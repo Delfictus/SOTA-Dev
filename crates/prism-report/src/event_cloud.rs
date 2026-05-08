@@ -194,12 +194,16 @@ impl EventCloud {
 
     /// Filter events by replicate
     pub fn filter_replicate(&self, replicate_id: usize) -> Vec<&PocketEvent> {
-        self.events.iter().filter(|e| e.replicate_id == replicate_id).collect()
+        self.events
+            .iter()
+            .filter(|e| e.replicate_id == replicate_id)
+            .collect()
     }
 
     /// Get unique residues across all events
     pub fn all_residues(&self) -> Vec<u32> {
-        let mut residues: Vec<u32> = self.events
+        let mut residues: Vec<u32> = self
+            .events
             .iter()
             .flat_map(|e| e.residues.iter().copied())
             .collect();
@@ -231,11 +235,7 @@ impl EventCloud {
     pub fn set_grid_from_bounds(&mut self, padding: f32, spacing: f32) {
         if let Some((min, max)) = self.bounding_box() {
             self.spacing = spacing;
-            self.grid_origin = [
-                min[0] - padding,
-                min[1] - padding,
-                min[2] - padding,
-            ];
+            self.grid_origin = [min[0] - padding, min[1] - padding, min[2] - padding];
 
             self.grid_dims = [
                 ((max[0] - min[0] + 2.0 * padding) / spacing).ceil() as usize,
@@ -386,8 +386,12 @@ impl ProcessedSpikeEvent {
 /// These events have been filtered and scored by Stage 2b trajectory analysis.
 /// Returns events sorted by quality_score descending.
 pub fn read_processed_spike_events(path: impl AsRef<Path>) -> Result<Vec<ProcessedSpikeEvent>> {
-    let file = File::open(path.as_ref())
-        .with_context(|| format!("Failed to open processed events: {}", path.as_ref().display()))?;
+    let file = File::open(path.as_ref()).with_context(|| {
+        format!(
+            "Failed to open processed events: {}",
+            path.as_ref().display()
+        )
+    })?;
     let reader = BufReader::new(file);
 
     let mut events = Vec::new();
@@ -405,7 +409,9 @@ pub fn read_processed_spike_events(path: impl AsRef<Path>) -> Result<Vec<Process
 
     // Sort by quality score descending (best first)
     events.sort_by(|a, b| {
-        b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal)
+        b.quality_score
+            .partial_cmp(&a.quality_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     log::info!(
@@ -442,7 +448,10 @@ pub fn read_best_available_events(
                 log::warn!("Stage 2b processed_events.jsonl is empty, falling back to raw");
             }
             Err(e) => {
-                log::warn!("Failed to read processed events: {}, falling back to raw", e);
+                log::warn!(
+                    "Failed to read processed events: {}, falling back to raw",
+                    e
+                );
             }
         }
     }
@@ -476,9 +485,7 @@ pub fn read_best_available_events(
         return Ok((processed, false));
     }
 
-    anyhow::bail!(
-        "No spike events found. Expected processed_events.jsonl or spike_events.jsonl"
-    );
+    anyhow::bail!("No spike events found. Expected processed_events.jsonl or spike_events.jsonl");
 }
 
 /// Read events from JSONL file
@@ -542,30 +549,34 @@ mod tests {
         // Write events
         {
             let mut writer = EventWriter::new(&path).unwrap();
-            writer.write_event(&PocketEvent {
-                center_xyz: [1.0, 2.0, 3.0],
-                volume_a3: 100.0,
-                spike_count: 3,
-                phase: AblationPhase::Baseline,
-                temp_phase: TempPhase::Warm, // Baseline is always at 300K
-                replicate_id: 0,
-                frame_idx: 50,
-                residues: vec![5, 10],
-                confidence: 0.5,
-                wavelength_nm: None,
-            }).unwrap();
-            writer.write_event(&PocketEvent {
-                center_xyz: [4.0, 5.0, 6.0],
-                volume_a3: 200.0,
-                spike_count: 7,
-                phase: AblationPhase::CryoOnly,
-                temp_phase: TempPhase::Ramp,
-                replicate_id: 1,
-                frame_idx: 100,
-                residues: vec![15, 20, 25],
-                confidence: 0.9,
-                wavelength_nm: None,
-            }).unwrap();
+            writer
+                .write_event(&PocketEvent {
+                    center_xyz: [1.0, 2.0, 3.0],
+                    volume_a3: 100.0,
+                    spike_count: 3,
+                    phase: AblationPhase::Baseline,
+                    temp_phase: TempPhase::Warm, // Baseline is always at 300K
+                    replicate_id: 0,
+                    frame_idx: 50,
+                    residues: vec![5, 10],
+                    confidence: 0.5,
+                    wavelength_nm: None,
+                })
+                .unwrap();
+            writer
+                .write_event(&PocketEvent {
+                    center_xyz: [4.0, 5.0, 6.0],
+                    volume_a3: 200.0,
+                    spike_count: 7,
+                    phase: AblationPhase::CryoOnly,
+                    temp_phase: TempPhase::Ramp,
+                    replicate_id: 1,
+                    frame_idx: 100,
+                    residues: vec![15, 20, 25],
+                    confidence: 0.9,
+                    wavelength_nm: None,
+                })
+                .unwrap();
             writer.flush().unwrap();
         }
 

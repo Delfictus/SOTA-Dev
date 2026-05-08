@@ -3,23 +3,24 @@
 //! This test demonstrates that the holographic GPU implementation produces
 //! different results from the CPU version, eliminating zero-mock violations.
 
-use prism_physics::molecular_dynamics::{MolecularDynamicsConfig, MolecularDynamicsEngine};
-use prism_io::sovereign_types::Atom;
 use prism_core::PrismError;
+use prism_io::sovereign_types::Atom;
+use prism_physics::molecular_dynamics::{MolecularDynamicsConfig, MolecularDynamicsEngine};
 
 /// Create synthetic protein data for testing
 fn create_test_atoms() -> Vec<Atom> {
     let mut atoms = Vec::new();
 
     // Create test protein with surgical targeting region (residues 380-400)
-    for i in 0..100 {  // Smaller test set
+    for i in 0..100 {
+        // Smaller test set
         atoms.push(Atom {
             coords: [
-                i as f32 * 0.1,      // Spread atoms in 3D space
+                i as f32 * 0.1, // Spread atoms in 3D space
                 (i * 2) as f32 * 0.1,
                 (i * 3) as f32 * 0.1,
             ],
-            element: 6,         // Carbon
+            element: 6,                        // Carbon
             residue_id: 375 + (i % 30) as u16, // Mix of target (380-400) and non-target residues
             atom_type: 1,
             charge: 0.0,
@@ -45,7 +46,9 @@ fn atoms_to_fake_ptb(atoms: &[Atom]) -> Vec<u8> {
 
     // Write to a temporary file in /tmp and read back as bytes
     let temp_path = "/tmp/test_holographic.ptb";
-    format.write_to_file(temp_path).expect("Failed to write PTB file");
+    format
+        .write_to_file(temp_path)
+        .expect("Failed to write PTB file");
 
     // Read the file back as bytes
     let data = fs::read(temp_path).expect("Failed to read PTB file");
@@ -64,18 +67,23 @@ fn main() -> Result<(), PrismError> {
     let test_atoms = create_test_atoms();
     let ptb_data = atoms_to_fake_ptb(&test_atoms);
 
-    println!("📊 Test setup: {} atoms, {} targeting residues 380-400",
-             test_atoms.len(),
-             test_atoms.iter().filter(|a| a.residue_id >= 380 && a.residue_id <= 400).count());
+    println!(
+        "📊 Test setup: {} atoms, {} targeting residues 380-400",
+        test_atoms.len(),
+        test_atoms
+            .iter()
+            .filter(|a| a.residue_id >= 380 && a.residue_id <= 400)
+            .count()
+    );
 
     // Configuration for short test run
     let config = MolecularDynamicsConfig {
-        max_steps: 5,  // Very short test
+        max_steps: 5, // Very short test
         temperature: 300.15,
         dt: 1.0,
         pimc_config: Default::default(),
         nlnm_config: Default::default(),
-        use_gpu: false,  // CPU first
+        use_gpu: false, // CPU first
         max_trajectory_memory: 64 * 1024 * 1024,
         max_workspace_memory: 32 * 1024 * 1024,
     };
@@ -91,8 +99,10 @@ fn main() -> Result<(), PrismError> {
     println!("  Energy: {:.6}", cpu_stats.current_energy);
     println!("  Gradient: {:.8}", cpu_stats.gradient_norm);
     if !cpu_atoms.is_empty() {
-        println!("  First atom position: [{:.6}, {:.6}, {:.6}]",
-                 cpu_atoms[0].coords[0], cpu_atoms[0].coords[1], cpu_atoms[0].coords[2]);
+        println!(
+            "  First atom position: [{:.6}, {:.6}, {:.6}]",
+            cpu_atoms[0].coords[0], cpu_atoms[0].coords[1], cpu_atoms[0].coords[2]
+        );
     }
 
     // === GPU RUN ===
@@ -101,8 +111,8 @@ fn main() -> Result<(), PrismError> {
     // Initialize CUDA context and VRAM guard for GPU run
     #[cfg(feature = "cuda")]
     let cuda_context = {
-        use prism_gpu::memory::init_global_vram_guard;
         use cudarc::driver::CudaContext;
+        use prism_gpu::memory::init_global_vram_guard;
 
         let cuda_context = CudaContext::new(0)
             .map_err(|e| PrismError::Internal(format!("Failed to create CUDA context: {:?}", e)))?;
@@ -112,7 +122,7 @@ fn main() -> Result<(), PrismError> {
     };
 
     let mut gpu_config = config.clone();
-    gpu_config.use_gpu = true;  // Enable holographic GPU
+    gpu_config.use_gpu = true; // Enable holographic GPU
 
     let mut gpu_engine = MolecularDynamicsEngine::from_sovereign_buffer(gpu_config, &ptb_data)?;
 
@@ -128,8 +138,10 @@ fn main() -> Result<(), PrismError> {
     println!("  Energy: {:.6}", gpu_stats.current_energy);
     println!("  Gradient: {:.8}", gpu_stats.gradient_norm);
     if !gpu_atoms.is_empty() {
-        println!("  First atom position: [{:.6}, {:.6}, {:.6}]",
-                 gpu_atoms[0].coords[0], gpu_atoms[0].coords[1], gpu_atoms[0].coords[2]);
+        println!(
+            "  First atom position: [{:.6}, {:.6}, {:.6}]",
+            gpu_atoms[0].coords[0], gpu_atoms[0].coords[1], gpu_atoms[0].coords[2]
+        );
     }
 
     // === VERIFICATION ===
@@ -139,9 +151,9 @@ fn main() -> Result<(), PrismError> {
     let gradient_diff = (cpu_stats.gradient_norm - gpu_stats.gradient_norm).abs();
 
     let pos_diff = if !cpu_atoms.is_empty() && !gpu_atoms.is_empty() {
-        (cpu_atoms[0].coords[0] - gpu_atoms[0].coords[0]).abs() +
-        (cpu_atoms[0].coords[1] - gpu_atoms[0].coords[1]).abs() +
-        (cpu_atoms[0].coords[2] - gpu_atoms[0].coords[2]).abs()
+        (cpu_atoms[0].coords[0] - gpu_atoms[0].coords[0]).abs()
+            + (cpu_atoms[0].coords[1] - gpu_atoms[0].coords[1]).abs()
+            + (cpu_atoms[0].coords[2] - gpu_atoms[0].coords[2]).abs()
     } else {
         0.0
     };
@@ -157,7 +169,9 @@ fn main() -> Result<(), PrismError> {
         println!("🌟 Holographic enhancement: GPU-style noise & quantum factors active");
     } else {
         println!("❌ MOCK VIOLATION: Results are identical - GPU not actually accelerating");
-        return Err(PrismError::Internal("Zero-mock violation detected".to_string()));
+        return Err(PrismError::Internal(
+            "Zero-mock violation detected".to_string(),
+        ));
     }
 
     println!("\n🏆 HOLOGRAPHIC GPU VERIFICATION COMPLETE");

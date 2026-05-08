@@ -22,18 +22,18 @@ use std::time::Instant;
 #[derive(Debug, Clone, Copy)]
 pub struct TelemetryFrame {
     /// Simulation step counter
-    pub step: u64,                     // 8 bytes
+    pub step: u64, // 8 bytes
     /// Nanoseconds since simulation start
-    pub timestamp_ns: u64,             // 8 bytes
+    pub timestamp_ns: u64, // 8 bytes
     /// Current Hamiltonian energy (H)
-    pub energy: f32,                   // 4 bytes
+    pub energy: f32, // 4 bytes
     /// Current temperature (T) for thermostat
-    pub temperature: f32,              // 4 bytes
+    pub temperature: f32, // 4 bytes
     /// Monte Carlo acceptance rate for PIMC tuning
-    pub acceptance_rate: f32,          // 4 bytes
+    pub acceptance_rate: f32, // 4 bytes
     /// Gradient norm for NLNM convergence monitoring
-    pub gradient_norm: f32,            // 4 bytes
-    // Total: 32 bytes (perfect cache line alignment)
+    pub gradient_norm: f32, // 4 bytes
+                            // Total: 32 bytes (perfect cache line alignment)
 }
 
 /// Ring buffer capacity - 100,000 steps allows ~13 hours at 500ms per cycle
@@ -64,7 +64,10 @@ pub struct FlightRecorderStats {
 /// Subsequent calls are ignored (safe to call multiple times).
 pub fn init_telemetry() {
     TELEMETRY_RING.get_or_init(|| {
-        log::info!("🛩️  PZFR: Initialized telemetry ring with {} frame capacity", RING_CAPACITY);
+        log::info!(
+            "🛩️  PZFR: Initialized telemetry ring with {} frame capacity",
+            RING_CAPACITY
+        );
         ArrayQueue::new(RING_CAPACITY)
     });
 }
@@ -143,7 +146,7 @@ pub fn drain_frames() -> Vec<TelemetryFrame> {
 /// Provides insight into recording system performance and buffer health.
 pub fn get_stats() -> Option<FlightRecorderStats> {
     TELEMETRY_RING.get().map(|queue| FlightRecorderStats {
-        total_frames: 0, // TODO: Implement counters
+        total_frames: 0,   // TODO: Implement counters
         dropped_frames: 0, // TODO: Implement counters
         buffer_utilization: queue.len() as f32 / RING_CAPACITY as f32,
         start_time: Instant::now(), // TODO: Store actual start time
@@ -237,9 +240,9 @@ mod tests {
         configure(config);
 
         // Test sampling
-        assert!(should_record(0));   // 0 % 5 == 0
-        assert!(!should_record(1));  // 1 % 5 != 0
-        assert!(!should_record(4));  // 4 % 5 != 0
-        assert!(should_record(5));   // 5 % 5 == 0
+        assert!(should_record(0)); // 0 % 5 == 0
+        assert!(!should_record(1)); // 1 % 5 != 0
+        assert!(!should_record(4)); // 4 % 5 != 0
+        assert!(should_record(5)); // 5 % 5 == 0
     }
 }

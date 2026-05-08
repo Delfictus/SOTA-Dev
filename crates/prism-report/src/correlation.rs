@@ -49,11 +49,7 @@ pub struct SiteTier1 {
 
 impl Tier1Correlation {
     /// Compute Tier 1 correlation for sites against holo structure
-    pub fn compute(
-        sites: &[CrypticSite],
-        holo: &HoloStructure,
-        topology: &TopologyData,
-    ) -> Self {
+    pub fn compute(sites: &[CrypticSite], holo: &HoloStructure, topology: &TopologyData) -> Self {
         let mut site_correlations = Vec::new();
         let mut best_distance = f32::INFINITY;
         let mut best_site_id = String::new();
@@ -172,7 +168,11 @@ impl Tier2Correlation {
 
             // Count correct residues
             let truth_set: std::collections::HashSet<_> = truth.residues.iter().collect();
-            let correct = site.residues.iter().filter(|r| truth_set.contains(r)).count();
+            let correct = site
+                .residues
+                .iter()
+                .filter(|r| truth_set.contains(r))
+                .count();
 
             let is_hit = f1 > 0.3;
 
@@ -196,8 +196,14 @@ impl Tier2Correlation {
         // Sort by rank for hit@1 and hit@3
         let mut sorted_sites = site_correlations.clone();
         sorted_sites.sort_by(|a, b| {
-            let idx_a = sites.iter().position(|s| s.site_id == a.site_id).unwrap_or(usize::MAX);
-            let idx_b = sites.iter().position(|s| s.site_id == b.site_id).unwrap_or(usize::MAX);
+            let idx_a = sites
+                .iter()
+                .position(|s| s.site_id == a.site_id)
+                .unwrap_or(usize::MAX);
+            let idx_b = sites
+                .iter()
+                .position(|s| s.site_id == b.site_id)
+                .unwrap_or(usize::MAX);
             idx_a.cmp(&idx_b)
         });
 
@@ -248,11 +254,14 @@ impl CorrelationResult {
         let tier2 = truth.map(|t| Tier2Correlation::compute(sites, t));
 
         let tier1_hit_at_1 = tier1.as_ref().map(|t| {
-            t.site_correlations.first().map(|s| s.is_hit).unwrap_or(false)
+            t.site_correlations
+                .first()
+                .map(|s| s.is_hit)
+                .unwrap_or(false)
         });
-        let tier1_hit_at_3 = tier1.as_ref().map(|t| {
-            t.site_correlations.iter().take(3).any(|s| s.is_hit)
-        });
+        let tier1_hit_at_3 = tier1
+            .as_ref()
+            .map(|t| t.site_correlations.iter().take(3).any(|s| s.is_hit));
 
         let hit_metrics = HitMetrics {
             n_sites: sites.len(),
@@ -411,20 +420,25 @@ mod tests {
             notes: None,
         };
 
-        let result = CorrelationResult::compute(&sites, None, Some(&truth), &TopologyData {
-            source_pdb: String::new(),
-            n_atoms: 0,
-            n_residues: 0,
-            n_chains: 0,
-            positions: vec![],
-            atom_names: vec![],
-            residue_names: vec![],
-            residue_ids: vec![],
-            chain_ids: vec![],
-            aromatic_targets: vec![],
-            n_aromatics: 0,
-            ca_indices: vec![],
-        });
+        let result = CorrelationResult::compute(
+            &sites,
+            None,
+            Some(&truth),
+            &TopologyData {
+                source_pdb: String::new(),
+                n_atoms: 0,
+                n_residues: 0,
+                n_chains: 0,
+                positions: vec![],
+                atom_names: vec![],
+                residue_names: vec![],
+                residue_ids: vec![],
+                chain_ids: vec![],
+                aromatic_targets: vec![],
+                n_aromatics: 0,
+                ca_indices: vec![],
+            },
+        );
 
         let csv = result.to_csv();
         assert!(csv.contains("site_001"));

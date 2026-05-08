@@ -26,9 +26,9 @@
 
 use std::collections::HashMap;
 
+use crate::amber_dynamics::{AmberSimConfig, AmberSimResult, AmberSimulator};
+use crate::amber_ff14sb::{AmberTopology, GpuTopology, PdbAtom};
 use crate::gnm_enhanced::{EnhancedGnm, EnhancedGnmConfig, EnhancedGnmResult};
-use crate::amber_ff14sb::{AmberTopology, PdbAtom, GpuTopology};
-use crate::amber_dynamics::{AmberSimulator, AmberSimConfig, AmberSimResult};
 
 /// Dynamics computation mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -99,12 +99,12 @@ impl DynamicsMode {
     /// Relative speed (1.0 = baseline GNM)
     pub fn relative_speed(&self) -> f64 {
         match self {
-            DynamicsMode::AllAtomAmber => 0.001,      // ~1000x slower
-            DynamicsMode::CoarseGrainedAnm => 0.1,    // ~10x slower
-            DynamicsMode::PlainGnm => 1.0,            // Fastest
-            DynamicsMode::EnhancedGnm => 0.8,         // Slightly slower than base GNM
-            DynamicsMode::TransferEntropyGnm => 0.1,  // ~10x slower (GPU TE)
-            DynamicsMode::MlCorrectedGnm => 0.2,      // ~5x slower (reservoir + readout)
+            DynamicsMode::AllAtomAmber => 0.001,     // ~1000x slower
+            DynamicsMode::CoarseGrainedAnm => 0.1,   // ~10x slower
+            DynamicsMode::PlainGnm => 1.0,           // Fastest
+            DynamicsMode::EnhancedGnm => 0.8,        // Slightly slower than base GNM
+            DynamicsMode::TransferEntropyGnm => 0.1, // ~10x slower (GPU TE)
+            DynamicsMode::MlCorrectedGnm => 0.2,     // ~5x slower (reservoir + readout)
         }
     }
 }
@@ -164,8 +164,8 @@ impl Default for DynamicsConfig {
             mode: DynamicsMode::EnhancedGnm,
             temperature: 310.0,
             n_steps: 1000,
-            timestep: 0.002,  // 2 fs for all-atom
-            gnm_cutoff: 9.0,  // Optimal cutoff from benchmark
+            timestep: 0.002,                // 2 fs for all-atom
+            gnm_cutoff: 9.0,                // Optimal cutoff from benchmark
             use_distance_weighting: true,   // +0.009 when alone
             use_multi_cutoff: false,        // DISABLED: interferes with DW
             use_secondary_structure: false, // DISABLED: hurts accuracy
@@ -183,7 +183,7 @@ impl DynamicsConfig {
     pub fn fast() -> Self {
         Self {
             mode: DynamicsMode::EnhancedGnm,
-            use_multi_cutoff: false,  // Single cutoff is faster
+            use_multi_cutoff: false, // Single cutoff is faster
             ..Default::default()
         }
     }
@@ -206,7 +206,7 @@ impl DynamicsConfig {
         Self {
             mode: DynamicsMode::AllAtomAmber,
             n_steps: 10000,
-            timestep: 0.002,  // 2 fs
+            timestep: 0.002, // 2 fs
             save_trajectory: true,
             trajectory_interval: 100,
             ..Default::default()
@@ -218,7 +218,7 @@ impl DynamicsConfig {
         Self {
             mode: DynamicsMode::CoarseGrainedAnm,
             n_steps: 2000,
-            timestep: 0.005,  // 5 fs for CG
+            timestep: 0.005, // 5 fs for CG
             save_trajectory: true,
             trajectory_interval: 10,
             ..Default::default()
@@ -288,7 +288,8 @@ impl StructureInput {
 
     /// Number of atoms (all-atom) or residues (CA-only)
     pub fn n_atoms(&self) -> usize {
-        self.all_positions.as_ref()
+        self.all_positions
+            .as_ref()
             .map(|p| p.len())
             .unwrap_or(self.ca_positions.len())
     }
@@ -304,9 +305,13 @@ impl StructureInput {
         let atom_names = self.atom_names.as_ref()?;
         let residue_indices = self.atom_residue_indices.as_ref()?;
 
-        let chain_ids = self.chain_ids.clone()
+        let chain_ids = self
+            .chain_ids
+            .clone()
             .unwrap_or_else(|| vec!['A'; self.n_residues()]);
-        let residue_seqs = self.residue_seqs.clone()
+        let residue_seqs = self
+            .residue_seqs
+            .clone()
             .unwrap_or_else(|| (1..=self.n_residues() as i32).collect());
 
         let mut atoms = Vec::with_capacity(all_pos.len());
@@ -399,7 +404,6 @@ pub struct DynamicsEngine {
 
     /// Enhanced GNM calculator (always available)
     enhanced_gnm: EnhancedGnm,
-
     // GPU components (lazy initialized for MD modes)
     // amber_forces: Option<AmberBondedForces>,
     // nova_engine: Option<PrismNova>,
@@ -415,7 +419,7 @@ impl DynamicsEngine {
             use_secondary_structure: config.use_secondary_structure,
             use_sidechain_factors: config.use_sidechain_factors,
             use_sasa_modulation: config.use_sasa_modulation,
-            distance_sigma: 5.0,  // Match EnhancedGnmConfig default
+            distance_sigma: 5.0, // Match EnhancedGnmConfig default
             ensemble_cutoffs: vec![6.0, 7.0, 8.0, 10.0],
             ensemble_weights: vec![0.15, 0.30, 0.35, 0.20],
             use_long_range_contacts: false,
@@ -424,7 +428,7 @@ impl DynamicsEngine {
         };
 
         let mut enhanced_gnm = EnhancedGnm::with_config(gnm_config);
-        enhanced_gnm.set_cutoff(config.gnm_cutoff);  // Apply configured cutoff
+        enhanced_gnm.set_cutoff(config.gnm_cutoff); // Apply configured cutoff
 
         Ok(Self {
             config,
@@ -438,7 +442,10 @@ impl DynamicsEngine {
     }
 
     /// Predict flexibility (RMSF) for a structure
-    pub fn predict_flexibility(&self, structure: &StructureInput) -> anyhow::Result<DynamicsResult> {
+    pub fn predict_flexibility(
+        &self,
+        structure: &StructureInput,
+    ) -> anyhow::Result<DynamicsResult> {
         let start_time = std::time::Instant::now();
 
         let result = match self.config.mode {
@@ -457,12 +464,11 @@ impl DynamicsEngine {
         result.computation_time_ms = elapsed;
 
         if let Some(ref b_factors) = structure.b_factors {
-            let exp_rmsf: Vec<f64> = b_factors.iter()
+            let exp_rmsf: Vec<f64> = b_factors
+                .iter()
                 .map(|b| ((*b as f64).max(1.0) / 26.31).sqrt())
                 .collect();
-            result.experimental_correlation = Some(
-                pearson_correlation(&result.rmsf, &exp_rmsf)
-            );
+            result.experimental_correlation = Some(pearson_correlation(&result.rmsf, &exp_rmsf));
         }
 
         Ok(result)
@@ -474,18 +480,17 @@ impl DynamicsEngine {
         let plain_config = EnhancedGnmConfig::plain();
         let mut plain_gnm = EnhancedGnm::with_config(plain_config);
         // Use configured cutoff (default 10Å for literature standard)
-        let cutoff = if self.config.gnm_cutoff > 0.0 { self.config.gnm_cutoff } else { 10.0 };
+        let cutoff = if self.config.gnm_cutoff > 0.0 {
+            self.config.gnm_cutoff
+        } else {
+            10.0
+        };
         plain_gnm.set_cutoff(cutoff);
 
         // Prepare residue names
-        let residue_refs: Vec<&str> = structure.residue_names.iter()
-            .map(|s| s.as_str())
-            .collect();
+        let residue_refs: Vec<&str> = structure.residue_names.iter().map(|s| s.as_str()).collect();
 
-        let gnm_result = plain_gnm.compute_rmsf(
-            &structure.ca_positions,
-            Some(&residue_refs),
-        );
+        let gnm_result = plain_gnm.compute_rmsf(&structure.ca_positions, Some(&residue_refs));
 
         Ok(DynamicsResult {
             mode: DynamicsMode::PlainGnm,
@@ -507,14 +512,11 @@ impl DynamicsEngine {
     /// Run Enhanced GNM mode
     fn run_enhanced_gnm(&self, structure: &StructureInput) -> anyhow::Result<DynamicsResult> {
         // Prepare residue names as &str slice
-        let residue_refs: Vec<&str> = structure.residue_names.iter()
-            .map(|s| s.as_str())
-            .collect();
+        let residue_refs: Vec<&str> = structure.residue_names.iter().map(|s| s.as_str()).collect();
 
-        let gnm_result = self.enhanced_gnm.compute_rmsf(
-            &structure.ca_positions,
-            Some(&residue_refs),
-        );
+        let gnm_result = self
+            .enhanced_gnm
+            .compute_rmsf(&structure.ca_positions, Some(&residue_refs));
 
         Ok(DynamicsResult {
             mode: DynamicsMode::EnhancedGnm,
@@ -544,7 +546,8 @@ impl DynamicsEngine {
         }
 
         // Convert structure to PDB atoms
-        let pdb_atoms = structure.to_pdb_atoms()
+        let pdb_atoms = structure
+            .to_pdb_atoms()
             .ok_or_else(|| anyhow::anyhow!("Failed to convert to PDB atoms"))?;
 
         // Create AMBER simulation config from dynamics config
@@ -567,7 +570,9 @@ impl DynamicsEngine {
 
         // Convert per-atom RMSF to per-residue RMSF
         // Group atoms by residue and average their RMSF values
-        let atom_residue_indices = structure.atom_residue_indices.as_ref()
+        let atom_residue_indices = structure
+            .atom_residue_indices
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing atom_residue_indices"))?;
 
         let n_residues = structure.n_residues();
@@ -592,29 +597,45 @@ impl DynamicsEngine {
 
         // Convert trajectory frames
         let trajectory = if self.config.save_trajectory {
-            Some(amber_result.trajectory.iter().enumerate().map(|(idx, frame)| {
-                // Extract CA positions from all-atom positions
-                let atom_names = structure.atom_names.as_ref();
-                let ca_positions: Vec<[f32; 3]> = frame.positions.iter()
+            Some(
+                amber_result
+                    .trajectory
+                    .iter()
                     .enumerate()
-                    .filter(|(i, _)| {
-                        atom_names.map(|names| names.get(*i).map(|n| n.trim() == "CA").unwrap_or(false))
-                            .unwrap_or(false)
-                    })
-                    .map(|(_, pos)| [pos[0] as f32, pos[1] as f32, pos[2] as f32])
-                    .collect();
+                    .map(|(idx, frame)| {
+                        // Extract CA positions from all-atom positions
+                        let atom_names = structure.atom_names.as_ref();
+                        let ca_positions: Vec<[f32; 3]> = frame
+                            .positions
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, _)| {
+                                atom_names
+                                    .map(|names| {
+                                        names.get(*i).map(|n| n.trim() == "CA").unwrap_or(false)
+                                    })
+                                    .unwrap_or(false)
+                            })
+                            .map(|(_, pos)| [pos[0] as f32, pos[1] as f32, pos[2] as f32])
+                            .collect();
 
-                TrajectoryFrame {
-                    index: idx,
-                    time_ps: (frame.time / 1000.0) as f32, // fs to ps
-                    ca_positions,
-                    all_positions: Some(frame.positions.iter()
-                        .map(|p| [p[0] as f32, p[1] as f32, p[2] as f32])
-                        .collect()),
-                    potential_energy: frame.potential_energy as f32,
-                    kinetic_energy: frame.kinetic_energy as f32,
-                }
-            }).collect())
+                        TrajectoryFrame {
+                            index: idx,
+                            time_ps: (frame.time / 1000.0) as f32, // fs to ps
+                            ca_positions,
+                            all_positions: Some(
+                                frame
+                                    .positions
+                                    .iter()
+                                    .map(|p| [p[0] as f32, p[1] as f32, p[2] as f32])
+                                    .collect(),
+                            ),
+                            potential_energy: frame.potential_energy as f32,
+                            kinetic_energy: frame.kinetic_energy as f32,
+                        }
+                    })
+                    .collect(),
+            )
         } else {
             None
         };
@@ -647,10 +668,14 @@ impl DynamicsEngine {
     /// Run Coarse-Grained ANM mode
     fn run_coarse_grained_anm(&self, structure: &StructureInput) -> anyhow::Result<DynamicsResult> {
         // Generate CG topology
-        let ca_atoms: Vec<PdbAtom> = structure.ca_positions.iter()
+        let ca_atoms: Vec<PdbAtom> = structure
+            .ca_positions
+            .iter()
             .enumerate()
             .map(|(i, pos)| {
-                let res_name = structure.residue_names.get(i)
+                let res_name = structure
+                    .residue_names
+                    .get(i)
                     .map(|s| s.as_str())
                     .unwrap_or("ALA");
                 PdbAtom {
@@ -676,7 +701,10 @@ impl DynamicsEngine {
 
     /// Run Transfer Entropy + GNM mode
     /// Uses network centrality to modulate RMSF predictions
-    fn run_transfer_entropy_gnm(&self, structure: &StructureInput) -> anyhow::Result<DynamicsResult> {
+    fn run_transfer_entropy_gnm(
+        &self,
+        structure: &StructureInput,
+    ) -> anyhow::Result<DynamicsResult> {
         let n = structure.ca_positions.len();
         if n < 3 {
             return self.run_enhanced_gnm(structure);
@@ -760,7 +788,11 @@ impl DynamicsEngine {
         let mean_deg: f64 = degree.iter().sum::<f64>() / n as f64;
         let mut hub_score = vec![0.0f64; n];
         for i in 0..n {
-            let norm_degree = if mean_deg > 1e-10 { degree[i] / mean_deg } else { 1.0 };
+            let norm_degree = if mean_deg > 1e-10 {
+                degree[i] / mean_deg
+            } else {
+                1.0
+            };
             // High degree but low clustering → motion hub → amplify RMSF
             // Low degree → peripheral → keep as is
             // High degree + high clustering → constrained → slightly reduce
@@ -783,9 +815,12 @@ impl DynamicsEngine {
         // Use a small multiplier to avoid over-correction
         let correction_strength = 0.05; // 5% correction
         let orig_mean: f64 = result.rmsf.iter().sum::<f64>() / n as f64;
-        let orig_var: f64 = result.rmsf.iter()
+        let orig_var: f64 = result
+            .rmsf
+            .iter()
             .map(|&r| (r - orig_mean).powi(2))
-            .sum::<f64>() / n as f64;
+            .sum::<f64>()
+            / n as f64;
         let orig_std = orig_var.sqrt();
 
         for i in 0..n {

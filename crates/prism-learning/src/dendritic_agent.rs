@@ -31,11 +31,11 @@
 //! where λ is the regularization parameter (forgetting factor).
 
 use anyhow::{Context, Result};
-use log::{info, debug, warn};
-use serde::{Serialize, Deserialize};
+use cudarc::driver::CudaContext;
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
-use cudarc::driver::CudaContext;
 
 use prism_gpu::DendriticSNNReservoir;
 
@@ -98,7 +98,12 @@ impl FactorizedAction {
     }
 
     pub fn to_array(&self) -> [usize; 4] {
-        [self.temp_idx, self.friction_idx, self.spring_idx, self.bias_idx]
+        [
+            self.temp_idx,
+            self.friction_idx,
+            self.spring_idx,
+            self.bias_idx,
+        ]
     }
 }
 
@@ -201,14 +206,15 @@ impl RLSReadout {
 
     /// Compute Q-values from reservoir state
     fn compute_q_values(&self, state: &[f32], use_target: bool) -> [f32; NUM_OUTPUTS] {
-        let weights = if use_target { &self.w_target } else { &self.w_active };
+        let weights = if use_target {
+            &self.w_target
+        } else {
+            &self.w_active
+        };
 
         let mut q_values = [0.0f32; NUM_OUTPUTS];
         for (i, w) in weights.iter().enumerate() {
-            q_values[i] = w.iter()
-                .zip(state.iter())
-                .map(|(wi, si)| wi * si)
-                .sum();
+            q_values[i] = w.iter().zip(state.iter()).map(|(wi, si)| wi * si).sum();
         }
         q_values
     }
@@ -233,7 +239,13 @@ impl RLSReadout {
     /// * `state` - Reservoir state vector
     /// * `target` - TD target value
     /// * `reward_modulation` - Reward-based learning rate scaling [MIN..MAX]
-    fn rls_update_modulated(&mut self, output_idx: usize, state: &[f32], target: f32, reward_modulation: f32) {
+    fn rls_update_modulated(
+        &mut self,
+        output_idx: usize,
+        state: &[f32],
+        target: f32,
+        reward_modulation: f32,
+    ) {
         let n = self.reservoir_size;
         let w = &mut self.w_active[output_idx];
         let p = &mut self.p_matrices[output_idx];
@@ -251,7 +263,9 @@ impl RLSReadout {
         }
 
         // Clamp reward modulation to safe range
-        let modulation = reward_modulation.max(MIN_REWARD_MODULATION).min(MAX_REWARD_MODULATION);
+        let modulation = reward_modulation
+            .max(MIN_REWARD_MODULATION)
+            .min(MAX_REWARD_MODULATION);
 
         // Step 1: Compute P @ x
         let mut px = vec![0.0f32; n];
@@ -262,13 +276,10 @@ impl RLSReadout {
         }
 
         // Step 2: Compute x^T @ P @ x
-        let xtpx: f32 = state.iter()
-            .zip(px.iter())
-            .map(|(xi, pxi)| xi * pxi)
-            .sum();
+        let xtpx: f32 = state.iter().zip(px.iter()).map(|(xi, pxi)| xi * pxi).sum();
 
         // Step 3: Compute Kalman gain k = P @ x / (λ + x^T @ P @ x)
-        let denom = (self.lambda + xtpx).max(1e-8);  // Prevent division by zero
+        let denom = (self.lambda + xtpx).max(1e-8); // Prevent division by zero
         let mut k = vec![0.0f32; n];
         for i in 0..n {
             k[i] = px[i] / denom;
@@ -277,10 +288,7 @@ impl RLSReadout {
         }
 
         // Step 4: Compute prediction error
-        let prediction: f32 = w.iter()
-            .zip(state.iter())
-            .map(|(wi, si)| wi * si)
-            .sum();
+        let prediction: f32 = w.iter().zip(state.iter()).map(|(wi, si)| wi * si).sum();
         let error = target - prediction;
 
         // Step 5: Update weights with REWARD MODULATION
@@ -296,7 +304,7 @@ impl RLSReadout {
         // Step 6: Update P matrix: P = (1/λ) * (P - k @ x^T @ P)
         // Sherman-Morrison update (also modulated for consistency)
         let inv_lambda = 1.0 / self.lambda;
-        let p_modulation = 0.5 + 0.5 * modulation;  // P update less aggressive
+        let p_modulation = 0.5 + 0.5 * modulation; // P update less aggressive
         for i in 0..n {
             for j in 0..n {
                 let delta = p_modulation * k[i] * px[j];
@@ -322,7 +330,7 @@ impl RLSReadout {
         // reward > 0 → modulation > 1.0 (more learning)
         // reward < 0 → modulation < 1.0 (less learning, but not zero)
         let scaled = reward * REWARD_MODULATION_SCALE;
-        let modulation = 1.0 + scaled.tanh();  // Range: [0, 2]
+        let modulation = 1.0 + scaled.tanh(); // Range: [0, 2]
 
         // Map to [MIN, MAX] range
         MIN_REWARD_MODULATION + modulation * (MAX_REWARD_MODULATION - MIN_REWARD_MODULATION) / 2.0
@@ -403,15 +411,18 @@ impl DendriticAgent {
         // Accept valid feature dimensions for different configurations
         // 23: standard, 27: +difficulty, 31: +glycan, 37: meta-learning, 40: +bio-chemistry
         anyhow::ensure!(
-            input_dim == 23 || input_dim == 27 || input_dim == 31 || input_dim == 37 || input_dim == 40,
+            input_dim == 23
+                || input_dim == 27
+                || input_dim == 31
+                || input_dim == 37
+                || input_dim == 40,
             "DendriticAgent requires 23, 27, 31, 37, or 40 input features, got {}. \
              23=standard, 27=+difficulty, 31=+glycan, 37=meta-learning, 40=+bio-chemistry",
             input_dim
         );
 
         // Initialize CUDA context
-        let context = CudaContext::new(device_idx)
-            .context("Failed to create CUDA context")?;
+        let context = CudaContext::new(device_idx).context("Failed to create CUDA context")?;
 
         // Create SNN reservoir
         let mut reservoir = DendriticSNNReservoir::new(context, config.reservoir_size)
@@ -428,7 +439,10 @@ impl DendriticAgent {
         let readout = RLSReadout::new(config.reservoir_size, config.lambda, config.tau);
 
         info!("🧠 Dendritic Agent initialized on CUDA:{}", device_idx);
-        info!("   Architecture: 23→SNN({})→RLS({})", config.reservoir_size, NUM_OUTPUTS);
+        info!(
+            "   Architecture: 23→SNN({})→RLS({})",
+            config.reservoir_size, NUM_OUTPUTS
+        );
         info!("   Lambda: {}, Tau: {}", config.lambda, config.tau);
         info!("   No PyTorch dependency - Pure neuromorphic!");
 
@@ -488,8 +502,11 @@ impl DendriticAgent {
         // Check for NaN in Q-values (indicates numerical instability)
         let nan_count = q_values.iter().filter(|x| x.is_nan()).count();
         if nan_count > 0 {
-            log::warn!("⚠️ NaN detected in Q-values: {}/{} values are NaN. Falling back to random action.",
-                       nan_count, q_values.len());
+            log::warn!(
+                "⚠️ NaN detected in Q-values: {}/{} values are NaN. Falling back to random action.",
+                nan_count,
+                q_values.len()
+            );
             // Return random action when Q-values are corrupted
             use rand::Rng;
             let mut rng = rand::thread_rng();
@@ -519,10 +536,20 @@ impl DendriticAgent {
             .max_by(|&a, &b| safe_cmp(q_values[BINS_PER_PARAM + a], q_values[BINS_PER_PARAM + b]))
             .unwrap_or(0);
         let spring_idx = (0..BINS_PER_PARAM)
-            .max_by(|&a, &b| safe_cmp(q_values[2*BINS_PER_PARAM + a], q_values[2*BINS_PER_PARAM + b]))
+            .max_by(|&a, &b| {
+                safe_cmp(
+                    q_values[2 * BINS_PER_PARAM + a],
+                    q_values[2 * BINS_PER_PARAM + b],
+                )
+            })
             .unwrap_or(0);
         let bias_idx = (0..BINS_PER_PARAM)
-            .max_by(|&a, &b| safe_cmp(q_values[3*BINS_PER_PARAM + a], q_values[3*BINS_PER_PARAM + b]))
+            .max_by(|&a, &b| {
+                safe_cmp(
+                    q_values[3 * BINS_PER_PARAM + a],
+                    q_values[3 * BINS_PER_PARAM + b],
+                )
+            })
             .unwrap_or(0);
 
         FactorizedAction::new(temp_idx, fric_idx, spring_idx, bias_idx)
@@ -611,7 +638,12 @@ impl DendriticAgent {
                 total_error += error;
 
                 // RLS update with REWARD MODULATION
-                self.readout.rls_update_modulated(action_indices[head], &state, target, reward_modulation);
+                self.readout.rls_update_modulated(
+                    action_indices[head],
+                    &state,
+                    target,
+                    reward_modulation,
+                );
             }
 
             // Polyak averaging of target weights (every step)
@@ -652,7 +684,10 @@ impl DendriticAgent {
     /// Values > 1.0 speed up learning, < 1.0 slow it down
     pub fn set_learning_rate_multiplier(&mut self, multiplier: f32) {
         self.learning_rate_multiplier = multiplier.clamp(0.1, 10.0);
-        log::info!("📈 Learning rate multiplier set to {:.2}x", self.learning_rate_multiplier);
+        log::info!(
+            "📈 Learning rate multiplier set to {:.2}x",
+            self.learning_rate_multiplier
+        );
     }
 
     pub fn get_learning_rate_multiplier(&self) -> f32 {
@@ -663,24 +698,31 @@ impl DendriticAgent {
     /// Returns a JSON-serializable struct with all internal states
     pub fn export_neural_state(&self, features: Option<&[f32]>) -> NeuralStateExport {
         // Get reservoir state (last cached or zeros)
-        let reservoir_state: Vec<f32> = self.last_state.clone().unwrap_or_else(|| {
-            vec![0.0; self.config.reservoir_size]
-        });
+        let reservoir_state: Vec<f32> = self
+            .last_state
+            .clone()
+            .unwrap_or_else(|| vec![0.0; self.config.reservoir_size]);
 
         // Compute Q-values from current state
         let q_values: Vec<f32> = if self.last_state.is_some() {
-            self.readout.compute_q_values(self.last_state.as_ref().unwrap(), false).to_vec()
+            self.readout
+                .compute_q_values(self.last_state.as_ref().unwrap(), false)
+                .to_vec()
         } else {
             vec![0.0; NUM_OUTPUTS]
         };
 
         // Get weight statistics per output head
-        let weight_stats: Vec<WeightStats> = self.readout.w_active.iter()
+        let weight_stats: Vec<WeightStats> = self
+            .readout
+            .w_active
+            .iter()
             .enumerate()
             .map(|(i, weights)| {
                 let sum: f32 = weights.iter().sum();
                 let mean = sum / weights.len() as f32;
-                let variance: f32 = weights.iter().map(|w| (w - mean).powi(2)).sum::<f32>() / weights.len() as f32;
+                let variance: f32 =
+                    weights.iter().map(|w| (w - mean).powi(2)).sum::<f32>() / weights.len() as f32;
                 let min = weights.iter().cloned().fold(f32::INFINITY, f32::min);
                 let max = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                 WeightStats {
@@ -697,9 +739,13 @@ impl DendriticAgent {
         // Subsample weights for visualization (full matrix too large)
         // Take every Nth weight to get ~64 values per head
         let subsample_rate = (self.config.reservoir_size / 64).max(1);
-        let weight_heatmap: Vec<Vec<f32>> = self.readout.w_active.iter()
+        let weight_heatmap: Vec<Vec<f32>> = self
+            .readout
+            .w_active
+            .iter()
             .map(|weights| {
-                weights.iter()
+                weights
+                    .iter()
                     .step_by(subsample_rate)
                     .take(64)
                     .cloned()
@@ -708,7 +754,8 @@ impl DendriticAgent {
             .collect();
 
         // Subsample reservoir state for heatmap (reshape to 2D grid)
-        let reservoir_heatmap: Vec<f32> = reservoir_state.iter()
+        let reservoir_heatmap: Vec<f32> = reservoir_state
+            .iter()
             .step_by(subsample_rate)
             .take(256)
             .cloned()
@@ -723,10 +770,12 @@ impl DendriticAgent {
 
         NeuralStateExport {
             timestamp: chrono::Utc::now().to_rfc3339(),
-            architecture: format!("{}→SNN({})→RLS({})",
+            architecture: format!(
+                "{}→SNN({})→RLS({})",
                 feature_importance.len(),
                 self.config.reservoir_size,
-                NUM_OUTPUTS),
+                NUM_OUTPUTS
+            ),
             reservoir_size: self.config.reservoir_size,
             num_outputs: NUM_OUTPUTS,
             epsilon: self.epsilon,
@@ -739,21 +788,35 @@ impl DendriticAgent {
                 mean: reservoir_state.iter().sum::<f32>() / reservoir_state.len() as f32,
                 std: {
                     let mean = reservoir_state.iter().sum::<f32>() / reservoir_state.len() as f32;
-                    (reservoir_state.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / reservoir_state.len() as f32).sqrt()
+                    (reservoir_state
+                        .iter()
+                        .map(|x| (x - mean).powi(2))
+                        .sum::<f32>()
+                        / reservoir_state.len() as f32)
+                        .sqrt()
                 },
-                sparsity: reservoir_state.iter().filter(|&&x| x.abs() < 0.01).count() as f32 / reservoir_state.len() as f32,
-                max_activation: reservoir_state.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+                sparsity: reservoir_state.iter().filter(|&&x| x.abs() < 0.01).count() as f32
+                    / reservoir_state.len() as f32,
+                max_activation: reservoir_state
+                    .iter()
+                    .cloned()
+                    .fold(f32::NEG_INFINITY, f32::max),
             },
 
             // Q-values
             q_values: q_values.clone(),
             q_values_by_param: vec![
                 q_values[0..BINS_PER_PARAM].to_vec(),
-                q_values[BINS_PER_PARAM..2*BINS_PER_PARAM].to_vec(),
-                q_values[2*BINS_PER_PARAM..3*BINS_PER_PARAM].to_vec(),
-                q_values[3*BINS_PER_PARAM..4*BINS_PER_PARAM].to_vec(),
+                q_values[BINS_PER_PARAM..2 * BINS_PER_PARAM].to_vec(),
+                q_values[2 * BINS_PER_PARAM..3 * BINS_PER_PARAM].to_vec(),
+                q_values[3 * BINS_PER_PARAM..4 * BINS_PER_PARAM].to_vec(),
             ],
-            param_names: vec!["temperature".to_string(), "friction".to_string(), "spring_k".to_string(), "bias".to_string()],
+            param_names: vec![
+                "temperature".to_string(),
+                "friction".to_string(),
+                "spring_k".to_string(),
+                "bias".to_string(),
+            ],
 
             // Weights
             weight_heatmap,
@@ -762,12 +825,29 @@ impl DendriticAgent {
             // Features
             feature_values: feature_importance,
             feature_names: vec![
-                "rgyr".into(), "sasa".into(), "hbonds".into(), "contacts".into(),
-                "rmsd".into(), "temp".into(), "friction".into(), "spring_k".into(),
-                "bias".into(), "energy_pot".into(), "energy_kin".into(), "energy_tot".into(),
-                "d_rgyr".into(), "d_sasa".into(), "d_hbonds".into(), "d_contacts".into(),
-                "d_rmsd".into(), "d_energy".into(), "step_norm".into(), "episode_frac".into(),
-                "stuck_frac".into(), "reward_ma".into(), "explore_bonus".into(),
+                "rgyr".into(),
+                "sasa".into(),
+                "hbonds".into(),
+                "contacts".into(),
+                "rmsd".into(),
+                "temp".into(),
+                "friction".into(),
+                "spring_k".into(),
+                "bias".into(),
+                "energy_pot".into(),
+                "energy_kin".into(),
+                "energy_tot".into(),
+                "d_rgyr".into(),
+                "d_sasa".into(),
+                "d_hbonds".into(),
+                "d_contacts".into(),
+                "d_rmsd".into(),
+                "d_energy".into(),
+                "step_norm".into(),
+                "episode_frac".into(),
+                "stuck_frac".into(),
+                "reward_ma".into(),
+                "explore_bonus".into(),
             ],
         }
     }
@@ -812,7 +892,10 @@ impl DendriticAgent {
         });
         std::fs::write(&meta_path, serde_json::to_string_pretty(&metadata)?)?;
 
-        info!("💾 Dendritic Agent saved to {:?} (ε={:.4}, steps={})", path, self.epsilon, self.step_count);
+        info!(
+            "💾 Dendritic Agent saved to {:?} (ε={:.4}, steps={})",
+            path, self.epsilon, self.step_count
+        );
         Ok(())
     }
 
@@ -851,7 +934,10 @@ impl DendriticAgent {
         // Reset precision matrices for fresh learning
         self.readout.reset_precision_matrices();
 
-        info!("📂 Dendritic Agent loaded from {:?} (ε={:.4}, steps={})", path, self.epsilon, self.step_count);
+        info!(
+            "📂 Dendritic Agent loaded from {:?} (ε={:.4}, steps={})",
+            path, self.epsilon, self.step_count
+        );
         Ok(())
     }
 

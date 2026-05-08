@@ -6,14 +6,14 @@
 //! 3. Immunological_Landscape - Population immunity levels
 //! 4. PK_for_all_Epitopes - Epitope-specific immunity decay
 
-use anyhow::{Result, Context, bail};
-use std::path::Path;
-use std::collections::HashMap;
-use csv::ReaderBuilder;
+use anyhow::{bail, Context, Result};
 use chrono::NaiveDate;
+use csv::ReaderBuilder;
+use std::collections::HashMap;
+use std::path::Path;
 
 #[allow(unused_imports)]
-use log::{info, debug, warn};
+use log::{debug, info, warn};
 
 /// Case ascertainment rate (phi) over time
 /// Higher phi = more comprehensive surveillance = more reliable frequency data
@@ -21,7 +21,7 @@ use log::{info, debug, warn};
 pub struct PhiEstimates {
     pub country: String,
     pub dates: Vec<NaiveDate>,
-    pub phi_values: Vec<f32>,  // Smoothed phi estimates
+    pub phi_values: Vec<f32>, // Smoothed phi estimates
     date_to_phi: HashMap<NaiveDate, f32>,
 }
 
@@ -49,8 +49,11 @@ impl PhiEstimates {
         }
 
         let phi_file = phi_file.ok_or_else(|| {
-            anyhow::anyhow!("Phi estimates file not found for {} (tried {} patterns)",
-                country, naming_patterns.len())
+            anyhow::anyhow!(
+                "Phi estimates file not found for {} (tried {} patterns)",
+                country,
+                naming_patterns.len()
+            )
         })?;
 
         log::info!("Loading phi estimates from: {:?}", phi_file);
@@ -79,10 +82,13 @@ impl PhiEstimates {
             date_to_phi.insert(date, phi);
         }
 
-        log::info!("Loaded {} phi estimates for {}, range {:.1} to {:.1}",
-            dates.len(), country,
+        log::info!(
+            "Loaded {} phi estimates for {}, range {:.1} to {:.1}",
+            dates.len(),
+            country,
             phi_values.iter().cloned().fold(f32::INFINITY, f32::min),
-            phi_values.iter().cloned().fold(f32::NEG_INFINITY, f32::max));
+            phi_values.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+        );
 
         Ok(PhiEstimates {
             country: country.to_string(),
@@ -118,7 +124,7 @@ impl PhiEstimates {
     pub fn normalize_frequency(&self, freq: f32, date: &NaiveDate) -> f32 {
         let phi = self.get_phi(date);
         if phi > 0.0 {
-            freq / phi * 100.0  // Scale factor for numerical stability
+            freq / phi * 100.0 // Scale factor for numerical stability
         } else {
             freq
         }
@@ -129,7 +135,7 @@ impl PhiEstimates {
 /// P_neut indicates probability of neutralization vs specific variant
 #[derive(Debug, Clone)]
 pub struct PNeutData {
-    pub variant: String,  // e.g., "Delta", "Omicron_BA.1"
+    pub variant: String, // e.g., "Delta", "Omicron_BA.1"
     pub days_since_infection: Vec<i32>,
     pub p_neut_min: Vec<f32>,
     pub p_neut_max: Vec<f32>,
@@ -137,11 +143,7 @@ pub struct PNeutData {
 
 impl PNeutData {
     /// Load from VASIL P_neut_{variant}.csv
-    pub fn load_from_vasil(
-        vasil_data_dir: &Path,
-        country: &str,
-        variant: &str,
-    ) -> Result<Self> {
+    pub fn load_from_vasil(vasil_data_dir: &Path, country: &str, variant: &str) -> Result<Self> {
         let p_neut_file = vasil_data_dir
             .join("ByCountry")
             .join(country)
@@ -180,10 +182,14 @@ impl PNeutData {
             p_neut_max.push(max);
         }
 
-        log::info!("Loaded {} P_neut entries for {} ({}), range [{:.3}, {:.3}]",
-            days_since_infection.len(), country, variant,
+        log::info!(
+            "Loaded {} P_neut entries for {} ({}), range [{:.3}, {:.3}]",
+            days_since_infection.len(),
+            country,
+            variant,
             p_neut_min.iter().cloned().fold(f32::INFINITY, f32::min),
-            p_neut_max.iter().cloned().fold(f32::NEG_INFINITY, f32::max));
+            p_neut_max.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+        );
 
         Ok(PNeutData {
             variant: variant.to_string(),
@@ -196,11 +202,14 @@ impl PNeutData {
     /// Get neutralization probability for days since infection
     pub fn get_p_neut(&self, days: i32) -> (f32, f32) {
         // Find index for this day
-        let idx = self.days_since_infection.iter()
+        let idx = self
+            .days_since_infection
+            .iter()
             .position(|&d| d == days)
             .unwrap_or_else(|| {
                 // Find nearest day
-                self.days_since_infection.iter()
+                self.days_since_infection
+                    .iter()
                     .enumerate()
                     .min_by_key(|(_, &d)| (d - days).abs())
                     .map(|(i, _)| i)
@@ -228,9 +237,9 @@ impl PNeutData {
 pub struct ImmunologicalLandscape {
     pub country: String,
     pub variant: String,
-    pub dates: Vec<NaiveDate>,  // 655 days from 2021-07-01 to 2023-04-16
-    pub immunity_by_pk: Vec<Vec<f32>>,  // [75 PK combos][655 days] of population immunity
-    pub pk_headers: Vec<String>,  // PK parameter descriptions
+    pub dates: Vec<NaiveDate>, // 655 days from 2021-07-01 to 2023-04-16
+    pub immunity_by_pk: Vec<Vec<f32>>, // [75 PK combos][655 days] of population immunity
+    pub pk_headers: Vec<String>, // PK parameter descriptions
     date_to_idx: HashMap<NaiveDate, usize>,
 }
 
@@ -241,17 +250,23 @@ impl ImmunologicalLandscape {
         vasil_data_dir: &Path,
         country: &str,
         variant: &str,
-        population_type: &str,  // "Immunized" or "Susceptible"
+        population_type: &str, // "Immunized" or "Susceptible"
     ) -> Result<Self> {
         let landscape_file = vasil_data_dir
             .join("ByCountry")
             .join(country)
             .join("results")
             .join("Immunological_Landscape_groups")
-            .join(format!("{}_SpikeGroup_{}_all_PK.csv", population_type, variant));
+            .join(format!(
+                "{}_SpikeGroup_{}_all_PK.csv",
+                population_type, variant
+            ));
 
         if !landscape_file.exists() {
-            bail!("Immunological landscape file not found: {:?}", landscape_file);
+            bail!(
+                "Immunological landscape file not found: {:?}",
+                landscape_file
+            );
         }
 
         log::info!("Loading immunity time series from: {:?}", landscape_file);
@@ -264,10 +279,7 @@ impl ImmunologicalLandscape {
         let headers = reader.headers()?.clone();
 
         // Extract PK parameter headers (skip index=0, Days=1)
-        let pk_headers: Vec<String> = headers.iter()
-            .skip(2)
-            .map(|s| s.to_string())
-            .collect();
+        let pk_headers: Vec<String> = headers.iter().skip(2).map(|s| s.to_string()).collect();
 
         let n_pk_combos = pk_headers.len();
         log::info!("  Found {} PK parameter combinations", n_pk_combos);
@@ -291,7 +303,8 @@ impl ImmunologicalLandscape {
 
             // Columns 2+ are immunity for each PK combination
             for pk_idx in 0..n_pk_combos {
-                let immunity: f32 = record.get(pk_idx + 2)
+                let immunity: f32 = record
+                    .get(pk_idx + 2)
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0.0);
 
@@ -299,13 +312,25 @@ impl ImmunologicalLandscape {
             }
         }
 
-        log::info!("  Loaded {} days: {} to {}",
-                   dates.len(),
-                   dates.first().unwrap(),
-                   dates.last().unwrap());
-        log::info!("  Immunity range: {:.0} to {:.0}",
-                   immunity_by_pk.iter().flatten().cloned().fold(f32::INFINITY, f32::min),
-                   immunity_by_pk.iter().flatten().cloned().fold(f32::NEG_INFINITY, f32::max));
+        log::info!(
+            "  Loaded {} days: {} to {}",
+            dates.len(),
+            dates.first().unwrap(),
+            dates.last().unwrap()
+        );
+        log::info!(
+            "  Immunity range: {:.0} to {:.0}",
+            immunity_by_pk
+                .iter()
+                .flatten()
+                .cloned()
+                .fold(f32::INFINITY, f32::min),
+            immunity_by_pk
+                .iter()
+                .flatten()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max)
+        );
 
         Ok(ImmunologicalLandscape {
             country: country.to_string(),
@@ -364,7 +389,11 @@ impl ImmunologicalLandscape {
             }
         }
 
-        if count > 0 { sum / count as f32 } else { 0.0 }
+        if count > 0 {
+            sum / count as f32
+        } else {
+            0.0
+        }
     }
 }
 
@@ -372,7 +401,7 @@ impl ImmunologicalLandscape {
 #[derive(Debug, Clone)]
 pub struct EpitopePK {
     pub days: Vec<i32>,
-    pub epitope_immunity: HashMap<String, Vec<f32>>,  // Epitope -> immunity over time
+    pub epitope_immunity: HashMap<String, Vec<f32>>, // Epitope -> immunity over time
 }
 
 impl EpitopePK {
@@ -398,8 +427,9 @@ impl EpitopePK {
         let headers = reader.headers()?.clone();
 
         // Extract epitope column names
-        let epitope_columns: Vec<String> = headers.iter()
-            .skip(2)  // Skip index and Day columns
+        let epitope_columns: Vec<String> = headers
+            .iter()
+            .skip(2) // Skip index and Day columns
             .map(|s| s.to_string())
             .collect();
 
@@ -413,13 +443,12 @@ impl EpitopePK {
         for result in reader.records() {
             let record = result?;
 
-            let day: i32 = record.get(1)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0);
+            let day: i32 = record.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             days.push(day);
 
             for (col_idx, col_name) in epitope_columns.iter().enumerate() {
-                let value: f32 = record.get(col_idx + 2)
+                let value: f32 = record
+                    .get(col_idx + 2)
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0.0);
 
@@ -427,8 +456,11 @@ impl EpitopePK {
             }
         }
 
-        log::info!("Loaded {} days of epitope PK data with {} epitopes",
-            days.len(), epitope_columns.len());
+        log::info!(
+            "Loaded {} days of epitope PK data with {} epitopes",
+            days.len(),
+            epitope_columns.len()
+        );
 
         Ok(EpitopePK {
             days,
@@ -438,15 +470,14 @@ impl EpitopePK {
 
     /// Get epitope-specific immunity score at a given day
     pub fn get_epitope_immunity(&self, epitope: &str, day: i32) -> f32 {
-        let day_idx = self.days.iter()
-            .position(|&d| d == day)
-            .unwrap_or_else(|| {
-                self.days.iter()
-                    .enumerate()
-                    .min_by_key(|(_, &d)| (d - day).abs())
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            });
+        let day_idx = self.days.iter().position(|&d| d == day).unwrap_or_else(|| {
+            self.days
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, &d)| (d - day).abs())
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        });
 
         // Try exact match or partial match
         for (name, values) in &self.epitope_immunity {
@@ -462,15 +493,14 @@ impl EpitopePK {
 
     /// Compute mean epitope immunity across all epitopes
     pub fn get_mean_epitope_immunity(&self, day: i32) -> f32 {
-        let day_idx = self.days.iter()
-            .position(|&d| d == day)
-            .unwrap_or_else(|| {
-                self.days.iter()
-                    .enumerate()
-                    .min_by_key(|(_, &d)| (d - day).abs())
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            });
+        let day_idx = self.days.iter().position(|&d| d == day).unwrap_or_else(|| {
+            self.days
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, &d)| (d - day).abs())
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        });
 
         let mut sum = 0.0f32;
         let mut count = 0;
@@ -482,7 +512,11 @@ impl EpitopePK {
             }
         }
 
-        if count > 0 { sum / count as f32 } else { 0.0 }
+        if count > 0 {
+            sum / count as f32
+        } else {
+            0.0
+        }
     }
 }
 
@@ -508,25 +542,32 @@ impl VasilEnhancedData {
 
         // P_neut for variants (optional)
         let p_neut_delta = PNeutData::load_from_vasil(vasil_data_dir, country, "Delta").ok();
-        let p_neut_omicron = PNeutData::load_from_vasil(vasil_data_dir, country, "Omicron_BA.1").ok();
+        let p_neut_omicron =
+            PNeutData::load_from_vasil(vasil_data_dir, country, "Omicron_BA.1").ok();
 
         // Immunological landscapes (optional)
-        let landscape_immunized = ImmunologicalLandscape::load_from_vasil(
-            vasil_data_dir, country, "Delta", "Immunized"
-        ).ok();
+        let landscape_immunized =
+            ImmunologicalLandscape::load_from_vasil(vasil_data_dir, country, "Delta", "Immunized")
+                .ok();
         let landscape_susceptible = ImmunologicalLandscape::load_from_vasil(
-            vasil_data_dir, country, "Delta", "Susceptible"
-        ).ok();
+            vasil_data_dir,
+            country,
+            "Delta",
+            "Susceptible",
+        )
+        .ok();
 
         // Epitope PK (optional)
         let epitope_pk = EpitopePK::load_from_vasil(vasil_data_dir, country).ok();
 
-        log::info!("  ✅ Phi: {} dates, P_neut: Delta={}, Omicron={}, Landscapes: {}, Epitope PK: {}",
+        log::info!(
+            "  ✅ Phi: {} dates, P_neut: Delta={}, Omicron={}, Landscapes: {}, Epitope PK: {}",
             phi.dates.len(),
             p_neut_delta.is_some(),
             p_neut_omicron.is_some(),
             landscape_immunized.is_some() || landscape_susceptible.is_some(),
-            epitope_pk.is_some());
+            epitope_pk.is_some()
+        );
 
         Ok(VasilEnhancedData {
             country: country.to_string(),
@@ -545,7 +586,7 @@ impl VasilEnhancedData {
         &self,
         frequency: f32,
         date: &NaiveDate,
-        variant_type: &str,  // "Delta", "Omicron", etc.
+        variant_type: &str, // "Delta", "Omicron", etc.
         days_since_outbreak: i32,
     ) -> f32 {
         // 1. Phi-normalized frequency
@@ -553,22 +594,28 @@ impl VasilEnhancedData {
 
         // 2. P_neut-based escape (1 - neutralization probability)
         let p_neut_escape = if variant_type.contains("Omicron") || variant_type.contains("BA.") {
-            self.p_neut_omicron.as_ref()
+            self.p_neut_omicron
+                .as_ref()
                 .map(|p| p.compute_escape(days_since_outbreak))
-                .unwrap_or(0.3)  // Default higher escape for Omicron
+                .unwrap_or(0.3) // Default higher escape for Omicron
         } else {
-            self.p_neut_delta.as_ref()
+            self.p_neut_delta
+                .as_ref()
                 .map(|p| p.compute_escape(days_since_outbreak))
-                .unwrap_or(0.2)  // Default escape for Delta
+                .unwrap_or(0.2) // Default escape for Delta
         };
 
         // 3. Population immunity effect (use date instead of days)
-        let pop_immunity = self.landscape_immunized.as_ref()
-            .map(|l| l.get_mean_immunity_at_date(date) / 100000.0)  // Normalize large values
+        let pop_immunity = self
+            .landscape_immunized
+            .as_ref()
+            .map(|l| l.get_mean_immunity_at_date(date) / 100000.0) // Normalize large values
             .unwrap_or(0.5);
 
         // 4. Epitope-specific immunity
-        let epitope_immunity = self.epitope_pk.as_ref()
+        let epitope_immunity = self
+            .epitope_pk
+            .as_ref()
             .map(|e| e.get_mean_epitope_immunity(days_since_outbreak))
             .unwrap_or(0.5);
 
@@ -588,15 +635,14 @@ impl VasilEnhancedData {
         variant_type: &str,
         days_since_outbreak: i32,
     ) -> f32 {
-        let enhanced_escape = self.compute_enhanced_escape(
-            frequency, date, variant_type, days_since_outbreak
-        );
+        let enhanced_escape =
+            self.compute_enhanced_escape(frequency, date, variant_type, days_since_outbreak);
 
         // Velocity inversion: high velocity at high frequency = at peak
         let corrected_velocity = if frequency > 0.3 {
-            -velocity.abs() * 0.5  // Penalize high velocity when dominant
+            -velocity.abs() * 0.5 // Penalize high velocity when dominant
         } else if frequency < 0.1 && velocity > 0.0 {
-            velocity * 1.5  // Reward early growth
+            velocity * 1.5 // Reward early growth
         } else {
             velocity * 0.5
         };
@@ -611,10 +657,22 @@ impl VasilEnhancedData {
 }
 
 /// Load enhanced VASIL data for all 12 countries
-pub fn load_all_countries_enhanced(vasil_data_dir: &Path) -> Result<HashMap<String, VasilEnhancedData>> {
+pub fn load_all_countries_enhanced(
+    vasil_data_dir: &Path,
+) -> Result<HashMap<String, VasilEnhancedData>> {
     const COUNTRIES: &[&str] = &[
-        "Germany", "USA", "UK", "Japan", "Brazil", "France",
-        "Canada", "Denmark", "Australia", "Sweden", "Mexico", "SouthAfrica"
+        "Germany",
+        "USA",
+        "UK",
+        "Japan",
+        "Brazil",
+        "France",
+        "Canada",
+        "Denmark",
+        "Australia",
+        "Sweden",
+        "Mexico",
+        "SouthAfrica",
     ];
 
     let mut all_data = HashMap::new();
@@ -632,7 +690,10 @@ pub fn load_all_countries_enhanced(vasil_data_dir: &Path) -> Result<HashMap<Stri
         }
     }
 
-    log::info!("✅ Loaded enhanced VASIL data for {} countries", all_data.len());
+    log::info!(
+        "✅ Loaded enhanced VASIL data for {} countries",
+        all_data.len()
+    );
 
     Ok(all_data)
 }
@@ -674,10 +735,10 @@ mod tests {
 
         // At day 0, escape should be high (1 - mean_p_neut)
         let escape_0 = p_neut.compute_escape(0);
-        assert!(escape_0 > 0.5);  // (1 - 0.4) = 0.6
+        assert!(escape_0 > 0.5); // (1 - 0.4) = 0.6
 
         // At day 90, escape should be low (immunity built up)
         let escape_90 = p_neut.compute_escape(90);
-        assert!(escape_90 < 0.2);  // (1 - 0.9) = 0.1
+        assert!(escape_90 < 0.2); // (1 - 0.9) = 0.1
     }
 }

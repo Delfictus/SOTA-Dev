@@ -19,23 +19,21 @@
 //! - Invariant to protein identity (generalizable)
 //! - Computed on CPU with simple reductions
 
+use crate::atomic_chemistry::{
+    calculate_anisotropy, calculate_electrostatic_frustration, calculate_hydrophobic_exposure,
+    AtomicMetadata, ResidueType,
+};
 use crate::buffers::SimulationBuffers;
 use crate::manifest::{FeatureConfig, ProteinTarget};
-use crate::atomic_chemistry::{
-    AtomicMetadata, ResidueType,
-    calculate_hydrophobic_exposure,
-    calculate_anisotropy,
-    calculate_electrostatic_frustration,
-};
 use prism_io::sovereign_types::Atom;
-use std::collections::{HashMap, HashSet};
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 // GPU-accelerated bio-chemistry feature extraction (optional)
 #[cfg(feature = "cuda")]
-use prism_gpu::{BiochemistryGpu, GpuAtomicMetadata};
-#[cfg(feature = "cuda")]
 use cudarc::driver::CudaContext;
+#[cfg(feature = "cuda")]
+use prism_gpu::{BiochemistryGpu, GpuAtomicMetadata};
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 
@@ -151,18 +149,16 @@ impl FeatureExtractor {
     #[cfg(feature = "cuda")]
     fn try_init_gpu_biochemistry(neighbor_cutoff: f32) -> Option<BiochemistryGpu> {
         match CudaContext::new(0) {
-            Ok(ctx) => {
-                match BiochemistryGpu::new(ctx, 10000, neighbor_cutoff) {
-                    Ok(gpu) => {
-                        log::info!("GPU bio-chemistry extractor initialized successfully");
-                        Some(gpu)
-                    }
-                    Err(e) => {
-                        log::warn!("GPU bio-chemistry init failed (using CPU fallback): {}", e);
-                        None
-                    }
+            Ok(ctx) => match BiochemistryGpu::new(ctx, 10000, neighbor_cutoff) {
+                Ok(gpu) => {
+                    log::info!("GPU bio-chemistry extractor initialized successfully");
+                    Some(gpu)
                 }
-            }
+                Err(e) => {
+                    log::warn!("GPU bio-chemistry init failed (using CPU fallback): {}", e);
+                    None
+                }
+            },
             Err(e) => {
                 log::warn!("CUDA context creation failed (using CPU fallback): {:?}", e);
                 None
@@ -177,13 +173,15 @@ impl FeatureExtractor {
             self.initial_rg = calculate_radius_of_gyration(&positions);
 
             // Calculate initial target exposure
-            let target_indices: Vec<usize> = initial_atoms.iter()
+            let target_indices: Vec<usize> = initial_atoms
+                .iter()
                 .enumerate()
                 .filter(|(_, a)| self.target_residues.contains(&(a.residue_id as usize)))
                 .map(|(i, _)| i)
                 .collect();
 
-            self.initial_exposure = calculate_exposure_fast(&positions, &target_indices, self.config.neighbor_cutoff);
+            self.initial_exposure =
+                calculate_exposure_fast(&positions, &target_indices, self.config.neighbor_cutoff);
 
             // Store initial glycan positions for displacement tracking (v3.1.1)
             if !self.glycan_residues.is_empty() {
@@ -207,10 +205,13 @@ impl FeatureExtractor {
                 {
                     let mut gpu_failed = false;
                     if let Some(ref mut gpu) = *self.gpu_biochemistry.borrow_mut() {
-                        if let Err(e) = Self::upload_gpu_metadata(gpu, &metadata, &self.target_residue_vec) {
+                        if let Err(e) =
+                            Self::upload_gpu_metadata(gpu, &metadata, &self.target_residue_vec)
+                        {
                             log::warn!("GPU metadata upload failed (will use CPU): {}", e);
                             gpu_failed = true;
-                        } else if let Err(e) = gpu.upload_initial_positions(&self.initial_positions) {
+                        } else if let Err(e) = gpu.upload_initial_positions(&self.initial_positions)
+                        {
                             log::warn!("GPU initial positions upload failed (will use CPU): {}", e);
                             gpu_failed = true;
                         }
@@ -238,10 +239,11 @@ impl FeatureExtractor {
             target_residues: target_residues.iter().map(|&r| r as i32).collect(),
             ca_indices: metadata.ca_indices.iter().map(|&i| i as i32).collect(),
             charges: metadata.atom_charges.clone(),
-            charged_indices: metadata.atom_charges
+            charged_indices: metadata
+                .atom_charges
                 .iter()
                 .enumerate()
-                .filter(|(_, &c)| c.abs() > 0.25)  // Significant charge
+                .filter(|(_, &c)| c.abs() > 0.25) // Significant charge
                 .map(|(i, _)| i as i32)
                 .collect(),
         };
@@ -270,7 +272,8 @@ impl FeatureExtractor {
 
         // 2. Target Neighborhood Features (8)
         if self.config.include_target_neighborhood {
-            let neighborhood = self.extract_target_neighborhood(&positions, &target_indices, &core_indices);
+            let neighborhood =
+                self.extract_target_neighborhood(&positions, &target_indices, &core_indices);
             for v in neighborhood {
                 features.values[idx] = v;
                 idx += 1;
@@ -376,7 +379,11 @@ impl FeatureExtractor {
         let rg = calculate_radius_of_gyration(positions);
 
         // Density: atoms per unit volume (normalized)
-        let density = if rg > 0.0 { n / (rg.powi(3) + 1e-6) } else { 0.0 };
+        let density = if rg > 0.0 {
+            n / (rg.powi(3) + 1e-6)
+        } else {
+            0.0
+        };
         let density_norm = (density / 100.0).min(1.0);
 
         (size, rg / 50.0, density_norm) // Normalize Rg to ~[0,1]
@@ -418,9 +425,8 @@ impl FeatureExtractor {
         let target_set: HashSet<usize> = target_indices.iter().cloned().collect();
 
         for &idx in target_indices {
-            let (neighbors, non_target_dist) = grid.count_neighbors_detailed(
-                positions, idx, &target_set, cutoff
-            );
+            let (neighbors, non_target_dist) =
+                grid.count_neighbors_detailed(positions, idx, &target_set, cutoff);
 
             // Exposure proxy: fewer neighbors = more exposed
             let exposure = 1.0 / (1.0 + neighbors);
@@ -447,13 +453,13 @@ impl FeatureExtractor {
         mean_dist_to_non_target /= n;
 
         [
-            mean_exposure,                              // 0: Mean target exposure [0,1]
-            min_exposure.min(1.0),                      // 1: Min target exposure (bottleneck)
-            max_exposure.min(1.0),                      // 2: Max target exposure
-            (mean_contacts / 20.0).min(1.0),            // 3: Mean contact count (normalized)
-            (max_contacts / 30.0).min(1.0),             // 4: Max contacts (crowding)
-            (min_dist_to_non_target / 10.0).min(1.0),   // 5: Min dist to non-target (boundary)
-            (mean_dist_to_non_target / 15.0).min(1.0),  // 6: Mean dist to non-target
+            mean_exposure,                                  // 0: Mean target exposure [0,1]
+            min_exposure.min(1.0),                          // 1: Min target exposure (bottleneck)
+            max_exposure.min(1.0),                          // 2: Max target exposure
+            (mean_contacts / 20.0).min(1.0),                // 3: Mean contact count (normalized)
+            (max_contacts / 30.0).min(1.0),                 // 4: Max contacts (crowding)
+            (min_dist_to_non_target / 10.0).min(1.0),       // 5: Min dist to non-target (boundary)
+            (mean_dist_to_non_target / 15.0).min(1.0),      // 6: Mean dist to non-target
             (target_indices.len() as f32 / 100.0).min(1.0), // 7: Target region size
         ]
     }
@@ -495,10 +501,10 @@ impl FeatureExtractor {
         };
 
         [
-            (core_rmsd / 5.0).min(1.0),              // Normalized RMSD
-            (clash_count as f32 / 10.0).min(1.0),   // Clash severity
-            (max_displacement / 10.0).min(1.0),      // Max displacement
-            (rmsd_variance / 5.0).min(1.0),          // Displacement variance
+            (core_rmsd / 5.0).min(1.0),           // Normalized RMSD
+            (clash_count as f32 / 10.0).min(1.0), // Clash severity
+            (max_displacement / 10.0).min(1.0),   // Max displacement
+            (rmsd_variance / 5.0).min(1.0),       // Displacement variance
         ]
     }
 
@@ -536,9 +542,8 @@ impl FeatureExtractor {
 
     fn extract_temporal(&self, positions: &[f32], target_indices: &[usize]) -> [f32; 4] {
         // Current exposure
-        let current_exposure = calculate_exposure_fast(
-            positions, target_indices, self.config.neighbor_cutoff
-        );
+        let current_exposure =
+            calculate_exposure_fast(positions, target_indices, self.config.neighbor_cutoff);
 
         // Exposure change from initial
         let exposure_delta = current_exposure - self.initial_exposure;
@@ -550,9 +555,9 @@ impl FeatureExtractor {
         let rg_delta = current_rg - self.initial_rg;
 
         [
-            current_exposure,                           // 0: Current exposure
-            (exposure_delta + 0.5).max(0.0).min(1.0),  // 1: Exposure change (centered)
-            (current_rg / 50.0).min(1.0),              // 2: Current Rg (normalized)
+            current_exposure,                            // 0: Current exposure
+            (exposure_delta + 0.5).max(0.0).min(1.0),    // 1: Exposure change (centered)
+            (current_rg / 50.0).min(1.0),                // 2: Current Rg (normalized)
             ((rg_delta / 10.0) + 0.5).max(0.0).min(1.0), // 3: Rg change (centered)
         ]
     }
@@ -604,7 +609,8 @@ impl FeatureExtractor {
         }
 
         // Identify glycan atom indices
-        let glycan_indices: Vec<usize> = atoms.iter()
+        let glycan_indices: Vec<usize> = atoms
+            .iter()
             .enumerate()
             .filter(|(_, a)| self.glycan_residues.contains(&(a.residue_id as usize)))
             .map(|(i, _)| i)
@@ -687,9 +693,8 @@ impl FeatureExtractor {
 
         // 4. Displacement-exposure correlation
         // Higher value when glycan displacement correlates with target exposure
-        let current_exposure = calculate_exposure_fast(
-            positions, target_indices, self.config.neighbor_cutoff
-        );
+        let current_exposure =
+            calculate_exposure_fast(positions, target_indices, self.config.neighbor_cutoff);
         let exposure_gain = current_exposure - self.initial_exposure;
 
         // Correlation proxy: if both displacement and exposure increase together
@@ -760,7 +765,7 @@ impl FeatureExtractor {
         // Check if atomic metadata is available
         let metadata = match &self.atomic_metadata {
             Some(m) => m,
-            None => return [0.0, 0.0, 0.0],  // No metadata, return zeros
+            None => return [0.0, 0.0, 0.0], // No metadata, return zeros
         };
 
         // Check if initial positions are available
@@ -779,7 +784,10 @@ impl FeatureExtractor {
                         return result;
                     }
                     Err(e) => {
-                        log::warn!("GPU bio-chemistry compute failed, falling back to CPU: {}", e);
+                        log::warn!(
+                            "GPU bio-chemistry compute failed, falling back to CPU: {}",
+                            e
+                        );
                         // Disable GPU for subsequent calls
                         *gpu_ref = None;
                     }
@@ -805,27 +813,21 @@ impl FeatureExtractor {
         let hydrophobic_feature = ((hydrophobic_delta / 10.0) + 0.5).max(0.0).min(1.0);
 
         // 2. Local Displacement Anisotropy (Hinge Detection)
-        let (max_anisotropy, _mean_anisotropy) = calculate_anisotropy(
-            positions,
-            &self.initial_positions,
-            metadata,
-        );
+        let (max_anisotropy, _mean_anisotropy) =
+            calculate_anisotropy(positions, &self.initial_positions, metadata);
         // Normalize: typical hinge motion is 2-5Å differential
         let anisotropy_feature = (max_anisotropy / 5.0).min(1.0);
 
         // 3. Electrostatic Frustration
-        let frustration = calculate_electrostatic_frustration(
-            positions,
-            metadata,
-            self.config.neighbor_cutoff,
-        );
+        let frustration =
+            calculate_electrostatic_frustration(positions, metadata, self.config.neighbor_cutoff);
         // Normalize: frustration is usually 0-10 energy units
         let frustration_feature = (frustration / 10.0).min(1.0);
 
         [
-            hydrophobic_feature,   // 0: "Grease" - exposed hydrophobic surface
-            anisotropy_feature,    // 1: "Hinge" - local displacement differential
-            frustration_feature,   // 2: "Spring" - electrostatic stress
+            hydrophobic_feature, // 0: "Grease" - exposed hydrophobic surface
+            anisotropy_feature,  // 1: "Hinge" - local displacement differential
+            frustration_feature, // 2: "Spring" - electrostatic stress
         ]
     }
 }
@@ -885,7 +887,9 @@ impl SpatialGrid {
                 for dz in -1..=1 {
                     if let Some(indices) = self.cells.get(&(cx + dx, cy + dy, cz + dz)) {
                         for &j in indices {
-                            if atom_idx == j { continue; }
+                            if atom_idx == j {
+                                continue;
+                            }
 
                             let x2 = positions[j * 3];
                             let y2 = positions[j * 3 + 1];
@@ -927,7 +931,9 @@ impl SpatialGrid {
                 for dz in -1..=1 {
                     if let Some(indices) = self.cells.get(&(cx + dx, cy + dy, cz + dz)) {
                         for &j in indices {
-                            if atom_idx == j { continue; }
+                            if atom_idx == j {
+                                continue;
+                            }
 
                             let x2 = positions[j * 3];
                             let y2 = positions[j * 3 + 1];
@@ -965,7 +971,9 @@ fn atoms_to_flat_positions(atoms: &[Atom]) -> Vec<f32> {
 /// Calculate radius of gyration
 fn calculate_radius_of_gyration(positions: &[f32]) -> f32 {
     let n = positions.len() / 3;
-    if n == 0 { return 0.0; }
+    if n == 0 {
+        return 0.0;
+    }
 
     // Calculate center of mass
     let mut com = [0.0f32; 3];
@@ -993,7 +1001,9 @@ fn calculate_radius_of_gyration(positions: &[f32]) -> f32 {
 
 /// Fast exposure calculation using spatial grid
 fn calculate_exposure_fast(positions: &[f32], target_indices: &[usize], cutoff: f32) -> f32 {
-    if target_indices.is_empty() { return 0.0; }
+    if target_indices.is_empty() {
+        return 0.0;
+    }
 
     let grid = SpatialGrid::new(positions, cutoff);
     let mut total_exposure = 0.0;
@@ -1008,7 +1018,9 @@ fn calculate_exposure_fast(positions: &[f32], target_indices: &[usize], cutoff: 
 
 /// Fast core RMSD calculation
 fn calculate_core_rmsd_fast(positions: &[f32], initial: &[f32], core_indices: &[usize]) -> f32 {
-    if core_indices.is_empty() { return 0.0; }
+    if core_indices.is_empty() {
+        return 0.0;
+    }
 
     let mut sum_sq = 0.0;
     for &idx in core_indices {
@@ -1046,7 +1058,9 @@ fn count_clashes(positions: &[f32], clash_dist_sq: f32) -> usize {
                 for dz in 0..=1 {
                     if let Some(indices) = grid.cells.get(&(cx + dx, cy + dy, cz + dz)) {
                         for &j in indices {
-                            if j <= i { continue; }
+                            if j <= i {
+                                continue;
+                            }
 
                             let x2 = positions[j * 3];
                             let y2 = positions[j * 3 + 1];
@@ -1086,7 +1100,9 @@ fn calculate_max_displacement(positions: &[f32], initial: &[f32]) -> f32 {
 /// Calculate variance in displacement (heterogeneity)
 fn calculate_displacement_variance(positions: &[f32], initial: &[f32]) -> f32 {
     let n = positions.len().min(initial.len()) / 3;
-    if n == 0 { return 0.0; }
+    if n == 0 {
+        return 0.0;
+    }
 
     let mut displacements = Vec::with_capacity(n);
     let mut sum = 0.0;
@@ -1102,9 +1118,11 @@ fn calculate_displacement_variance(positions: &[f32], initial: &[f32]) -> f32 {
     }
 
     let mean = sum / n as f32;
-    let variance: f32 = displacements.iter()
+    let variance: f32 = displacements
+        .iter()
         .map(|&d| (d - mean).powi(2))
-        .sum::<f32>() / n as f32;
+        .sum::<f32>()
+        / n as f32;
 
     variance.sqrt()
 }
@@ -1122,12 +1140,7 @@ mod tests {
     #[test]
     fn test_radius_of_gyration() {
         // Simple cube of atoms
-        let positions = vec![
-            0.0, 0.0, 0.0,
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            1.0, 1.0, 0.0,
-        ];
+        let positions = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0];
         let rg = calculate_radius_of_gyration(&positions);
         assert!(rg > 0.0 && rg < 2.0);
     }

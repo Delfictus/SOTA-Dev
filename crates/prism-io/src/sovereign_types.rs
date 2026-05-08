@@ -110,15 +110,13 @@ impl SovereignBuffer {
         use blake3;
 
         // Read the current data and compute hash
-        let current_data = unsafe {
-            std::slice::from_raw_parts(self.ptr.as_ptr(), self.len)
-        };
+        let current_data = unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) };
 
         let computed_hash = blake3::hash(current_data);
 
         if computed_hash.as_bytes() != &self.integrity_hash {
             return Err(SovereignError::IntegrityViolation(
-                "Buffer integrity verification failed - data has been modified".to_string()
+                "Buffer integrity verification failed - data has been modified".to_string(),
             ));
         }
 
@@ -291,14 +289,20 @@ impl VerifiedProteinData {
 /// Constants for dataset integrity verification
 pub mod integrity {
     /// Known SHA-256 hashes for authentic biological datasets
-    pub const NIPAH_G_GENBANK_SHA256: &str = "a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789a";
-    pub const M102_ANTIBODY_PDB_SHA256: &str = "1a2b3c4d5e6f789def0123456789abcdef0123456789abcdef0123456789abcdef";
-    pub const HENDRA_G_UNIPROT_SHA256: &str = "9z8y7x6w5v4u3t2s1r0q9p8o7n6m5l4k3j2i1h0g9f8e7d6c5b4a3928171605";
+    pub const NIPAH_G_GENBANK_SHA256: &str =
+        "a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789a";
+    pub const M102_ANTIBODY_PDB_SHA256: &str =
+        "1a2b3c4d5e6f789def0123456789abcdef0123456789abcdef0123456789abcdef";
+    pub const HENDRA_G_UNIPROT_SHA256: &str =
+        "9z8y7x6w5v4u3t2s1r0q9p8o7n6m5l4k3j2i1h0g9f8e7d6c5b4a3928171605";
 
     /// Verify if a given hash matches a known authentic dataset
     pub fn is_authentic_dataset(hash: &[u8; 32]) -> bool {
         let hash_hex = hex::encode(hash);
-        matches!(hash_hex.as_str(), NIPAH_G_GENBANK_SHA256 | M102_ANTIBODY_PDB_SHA256 | HENDRA_G_UNIPROT_SHA256)
+        matches!(
+            hash_hex.as_str(),
+            NIPAH_G_GENBANK_SHA256 | M102_ANTIBODY_PDB_SHA256 | HENDRA_G_UNIPROT_SHA256
+        )
     }
 }
 
@@ -321,9 +325,7 @@ mod tests {
         let ptr = NonNull::new(test_data.as_ptr() as *mut u8).unwrap();
         let hash = [0u8; 32];
 
-        let buffer = unsafe {
-            SovereignBuffer::new_from_dma(ptr, 1024, 1024, hash)
-        };
+        let buffer = unsafe { SovereignBuffer::new_from_dma(ptr, 1024, 1024, hash) };
 
         assert_eq!(buffer.len(), 1024);
         assert!(!buffer.is_empty());

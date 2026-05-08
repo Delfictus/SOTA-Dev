@@ -58,9 +58,9 @@ impl Default for ChemistryGnmConfig {
             sigma: 5.0,
             use_aa_stiffness: true,
             use_burial_weighting: true,
-            use_hbond_detection: true,   // Slight positive
-            use_salt_bridges: false,      // DISABLED: hurts accuracy by 0.004
-            use_contact_types: true,      // Beneficial
+            use_hbond_detection: true, // Slight positive
+            use_salt_bridges: false,   // DISABLED: hurts accuracy by 0.004
+            use_contact_types: true,   // Beneficial
             burial_radius: 10.0,
         }
     }
@@ -115,9 +115,9 @@ impl ContactType {
     /// Get the stiffness weight for this contact type
     pub fn weight(&self) -> f64 {
         match self {
-            ContactType::SequenceLocal => 1.2,     // Chain connectivity is stiff
-            ContactType::BackboneBackbone => 1.1,  // Backbone contacts stable
-            ContactType::LongRange => 1.3,         // Tertiary contacts important
+            ContactType::SequenceLocal => 1.2, // Chain connectivity is stiff
+            ContactType::BackboneBackbone => 1.1, // Backbone contacts stable
+            ContactType::LongRange => 1.3,     // Tertiary contacts important
             ContactType::SidechainSidechain => 0.9, // More dynamic
             ContactType::BackboneSidechain => 1.0,
         }
@@ -184,7 +184,10 @@ impl ChemistryGnm {
         if let Some(t) = threshold {
             self.gpu_threshold = t;
         }
-        log::info!("CA-GNM: GPU acceleration enabled (threshold: {} residues)", self.gpu_threshold);
+        log::info!(
+            "CA-GNM: GPU acceleration enabled (threshold: {} residues)",
+            self.gpu_threshold
+        );
         Ok(())
     }
 
@@ -219,7 +222,9 @@ impl ChemistryGnm {
 
         for i in 0..n {
             for j in 0..n {
-                if i == j { continue; }
+                if i == j {
+                    continue;
+                }
                 let dist_sq = distance_squared(ca_positions[i], ca_positions[j]);
                 if dist_sq < radius_sq as f64 {
                     neighbor_counts[i] += 1;
@@ -248,7 +253,8 @@ impl ChemistryGnm {
         let mut hbonds = Vec::new();
 
         for i in 0..n {
-            for j in (i + 3)..n { // At least 3 residues apart
+            for j in (i + 3)..n {
+                // At least 3 residues apart
                 let dist = distance(ca_positions[i], ca_positions[j]);
 
                 // α-helix pattern: i,i+3 or i,i+4 at specific distances
@@ -285,12 +291,15 @@ impl ChemistryGnm {
             let class_i = ResidueClass::from_name(residue_names[i]);
             for j in (i + 1)..n {
                 let dist = distance(ca_positions[i], ca_positions[j]);
-                if dist > 8.0 { continue; }
+                if dist > 8.0 {
+                    continue;
+                }
 
                 let class_j = ResidueClass::from_name(residue_names[j]);
 
-                if (class_i.is_positive() && class_j.is_negative()) ||
-                   (class_i.is_negative() && class_j.is_positive()) {
+                if (class_i.is_positive() && class_j.is_negative())
+                    || (class_i.is_negative() && class_j.is_positive())
+                {
                     bridges.push((i, j));
                 }
             }
@@ -477,9 +486,7 @@ impl ChemistryGnm {
 
         // Sort eigenvalues and get indices
         let mut sorted_indices: Vec<usize> = (0..n).collect();
-        sorted_indices.sort_by(|&a, &b| {
-            eigenvalues[a].partial_cmp(&eigenvalues[b]).unwrap()
-        });
+        sorted_indices.sort_by(|&a, &b| eigenvalues[a].partial_cmp(&eigenvalues[b]).unwrap());
 
         // Compute RMSF from inverse eigenvalues (skip first trivial mode)
         let mut rmsf = vec![0.0; n];
@@ -487,7 +494,9 @@ impl ChemistryGnm {
         for k in 1..n {
             let idx = sorted_indices[k];
             let lambda = eigenvalues[idx];
-            if lambda.abs() < 1e-6 { continue; }
+            if lambda.abs() < 1e-6 {
+                continue;
+            }
 
             for i in 0..n {
                 let v = eigenvectors[(i, idx)];
@@ -556,13 +565,15 @@ mod tests {
     fn make_helix_positions(n: usize) -> Vec<[f32; 3]> {
         // Generate idealized α-helix positions
         // Rise per residue: 1.5Å, rotation: 100°
-        (0..n).map(|i| {
-            let angle = (i as f64) * 100.0_f64.to_radians();
-            let x = 2.3 * angle.cos();
-            let y = 2.3 * angle.sin();
-            let z = (i as f64) * 1.5;
-            [x as f32, y as f32, z as f32]
-        }).collect()
+        (0..n)
+            .map(|i| {
+                let angle = (i as f64) * 100.0_f64.to_radians();
+                let x = 2.3 * angle.cos();
+                let y = 2.3 * angle.sin();
+                let z = (i as f64) * 1.5;
+                [x as f32, y as f32, z as f32]
+            })
+            .collect()
     }
 
     #[test]

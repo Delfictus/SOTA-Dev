@@ -74,7 +74,10 @@ impl CapturedPhysicsGraph {
             sys::cuGraphGetNodes(cu_graph, std::ptr::null_mut(), &mut n_nodes);
         }
 
-        log::info!("  Stream capture: COMPLETED ({} kernel nodes captured)", n_nodes);
+        log::info!(
+            "  Stream capture: COMPLETED ({} kernel nodes captured)",
+            n_nodes
+        );
         Ok(Self { cu_graph })
     }
 
@@ -93,7 +96,11 @@ impl CapturedPhysicsGraph {
         dependencies: &[sys::CUgraphNode],
     ) -> Result<sys::CUgraphNode> {
         let mut node: sys::CUgraphNode = std::ptr::null_mut();
-        let dep_ptr = if dependencies.is_empty() { std::ptr::null() } else { dependencies.as_ptr() };
+        let dep_ptr = if dependencies.is_empty() {
+            std::ptr::null()
+        } else {
+            dependencies.as_ptr()
+        };
 
         unsafe {
             check(

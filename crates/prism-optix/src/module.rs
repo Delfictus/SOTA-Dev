@@ -38,10 +38,18 @@ pub enum OptimizationLevel {
 impl From<OptimizationLevel> for OptixCompileOptimizationLevel {
     fn from(level: OptimizationLevel) -> Self {
         match level {
-            OptimizationLevel::Level0 => OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_0,
-            OptimizationLevel::Level1 => OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_1,
-            OptimizationLevel::Level2 => OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_2,
-            OptimizationLevel::Level3 => OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_3,
+            OptimizationLevel::Level0 => {
+                OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_0
+            }
+            OptimizationLevel::Level1 => {
+                OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_1
+            }
+            OptimizationLevel::Level2 => {
+                OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_2
+            }
+            OptimizationLevel::Level3 => {
+                OptixCompileOptimizationLevel::OPTIX_COMPILE_OPTIMIZATION_LEVEL_3
+            }
         }
     }
 }
@@ -104,12 +112,14 @@ impl Default for PipelineCompileOptions {
     fn default() -> Self {
         Self {
             uses_motion_blur: false,
-            traversable_graph_flags: OptixTraversableGraphFlags::OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS as u32,
+            traversable_graph_flags:
+                OptixTraversableGraphFlags::OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS as u32,
             num_payload_values: 2,
             num_attribute_values: 2,
             exception_flags: OptixExceptionFlags::OPTIX_EXCEPTION_FLAG_NONE as u32,
             pipeline_launch_params_variable_name: "params".to_string(),
-            use_primitive_type_flags: OptixPrimitiveTypeFlags::OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM as u32
+            use_primitive_type_flags: OptixPrimitiveTypeFlags::OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM
+                as u32
                 | OptixPrimitiveTypeFlags::OPTIX_PRIMITIVE_TYPE_FLAGS_SPHERE as u32,
         }
     }
@@ -131,7 +141,11 @@ impl Module {
     ) -> Result<Self> {
         let path = path.as_ref();
         let ir_data = std::fs::read(path).map_err(|e| {
-            OptixError::ModuleError(format!("Failed to read OptiX IR file {}: {}", path.display(), e))
+            OptixError::ModuleError(format!(
+                "Failed to read OptiX IR file {}: {}",
+                path.display(),
+                e
+            ))
         })?;
 
         Self::from_optix_ir_bytes(ctx, &ir_data, module_options, pipeline_options)
@@ -159,11 +173,19 @@ impl Module {
         };
 
         // Prepare pipeline compile options
-        let launch_params_name = CString::new(pipeline_options.pipeline_launch_params_variable_name.as_str())
-            .map_err(|_| OptixError::ModuleError("Invalid launch params name".to_string()))?;
+        let launch_params_name = CString::new(
+            pipeline_options
+                .pipeline_launch_params_variable_name
+                .as_str(),
+        )
+        .map_err(|_| OptixError::ModuleError("Invalid launch params name".to_string()))?;
 
         let pipeline_compile_options = OptixPipelineCompileOptions {
-            usesMotionBlur: if pipeline_options.uses_motion_blur { 1 } else { 0 },
+            usesMotionBlur: if pipeline_options.uses_motion_blur {
+                1
+            } else {
+                0
+            },
             traversableGraphFlags: pipeline_options.traversable_graph_flags,
             numPayloadValues: pipeline_options.num_payload_values as i32,
             numAttributeValues: pipeline_options.num_attribute_values as i32,
@@ -204,7 +226,9 @@ impl Module {
         check_optix(result, "module creation")?;
 
         if module.is_null() {
-            return Err(OptixError::ModuleError("Module creation returned null".to_string()));
+            return Err(OptixError::ModuleError(
+                "Module creation returned null".to_string(),
+            ));
         }
 
         Ok(Self {

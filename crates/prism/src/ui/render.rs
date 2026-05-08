@@ -2,12 +2,9 @@
 //!
 //! World-class visualization rendering for the terminal interface.
 
-use ratatui::{
-    prelude::*,
-    widgets::*,
-};
+use ratatui::{prelude::*, widgets::*};
 
-use super::app::{App, AppMode, PhaseState, Focus};
+use super::app::{App, AppMode, Focus, PhaseState};
 use super::theme::Theme;
 use crate::widgets;
 
@@ -25,9 +22,9 @@ pub fn render(app: &App, frame: &mut Frame) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
-            Constraint::Min(20),    // Content
-            Constraint::Length(3),  // Dialogue input
+            Constraint::Length(3), // Header
+            Constraint::Min(20),   // Content
+            Constraint::Length(3), // Dialogue input
         ])
         .split(area);
 
@@ -56,16 +53,20 @@ fn render_header(app: &App, frame: &mut Frame, area: Rect) {
     let header_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(30),  // Title
-            Constraint::Min(20),     // Mode/file
-            Constraint::Length(35),  // GPU status
+            Constraint::Length(30), // Title
+            Constraint::Min(20),    // Mode/file
+            Constraint::Length(35), // GPU status
         ])
         .split(area);
 
     // Title
     let title = Paragraph::new(format!(" ◆ PRISM-Fold v{}", env!("CARGO_PKG_VERSION")))
         .style(Theme::title())
-        .block(Block::default().borders(Borders::ALL).border_style(Theme::panel_border()));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Theme::panel_border()),
+        );
     frame.render_widget(title, header_layout[0]);
 
     // Mode and file
@@ -78,25 +79,27 @@ fn render_header(app: &App, frame: &mut Frame, area: Rect) {
     let file_text = app.input_path.as_deref().unwrap_or("No file loaded");
     let mode = Paragraph::new(format!(" {} │ {}", mode_text, file_text))
         .style(Theme::normal())
-        .block(Block::default().borders(Borders::ALL).border_style(Theme::panel_border()));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Theme::panel_border()),
+        );
     frame.render_widget(mode, header_layout[1]);
 
     // GPU status
     let gpu_color = Theme::gpu_util_color(app.gpu.utilization);
-    let gpu_bar = format!(
-        "{}",
-        "█".repeat((app.gpu.utilization / 10.0) as usize)
-    );
+    let gpu_bar = format!("{}", "█".repeat((app.gpu.utilization / 10.0) as usize));
     let gpu_text = format!(
         " {} {} {:.0}% {}°C",
-        app.gpu.name,
-        gpu_bar,
-        app.gpu.utilization,
-        app.gpu.temperature
+        app.gpu.name, gpu_bar, app.gpu.utilization, app.gpu.temperature
     );
     let gpu = Paragraph::new(gpu_text)
         .style(Style::default().fg(gpu_color))
-        .block(Block::default().borders(Borders::ALL).border_style(Theme::panel_border()));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Theme::panel_border()),
+        );
     frame.render_widget(gpu, header_layout[2]);
 }
 
@@ -106,8 +109,8 @@ fn render_graph_mode(app: &App, frame: &mut Frame, area: Rect) {
     let content_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(65),  // Visualizations
-            Constraint::Percentage(35),  // Dialogue + metrics
+            Constraint::Percentage(65), // Visualizations
+            Constraint::Percentage(35), // Dialogue + metrics
         ])
         .split(area);
 
@@ -115,9 +118,9 @@ fn render_graph_mode(app: &App, frame: &mut Frame, area: Rect) {
     let viz_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50),  // Graph + energy landscape
-            Constraint::Percentage(25),  // Replica swarm
-            Constraint::Percentage(25),  // Quantum + dendritic + kernels
+            Constraint::Percentage(50), // Graph + energy landscape
+            Constraint::Percentage(25), // Replica swarm
+            Constraint::Percentage(25), // Quantum + dendritic + kernels
         ])
         .split(content_layout[0]);
 
@@ -151,9 +154,9 @@ fn render_graph_mode(app: &App, frame: &mut Frame, area: Rect) {
     let right_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(10),     // Dialogue
-            Constraint::Length(10),  // Pipeline
-            Constraint::Length(8),   // Convergence
+            Constraint::Min(10),    // Dialogue
+            Constraint::Length(10), // Pipeline
+            Constraint::Length(8),  // Convergence
         ])
         .split(content_layout[1]);
 
@@ -167,8 +170,8 @@ fn render_biomolecular_mode(app: &App, frame: &mut Frame, area: Rect) {
     let content_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(55),  // Protein visualization
-            Constraint::Percentage(45),  // Analysis panels
+            Constraint::Percentage(55), // Protein visualization
+            Constraint::Percentage(45), // Analysis panels
         ])
         .split(area);
 
@@ -179,10 +182,10 @@ fn render_biomolecular_mode(app: &App, frame: &mut Frame, area: Rect) {
     let analysis_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(10),  // Pocket analysis
-            Constraint::Length(8),   // GNN attention
-            Constraint::Length(6),   // Pharmacophore
-            Constraint::Min(8),      // Dialogue
+            Constraint::Length(10), // Pocket analysis
+            Constraint::Length(8),  // GNN attention
+            Constraint::Length(6),  // Pharmacophore
+            Constraint::Min(8),     // Dialogue
         ])
         .split(content_layout[1]);
 
@@ -196,10 +199,7 @@ fn render_biomolecular_mode(app: &App, frame: &mut Frame, area: Rect) {
 fn render_welcome(app: &App, frame: &mut Frame, area: Rect) {
     let welcome_layout = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(60),
-            Constraint::Percentage(40),
-        ])
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
         .split(area);
 
     // Welcome text
@@ -207,7 +207,10 @@ fn render_welcome(app: &App, frame: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(Span::styled("  Welcome to PRISM-Fold", Theme::title())),
         Line::from(""),
-        Line::from(Span::styled("  Phase Resonance Integrated Solver Machine", Theme::dim())),
+        Line::from(Span::styled(
+            "  Phase Resonance Integrated Solver Machine",
+            Theme::dim(),
+        )),
         Line::from(Span::styled("  for Molecular Folding", Theme::dim())),
         Line::from(""),
         Line::from(""),
@@ -228,11 +231,12 @@ fn render_welcome(app: &App, frame: &mut Frame, area: Rect) {
         Line::from("  • AI research assistant"),
     ];
 
-    let welcome = Paragraph::new(welcome_text)
-        .block(Block::default()
+    let welcome = Paragraph::new(welcome_text).block(
+        Block::default()
             .borders(Borders::ALL)
             .border_style(Theme::panel_border())
-            .title(Span::styled(" ◆ PRISM-Fold ", Theme::panel_title())));
+            .title(Span::styled(" ◆ PRISM-Fold ", Theme::panel_title())),
+    );
     frame.render_widget(welcome, welcome_layout[0]);
 
     // Dialogue on right
@@ -264,35 +268,71 @@ fn render_graph_visualization(app: &App, frame: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(vec![
             Span::raw("        "),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(0).copied().unwrap_or(0) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(0).copied().unwrap_or(0) % Theme::GRAPH_COLORS.len()]),
+            ),
             Span::raw("───"),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(1).copied().unwrap_or(1) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(1).copied().unwrap_or(1) % Theme::GRAPH_COLORS.len()]),
+            ),
             Span::raw("───"),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(2).copied().unwrap_or(2) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(2).copied().unwrap_or(2) % Theme::GRAPH_COLORS.len()]),
+            ),
         ]),
-        Line::from(vec![
-            Span::raw("       ╱│╲   │   ╱│╲"),
-        ]),
+        Line::from(vec![Span::raw("       ╱│╲   │   ╱│╲")]),
         Line::from(vec![
             Span::raw("     "),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(3).copied().unwrap_or(3) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(3).copied().unwrap_or(3) % Theme::GRAPH_COLORS.len()]),
+            ),
             Span::raw(" │ "),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(4).copied().unwrap_or(4) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(4).copied().unwrap_or(4) % Theme::GRAPH_COLORS.len()]),
+            ),
             Span::raw("─┼─"),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(3).copied().unwrap_or(3) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(3).copied().unwrap_or(3) % Theme::GRAPH_COLORS.len()]),
+            ),
             Span::raw(" │ "),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(1).copied().unwrap_or(1) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(1).copied().unwrap_or(1) % Theme::GRAPH_COLORS.len()]),
+            ),
         ]),
-        Line::from(vec![
-            Span::raw("      ╲│╱   │   ╲│╱"),
-        ]),
+        Line::from(vec![Span::raw("      ╲│╱   │   ╲│╱")]),
         Line::from(vec![
             Span::raw("       "),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(2).copied().unwrap_or(2) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(2).copied().unwrap_or(2) % Theme::GRAPH_COLORS.len()]),
+            ),
             Span::raw("───"),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(0).copied().unwrap_or(0) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(0).copied().unwrap_or(0) % Theme::GRAPH_COLORS.len()]),
+            ),
             Span::raw("───"),
-            Span::styled("●", Style::default().fg(Theme::GRAPH_COLORS[color_indices.get(4).copied().unwrap_or(4) % Theme::GRAPH_COLORS.len()])),
+            Span::styled(
+                "●",
+                Style::default().fg(Theme::GRAPH_COLORS
+                    [color_indices.get(4).copied().unwrap_or(4) % Theme::GRAPH_COLORS.len()]),
+            ),
         ]),
         Line::from(""),
         Line::from(format!(
@@ -339,17 +379,35 @@ fn render_replica_swarm(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Theme::panel_border())
-        .title(Span::styled(" Parallel Tempering Replicas ", Theme::panel_title()));
+        .title(Span::styled(
+            " Parallel Tempering Replicas ",
+            Theme::panel_title(),
+        ));
 
     let mut lines = vec![Line::from("")];
 
     // Use real replica data if available, otherwise show placeholder
     if app.optimization.replicas.is_empty() {
-        lines.push(Line::from(Span::styled("  No replicas active", Theme::dim())));
+        lines.push(Line::from(Span::styled(
+            "  No replicas active",
+            Theme::dim(),
+        )));
     } else {
         // Find min/max colors for normalization
-        let min_colors = app.optimization.replicas.iter().map(|r| r.colors).min().unwrap_or(0);
-        let max_colors = app.optimization.replicas.iter().map(|r| r.colors).max().unwrap_or(1);
+        let min_colors = app
+            .optimization
+            .replicas
+            .iter()
+            .map(|r| r.colors)
+            .min()
+            .unwrap_or(0);
+        let max_colors = app
+            .optimization
+            .replicas
+            .iter()
+            .map(|r| r.colors)
+            .max()
+            .unwrap_or(1);
         let range = (max_colors - min_colors).max(1) as f64;
 
         for (i, replica) in app.optimization.replicas.iter().enumerate() {
@@ -363,12 +421,16 @@ fn render_replica_swarm(app: &App, frame: &mut Frame, area: Rect) {
             let bar = "━".repeat(bar_len.min(40));
 
             // Color based on temperature
-            let temp_color = Theme::temperature_color(i as f64 / app.optimization.replicas.len().max(1) as f64);
+            let temp_color =
+                Theme::temperature_color(i as f64 / app.optimization.replicas.len().max(1) as f64);
 
             let suffix = if replica.is_best { "◆ BEST" } else { "" };
 
             lines.push(Line::from(vec![
-                Span::styled(format!("  T={:.2} ", replica.temperature), Style::default().fg(temp_color)),
+                Span::styled(
+                    format!("  T={:.2} ", replica.temperature),
+                    Style::default().fg(temp_color),
+                ),
                 Span::styled(bar, Style::default().fg(temp_color)),
                 Span::styled(format!(" {}c {}", replica.colors, suffix), Theme::normal()),
             ]));
@@ -404,7 +466,10 @@ fn render_quantum_state(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     lines.push(Line::from(""));
-    lines.push(Line::from(format!("  coherence: {:.2}", app.optimization.quantum_coherence)));
+    lines.push(Line::from(format!(
+        "  coherence: {:.2}",
+        app.optimization.quantum_coherence
+    )));
 
     let widget = Paragraph::new(lines).block(block);
     frame.render_widget(widget, area);
@@ -481,9 +546,15 @@ fn render_gpu_kernels(app: &App, frame: &mut Frame, area: Rect) {
 
     // Use real GPU kernel data if available
     if app.gpu.active_kernels.is_empty() {
-        lines.push(Line::from(Span::styled("  No kernels active", Theme::dim())));
+        lines.push(Line::from(Span::styled(
+            "  No kernels active",
+            Theme::dim(),
+        )));
         lines.push(Line::from(""));
-        lines.push(Line::from(format!("  GPU util: {:.0}%", app.gpu.utilization)));
+        lines.push(Line::from(format!(
+            "  GPU util: {:.0}%",
+            app.gpu.utilization
+        )));
     } else {
         // Show active kernels with utilization bars
         for (i, kernel) in app.gpu.active_kernels.iter().enumerate().take(3) {
@@ -535,7 +606,10 @@ fn render_dialogue_history(app: &App, frame: &mut Frame, area: Rect) {
         })
         .title(Span::styled(" AI Assistant ", Theme::panel_title()));
 
-    let messages: Vec<Line> = app.dialogue.messages.iter()
+    let messages: Vec<Line> = app
+        .dialogue
+        .messages
+        .iter()
         .flat_map(|msg| {
             let style = if msg.is_user {
                 Style::default().fg(Theme::ACCENT_SECONDARY)
@@ -544,7 +618,8 @@ fn render_dialogue_history(app: &App, frame: &mut Frame, area: Rect) {
             };
             let prefix = if msg.is_user { "> " } else { "  " };
 
-            msg.content.lines()
+            msg.content
+                .lines()
                 .map(|line| Line::from(Span::styled(format!("{}{}", prefix, line), style)))
                 .collect::<Vec<_>>()
         })
@@ -584,11 +659,16 @@ fn render_pipeline_flow(app: &App, frame: &mut Frame, area: Rect) {
     lines.push(Line::from(phase_spans));
 
     // Phase names
-    let names: String = app.phases.iter()
+    let names: String = app
+        .phases
+        .iter()
         .map(|p| format!("{:^3}", &p.name[..2]))
         .collect::<Vec<_>>()
         .join("");
-    lines.push(Line::from(Span::styled(format!("  {}", names), Theme::dim())));
+    lines.push(Line::from(Span::styled(
+        format!("  {}", names),
+        Theme::dim(),
+    )));
 
     // Progress bar for running phase
     if let Some(phase) = app.phases.iter().find(|p| p.status == PhaseState::Running) {
@@ -601,7 +681,10 @@ fn render_pipeline_flow(app: &App, frame: &mut Frame, area: Rect) {
             phase.progress
         );
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(bar, Style::default().fg(Theme::progress_color(phase.progress)))));
+        lines.push(Line::from(Span::styled(
+            bar,
+            Style::default().fg(Theme::progress_color(phase.progress)),
+        )));
     }
 
     let widget = Paragraph::new(lines).block(block);
@@ -624,7 +707,12 @@ fn render_convergence_chart(app: &App, frame: &mut Frame, area: Rect) {
         chart.push(Line::from(""));
     } else {
         // Find min/max colors for scaling
-        let colors: Vec<usize> = app.optimization.convergence_history.iter().map(|(_, c)| *c).collect();
+        let colors: Vec<usize> = app
+            .optimization
+            .convergence_history
+            .iter()
+            .map(|(_, c)| *c)
+            .collect();
         let min_colors = *colors.iter().min().unwrap_or(&0);
         let max_colors = *colors.iter().max().unwrap_or(&100);
         let range = (max_colors - min_colors).max(1);
@@ -637,21 +725,29 @@ fn render_convergence_chart(app: &App, frame: &mut Frame, area: Rect) {
             let threshold = max_colors - (row * range / chart_height);
             let mut line_spans = vec![
                 Span::raw(format!(" {:3} ", threshold)),
-                if row == chart_height { Span::raw("└") } else { Span::raw("┤") },
+                if row == chart_height {
+                    Span::raw("└")
+                } else {
+                    Span::raw("┤")
+                },
             ];
 
             // Plot points
-            let sample_step = (app.optimization.convergence_history.len()).max(1) / chart_width.min(app.optimization.convergence_history.len());
+            let sample_step = (app.optimization.convergence_history.len()).max(1)
+                / chart_width.min(app.optimization.convergence_history.len());
             let sample_step = sample_step.max(1);
 
-            for i in (0..app.optimization.convergence_history.len()).step_by(sample_step).take(chart_width) {
+            for i in (0..app.optimization.convergence_history.len())
+                .step_by(sample_step)
+                .take(chart_width)
+            {
                 let (_, color_count) = app.optimization.convergence_history[i];
                 let y_pos = ((max_colors - color_count) * chart_height) / range.max(1);
 
                 if y_pos == row {
                     // Is this the best/latest point?
                     let is_best = i == app.optimization.convergence_history.len() - 1
-                                   && color_count == min_colors;
+                        && color_count == min_colors;
                     if is_best {
                         line_spans.push(Span::styled("◆", Style::default().fg(Theme::SUCCESS)));
                     } else {
@@ -763,11 +859,9 @@ fn render_protein_structure(app: &App, frame: &mut Frame, area: Rect) {
             Span::styled(
                 format!(
                     "{} residues │ {} atoms │ {} chains",
-                    app.protein.residue_count,
-                    app.protein.atom_count,
-                    app.protein.chain_count
+                    app.protein.residue_count, app.protein.atom_count, app.protein.chain_count
                 ),
-                Style::default().fg(Theme::TEXT_DIM)
+                Style::default().fg(Theme::TEXT_DIM),
             ),
         ]));
     }
@@ -783,7 +877,7 @@ fn render_pocket_analysis(app: &App, frame: &mut Frame, area: Rect) {
         .border_style(Theme::panel_border())
         .title(Span::styled(
             format!(" Detected Pockets ({}) ", app.protein.pockets.len()),
-            Theme::panel_title()
+            Theme::panel_title(),
         ));
 
     let mut lines = vec![];
@@ -842,8 +936,11 @@ fn render_pocket_analysis(app: &App, frame: &mut Frame, area: Rect) {
             lines.push(Line::from(vec![
                 Span::raw(format!("  #{} ", pocket.id)),
                 Span::styled(
-                    format!("Vol: {:.1}Å³  Drug: {:.2}", pocket.volume, pocket.druggability),
-                    Style::default().fg(drug_color).bold()
+                    format!(
+                        "Vol: {:.1}Å³  Drug: {:.2}",
+                        pocket.volume, pocket.druggability
+                    ),
+                    Style::default().fg(drug_color).bold(),
                 ),
             ]));
 
@@ -856,7 +953,9 @@ fn render_pocket_analysis(app: &App, frame: &mut Frame, area: Rect) {
             ]));
 
             // Residues (show first 5)
-            let residue_list: String = pocket.residues.iter()
+            let residue_list: String = pocket
+                .residues
+                .iter()
                 .take(5)
                 .cloned()
                 .collect::<Vec<_>>()
@@ -920,7 +1019,10 @@ fn render_pharmacophore(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Theme::panel_border())
-        .title(Span::styled(" Pharmacophore Features ", Theme::panel_title()));
+        .title(Span::styled(
+            " Pharmacophore Features ",
+            Theme::panel_title(),
+        ));
 
     let features = vec![
         Line::from(""),
@@ -946,13 +1048,14 @@ fn render_pharmacophore(app: &App, frame: &mut Frame, area: Rect) {
 
 /// Render dialogue input bar
 fn render_dialogue_input(app: &App, frame: &mut Frame, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(if app.focus == Focus::Dialogue {
-            Style::default().fg(Theme::ACCENT)
-        } else {
-            Theme::panel_border()
-        });
+    let block =
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(if app.focus == Focus::Dialogue {
+                Style::default().fg(Theme::ACCENT)
+            } else {
+                Theme::panel_border()
+            });
 
     let input_text = format!(" > {}_", app.input_buffer);
     let input = Paragraph::new(input_text)
@@ -991,12 +1094,13 @@ fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("   m          Focus metrics"),
     ];
 
-    let help = Paragraph::new(help_text)
-        .block(Block::default()
+    let help = Paragraph::new(help_text).block(
+        Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Theme::ACCENT))
             .title(Span::styled(" Help ", Theme::panel_title()))
-            .style(Style::default().bg(Theme::BG_PANEL)));
+            .style(Style::default().bg(Theme::BG_PANEL)),
+    );
 
     frame.render_widget(help, help_area);
 }

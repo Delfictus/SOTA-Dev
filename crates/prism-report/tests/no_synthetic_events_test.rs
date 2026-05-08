@@ -68,22 +68,14 @@ fn scan_file_for_banned_tokens(path: &Path) -> Vec<(usize, String, String)> {
         // Check banned tokens
         for token in BANNED_TOKENS {
             if line_lower.contains(token) {
-                violations.push((
-                    line_num + 1,
-                    token.to_string(),
-                    line.trim().to_string(),
-                ));
+                violations.push((line_num + 1, token.to_string(), line.trim().to_string()));
             }
         }
 
         // Check banned patterns
         for pattern in BANNED_PATTERNS {
             if line_lower.contains(&pattern.to_lowercase()) {
-                violations.push((
-                    line_num + 1,
-                    pattern.to_string(),
-                    line.trim().to_string(),
-                ));
+                violations.push((line_num + 1, pattern.to_string(), line.trim().to_string()));
             }
         }
     }
@@ -122,12 +114,7 @@ fn scan_directory(dir: &Path, violations: &mut Vec<(String, usize, String, Strin
         } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
             let file_violations = scan_file_for_banned_tokens(&path);
             for (line, token, context) in file_violations {
-                violations.push((
-                    path.to_string_lossy().to_string(),
-                    line,
-                    token,
-                    context,
-                ));
+                violations.push((path.to_string_lossy().to_string(), line, token, context));
             }
         }
     }
@@ -173,13 +160,11 @@ fn test_run_engine_requires_gpu_feature() {
         .join("bin")
         .join("prism4d.rs");
 
-    let content = fs::read_to_string(&prism4d_path)
-        .expect("Failed to read prism4d.rs");
+    let content = fs::read_to_string(&prism4d_path).expect("Failed to read prism4d.rs");
 
     // Check that the non-gpu version bails
     assert!(
-        content.contains("#[cfg(not(feature = \"gpu\"))]") &&
-        content.contains("bail!("),
+        content.contains("#[cfg(not(feature = \"gpu\"))]") && content.contains("bail!("),
         "Non-GPU run_cryo_uv_engine must bail with clear error message"
     );
 
@@ -191,9 +176,9 @@ fn test_run_engine_requires_gpu_feature() {
 
     // Check there's no fallback generation
     assert!(
-        !content.contains("generate_synthetic") &&
-        !content.contains("synthetic_event") &&
-        !content.contains("for testing the pipeline"),
+        !content.contains("generate_synthetic")
+            && !content.contains("synthetic_event")
+            && !content.contains("for testing the pipeline"),
         "No synthetic event generation allowed"
     );
 }
@@ -206,8 +191,7 @@ fn test_validate_events_file_exists() {
         .join("bin")
         .join("prism4d.rs");
 
-    let content = fs::read_to_string(&prism4d_path)
-        .expect("Failed to read prism4d.rs");
+    let content = fs::read_to_string(&prism4d_path).expect("Failed to read prism4d.rs");
 
     // Must check file exists
     assert!(
@@ -229,7 +213,9 @@ fn test_validate_events_file_exists() {
 
     // Must check required fields
     assert!(
-        content.contains("center_xyz") && content.contains("volume_a3") && content.contains("phase"),
+        content.contains("center_xyz")
+            && content.contains("volume_a3")
+            && content.contains("phase"),
         "Must validate required event fields"
     );
 }
@@ -242,8 +228,7 @@ fn test_no_alternate_execution_paths() {
         .join("bin")
         .join("prism4d.rs");
 
-    let content = fs::read_to_string(&prism4d_path)
-        .expect("Failed to read prism4d.rs");
+    let content = fs::read_to_string(&prism4d_path).expect("Failed to read prism4d.rs");
 
     // Must not have legacy/placeholder/demo mode flags
     let forbidden_args = [

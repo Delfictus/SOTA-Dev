@@ -9,6 +9,6 @@ mod render;
 mod theme;
 
 pub use app::App;
-pub use event::{Event, PipelineEvent, GpuEvent};
-pub use reactive::{ReactiveController, ReactiveConfig, ReactiveControllerBuilder};
+pub use event::{Event, GpuEvent, PipelineEvent};
+pub use reactive::{ReactiveConfig, ReactiveController, ReactiveControllerBuilder};
 pub use theme::Theme;

@@ -9,10 +9,10 @@
 //! - Async pipeline with overlapped computation and data transfer
 //! - Direct GPU mapping bypassing host memory entirely with GPU Direct Storage
 
-use tokio_uring::fs::File;
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
+use tokio_uring::fs::File;
 
 // Logging handled by tracing (already imported elsewhere)
 
@@ -24,8 +24,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::{
-    sovereign_types::{SovereignBuffer, SovereignError},
     holographic::PtbStructure,
+    sovereign_types::{SovereignBuffer, SovereignError},
     validation::DataIntegrityValidator,
     PrismIoError, Result,
 };
@@ -90,8 +90,9 @@ impl AsyncPinnedStreamer {
 
         #[cfg(feature = "gpu")]
         let device = {
-            cudarc::driver::CudaContext::new(0)
-                .map_err(|e| PrismIoError::CudaError(format!("Failed to initialize CUDA context: {:?}", e)))?
+            cudarc::driver::CudaContext::new(0).map_err(|e| {
+                PrismIoError::CudaError(format!("Failed to initialize CUDA context: {:?}", e))
+            })?
         };
 
         let validator = Arc::new(DataIntegrityValidator::new());
@@ -114,21 +115,28 @@ impl AsyncPinnedStreamer {
     ///
     /// # Returns
     /// * `Result<SovereignBuffer>` - Verified structure in GPU memory
-    pub async fn load_verified_structure<P: AsRef<Path>>(&self, path: P) -> Result<SovereignBuffer> {
+    pub async fn load_verified_structure<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<SovereignBuffer> {
         let start_time = std::time::Instant::now();
         let path = path.as_ref();
 
         tracing::info!("Loading structure from: {}", path.display());
 
         // Determine file format
-        let extension = path.extension()
+        let extension = path
+            .extension()
             .and_then(|ext| ext.to_str())
             .ok_or_else(|| PrismIoError::FormatError("No file extension found".to_string()))?;
 
         match extension {
             "ptb" => self.load_ptb_structure(path).await,
             "pdb" => self.load_pdb_structure(path).await,
-            _ => Err(PrismIoError::FormatError(format!("Unsupported format: {}", extension))),
+            _ => Err(PrismIoError::FormatError(format!(
+                "Unsupported format: {}",
+                extension
+            ))),
         }
         .and_then(|buffer| {
             let load_time = start_time.elapsed();
@@ -149,8 +157,9 @@ impl AsyncPinnedStreamer {
             // Update metrics
             let mut metrics = self.metrics.lock();
             metrics.transfer_count += 1;
-            metrics.avg_latency_micros =
-                (metrics.avg_latency_micros * (metrics.transfer_count - 1) + load_time.as_micros() as u64)
+            metrics.avg_latency_micros = (metrics.avg_latency_micros
+                * (metrics.transfer_count - 1)
+                + load_time.as_micros() as u64)
                 / metrics.transfer_count;
 
             Ok(buffer)
@@ -172,7 +181,8 @@ impl AsyncPinnedStreamer {
     /// Load a .pdb file using async streaming and warp-drive parsing
     async fn load_pdb_structure(&self, path: &Path) -> Result<SovereignBuffer> {
         // Open file with io_uring for async I/O
-        let file = File::open(path).await
+        let file = File::open(path)
+            .await
             .map_err(|e| PrismIoError::IoError(e))?;
 
         // Read entire file into pinned memory
@@ -185,8 +195,7 @@ impl AsyncPinnedStreamer {
             let chunk_buf = vec![0u8; chunk_size];
             let (result, returned_buf) = file.read_at(chunk_buf, pos).await;
 
-            let bytes_read = result
-                .map_err(|e| PrismIoError::IoError(e))?;
+            let bytes_read = result.map_err(|e| PrismIoError::IoError(e))?;
 
             if bytes_read == 0 {
                 break;
@@ -209,7 +218,9 @@ impl AsyncPinnedStreamer {
         let bytes_read = buffer.len();
 
         if bytes_read != file_size as usize {
-            return Err(PrismIoError::FormatError("Incomplete file read".to_string()));
+            return Err(PrismIoError::FormatError(
+                "Incomplete file read".to_string(),
+            ));
         }
 
         // Validate data integrity
@@ -244,7 +255,7 @@ impl AsyncPinnedStreamer {
     async fn parse_pdb_with_warp_drive(
         &self,
         pdb_data: &[u8],
-        source_hash: [u8; 32]
+        source_hash: [u8; 32],
     ) -> Result<crate::sovereign_types::VerifiedProteinData> {
         use crate::warp_parser::WarpDriveParser;
 
@@ -267,13 +278,15 @@ impl AsyncPinnedStreamer {
 
         // Create verified protein data
         let source_id = format!("pdb:{}", hex::encode(source_hash));
-        Ok(crate::sovereign_types::VerifiedProteinData::from_authenticated_source(
-            parsed_data.atoms,
-            parsed_data.bonds,
-            parsed_data.secondary_structure,
-            source_id,
-            source_hash,
-        ))
+        Ok(
+            crate::sovereign_types::VerifiedProteinData::from_authenticated_source(
+                parsed_data.atoms,
+                parsed_data.bonds,
+                parsed_data.secondary_structure,
+                source_id,
+                source_hash,
+            ),
+        )
     }
 
     /// Fallback CPU parsing for systems without GPU support
@@ -281,7 +294,7 @@ impl AsyncPinnedStreamer {
     async fn parse_pdb_cpu(
         &self,
         pdb_data: &[u8],
-        source_hash: [u8; 32]
+        source_hash: [u8; 32],
     ) -> Result<crate::sovereign_types::VerifiedProteinData> {
         // Basic PDB parsing implementation
         // This would be much slower than GPU version but provides compatibility
@@ -299,31 +312,41 @@ impl AsyncPinnedStreamer {
         }
 
         let source_id = format!("pdb:{}", hex::encode(source_hash));
-        Ok(crate::sovereign_types::VerifiedProteinData::from_authenticated_source(
-            atoms,
-            Vec::new(), // Bonds would require additional parsing
-            Vec::new(), // Secondary structure would require additional parsing
-            source_id,
-            source_hash,
-        ))
+        Ok(
+            crate::sovereign_types::VerifiedProteinData::from_authenticated_source(
+                atoms,
+                Vec::new(), // Bonds would require additional parsing
+                Vec::new(), // Secondary structure would require additional parsing
+                source_id,
+                source_hash,
+            ),
+        )
     }
 
     /// Parse a single ATOM line from PDB format
     fn parse_atom_line(
         &self,
         line: &str,
-        current_residue: &mut u16
+        current_residue: &mut u16,
     ) -> Result<crate::sovereign_types::Atom> {
         if line.len() < 54 {
-            return Err(PrismIoError::FormatError("Invalid ATOM line length".to_string()));
+            return Err(PrismIoError::FormatError(
+                "Invalid ATOM line length".to_string(),
+            ));
         }
 
         // Parse coordinates (columns 31-38, 39-46, 47-54)
-        let x: f32 = line[30..38].trim().parse()
+        let x: f32 = line[30..38]
+            .trim()
+            .parse()
             .map_err(|_| PrismIoError::FormatError("Invalid X coordinate".to_string()))?;
-        let y: f32 = line[38..46].trim().parse()
+        let y: f32 = line[38..46]
+            .trim()
+            .parse()
             .map_err(|_| PrismIoError::FormatError("Invalid Y coordinate".to_string()))?;
-        let z: f32 = line[46..54].trim().parse()
+        let z: f32 = line[46..54]
+            .trim()
+            .parse()
             .map_err(|_| PrismIoError::FormatError("Invalid Z coordinate".to_string()))?;
 
         // Parse residue number (columns 23-26)
@@ -352,14 +375,20 @@ impl AsyncPinnedStreamer {
     }
 
     /// Transfer PTB file data to pinned host memory preserving format
-    async fn transfer_ptb_file_data(&self, structure: crate::holographic::PtbStructure) -> Result<SovereignBuffer> {
+    async fn transfer_ptb_file_data(
+        &self,
+        structure: crate::holographic::PtbStructure,
+    ) -> Result<SovereignBuffer> {
         #[cfg(feature = "gpu")]
         {
             // Access the raw PTB file data from memory map
             let file_data = structure.as_bytes();
             let data_size = file_data.len();
 
-            tracing::info!("📦 Transferring PTB file data: {} bytes (preserving magic bytes)", data_size);
+            tracing::info!(
+                "📦 Transferring PTB file data: {} bytes (preserving magic bytes)",
+                data_size
+            );
 
             // Allocate PINNED HOST MEMORY for the complete PTB file
             let host_ptr = {
@@ -367,7 +396,10 @@ impl AsyncPinnedStreamer {
                 unsafe {
                     let result = cudarc::driver::sys::cuMemAllocHost_v2(&mut ptr, data_size);
                     if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-                        return Err(PrismIoError::CudaError(format!("Pinned host memory allocation failed: {:?}", result)));
+                        return Err(PrismIoError::CudaError(format!(
+                            "Pinned host memory allocation failed: {:?}",
+                            result
+                        )));
                     }
                 }
                 ptr as *mut u8
@@ -375,11 +407,7 @@ impl AsyncPinnedStreamer {
 
             // Copy complete PTB file data to pinned host memory
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    file_data.as_ptr(),
-                    host_ptr,
-                    data_size
-                );
+                std::ptr::copy_nonoverlapping(file_data.as_ptr(), host_ptr, data_size);
             }
 
             tracing::info!("✅ PTB file data copied to pinned host memory");
@@ -400,8 +428,9 @@ impl AsyncPinnedStreamer {
             // Create SovereignBuffer with PTB file data
             Ok(unsafe {
                 SovereignBuffer::new_from_dma(
-                    std::ptr::NonNull::new(host_ptr)
-                        .ok_or_else(|| PrismIoError::CudaError("Invalid host pointer".to_string()))?,
+                    std::ptr::NonNull::new(host_ptr).ok_or_else(|| {
+                        PrismIoError::CudaError("Invalid host pointer".to_string())
+                    })?,
                     data_size,
                     data_size,
                     integrity_hash,
@@ -411,14 +440,16 @@ impl AsyncPinnedStreamer {
 
         #[cfg(not(feature = "gpu"))]
         {
-            Err(PrismIoError::CudaError("GPU features required for SovereignBuffer".to_string()))
+            Err(PrismIoError::CudaError(
+                "GPU features required for SovereignBuffer".to_string(),
+            ))
         }
     }
 
     /// Transfer verified protein data to GPU memory as SovereignBuffer
     async fn transfer_to_gpu_memory(
         &self,
-        verified_data: crate::sovereign_types::VerifiedProteinData
+        verified_data: crate::sovereign_types::VerifiedProteinData,
     ) -> Result<SovereignBuffer> {
         #[cfg(feature = "gpu")]
         {
@@ -446,7 +477,10 @@ impl AsyncPinnedStreamer {
                 unsafe {
                     let result = cudarc::driver::sys::cuMemAllocHost_v2(&mut ptr, data_size);
                     if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-                        return Err(PrismIoError::CudaError(format!("Pinned host memory allocation failed: {:?}", result)));
+                        return Err(PrismIoError::CudaError(format!(
+                            "Pinned host memory allocation failed: {:?}",
+                            result
+                        )));
                     }
                 }
                 ptr as *mut u8
@@ -455,11 +489,7 @@ impl AsyncPinnedStreamer {
             // Copy atom data to pinned host memory
             #[cfg(feature = "gpu")]
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    atoms.as_ptr() as *const u8,
-                    host_ptr,
-                    data_size
-                );
+                std::ptr::copy_nonoverlapping(atoms.as_ptr() as *const u8, host_ptr, data_size);
             }
 
             #[cfg(not(feature = "gpu"))]
@@ -475,8 +505,9 @@ impl AsyncPinnedStreamer {
 
             Ok(unsafe {
                 SovereignBuffer::new_from_dma(
-                    std::ptr::NonNull::new(host_ptr)
-                        .ok_or_else(|| PrismIoError::CudaError("Invalid host pointer".to_string()))?,
+                    std::ptr::NonNull::new(host_ptr).ok_or_else(|| {
+                        PrismIoError::CudaError("Invalid host pointer".to_string())
+                    })?,
                     data_size,
                     data_size,
                     hash_array,
@@ -488,7 +519,9 @@ impl AsyncPinnedStreamer {
         {
             // For CPU-only builds, create a mock SovereignBuffer
             // This would not be used in production GPU builds
-            Err(PrismIoError::CudaError("GPU features required for SovereignBuffer".to_string()))
+            Err(PrismIoError::CudaError(
+                "GPU features required for SovereignBuffer".to_string(),
+            ))
         }
     }
 
@@ -540,8 +573,8 @@ impl Clone for StreamingMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn test_async_pinned_streamer_creation() {
@@ -558,8 +591,16 @@ mod tests {
         let mut temp_file = NamedTempFile::new().unwrap();
 
         // Write a minimal PDB structure
-        writeln!(temp_file, "ATOM      1  CA  ALA A   1      20.154  16.967  10.000  1.00 20.00           C").unwrap();
-        writeln!(temp_file, "ATOM      2  CB  ALA A   1      21.500  16.967  10.000  1.00 20.00           C").unwrap();
+        writeln!(
+            temp_file,
+            "ATOM      1  CA  ALA A   1      20.154  16.967  10.000  1.00 20.00           C"
+        )
+        .unwrap();
+        writeln!(
+            temp_file,
+            "ATOM      2  CB  ALA A   1      21.500  16.967  10.000  1.00 20.00           C"
+        )
+        .unwrap();
 
         let streamer = AsyncPinnedStreamer::new().await;
         if let Ok(streamer) = streamer {

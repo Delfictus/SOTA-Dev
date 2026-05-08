@@ -9,8 +9,8 @@
 use anyhow::{Context, Result};
 use ndarray::{Array2, ArrayView2};
 use petgraph::graph::DiGraph;
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// GNN inference via ONNX Runtime
 ///
@@ -30,12 +30,15 @@ impl OnnxGnnRuntime {
     pub fn load<P: AsRef<Path>>(model_path: P) -> Result<Self> {
         let model_path_str = model_path.as_ref().to_string_lossy().to_string();
 
-        log::info!("ONNX Runtime stub: Model path registered: {}", model_path_str);
+        log::info!(
+            "ONNX Runtime stub: Model path registered: {}",
+            model_path_str
+        );
         log::warn!("ONNX Runtime 2.0 full integration pending. Using E3EquivariantGnn fallback.");
 
         Ok(Self {
             model_path: model_path_str,
-            use_gpu: true,  // Indicate GPU preference
+            use_gpu: true, // Indicate GPU preference
             node_feature_dim: 16,
         })
     }

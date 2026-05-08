@@ -54,7 +54,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(dead_code)]
-#![allow(deref_nullptr)]  // bindgen generates some nullptr derefs in layout tests
+#![allow(deref_nullptr)] // bindgen generates some nullptr derefs in layout tests
 
 // Include the generated FFI bindings from build.rs
 include!(concat!(env!("OUT_DIR"), "/optix_bindings.rs"));

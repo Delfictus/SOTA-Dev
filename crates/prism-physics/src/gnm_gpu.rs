@@ -22,7 +22,10 @@ pub struct GpuGnm {
 impl GpuGnm {
     /// Create a new GPU GNM calculator
     pub fn new(n_atoms: usize) -> Result<Self> {
-        Ok(Self { cutoff: 7.0, n_atoms })
+        Ok(Self {
+            cutoff: 7.0,
+            n_atoms,
+        })
     }
 
     /// Create with specific cutoff

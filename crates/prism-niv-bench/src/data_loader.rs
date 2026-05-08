@@ -1,8 +1,8 @@
-use anyhow::{Result, Context};
+use crate::structure_types::{Atom, ChainInfo, ParamyxoStructure, ProteinType, Residue, VirusType};
+use anyhow::{Context, Result};
 use std::fs::{self, File};
-use std::io::{Read, Write, BufReader, BufRead};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use crate::structure_types::{ParamyxoStructure, VirusType, ProteinType, ChainInfo, Atom, Residue};
 
 pub struct DataLoader {
     pub data_dir: String,
@@ -19,9 +19,8 @@ impl DataLoader {
     pub async fn download_paramyxo_structures(&self) -> Result<()> {
         let pdb_ids = [
             // NiV
-            "8XPS", "8XQ3", "7UPK", "7UPD", "7UPB", "8ZPV", "7SKT", "7TY0",
-            // HeV
-            "2X9M", "5EJB", "6CMG", "7UPH"
+            "8XPS", "8XQ3", "7UPK", "7UPD", "7UPB", "8ZPV", "7SKT", "7TY0", // HeV
+            "2X9M", "5EJB", "6CMG", "7UPH",
         ];
 
         fs::create_dir_all(&self.data_dir)?;
@@ -49,7 +48,8 @@ impl DataLoader {
     /// Simple PDB parser (can be replaced with a more robust library like pdbtbx if needed)
     pub fn parse_pdb(&self, pdb_id: &str) -> Result<ParamyxoStructure> {
         let file_path = Path::new(&self.data_dir).join(format!("{}.pdb", pdb_id));
-        let file = File::open(&file_path).context(format!("Failed to open PDB file: {:?}", file_path))?;
+        let file =
+            File::open(&file_path).context(format!("Failed to open PDB file: {:?}", file_path))?;
         let reader = BufReader::new(file);
 
         let mut atoms = Vec::new();
@@ -68,7 +68,7 @@ impl DataLoader {
             "2X9M" | "6CMG" => (VirusType::Hendra, ProteinType::GProtein),
             "5EJB" => (VirusType::Hendra, ProteinType::FProtein),
             "7UPH" => (VirusType::Hendra, ProteinType::FProtein), // Cross-reactive complex
-            _ => (VirusType::Nipah, ProteinType::GProtein), // Default
+            _ => (VirusType::Nipah, ProteinType::GProtein),       // Default
         };
 
         for line in reader.lines() {
@@ -99,25 +99,31 @@ impl DataLoader {
                 atoms.push(atom.clone());
 
                 if res_seq != current_residue_num && current_residue_num != 0 {
-                     // Finish previous residue
-                     // Need CA coords
-                     let ca = current_residue_atoms.iter().find(|a: &&Atom| a.name == "CA");
-                     let ca_coords = if let Some(a) = ca {
-                         (a.x, a.y, a.z)
-                     } else {
-                         // Fallback to first atom if CA missing (unlikely for standard residues)
-                         (current_residue_atoms[0].x, current_residue_atoms[0].y, current_residue_atoms[0].z)
-                     };
+                    // Finish previous residue
+                    // Need CA coords
+                    let ca = current_residue_atoms
+                        .iter()
+                        .find(|a: &&Atom| a.name == "CA");
+                    let ca_coords = if let Some(a) = ca {
+                        (a.x, a.y, a.z)
+                    } else {
+                        // Fallback to first atom if CA missing (unlikely for standard residues)
+                        (
+                            current_residue_atoms[0].x,
+                            current_residue_atoms[0].y,
+                            current_residue_atoms[0].z,
+                        )
+                    };
 
-                     residues.push(Residue {
-                         id: current_residue_num,
-                         name: current_residue_name.clone(),
-                         chain_id: current_chain_id.clone(),
-                         sequence_number: current_residue_num,
-                         ca_coords,
-                         atoms: current_residue_atoms.clone(),
-                     });
-                     current_residue_atoms.clear();
+                    residues.push(Residue {
+                        id: current_residue_num,
+                        name: current_residue_name.clone(),
+                        chain_id: current_chain_id.clone(),
+                        sequence_number: current_residue_num,
+                        ca_coords,
+                        atoms: current_residue_atoms.clone(),
+                    });
+                    current_residue_atoms.clear();
                 }
 
                 current_residue_num = res_seq;
@@ -128,21 +134,27 @@ impl DataLoader {
         }
         // Push last residue
         if !current_residue_atoms.is_empty() {
-             let ca = current_residue_atoms.iter().find(|a: &&Atom| a.name == "CA");
-             let ca_coords = if let Some(a) = ca {
-                 (a.x, a.y, a.z)
-             } else {
-                 (current_residue_atoms[0].x, current_residue_atoms[0].y, current_residue_atoms[0].z)
-             };
+            let ca = current_residue_atoms
+                .iter()
+                .find(|a: &&Atom| a.name == "CA");
+            let ca_coords = if let Some(a) = ca {
+                (a.x, a.y, a.z)
+            } else {
+                (
+                    current_residue_atoms[0].x,
+                    current_residue_atoms[0].y,
+                    current_residue_atoms[0].z,
+                )
+            };
 
-             residues.push(Residue {
-                 id: current_residue_num,
-                 name: current_residue_name.clone(),
-                 chain_id: current_chain_id.clone(),
-                 sequence_number: current_residue_num,
-                 ca_coords,
-                 atoms: current_residue_atoms,
-             });
+            residues.push(Residue {
+                id: current_residue_num,
+                name: current_residue_name.clone(),
+                chain_id: current_chain_id.clone(),
+                sequence_number: current_residue_num,
+                ca_coords,
+                atoms: current_residue_atoms,
+            });
         }
 
         Ok(ParamyxoStructure {
@@ -159,32 +171,48 @@ impl DataLoader {
     }
 
     /// Parse antibody interface residues (< 5Å from antibody chain)
-    pub fn parse_antibody_interface(&self, pdb_id: &str, antibody_chain: &str, antigen_chain: &str) -> Result<Vec<u32>> {
+    pub fn parse_antibody_interface(
+        &self,
+        pdb_id: &str,
+        antibody_chain: &str,
+        antigen_chain: &str,
+    ) -> Result<Vec<u32>> {
         let structure = self.parse_pdb(pdb_id)?;
         let mut interface_residues = Vec::new();
 
-        let ag_atoms: Vec<&Atom> = structure.atoms.iter()
+        let ag_atoms: Vec<&Atom> = structure
+            .atoms
+            .iter()
             .filter(|a| a.chain_id == antigen_chain)
             .collect();
-        
-        let ab_atoms: Vec<&Atom> = structure.atoms.iter()
+
+        let ab_atoms: Vec<&Atom> = structure
+            .atoms
+            .iter()
             .filter(|a| a.chain_id == antibody_chain)
             .collect();
 
-        for res in structure.residues.iter().filter(|r| r.chain_id == antigen_chain) {
+        for res in structure
+            .residues
+            .iter()
+            .filter(|r| r.chain_id == antigen_chain)
+        {
             let mut is_interface = false;
             for atom_ag in &res.atoms {
                 for atom_ab in &ab_atoms {
                     let dx = atom_ag.x - atom_ab.x;
                     let dy = atom_ag.y - atom_ab.y;
                     let dz = atom_ag.z - atom_ab.z;
-                    let dist_sq = dx*dx + dy*dy + dz*dz;
-                    if dist_sq < 25.0 { // 5.0 * 5.0
+                    let dist_sq = dx * dx + dy * dy + dz * dz;
+                    if dist_sq < 25.0 {
+                        // 5.0 * 5.0
                         is_interface = true;
                         break;
                     }
                 }
-                if is_interface { break; }
+                if is_interface {
+                    break;
+                }
             }
             if is_interface {
                 interface_residues.push(res.sequence_number);

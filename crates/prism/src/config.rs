@@ -555,31 +555,81 @@ pub struct CmaEsConfig {
 // Default Value Functions
 // =============================================================================
 
-fn default_max_attempts() -> usize { 1 }
-fn default_true() -> bool { true }
-fn default_max_vertices() -> usize { 10000 }
-fn default_retry_limit() -> usize { 3 }
-fn default_ptx_dir() -> String { "target/ptx".to_string() }
-fn default_nvml_interval() -> u64 { 1000 }
-fn default_scheduling_policy() -> String { "round-robin".to_string() }
-fn default_max_colors() -> usize { 50 }
-fn default_min_prob() -> f32 { 0.01 }
-fn default_anchor_fraction() -> f32 { 0.10 }
-fn default_flux_weight() -> f32 { 0.4 }
-fn default_ensemble_weight() -> f32 { 0.4 }
-fn default_random_weight() -> f32 { 0.2 }
-fn default_epsilon() -> f64 { 0.2 }
-fn default_alpha() -> f64 { 0.1 }
-fn default_gamma() -> f64 { 0.95 }
-fn default_reward_log_threshold() -> f64 { 0.001 }
-fn default_phase2_iterations() -> usize { 10000 }
-fn default_phase2_replicas() -> usize { 8 }
-fn default_phase2_temp_min() -> f32 { 0.01 }
-fn default_phase2_temp_max() -> f32 { 10.0 }
-fn default_telemetry_path() -> String { "telemetry.jsonl".to_string() }
-fn default_cma_population_size() -> usize { 50 }
-fn default_cma_sigma() -> f32 { 0.5 }
-fn default_cma_iterations() -> usize { 100 }
+fn default_max_attempts() -> usize {
+    1
+}
+fn default_true() -> bool {
+    true
+}
+fn default_max_vertices() -> usize {
+    10000
+}
+fn default_retry_limit() -> usize {
+    3
+}
+fn default_ptx_dir() -> String {
+    "target/ptx".to_string()
+}
+fn default_nvml_interval() -> u64 {
+    1000
+}
+fn default_scheduling_policy() -> String {
+    "round-robin".to_string()
+}
+fn default_max_colors() -> usize {
+    50
+}
+fn default_min_prob() -> f32 {
+    0.01
+}
+fn default_anchor_fraction() -> f32 {
+    0.10
+}
+fn default_flux_weight() -> f32 {
+    0.4
+}
+fn default_ensemble_weight() -> f32 {
+    0.4
+}
+fn default_random_weight() -> f32 {
+    0.2
+}
+fn default_epsilon() -> f64 {
+    0.2
+}
+fn default_alpha() -> f64 {
+    0.1
+}
+fn default_gamma() -> f64 {
+    0.95
+}
+fn default_reward_log_threshold() -> f64 {
+    0.001
+}
+fn default_phase2_iterations() -> usize {
+    10000
+}
+fn default_phase2_replicas() -> usize {
+    8
+}
+fn default_phase2_temp_min() -> f32 {
+    0.01
+}
+fn default_phase2_temp_max() -> f32 {
+    10.0
+}
+fn default_telemetry_path() -> String {
+    "telemetry.jsonl".to_string()
+}
+fn default_cma_population_size() -> usize {
+    50
+}
+fn default_cma_sigma() -> f32 {
+    0.5
+}
+fn default_cma_iterations() -> usize {
+    100
+}
 
 // =============================================================================
 // Tests

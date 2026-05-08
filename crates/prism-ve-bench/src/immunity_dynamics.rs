@@ -12,25 +12,23 @@
 //!
 //! GPU-accelerated batch computation is supported via the `compute_immunity_batch` method.
 
-use anyhow::{Result, Context, bail};
-use std::collections::HashMap;
-use std::path::Path;
-use std::fs::File;
-use std::io::BufReader;
+use anyhow::{bail, Context, Result};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
 
 #[allow(unused_imports)]
-use log::{info, debug, warn};
+use log::{debug, info, warn};
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
 /// Epitope class names in order (10 total, VASIL standard)
-pub const EPITOPE_CLASSES: [&str; 10] = [
-    "A", "B", "C", "D1", "D2", "E12", "E3", "F1", "F2", "F3"
-];
+pub const EPITOPE_CLASSES: [&str; 10] = ["A", "B", "C", "D1", "D2", "E12", "E3", "F1", "F2", "F3"];
 
 /// Natural log of 2 (used in half-life calculations)
 const LN_2: f32 = 0.693147181;
@@ -83,17 +81,26 @@ impl PKParameters {
 
     /// Fast decay scenario (young/healthy immune response)
     pub fn fast() -> Self {
-        Self { t_half: 25.0, t_max: 14.0 }
+        Self {
+            t_half: 25.0,
+            t_max: 14.0,
+        }
     }
 
     /// Medium decay scenario (default population average)
     pub fn medium() -> Self {
-        Self { t_half: 47.0, t_max: 21.0 }
+        Self {
+            t_half: 47.0,
+            t_max: 21.0,
+        }
     }
 
     /// Slow decay scenario (older adults, certain conditions)
     pub fn slow() -> Self {
-        Self { t_half: 69.0, t_max: 28.0 }
+        Self {
+            t_half: 69.0,
+            t_max: 28.0,
+        }
     }
 
     /// Compute decay constant (lambda = ln(2) / t_half)
@@ -132,18 +139,21 @@ pub struct PKParametersFile {
 impl PKParametersFile {
     /// Load PK parameters from JSON file
     pub fn load(path: &Path) -> Result<Self> {
-        let file = File::open(path)
-            .context(format!("Failed to open PK parameters file: {:?}", path))?;
+        let file =
+            File::open(path).context(format!("Failed to open PK parameters file: {:?}", path))?;
         let reader = BufReader::new(file);
-        let params: PKParametersFile = serde_json::from_reader(reader)
-            .context("Failed to parse PK parameters JSON")?;
+        let params: PKParametersFile =
+            serde_json::from_reader(reader).context("Failed to parse PK parameters JSON")?;
 
         if params.pk_combinations.is_empty() {
             bail!("PK parameters file contains no combinations");
         }
 
-        info!("Loaded {} PK parameter combinations from {:?}",
-              params.pk_combinations.len(), path);
+        info!(
+            "Loaded {} PK parameter combinations from {:?}",
+            params.pk_combinations.len(),
+            path
+        );
 
         Ok(params)
     }
@@ -183,7 +193,9 @@ impl EpitopeImmunity {
 
     /// Create with uniform immunity across all epitopes
     pub fn uniform(level: f32) -> Self {
-        Self { levels: [level.clamp(0.0, 1.0); 10] }
+        Self {
+            levels: [level.clamp(0.0, 1.0); 10],
+        }
     }
 
     /// Create from array
@@ -193,7 +205,8 @@ impl EpitopeImmunity {
 
     /// Get immunity for specific epitope by name
     pub fn get_by_name(&self, epitope: &str) -> Option<f32> {
-        EPITOPE_CLASSES.iter()
+        EPITOPE_CLASSES
+            .iter()
             .position(|&e| e == epitope)
             .map(|idx| self.levels[idx])
     }
@@ -216,7 +229,8 @@ impl EpitopeImmunity {
     /// Compute weighted fold reduction given escape scores
     /// fold_reduction = exp(sum(escape[i] * immunity[i]))
     pub fn compute_fold_reduction(&self, escape_scores: &[f32; 10]) -> f32 {
-        let sum: f32 = escape_scores.iter()
+        let sum: f32 = escape_scores
+            .iter()
             .zip(self.levels.iter())
             .map(|(&escape, &immunity)| escape * immunity)
             .sum();
@@ -244,11 +258,11 @@ pub struct CrossReactivityMatrix {
 impl CrossReactivityMatrix {
     /// Load from cross_immunity_per_variant.json
     pub fn load(path: &Path) -> Result<Self> {
-        let file = File::open(path)
-            .context(format!("Failed to open cross-immunity file: {:?}", path))?;
+        let file =
+            File::open(path).context(format!("Failed to open cross-immunity file: {:?}", path))?;
         let reader = BufReader::new(file);
-        let data: serde_json::Value = serde_json::from_reader(reader)
-            .context("Failed to parse cross-immunity JSON")?;
+        let data: serde_json::Value =
+            serde_json::from_reader(reader).context("Failed to parse cross-immunity JSON")?;
 
         // Load variant cross-immunity map
         let variant_cross_immunity = data["variant_cross_immunity"]
@@ -256,7 +270,8 @@ impl CrossReactivityMatrix {
             .context("Missing variant_cross_immunity")?;
 
         // Extract variant names
-        let variant_names: Vec<String> = variant_cross_immunity.keys()
+        let variant_names: Vec<String> = variant_cross_immunity
+            .keys()
             .map(|k| k.to_string())
             .collect();
 
@@ -271,13 +286,13 @@ impl CrossReactivityMatrix {
                     // Normalize large fold-reduction values to [0, 2] range
                     // Values > 100 indicate very weak cross-immunity
                     let normalized = if cross_val > 100.0 {
-                        0.1  // Weak cross-protection
+                        0.1 // Weak cross-protection
                     } else if cross_val > 10.0 {
-                        0.5  // Moderate
+                        0.5 // Moderate
                     } else if cross_val > 2.0 {
-                        0.8  // Good
+                        0.8 // Good
                     } else {
-                        1.0  // Strong (diagonal = 1.0)
+                        1.0 // Strong (diagonal = 1.0)
                     };
                     epitope_map.insert(variant.clone(), normalized as f32);
                 }
@@ -286,8 +301,11 @@ impl CrossReactivityMatrix {
             matrices.insert(epitope.to_string(), epitope_map);
         }
 
-        info!("Loaded cross-immunity for {} variants, {} epitopes",
-              variant_names.len(), matrices.len());
+        info!(
+            "Loaded cross-immunity for {} variants, {} epitopes",
+            variant_names.len(),
+            matrices.len()
+        );
 
         Ok(Self {
             variant_names,
@@ -310,13 +328,15 @@ impl CrossReactivityMatrix {
 
             // XBB family
             if (lin.starts_with("XBB") || lin.starts_with("EG.") || lin.starts_with("HK."))
-                && (var.starts_with("XBB") || var.starts_with("EG.")) {
+                && (var.starts_with("XBB") || var.starts_with("EG."))
+            {
                 return Some(idx);
             }
 
             // BA.5 family
             if (lin.starts_with("BA.5") || lin.starts_with("BA.4") || lin.starts_with("BQ."))
-                && (var.starts_with("BA.5") || var.starts_with("BA.4") || var.starts_with("BQ.")) {
+                && (var.starts_with("BA.5") || var.starts_with("BA.4") || var.starts_with("BQ."))
+            {
                 return Some(idx);
             }
 
@@ -327,7 +347,8 @@ impl CrossReactivityMatrix {
 
             // BA.1 family
             if (lin.starts_with("BA.1") || lin.starts_with("B.1.1.529"))
-                && (var.starts_with("BA.1") || var.starts_with("B.1.1.529")) {
+                && (var.starts_with("BA.1") || var.starts_with("B.1.1.529"))
+            {
                 return Some(idx);
             }
 
@@ -351,7 +372,7 @@ impl CrossReactivityMatrix {
         // Get epitope-specific matrix
         let epitope_matrix = match self.matrices.get(epitope) {
             Some(m) => m,
-            None => return 1.0,  // No data, assume full immunity
+            None => return 1.0, // No data, assume full immunity
         };
 
         // Lookup cross-immunity for this lineage
@@ -546,23 +567,35 @@ impl ImmunityDynamics {
         let pk_params = pk_file_data.pk_combinations;
         let median_idx = pk_params.len() / 2;
 
-        info!("Loaded {} PK parameter combinations, selected median index {}",
-              pk_params.len(), median_idx);
+        info!(
+            "Loaded {} PK parameter combinations, selected median index {}",
+            pk_params.len(),
+            median_idx
+        );
 
         // Try to load cross-immunity matrix (per-variant format)
         let cross_react_file = if data_dir.join("cross_immunity_per_variant.json").exists() {
             Some(data_dir.join("cross_immunity_per_variant.json"))
-        } else if data_dir.join("data/cross_immunity_per_variant.json").exists() {
+        } else if data_dir
+            .join("data/cross_immunity_per_variant.json")
+            .exists()
+        {
             Some(data_dir.join("data/cross_immunity_per_variant.json"))
-        } else if data_dir.join("../../data/cross_immunity_per_variant.json").exists() {
+        } else if data_dir
+            .join("../../data/cross_immunity_per_variant.json")
+            .exists()
+        {
             Some(data_dir.join("../../data/cross_immunity_per_variant.json"))
         } else {
             let fallback = Path::new("data/cross_immunity_per_variant.json");
-            if fallback.exists() { Some(fallback.to_path_buf()) } else { None }
+            if fallback.exists() {
+                Some(fallback.to_path_buf())
+            } else {
+                None
+            }
         };
 
-        let cross_reactivity = cross_react_file
-            .and_then(|p| CrossReactivityMatrix::load(&p).ok());
+        let cross_reactivity = cross_react_file.and_then(|p| CrossReactivityMatrix::load(&p).ok());
 
         Ok(Self {
             pk_params,
@@ -603,10 +636,15 @@ impl ImmunityDynamics {
             self.selected_pk_idx = idx;
             // Update all epitope indices to match
             self.epitope_pk_indices = [idx; 10];
-            info!("Selected PK params index {}: t_half={:.1}, t_max={:.1}",
-                  idx, self.pk_params[idx].t_half, self.pk_params[idx].t_max);
+            info!(
+                "Selected PK params index {}: t_half={:.1}, t_max={:.1}",
+                idx, self.pk_params[idx].t_half, self.pk_params[idx].t_max
+            );
         } else {
-            warn!("Invalid PK index {}, keeping current {}", idx, self.selected_pk_idx);
+            warn!(
+                "Invalid PK index {}, keeping current {}",
+                idx, self.selected_pk_idx
+            );
         }
     }
 
@@ -686,7 +724,8 @@ impl ImmunityDynamics {
             let base_immunity = self.compute_epitope_immunity(t, pk);
 
             // Apply cross-reactivity modulation if available
-            let cross_immunity_factor = self.cross_reactivity
+            let cross_immunity_factor = self
+                .cross_reactivity
                 .as_ref()
                 .map(|cr| cr.get_cross_immunity(lineage, i))
                 .unwrap_or(1.0);
@@ -719,18 +758,22 @@ impl ImmunityDynamics {
     ) -> Vec<EpitopeImmunity> {
         let t = days_since_outbreak as f32;
 
-        self.pk_params.iter().map(|pk| {
-            let mut immunity = EpitopeImmunity::new();
-            for i in 0..10 {
-                let base_immunity = self.compute_epitope_immunity(t, pk);
-                let cross_factor = self.cross_reactivity
-                    .as_ref()
-                    .map(|cr| cr.get_cross_immunity(lineage, i))
-                    .unwrap_or(1.0);
-                immunity.levels[i] = (base_immunity * cross_factor).clamp(0.0, 1.0);
-            }
-            immunity
-        }).collect()
+        self.pk_params
+            .iter()
+            .map(|pk| {
+                let mut immunity = EpitopeImmunity::new();
+                for i in 0..10 {
+                    let base_immunity = self.compute_epitope_immunity(t, pk);
+                    let cross_factor = self
+                        .cross_reactivity
+                        .as_ref()
+                        .map(|cr| cr.get_cross_immunity(lineage, i))
+                        .unwrap_or(1.0);
+                    immunity.levels[i] = (base_immunity * cross_factor).clamp(0.0, 1.0);
+                }
+                immunity
+            })
+            .collect()
     }
 
     /// Batch compute immunity for multiple samples
@@ -743,14 +786,10 @@ impl ImmunityDynamics {
     ///
     /// # Returns
     /// Vector of EpitopeImmunity values, one per sample
-    pub fn compute_immunity_batch(
-        &self,
-        samples: &[(&str, &str, i32)],
-    ) -> Vec<EpitopeImmunity> {
-        samples.iter()
-            .map(|(country, lineage, days)| {
-                self.compute_immunity(country, lineage, *days)
-            })
+    pub fn compute_immunity_batch(&self, samples: &[(&str, &str, i32)]) -> Vec<EpitopeImmunity> {
+        samples
+            .iter()
+            .map(|(country, lineage, days)| self.compute_immunity(country, lineage, *days))
             .collect()
     }
 
@@ -845,7 +884,9 @@ impl ImmunityTrajectory {
     /// Get immunity at specific day (interpolates if needed)
     pub fn get_immunity_at(&self, day: i32) -> Option<EpitopeImmunity> {
         // Find closest day
-        let idx = self.days.iter()
+        let idx = self
+            .days
+            .iter()
             .enumerate()
             .min_by_key(|(_, &d)| (d - day).abs())
             .map(|(i, _)| i)?;
@@ -868,8 +909,12 @@ pub fn estimate_days_since_outbreak(country: &str, date: &NaiveDate) -> i32 {
 pub fn lineage_to_family(lineage: &str) -> &'static str {
     let lin = lineage.to_uppercase();
 
-    if lin.starts_with("XBB") || lin.starts_with("EG.") || lin.starts_with("HK.")
-        || lin.starts_with("JN.") || lin.starts_with("FL.") {
+    if lin.starts_with("XBB")
+        || lin.starts_with("EG.")
+        || lin.starts_with("HK.")
+        || lin.starts_with("JN.")
+        || lin.starts_with("FL.")
+    {
         "XBB"
     } else if lin.starts_with("BQ.") || lin.starts_with("BE.") || lin.starts_with("BF.") {
         "BQ.1"
@@ -960,8 +1005,12 @@ mod tests {
 
         // Should be approximately 0.5 (within tolerance due to floor)
         let expected = 0.5;
-        assert!((imm_half.mean() - expected).abs() < 0.2,
-            "Expected ~{}, got {}", expected, imm_half.mean());
+        assert!(
+            (imm_half.mean() - expected).abs() < 0.2,
+            "Expected ~{}, got {}",
+            expected,
+            imm_half.mean()
+        );
     }
 
     #[test]
@@ -1053,21 +1102,16 @@ mod tests {
     fn test_immunity_trajectory() {
         let dynamics = ImmunityDynamics::new();
 
-        let trajectory = ImmunityTrajectory::compute(
-            &dynamics,
-            "Germany",
-            "Delta",
-            0,
-            100,
-            10,
-        );
+        let trajectory = ImmunityTrajectory::compute(&dynamics, "Germany", "Delta", 0, 100, 10);
 
         assert_eq!(trajectory.days.len(), 11); // 0, 10, 20, ..., 100
         assert_eq!(trajectory.immunity.len(), 11);
         assert_eq!(trajectory.mean_immunity.len(), 11);
 
         // Immunity should peak and then decay
-        let max_idx = trajectory.mean_immunity.iter()
+        let max_idx = trajectory
+            .mean_immunity
+            .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
             .map(|(i, _)| i)

@@ -29,7 +29,9 @@
 use nalgebra::{DMatrix, SymmetricEigen};
 
 use crate::gnm::{GaussianNetworkModel, GnmResult};
-use crate::secondary_structure::{SecondaryStructure, SecondaryStructureAnalyzer, SecondaryStructureSummary};
+use crate::secondary_structure::{
+    SecondaryStructure, SecondaryStructureAnalyzer, SecondaryStructureSummary,
+};
 use crate::sidechain_analysis::SidechainAnalyzer;
 use crate::tertiary_analysis::{TertiaryAnalyzer, TertiarySummary};
 
@@ -102,13 +104,13 @@ impl Default for EnhancedGnmConfig {
         // - Sidechain factors: -0.090 ❌
         Self {
             use_distance_weighting: true,
-            distance_sigma: 5.0, // Gaussian width for distance weighting
-            use_multi_cutoff: false,  // DISABLED: interferes with distance weighting
+            distance_sigma: 5.0,     // Gaussian width for distance weighting
+            use_multi_cutoff: false, // DISABLED: interferes with distance weighting
             ensemble_cutoffs: vec![6.0, 7.0, 8.0, 10.0],
             ensemble_weights: vec![0.15, 0.35, 0.35, 0.15],
-            use_secondary_structure: false,  // DISABLED: hurts accuracy by -0.08
-            use_sidechain_factors: false,    // DISABLED: hurts accuracy by -0.09
-            use_sasa_modulation: false,      // DISABLED: neutral but adds noise
+            use_secondary_structure: false, // DISABLED: hurts accuracy by -0.08
+            use_sidechain_factors: false,   // DISABLED: hurts accuracy by -0.09
+            use_sasa_modulation: false,     // DISABLED: neutral but adds noise
             use_long_range_contacts: false,
             detect_domains: false,
             n_domains: 2,
@@ -148,8 +150,8 @@ impl EnhancedGnmConfig {
         Self {
             use_distance_weighting: true,
             use_multi_cutoff: true,
-            use_secondary_structure: true,  // WARNING: -0.08 accuracy
-            use_sidechain_factors: true,    // WARNING: -0.09 accuracy
+            use_secondary_structure: true, // WARNING: -0.08 accuracy
+            use_sidechain_factors: true,   // WARNING: -0.09 accuracy
             use_sasa_modulation: true,
             use_long_range_contacts: true,
             detect_domains: true,
@@ -161,7 +163,7 @@ impl EnhancedGnmConfig {
     /// Optimized config based on ablation study
     /// Uses only enhancements that improve accuracy
     pub fn optimized() -> Self {
-        Self::default()  // Default is now optimized
+        Self::default() // Default is now optimized
     }
 
     /// Create config with NO enhancements (plain GNM baseline)
@@ -503,7 +505,11 @@ impl EnhancedGnm {
             }
 
             // Use coordination from largest cutoff
-            if *cutoff == *cutoffs.iter().max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(&10.0)
+            if *cutoff
+                == *cutoffs
+                    .iter()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .unwrap_or(&10.0)
             {
                 coordination = result.coordination;
             }
@@ -516,7 +522,11 @@ impl EnhancedGnm {
 
     /// Compute RMSF from Kirchhoff matrix
     /// Uses Lanczos algorithm for large matrices (> 500 residues) to avoid O(n³) full eigendecomposition
-    fn compute_rmsf_from_kirchhoff(&self, kirchhoff: &DMatrix<f64>, n: usize) -> (Vec<f64>, Vec<f64>) {
+    fn compute_rmsf_from_kirchhoff(
+        &self,
+        kirchhoff: &DMatrix<f64>,
+        n: usize,
+    ) -> (Vec<f64>, Vec<f64>) {
         // For large matrices, use Lanczos algorithm (O(k * n * iterations) instead of O(n³))
         if n > 500 {
             return self.compute_rmsf_lanczos(kirchhoff, n);
@@ -557,10 +567,7 @@ impl EnhancedGnm {
             }
         }
 
-        let rmsf: Vec<f64> = rmsf_sq
-            .iter()
-            .map(|&sq| (scale * sq).sqrt())
-            .collect();
+        let rmsf: Vec<f64> = rmsf_sq.iter().map(|&sq| (scale * sq).sqrt()).collect();
 
         // Normalize
         let mean: f64 = rmsf.iter().sum::<f64>() / n as f64;
@@ -692,7 +699,11 @@ impl EnhancedGnm {
 
         let rmsf_scaled: Vec<f64> = rmsf.iter().map(|&r| r * scale_factor).collect();
 
-        log::debug!("Lanczos: computed {} modes for {} residues", valid_eigenvalues.len(), n);
+        log::debug!(
+            "Lanczos: computed {} modes for {} residues",
+            valid_eigenvalues.len(),
+            n
+        );
 
         (rmsf_scaled, valid_eigenvalues)
     }
@@ -774,15 +785,24 @@ pub fn ablation_study(
 
     // Distance-weighted only
     let gnm_dist = EnhancedGnm::with_config(EnhancedGnmConfig::distance_weighted_only());
-    results.push(("distance_weighted", gnm_dist.compute_rmsf(ca_positions, None).rmsf));
+    results.push((
+        "distance_weighted",
+        gnm_dist.compute_rmsf(ca_positions, None).rmsf,
+    ));
 
     // Multi-cutoff only
     let gnm_multi = EnhancedGnm::with_config(EnhancedGnmConfig::multi_cutoff_only());
-    results.push(("multi_cutoff", gnm_multi.compute_rmsf(ca_positions, None).rmsf));
+    results.push((
+        "multi_cutoff",
+        gnm_multi.compute_rmsf(ca_positions, None).rmsf,
+    ));
 
     // Full enhancements
     let gnm_full = EnhancedGnm::with_config(EnhancedGnmConfig::full_experimental());
-    results.push(("full_enhanced", gnm_full.compute_rmsf(ca_positions, residue_names).rmsf));
+    results.push((
+        "full_enhanced",
+        gnm_full.compute_rmsf(ca_positions, residue_names).rmsf,
+    ));
 
     results
 }
@@ -796,11 +816,7 @@ mod tests {
         (0..n)
             .map(|i| {
                 let angle = i as f32 * 100.0 * std::f32::consts::PI / 180.0;
-                [
-                    2.3 * angle.cos(),
-                    2.3 * angle.sin(),
-                    i as f32 * 1.5,
-                ]
+                [2.3 * angle.cos(), 2.3 * angle.sin(), i as f32 * 1.5]
             })
             .collect()
     }
@@ -821,7 +837,9 @@ mod tests {
     #[test]
     fn test_with_residue_names() {
         let positions = generate_test_positions(10);
-        let residue_names: Vec<&str> = vec!["ALA", "GLY", "PRO", "VAL", "LEU", "SER", "ASN", "PHE", "TRP", "LYS"];
+        let residue_names: Vec<&str> = vec![
+            "ALA", "GLY", "PRO", "VAL", "LEU", "SER", "ASN", "PHE", "TRP", "LYS",
+        ];
 
         let gnm = EnhancedGnm::default();
         let result = gnm.compute_rmsf(&positions, Some(&residue_names));
@@ -850,8 +868,16 @@ mod tests {
         let correlation = EnhancedGnm::correlation(&base_result.rmsf, &weighted_result.rmsf);
 
         // High correlation but not perfect (enhancements change predictions)
-        assert!(correlation > 0.8, "Correlation {} should be high", correlation);
-        assert!(correlation < 0.999, "Correlation {} should not be perfect", correlation);
+        assert!(
+            correlation > 0.8,
+            "Correlation {} should be high",
+            correlation
+        );
+        assert!(
+            correlation < 0.999,
+            "Correlation {} should not be perfect",
+            correlation
+        );
     }
 
     #[test]
@@ -866,7 +892,11 @@ mod tests {
 
         // Check RMSF values are reasonable
         let mean_rmsf: f64 = result.rmsf.iter().sum::<f64>() / result.rmsf.len() as f64;
-        assert!(mean_rmsf > 0.1 && mean_rmsf < 2.0, "Mean RMSF {} should be reasonable", mean_rmsf);
+        assert!(
+            mean_rmsf > 0.1 && mean_rmsf < 2.0,
+            "Mean RMSF {} should be reasonable",
+            mean_rmsf
+        );
     }
 
     #[test]
@@ -886,7 +916,10 @@ mod tests {
         let result = gnm.compute_rmsf(&positions, Some(&residue_names));
 
         // All enhancements should be applied
-        assert!(result.applied_enhancements.distance_weighting || result.applied_enhancements.multi_cutoff);
+        assert!(
+            result.applied_enhancements.distance_weighting
+                || result.applied_enhancements.multi_cutoff
+        );
         assert!(result.applied_enhancements.secondary_structure);
         assert!(result.applied_enhancements.sidechain_factors);
         assert!(result.applied_enhancements.sasa_modulation);

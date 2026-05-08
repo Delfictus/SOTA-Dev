@@ -437,16 +437,25 @@ impl OnnxGnn {
         let onnx_runtime = if model_loaded {
             match crate::onnx_runtime::OnnxGnnRuntime::load(&model_path_str) {
                 Ok(runtime) => {
-                    log::info!("OnnxGnn: ONNX Runtime loaded successfully, GPU={}", runtime.is_gpu_enabled());
+                    log::info!(
+                        "OnnxGnn: ONNX Runtime loaded successfully, GPU={}",
+                        runtime.is_gpu_enabled()
+                    );
                     Some(runtime)
                 }
                 Err(e) => {
-                    log::warn!("OnnxGnn: Failed to load ONNX Runtime: {}. Using fallback.", e);
+                    log::warn!(
+                        "OnnxGnn: Failed to load ONNX Runtime: {}. Using fallback.",
+                        e
+                    );
                     None
                 }
             }
         } else {
-            log::warn!("OnnxGnn: Model file not found: {} (using fallback)", model_path_str);
+            log::warn!(
+                "OnnxGnn: Model file not found: {} (using fallback)",
+                model_path_str
+            );
             None
         };
 
@@ -472,7 +481,8 @@ impl OnnxGnn {
             log::info!("OnnxGnn: Using ONNX Runtime for inference");
 
             // Get embeddings from ONNX Runtime
-            let node_embeddings_map = runtime.predict_graph(graph)
+            let node_embeddings_map = runtime
+                .predict_graph(graph)
                 .context("ONNX Runtime inference failed")?;
 
             // Convert to expected format and compute additional features

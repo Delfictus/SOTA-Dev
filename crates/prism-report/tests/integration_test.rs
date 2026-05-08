@@ -2,7 +2,7 @@
 //!
 //! Verifies the output contract is satisfied using FinalizeStage with events.jsonl.
 
-use prism_report::config::{ReportConfig, OutputFormats};
+use prism_report::config::{OutputFormats, ReportConfig};
 use prism_report::event_cloud::{AblationPhase, EventWriter, PocketEvent, TempPhase};
 use prism_report::finalize::FinalizeStage;
 use std::path::PathBuf;
@@ -20,7 +20,11 @@ fn create_test_events() -> Vec<PocketEvent> {
     let base_xyz = [10.0, 15.0, 20.0];
 
     // Create dense events for each (phase, replicate_id) combination
-    for phase in [AblationPhase::Baseline, AblationPhase::CryoOnly, AblationPhase::CryoUv] {
+    for phase in [
+        AblationPhase::Baseline,
+        AblationPhase::CryoOnly,
+        AblationPhase::CryoUv,
+    ] {
         for replicate_id in 0..3 {
             // Create 5 consecutive frames (0-4) for each run = 100% persistence
             for frame_idx in 0..5 {
@@ -160,7 +164,8 @@ fn test_output_contract() {
     std::fs::write(
         &test_pdb,
         "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00\nEND\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let config = ReportConfig {
         input_pdb: test_pdb,
@@ -172,7 +177,7 @@ fn test_output_contract() {
             pdf: false, // Skip PDF in tests (requires external tool)
             json: true,
             csv: true,
-            pymol: false, // Skip in tests
+            pymol: false,    // Skip in tests
             chimerax: false, // Skip in tests
             figures: true,
             mrc_volumes: false,
@@ -180,25 +185,53 @@ fn test_output_contract() {
         ..Default::default()
     };
 
-    let stage = FinalizeStage::new_with_topology(config, events_path, topology_path, 42).expect("Failed to create FinalizeStage");
+    let stage = FinalizeStage::new_with_topology(config, events_path, topology_path, 42)
+        .expect("Failed to create FinalizeStage");
     let result = stage.run().expect("FinalizeStage failed");
 
     // Verify required files exist
-    assert!(output_dir.join("report.html").exists(), "report.html missing");
-    assert!(output_dir.join("summary.json").exists(), "summary.json missing");
-    assert!(output_dir.join("correlation.csv").exists(), "correlation.csv missing");
+    assert!(
+        output_dir.join("report.html").exists(),
+        "report.html missing"
+    );
+    assert!(
+        output_dir.join("summary.json").exists(),
+        "summary.json missing"
+    );
+    assert!(
+        output_dir.join("correlation.csv").exists(),
+        "correlation.csv missing"
+    );
 
     // Verify required directories exist
     assert!(output_dir.join("sites").is_dir(), "sites/ missing");
     assert!(output_dir.join("volumes").is_dir(), "volumes/ missing");
-    assert!(output_dir.join("trajectories").is_dir(), "trajectories/ missing");
-    assert!(output_dir.join("provenance").is_dir(), "provenance/ missing");
+    assert!(
+        output_dir.join("trajectories").is_dir(),
+        "trajectories/ missing"
+    );
+    assert!(
+        output_dir.join("provenance").is_dir(),
+        "provenance/ missing"
+    );
 
     // Verify provenance files
-    assert!(output_dir.join("provenance/manifest.json").exists(), "manifest.json missing");
-    assert!(output_dir.join("provenance/versions.json").exists(), "versions.json missing");
-    assert!(output_dir.join("provenance/seeds.json").exists(), "seeds.json missing");
-    assert!(output_dir.join("provenance/params.json").exists(), "params.json missing");
+    assert!(
+        output_dir.join("provenance/manifest.json").exists(),
+        "manifest.json missing"
+    );
+    assert!(
+        output_dir.join("provenance/versions.json").exists(),
+        "versions.json missing"
+    );
+    assert!(
+        output_dir.join("provenance/seeds.json").exists(),
+        "seeds.json missing"
+    );
+    assert!(
+        output_dir.join("provenance/params.json").exists(),
+        "params.json missing"
+    );
 
     // Verify at least one site was detected
     assert!(result.n_sites > 0, "No sites detected");
@@ -216,11 +249,31 @@ fn test_output_contract() {
         let path = site_dir.path();
         let site_id = path.file_name().unwrap().to_str().unwrap();
 
-        assert!(path.join("site.pdb").exists(), "{}/site.pdb missing", site_id);
-        assert!(path.join("site.mol2").exists(), "{}/site.mol2 missing", site_id);
-        assert!(path.join("residues.txt").exists(), "{}/residues.txt missing", site_id);
-        assert!(path.join("correlation.json").exists(), "{}/correlation.json missing", site_id);
-        assert!(path.join("figures").is_dir(), "{}/figures/ missing", site_id);
+        assert!(
+            path.join("site.pdb").exists(),
+            "{}/site.pdb missing",
+            site_id
+        );
+        assert!(
+            path.join("site.mol2").exists(),
+            "{}/site.mol2 missing",
+            site_id
+        );
+        assert!(
+            path.join("residues.txt").exists(),
+            "{}/residues.txt missing",
+            site_id
+        );
+        assert!(
+            path.join("correlation.json").exists(),
+            "{}/correlation.json missing",
+            site_id
+        );
+        assert!(
+            path.join("figures").is_dir(),
+            "{}/figures/ missing",
+            site_id
+        );
     }
 
     println!("Output contract verified successfully!");
@@ -247,7 +300,8 @@ fn test_summary_json_structure() {
     std::fs::write(
         &test_pdb,
         "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00\nEND\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let config = ReportConfig {
         input_pdb: test_pdb,
@@ -265,32 +319,60 @@ fn test_summary_json_structure() {
         ..Default::default()
     };
 
-    let stage = FinalizeStage::new_with_topology(config, events_path, topology_path, 42).expect("Failed to create FinalizeStage");
+    let stage = FinalizeStage::new_with_topology(config, events_path, topology_path, 42)
+        .expect("Failed to create FinalizeStage");
     stage.run().expect("FinalizeStage failed");
 
     // Read and parse summary.json
     let summary_content = std::fs::read_to_string(output_dir.join("summary.json"))
         .expect("Failed to read summary.json");
-    let summary: serde_json::Value = serde_json::from_str(&summary_content)
-        .expect("Failed to parse summary.json");
+    let summary: serde_json::Value =
+        serde_json::from_str(&summary_content).expect("Failed to parse summary.json");
 
     // Verify required fields
     assert!(summary.get("version").is_some(), "Missing version field");
-    assert!(summary.get("timestamp").is_some(), "Missing timestamp field");
+    assert!(
+        summary.get("timestamp").is_some(),
+        "Missing timestamp field"
+    );
     assert!(summary.get("input").is_some(), "Missing input field");
     assert!(summary.get("sites").is_some(), "Missing sites field");
     assert!(summary.get("ablation").is_some(), "Missing ablation field");
-    assert!(summary.get("ranking_weights").is_some(), "Missing ranking_weights field");
-    assert!(summary.get("statistics").is_some(), "Missing statistics field");
+    assert!(
+        summary.get("ranking_weights").is_some(),
+        "Missing ranking_weights field"
+    );
+    assert!(
+        summary.get("statistics").is_some(),
+        "Missing statistics field"
+    );
 
     // Verify ablation structure
     let ablation = summary.get("ablation").unwrap();
-    assert!(ablation.get("baseline_spikes").is_some(), "Missing baseline_spikes");
-    assert!(ablation.get("cryo_only_spikes").is_some(), "Missing cryo_only_spikes");
-    assert!(ablation.get("cryo_uv_spikes").is_some(), "Missing cryo_uv_spikes");
-    assert!(ablation.get("cryo_contrast_significant").is_some(), "Missing cryo_contrast_significant");
-    assert!(ablation.get("uv_response_significant").is_some(), "Missing uv_response_significant");
-    assert!(ablation.get("interpretation").is_some(), "Missing interpretation");
+    assert!(
+        ablation.get("baseline_spikes").is_some(),
+        "Missing baseline_spikes"
+    );
+    assert!(
+        ablation.get("cryo_only_spikes").is_some(),
+        "Missing cryo_only_spikes"
+    );
+    assert!(
+        ablation.get("cryo_uv_spikes").is_some(),
+        "Missing cryo_uv_spikes"
+    );
+    assert!(
+        ablation.get("cryo_contrast_significant").is_some(),
+        "Missing cryo_contrast_significant"
+    );
+    assert!(
+        ablation.get("uv_response_significant").is_some(),
+        "Missing uv_response_significant"
+    );
+    assert!(
+        ablation.get("interpretation").is_some(),
+        "Missing interpretation"
+    );
 
     println!("summary.json structure verified!");
 }
@@ -302,7 +384,10 @@ fn test_ablation_mandatory() {
 
     // Default config should be valid (all modes enabled)
     let default_ablation = AblationConfig::default();
-    assert!(default_ablation.validate().is_ok(), "Default ablation should be valid");
+    assert!(
+        default_ablation.validate().is_ok(),
+        "Default ablation should be valid"
+    );
 
     // Disabled mode should fail validation
     let invalid_ablation = AblationConfig {
@@ -310,7 +395,10 @@ fn test_ablation_mandatory() {
         run_cryo_only: true,
         run_cryo_uv: true,
     };
-    assert!(invalid_ablation.validate().is_err(), "Should reject disabled ablation mode");
+    assert!(
+        invalid_ablation.validate().is_err(),
+        "Should reject disabled ablation mode"
+    );
 }
 
 /// Test correlation CSV format
@@ -332,7 +420,8 @@ fn test_correlation_csv_format() {
     std::fs::write(
         &test_pdb,
         "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00\nEND\n",
-    ).unwrap();
+    )
+    .unwrap();
 
     let config = ReportConfig {
         input_pdb: test_pdb,
@@ -350,7 +439,8 @@ fn test_correlation_csv_format() {
         ..Default::default()
     };
 
-    let stage = FinalizeStage::new_with_topology(config, events_path, topology_path, 42).expect("Failed to create FinalizeStage");
+    let stage = FinalizeStage::new_with_topology(config, events_path, topology_path, 42)
+        .expect("Failed to create FinalizeStage");
     stage.run().expect("FinalizeStage failed");
 
     // Read and verify CSV

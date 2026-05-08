@@ -8,16 +8,16 @@
 //! 2. Applies lineage-specific mutations
 //! 3. Computes features on actual mutated structures
 
-use anyhow::{Result, Context, bail};
+use anyhow::{bail, Context, Result};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use cudarc::driver::CudaContext;
-use prism_gpu::{MegaFusedGpu, MegaFusedConfig, MegaFusedOutput};
+use prism_gpu::{MegaFusedConfig, MegaFusedGpu, MegaFusedOutput};
 
+use crate::data_loader::{DmsEscapeData, LineageMutations};
 use crate::pdb_parser::PdbStructure;
-use crate::data_loader::{LineageMutations, DmsEscapeData};
 
 /// Reference structure cache to avoid re-parsing PDB
 static mut REFERENCE_STRUCTURE: Option<PdbStructure> = None;
@@ -45,13 +45,11 @@ impl FeatureExtractor {
         log::info!("Initializing GPU context...");
 
         // CudaContext::new() already returns Arc<CudaContext>
-        let context = CudaContext::new(0)
-            .context("Failed to initialize CUDA")?;
+        let context = CudaContext::new(0).context("Failed to initialize CUDA")?;
 
         log::info!("Loading mega_fused kernel with fitness+cycle (Stages 7-8)...");
 
-        let gpu = MegaFusedGpu::new(context, ptx_dir)
-            .context("Failed to load mega_fused")?;
+        let gpu = MegaFusedGpu::new(context, ptx_dir).context("Failed to load mega_fused")?;
 
         let config = MegaFusedConfig::default();
 
@@ -71,8 +69,11 @@ impl FeatureExtractor {
         gisaid_freq: f32,
         gisaid_vel: f32,
     ) -> Result<VariantFeatures> {
-
-        log::debug!("Running mega_fused for lineage with freq={:.3}, vel={:.4}", gisaid_freq, gisaid_vel);
+        log::debug!(
+            "Running mega_fused for lineage with freq={:.3}, vel={:.4}",
+            gisaid_freq,
+            gisaid_vel
+        );
 
         // Replicate GISAID data across all residues
         let n_residues = structure.ca_indices.len();
@@ -80,26 +81,33 @@ impl FeatureExtractor {
         let velocities = vec![gisaid_vel; n_residues];
 
         // Call mega_fused with ALL modules enabled
-        let output: MegaFusedOutput = self.gpu.detect_pockets(
-            &structure.atoms,
-            &structure.ca_indices,
-            &structure.conservation,
-            &structure.bfactor,
-            &structure.burial,
-            Some(&structure.residue_types),  // Enable Stage 3.6 (physics)
-            Some(&frequencies),               // Enable Stage 7 (fitness)
-            Some(&velocities),                // Enable Stage 8 (cycle)
-            &self.config,
-        ).context("mega_fused failed")?;
+        let output: MegaFusedOutput = self
+            .gpu
+            .detect_pockets(
+                &structure.atoms,
+                &structure.ca_indices,
+                &structure.conservation,
+                &structure.bfactor,
+                &structure.burial,
+                Some(&structure.residue_types), // Enable Stage 3.6 (physics)
+                Some(&frequencies),             // Enable Stage 7 (fitness)
+                Some(&velocities),              // Enable Stage 8 (cycle)
+                &self.config,
+            )
+            .context("mega_fused failed")?;
 
         // WARNING: Old kernel outputs 101-dim, not 125-dim
         // For 125-dim features, use MegaFusedBatchGpu instead
         let features = &output.combined_features;
 
         // Old kernel outputs 101-dim; fail gracefully if size mismatch
-        let expected_dim = 101;  // Old kernel dimension
+        let expected_dim = 101; // Old kernel dimension
         if features.len() != n_residues * expected_dim && features.len() != n_residues * 125 {
-            bail!("Expected {} features, got {}", n_residues * expected_dim, features.len());
+            bail!(
+                "Expected {} features, got {}",
+                n_residues * expected_dim,
+                features.len()
+            );
         }
 
         // Average features 92-100 and 101-108 across RBD residues (331-531)
@@ -119,14 +127,18 @@ impl FeatureExtractor {
 
         // NOTE: Old kernel outputs 101 features; spike (101-108) and immunity (109-124)
         // indices are OUT OF BOUNDS with old kernel. Use expected_dim for safe access.
-        let stride = if features.len() == n_residues * 125 { 125 } else { expected_dim };
+        let stride = if features.len() == n_residues * 125 {
+            125
+        } else {
+            expected_dim
+        };
         for res_idx in 0..n_residues {
             let feature_offset = res_idx * stride;
 
             // Extract fitness+cycle features
-            let gamma = features[feature_offset + 95];           // Feature 95: gamma (fitness)
-            let phase = features[feature_offset + 96];           // Feature 96: cycle phase
-            let emergence_prob = features[feature_offset + 97];  // Feature 97: emergence probability
+            let gamma = features[feature_offset + 95]; // Feature 95: gamma (fitness)
+            let phase = features[feature_offset + 96]; // Feature 96: cycle phase
+            let emergence_prob = features[feature_offset + 97]; // Feature 97: emergence probability
 
             gamma_sum += gamma;
             emergence_sum += emergence_prob;
@@ -190,9 +202,8 @@ impl FeatureExtractor {
         lineage: &str,
         structure: &VariantStructure,
         gisaid_freq: f32,
-        population_immunity: f32,  // Overall immunity at this date (0-1)
+        population_immunity: f32, // Overall immunity at this date (0-1)
     ) -> Result<String> {
-
         let features = self.extract_features_full(structure, gisaid_freq, 0.0)?;
 
         // Get actual DMS escape score for this lineage
@@ -227,11 +238,11 @@ impl FeatureExtractor {
         let growth_potential = gamma * (1.0 - gisaid_freq).powi(2);
 
         let prediction = if gisaid_freq > 0.35 {
-            "FALL"  // Already dominant
+            "FALL" // Already dominant
         } else if growth_potential > 0.20 {
-            "RISE"  // High growth potential
+            "RISE" // High growth potential
         } else {
-            "FALL"  // Default
+            "FALL" // Default
         };
 
         Ok(prediction.to_string())
@@ -246,7 +257,6 @@ impl FeatureExtractor {
         gisaid_freq: f32,
         _gisaid_vel: f32,
     ) -> Result<String> {
-
         let features = self.extract_features_full(structure, gisaid_freq, 0.0)?;
         let dms_escape = get_lineage_escape_score(lineage);
         let structural_transmit = features.gamma.min(1.0).max(0.0);
@@ -289,14 +299,23 @@ impl FeatureExtractor {
         unsafe {
             ESCAPE_SUM += dms_escape as f64;
             ESCAPE_COUNT += 1;
-            if dms_escape > ESCAPE_MAX { ESCAPE_MAX = dms_escape; }
-            if dms_escape < ESCAPE_MIN && dms_escape > 0.0 { ESCAPE_MIN = dms_escape; }
+            if dms_escape > ESCAPE_MAX {
+                ESCAPE_MAX = dms_escape;
+            }
+            if dms_escape < ESCAPE_MIN && dms_escape > 0.0 {
+                ESCAPE_MIN = dms_escape;
+            }
 
             // Log distribution periodically
             if ESCAPE_COUNT % 1000 == 0 {
                 let avg = ESCAPE_SUM / ESCAPE_COUNT as f64;
-                log::warn!("DMS escape distribution: avg={:.3}, min={:.3}, max={:.3}, n={}",
-                          avg, ESCAPE_MIN, ESCAPE_MAX, ESCAPE_COUNT);
+                log::warn!(
+                    "DMS escape distribution: avg={:.3}, min={:.3}, max={:.3}, n={}",
+                    avg,
+                    ESCAPE_MIN,
+                    ESCAPE_MAX,
+                    ESCAPE_COUNT
+                );
             }
         }
 
@@ -327,7 +346,11 @@ impl FeatureExtractor {
             GP_COUNT += 1;
             if GP_COUNT % 2000 == 0 {
                 let avg = GP_SUM / GP_COUNT as f64;
-                log::warn!("Growth potential: avg={:.4}, gamma_avg={:.4}", avg, ESCAPE_SUM / ESCAPE_COUNT as f64);
+                log::warn!(
+                    "Growth potential: avg={:.4}, gamma_avg={:.4}",
+                    avg,
+                    ESCAPE_SUM / ESCAPE_COUNT as f64
+                );
             }
         }
 
@@ -363,8 +386,14 @@ impl FeatureExtractor {
             "FALL"
         };
 
-        log::info!("GPU Prediction: {} (γ={:.4}, escape={:.3}, transmit={:.3}, freq={:.3})",
-                   prediction, gamma, dms_escape, structural_transmit, gisaid_freq);
+        log::info!(
+            "GPU Prediction: {} (γ={:.4}, escape={:.3}, transmit={:.3}, freq={:.3})",
+            prediction,
+            gamma,
+            dms_escape,
+            structural_transmit,
+            gisaid_freq
+        );
 
         Ok(prediction.to_string())
     }
@@ -373,31 +402,31 @@ impl FeatureExtractor {
 /// Variant structure data (for GPU input)
 #[derive(Debug, Clone)]
 pub struct VariantStructure {
-    pub atoms: Vec<f32>,          // [n_atoms × 3] coordinates
-    pub ca_indices: Vec<i32>,     // [n_residues] CA atom indices
-    pub conservation: Vec<f32>,   // [n_residues]
-    pub bfactor: Vec<f32>,        // [n_residues]
-    pub burial: Vec<f32>,         // [n_residues]
-    pub residue_types: Vec<i32>,  // [n_residues] AA index 0-19
+    pub atoms: Vec<f32>,         // [n_atoms × 3] coordinates
+    pub ca_indices: Vec<i32>,    // [n_residues] CA atom indices
+    pub conservation: Vec<f32>,  // [n_residues]
+    pub bfactor: Vec<f32>,       // [n_residues]
+    pub burial: Vec<f32>,        // [n_residues]
+    pub residue_types: Vec<i32>, // [n_residues] AA index 0-19
 }
 
 /// Extracted features from GPU (features 92-100)
 #[derive(Debug, Clone)]
 pub struct VariantFeatures {
-    pub gamma: f32,                   // Feature 95: Fitness (RISE/FALL predictor)
-    pub emergence_prob: f32,          // Feature 97: P(emerges)
-    pub phase: i32,                   // Feature 96: Cycle phase (0-5)
-    pub all_features_125: Vec<f32>,   // Complete 125-dim for analysis (includes spike + immunity features)
+    pub gamma: f32,                 // Feature 95: Fitness (RISE/FALL predictor)
+    pub emergence_prob: f32,        // Feature 97: P(emerges)
+    pub phase: i32,                 // Feature 96: Cycle phase (0-5)
+    pub all_features_125: Vec<f32>, // Complete 125-dim for analysis (includes spike + immunity features)
 
     // Stage 8.5 Spike features (LIF neuron outputs)
-    pub spike_velocity: f32,          // Feature 101: Velocity-sensitive spike density
-    pub spike_freq: f32,              // Feature 102: Frequency-sensitive spike density
-    pub spike_emergence: f32,         // Feature 103: Emergence-sensitive spike density
-    pub spike_burst_ratio: f32,       // Feature 104: Multi-neuron burst ratio
-    pub spike_phase_coherence: f32,   // Feature 105: Phase-spike alignment
-    pub spike_momentum: f32,          // Feature 106: Cumulative temporal signal
+    pub spike_velocity: f32,  // Feature 101: Velocity-sensitive spike density
+    pub spike_freq: f32,      // Feature 102: Frequency-sensitive spike density
+    pub spike_emergence: f32, // Feature 103: Emergence-sensitive spike density
+    pub spike_burst_ratio: f32, // Feature 104: Multi-neuron burst ratio
+    pub spike_phase_coherence: f32, // Feature 105: Phase-spike alignment
+    pub spike_momentum: f32,  // Feature 106: Cumulative temporal signal
     pub spike_threshold_crossings: f32, // Feature 107: Number of spiking neurons
-    pub spike_refractory: f32,        // Feature 108: Recovery state fraction
+    pub spike_refractory: f32, // Feature 108: Recovery state fraction
 }
 
 /// Path to reference Spike RBD structure
@@ -410,7 +439,7 @@ const SPIKE_CHAIN: char = 'E';
 pub fn init_reference_structure() -> Result<()> {
     unsafe {
         if REFERENCE_STRUCTURE.is_some() {
-            return Ok(());  // Already initialized
+            return Ok(()); // Already initialized
         }
 
         log::info!("Loading reference Spike RBD structure from 6M0J...");
@@ -419,11 +448,15 @@ pub fn init_reference_structure() -> Result<()> {
             .context("Failed to load reference PDB")?;
 
         // Extract Spike chain E (RBD)
-        let spike_rbd = pdb.extract_chain(SPIKE_CHAIN)
+        let spike_rbd = pdb
+            .extract_chain(SPIKE_CHAIN)
             .context("Failed to extract Spike chain E")?;
 
-        log::info!("Reference structure loaded: {} residues, {} atoms",
-                   spike_rbd.n_residues, spike_rbd.n_atoms);
+        log::info!(
+            "Reference structure loaded: {} residues, {} atoms",
+            spike_rbd.n_residues,
+            spike_rbd.n_atoms
+        );
 
         REFERENCE_STRUCTURE = Some(spike_rbd);
         MUTATIONS_CACHE = Some(HashMap::new());
@@ -461,11 +494,26 @@ pub fn init_dms_escape_scores(dms_data: &DmsEscapeData) -> Result<()> {
 
         // Log key escape sites for validation
         log::info!("DMS escape scores initialized (201 sites):");
-        log::info!("  Site 417 (K417N): {:.3}", escape_per_site.get(417 - 331).unwrap_or(&0.0));
-        log::info!("  Site 452 (L452R): {:.3}", escape_per_site.get(452 - 331).unwrap_or(&0.0));
-        log::info!("  Site 478 (T478K): {:.3}", escape_per_site.get(478 - 331).unwrap_or(&0.0));
-        log::info!("  Site 484 (E484K): {:.3}", escape_per_site.get(484 - 331).unwrap_or(&0.0));
-        log::info!("  Site 501 (N501Y): {:.3}", escape_per_site.get(501 - 331).unwrap_or(&0.0));
+        log::info!(
+            "  Site 417 (K417N): {:.3}",
+            escape_per_site.get(417 - 331).unwrap_or(&0.0)
+        );
+        log::info!(
+            "  Site 452 (L452R): {:.3}",
+            escape_per_site.get(452 - 331).unwrap_or(&0.0)
+        );
+        log::info!(
+            "  Site 478 (T478K): {:.3}",
+            escape_per_site.get(478 - 331).unwrap_or(&0.0)
+        );
+        log::info!(
+            "  Site 484 (E484K): {:.3}",
+            escape_per_site.get(484 - 331).unwrap_or(&0.0)
+        );
+        log::info!(
+            "  Site 501 (N501Y): {:.3}",
+            escape_per_site.get(501 - 331).unwrap_or(&0.0)
+        );
 
         DMS_ESCAPE_PER_SITE = Some(escape_per_site);
 
@@ -512,7 +560,7 @@ pub fn get_lineage_escape_score(lineage: &str) -> f32 {
 
             // Parse site number from mutation (e.g., "K417N" -> 417)
             let chars: Vec<char> = mutation.chars().collect();
-            let pos_str: String = chars[1..chars.len()-1].iter().collect();
+            let pos_str: String = chars[1..chars.len() - 1].iter().collect();
             let site: i32 = match pos_str.parse() {
                 Ok(s) => s,
                 Err(_) => continue,
@@ -539,11 +587,19 @@ pub fn init_dms_escape_per_epitope(dms_data: &DmsEscapeData) -> Result<()> {
         let escape_per_epitope = dms_data.compute_mean_escape_per_epitope();
 
         // Log summary
-        log::info!("Initialized per-epitope DMS escape for {} groups", escape_per_epitope.len());
+        log::info!(
+            "Initialized per-epitope DMS escape for {} groups",
+            escape_per_epitope.len()
+        );
         for (epitope, scores) in &escape_per_epitope {
             let max_escape = scores.iter().cloned().fold(0.0f32, f32::max);
             let sum_escape: f32 = scores.iter().sum();
-            log::info!("  {}: max={:.3}, sum={:.1}", epitope, max_escape, sum_escape);
+            log::info!(
+                "  {}: max={:.3}, sum={:.1}",
+                epitope,
+                max_escape,
+                sum_escape
+            );
         }
 
         DMS_ESCAPE_PER_EPITOPE = Some(escape_per_epitope);
@@ -583,7 +639,7 @@ pub fn get_lineage_epitope_escape_scores(lineage: &str) -> [f32; 10] {
                 continue;
             }
             let chars: Vec<char> = mutation.chars().collect();
-            let pos_str: String = chars[1..chars.len()-1].iter().collect();
+            let pos_str: String = chars[1..chars.len() - 1].iter().collect();
             if let Ok(site) = pos_str.parse::<i32>() {
                 if site >= 331 && site <= 531 {
                     mutation_sites.push(site);
@@ -648,29 +704,44 @@ pub fn get_lineage_transmissibility(lineage: &str) -> f32 {
     let lin_upper = lineage.to_uppercase();
 
     // XBB and descendants (most transmissible as of 2023)
-    if lin_upper.starts_with("XBB") || lin_upper.starts_with("EG.")
-        || lin_upper.starts_with("HK.") || lin_upper.starts_with("FY.")
-        || lin_upper.starts_with("JN.") || lin_upper.starts_with("HV.")
-        || lin_upper.starts_with("GK.") || lin_upper.starts_with("FL.") {
+    if lin_upper.starts_with("XBB")
+        || lin_upper.starts_with("EG.")
+        || lin_upper.starts_with("HK.")
+        || lin_upper.starts_with("FY.")
+        || lin_upper.starts_with("JN.")
+        || lin_upper.starts_with("HV.")
+        || lin_upper.starts_with("GK.")
+        || lin_upper.starts_with("FL.")
+    {
         return 1.0;
     }
 
     // BQ.1 and descendants
-    if lin_upper.starts_with("BQ.") || lin_upper.starts_with("BE.")
-        || lin_upper.starts_with("BF.") || lin_upper.starts_with("CH.") {
+    if lin_upper.starts_with("BQ.")
+        || lin_upper.starts_with("BE.")
+        || lin_upper.starts_with("BF.")
+        || lin_upper.starts_with("CH.")
+    {
         return 0.9;
     }
 
     // BA.4/BA.5 and descendants
-    if lin_upper.starts_with("BA.5") || lin_upper.starts_with("BA.4")
-        || lin_upper.starts_with("BZ.") || lin_upper.starts_with("CP.")
-        || lin_upper.starts_with("CQ.") || lin_upper.starts_with("CJ.") {
+    if lin_upper.starts_with("BA.5")
+        || lin_upper.starts_with("BA.4")
+        || lin_upper.starts_with("BZ.")
+        || lin_upper.starts_with("CP.")
+        || lin_upper.starts_with("CQ.")
+        || lin_upper.starts_with("CJ.")
+    {
         return 0.85;
     }
 
     // BA.2 and descendants
-    if lin_upper.starts_with("BA.2") || lin_upper.starts_with("BS.")
-        || lin_upper.starts_with("BR.") || lin_upper.starts_with("CM.") {
+    if lin_upper.starts_with("BA.2")
+        || lin_upper.starts_with("BS.")
+        || lin_upper.starts_with("BR.")
+        || lin_upper.starts_with("CM.")
+    {
         return 0.75;
     }
 

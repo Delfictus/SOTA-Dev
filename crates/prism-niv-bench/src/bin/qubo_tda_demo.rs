@@ -9,13 +9,13 @@
 //! cargo run --bin qubo_tda_demo --release
 
 use anyhow::Result;
-use prism_niv_bench::{
-    structure_types::NivBenchDataset,
-    qubo_tda_integration::{QuboTdaOptimizer, QuboTdaParams},
-    pimc_epitope_optimization::{PimcEpitopeOptimizer, EpitopeOptimizationParams},
-};
 use cudarc::driver::CudaContext;
-use std::{sync::Arc, fs::File, io::BufReader, time::Instant};
+use prism_niv_bench::{
+    pimc_epitope_optimization::{EpitopeOptimizationParams, PimcEpitopeOptimizer},
+    qubo_tda_integration::{QuboTdaOptimizer, QuboTdaParams},
+    structure_types::NivBenchDataset,
+};
+use std::{fs::File, io::BufReader, sync::Arc, time::Instant};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -39,25 +39,23 @@ fn main() -> Result<()> {
 
     // Initialize CUDA context
     println!("🔧 Initializing CUDA context...");
-    let cuda_context = Arc::new(CudaContext::new(0)
-        .map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?);;
+    let cuda_context = Arc::new(
+        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?,
+    );
 
     println!("✅ CUDA initialized: {}", cuda_context.name()?);
 
     // Initialize QUBO-TDA optimizer with validated TDA infrastructure
     println!("🔗 Initializing QUBO-TDA Topology Optimizer...");
     let qubo_params = QuboTdaParams {
-        max_iterations: 500,                        // Fast demo iterations
-        topology_weight: 0.4,                      // Higher topology preservation
-        convergence_threshold: 0.01,               // 1% convergence tolerance
-        binary_encoding_resolution: 8,             // 8 accessibility levels
+        max_iterations: 500,           // Fast demo iterations
+        topology_weight: 0.4,          // Higher topology preservation
+        convergence_threshold: 0.01,   // 1% convergence tolerance
+        binary_encoding_resolution: 8, // 8 accessibility levels
         ..Default::default()
     };
 
-    let qubo_tda_optimizer = QuboTdaOptimizer::new(
-        cuda_context.clone(),
-        qubo_params,
-    )?;
+    let qubo_tda_optimizer = QuboTdaOptimizer::new(cuda_context.clone(), qubo_params)?;
 
     println!("✅ QUBO-TDA Optimizer ready");
     println!();
@@ -65,39 +63,38 @@ fn main() -> Result<()> {
     // Initialize PIMC optimizer for target accessibility generation
     println!("🔬 Initializing PIMC Epitope Optimizer for target generation...");
     let pimc_params = EpitopeOptimizationParams {
-        num_replicas: 32,                          // Fast demo
-        mc_steps: 200,                             // Reduced for speed
+        num_replicas: 32, // Fast demo
+        mc_steps: 200,    // Reduced for speed
         ..Default::default()
     };
 
-    let mut pimc_optimizer = PimcEpitopeOptimizer::new(
-        cuda_context.clone(),
-        pimc_params,
-    )?;
+    let mut pimc_optimizer = PimcEpitopeOptimizer::new(cuda_context.clone(), pimc_params)?;
 
     println!("✅ PIMC Optimizer ready");
     println!();
 
     // Process first structure as demo
     let demo_structure = &dataset.structures[0];
-    println!("🧬 Demo structure: {} ({} residues)", demo_structure.pdb_id, demo_structure.residues.len());
+    println!(
+        "🧬 Demo structure: {} ({} residues)",
+        demo_structure.pdb_id,
+        demo_structure.residues.len()
+    );
 
     // Step 1: Get PIMC epitope landscape for target accessibility
     println!("📊 Step 1: Generating PIMC epitope landscape...");
-    let known_epitopes: Vec<Vec<usize>> = dataset.epitopes
+    let known_epitopes: Vec<Vec<usize>> = dataset
+        .epitopes
         .get(&demo_structure.pdb_id)
         .map(|epitopes| {
-            epitopes.iter()
+            epitopes
+                .iter()
                 .map(|e| e.interface_residues.iter().map(|&r| r as usize).collect())
                 .collect()
         })
         .unwrap_or_default();
 
-    let antibody_contacts: Vec<usize> = known_epitopes
-        .iter()
-        .flatten()
-        .cloned()
-        .collect();
+    let antibody_contacts: Vec<usize> = known_epitopes.iter().flatten().cloned().collect();
 
     let pimc_results = pimc_optimizer.optimize_epitope_landscape(
         demo_structure,
@@ -105,7 +102,10 @@ fn main() -> Result<()> {
         &antibody_contacts,
     )?;
 
-    println!("   ✅ PIMC completed: {} cryptic sites discovered", pimc_results.cryptic_sites.len());
+    println!(
+        "   ✅ PIMC completed: {} cryptic sites discovered",
+        pimc_results.cryptic_sites.len()
+    );
 
     // Step 2: QUBO-TDA topology-constrained optimization
     println!("🔗 Step 2: QUBO-TDA topology-constrained optimization...");
@@ -125,29 +125,55 @@ fn main() -> Result<()> {
     println!("🎯 PHASE 2.2 DEMO RESULTS");
     println!("========================");
     println!("Structure: {}", demo_structure.pdb_id);
-    println!("Optimization time: {:.1}ms", qubo_tda_results.optimization_time_ms);
+    println!(
+        "Optimization time: {:.1}ms",
+        qubo_tda_results.optimization_time_ms
+    );
 
     if qubo_tda_results.optimization_time_ms <= 200.0 {
-        println!("🎯 PERFORMANCE TARGET MET: {:.1}ms <= 200ms", qubo_tda_results.optimization_time_ms);
+        println!(
+            "🎯 PERFORMANCE TARGET MET: {:.1}ms <= 200ms",
+            qubo_tda_results.optimization_time_ms
+        );
     } else {
-        println!("⚠️  Performance: {:.1}ms > 200ms target", qubo_tda_results.optimization_time_ms);
+        println!(
+            "⚠️  Performance: {:.1}ms > 200ms target",
+            qubo_tda_results.optimization_time_ms
+        );
     }
 
     println!();
     println!("📊 Topological Features:");
-    println!("   Betti numbers: β₀={}, β₁={}, β₂={}",
-            qubo_tda_results.topological_features.betti_0,
-            qubo_tda_results.topological_features.betti_1,
-            qubo_tda_results.topological_features.betti_2);
-    println!("   Critical points: {}", qubo_tda_results.topological_features.critical_points.len());
+    println!(
+        "   Betti numbers: β₀={}, β₁={}, β₂={}",
+        qubo_tda_results.topological_features.betti_0,
+        qubo_tda_results.topological_features.betti_1,
+        qubo_tda_results.topological_features.betti_2
+    );
+    println!(
+        "   Critical points: {}",
+        qubo_tda_results.topological_features.critical_points.len()
+    );
 
     println!();
     println!("🔗 QUBO Optimization:");
     println!("   Converged: {}", qubo_tda_results.convergence_achieved);
-    println!("   Iterations: {}", qubo_tda_results.qubo_solution.iterations_to_convergence);
-    println!("   Objective value: {:.4}", qubo_tda_results.qubo_solution.objective_value);
-    println!("   Accessibility term: {:.4}", qubo_tda_results.qubo_solution.accessibility_term);
-    println!("   Topology penalty: {:.4}", qubo_tda_results.qubo_solution.topology_penalty);
+    println!(
+        "   Iterations: {}",
+        qubo_tda_results.qubo_solution.iterations_to_convergence
+    );
+    println!(
+        "   Objective value: {:.4}",
+        qubo_tda_results.qubo_solution.objective_value
+    );
+    println!(
+        "   Accessibility term: {:.4}",
+        qubo_tda_results.qubo_solution.accessibility_term
+    );
+    println!(
+        "   Topology penalty: {:.4}",
+        qubo_tda_results.qubo_solution.topology_penalty
+    );
 
     println!();
     println!("🚨 Constraint Violations:");
@@ -157,7 +183,10 @@ fn main() -> Result<()> {
         for (i, violation) in qubo_tda_results.constraint_violations.iter().enumerate() {
             println!("   Violation {}: {:?}", i + 1, violation.constraint_type);
             println!("      Magnitude: {:.3}", violation.violation_magnitude);
-            println!("      Affected residues: {}", violation.affected_residues.len());
+            println!(
+                "      Affected residues: {}",
+                violation.affected_residues.len()
+            );
             println!("      Penalty: {:.3}", violation.penalty_applied);
         }
     }

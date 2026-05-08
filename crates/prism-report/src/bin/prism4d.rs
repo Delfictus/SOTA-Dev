@@ -126,11 +126,15 @@ impl SeedConfig {
 use cudarc::driver::CudaContext;
 #[cfg(feature = "gpu")]
 use prism_nhs::{
-    fused_engine::{NhsAmberFusedEngine, TemperatureProtocol as NhsTemperatureProtocol, UvProbeConfig},
+    fused_engine::{
+        NhsAmberFusedEngine, TemperatureProtocol as NhsTemperatureProtocol, UvProbeConfig,
+    },
     input::PrismPrepTopology,
 };
 #[cfg(feature = "gpu")]
-use prism_report::event_cloud::{AblationPhase, EventWriter, PocketEvent, RawSpikeEvent, TempPhase};
+use prism_report::event_cloud::{
+    AblationPhase, EventWriter, PocketEvent, RawSpikeEvent, TempPhase,
+};
 use std::io::Write;
 
 /// PRISM4D: Phase Resonance Integrated Solver Machine for Molecular Dynamics
@@ -180,7 +184,6 @@ struct FinalizeArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // SEED MANAGEMENT (Deterministic Reproducibility)
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Master seed for deterministic operations
     #[arg(long, default_value = "42")]
     seed: u64,
@@ -196,7 +199,6 @@ struct FinalizeArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // DISTANCE FILTERING
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Initial (tight) filter distance from protein atoms (Å)
     #[arg(long, default_value = "8.0")]
     filter_initial_dist: f32,
@@ -208,7 +210,6 @@ struct FinalizeArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // CLUSTER DETECTION TUNING
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Minimum events per cluster (DBSCAN min_samples)
     #[arg(long, default_value = "100")]
     cluster_min_events: usize,
@@ -232,7 +233,6 @@ struct FinalizeArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // SITE ACCEPTANCE CRITERIA
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Minimum site persistence (fraction of frames, 0.0-1.0)
     #[arg(long, default_value = "0.002")]
     min_persistence: f32,
@@ -260,7 +260,6 @@ struct FinalizeArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // BENCHMARK VALIDATION (Tier1/Tier2 Correlation)
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Holo structure PDB for Tier 1 correlation (distance to ligand)
     #[arg(long)]
     holo: Option<PathBuf>,
@@ -376,7 +375,6 @@ struct RunArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // SNAPSHOT TRIGGERS
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Delta SASA threshold to trigger activity-based snapshot (Ų)
     #[arg(long, default_value = "50.0")]
     snapshot_sasa_threshold: f32,
@@ -396,7 +394,6 @@ struct RunArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // DUAL-STAGE DISTANCE FILTERING
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Initial (tight) filter distance from protein atoms (Å).
     /// Events beyond this distance are flagged for secondary review.
     #[arg(long, default_value = "8.0")]
@@ -410,7 +407,6 @@ struct RunArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // CLUSTER DETECTION TUNING
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Minimum events per cluster (DBSCAN min_samples)
     #[arg(long, default_value = "100")]
     cluster_min_events: usize,
@@ -434,7 +430,6 @@ struct RunArgs {
     // ═══════════════════════════════════════════════════════════════════════
     // SITE ACCEPTANCE CRITERIA
     // ═══════════════════════════════════════════════════════════════════════
-
     /// Minimum site persistence (fraction of frames, 0.0-1.0)
     #[arg(long, default_value = "0.002")]
     min_persistence: f32,
@@ -554,31 +549,46 @@ fn validate_events_file(events_path: &PathBuf) -> Result<usize> {
 
     let mut event_count = 0;
     for (line_num, line_result) in reader.lines().enumerate() {
-        let line = line_result
-            .with_context(|| format!("Failed to read line {} of {}", line_num + 1, events_path.display()))?;
+        let line = line_result.with_context(|| {
+            format!(
+                "Failed to read line {} of {}",
+                line_num + 1,
+                events_path.display()
+            )
+        })?;
 
         if line.trim().is_empty() {
             continue;
         }
 
-        let json: serde_json::Value = serde_json::from_str(&line)
-            .with_context(|| format!(
+        let json: serde_json::Value = serde_json::from_str(&line).with_context(|| {
+            format!(
                 "FATAL: Invalid JSON on line {} of {}\n\
                  Line content: {}\n\
                  events.jsonl must contain valid JSONL (one JSON object per line)",
-                line_num + 1, events_path.display(), line
-            ))?;
+                line_num + 1,
+                events_path.display(),
+                line
+            )
+        })?;
 
         // Validate required fields on first event
         if event_count == 0 {
-            let required_fields = ["center_xyz", "volume_a3", "phase", "replicate_id", "frame_idx"];
+            let required_fields = [
+                "center_xyz",
+                "volume_a3",
+                "phase",
+                "replicate_id",
+                "frame_idx",
+            ];
             for field in &required_fields {
                 if json.get(field).is_none() {
                     bail!(
                         "FATAL: events.jsonl missing required field '{}' on line 1\n\
                          Required fields: {:?}\n\
                          This indicates corrupted or incompatible event data.",
-                        field, required_fields
+                        field,
+                        required_fields
                     );
                 }
             }
@@ -624,7 +634,9 @@ fn run_prep_stage(
                 .ok()
                 .and_then(|p| p.parent().map(|d| d.join("../scripts/prep/prism-prep"))),
             // Absolute paths
-            Some(PathBuf::from("/home/diddy/Desktop/PRISM4D_RELEASE/scripts/prep/prism-prep")),
+            Some(PathBuf::from(
+                "/home/diddy/Desktop/PRISM4D_RELEASE/scripts/prep/prism-prep",
+            )),
             Some(PathBuf::from("./scripts/prep/prism-prep")),
         ];
 
@@ -632,13 +644,22 @@ fn run_prep_stage(
             .into_iter()
             .flatten()
             .find(|p| p.exists())
-            .ok_or_else(|| anyhow::anyhow!(
-                "prism-prep script not found. Specify with --prep-script or provide --topology"
-            ))?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "prism-prep script not found. Specify with --prep-script or provide --topology"
+                )
+            })?
     };
 
-    log::info!("Running prep stage: {} -> {}", pdb_path.display(), topology_path.display());
-    log::info!("  AMBER H-placement: {}", if use_amber { "enabled" } else { "disabled" });
+    log::info!(
+        "Running prep stage: {} -> {}",
+        pdb_path.display(),
+        topology_path.display()
+    );
+    log::info!(
+        "  AMBER H-placement: {}",
+        if use_amber { "enabled" } else { "disabled" }
+    );
 
     // Ensure output directory exists
     if let Some(parent) = topology_path.parent() {
@@ -647,9 +668,7 @@ fn run_prep_stage(
 
     // Build command
     let mut cmd = Command::new("python3");
-    cmd.arg(&prep_script)
-        .arg(pdb_path)
-        .arg(topology_path);
+    cmd.arg(&prep_script).arg(pdb_path).arg(topology_path);
 
     if use_amber {
         cmd.arg("--use-amber");
@@ -730,9 +749,15 @@ fn run_cryo_uv_engine(
         max_pos[2] - min_pos[2] + 2.0 * padding,
     ];
     let max_dim = box_size[0].max(box_size[1]).max(box_size[2]);
-    let grid_dim = ((max_dim / config.grid_spacing).ceil() as usize).min(128).max(32);
+    let grid_dim = ((max_dim / config.grid_spacing).ceil() as usize)
+        .min(128)
+        .max(32);
 
-    log::info!("Grid: {}^3 voxels at {:.2} A spacing", grid_dim, config.grid_spacing);
+    log::info!(
+        "Grid: {}^3 voxels at {:.2} A spacing",
+        grid_dim,
+        config.grid_spacing
+    );
 
     // Create temperature protocol for the engine
     // Note: prism-nhs uses ramp_steps + hold_steps internally, we compute from our explicit phases
@@ -749,11 +774,15 @@ fn run_cryo_uv_engine(
 
     log::info!(
         "Temperature protocol: {:.1}K -> {:.1}K",
-        config.start_temp, config.end_temp
+        config.start_temp,
+        config.end_temp
     );
     log::info!(
         "  Phases: cold_hold={}, ramp={}, warm_hold={} (total={})",
-        config.cold_hold_steps, config.ramp_steps, config.warm_hold_steps, total_cryo_steps
+        config.cold_hold_steps,
+        config.ramp_steps,
+        config.warm_hold_steps,
+        total_cryo_steps
     );
 
     // Create UV probe configuration with wavelength sweep
@@ -777,17 +806,20 @@ fn run_cryo_uv_engine(
     };
 
     log::info!("UV targets: {} aromatic residues", aromatics.len());
-    log::info!("UV wavelength sweep: {:?} nm (disulfides: {})", config.wavelengths, has_250nm);
-    log::info!("UV Protocol: energy={:.1} kcal/mol, interval={}", config.uv_energy, config.uv_interval);
+    log::info!(
+        "UV wavelength sweep: {:?} nm (disulfides: {})",
+        config.wavelengths,
+        has_250nm
+    );
+    log::info!(
+        "UV Protocol: energy={:.1} kcal/mol, interval={}",
+        config.uv_energy,
+        config.uv_interval
+    );
 
     // Create fused engine
     log::info!("Creating NHS-AMBER Fused Engine...");
-    let mut engine = NhsAmberFusedEngine::new(
-        context,
-        &topology,
-        grid_dim,
-        config.grid_spacing,
-    )?;
+    let mut engine = NhsAmberFusedEngine::new(context, &topology, grid_dim, config.grid_spacing)?;
 
     engine.set_temperature_protocol(temp_protocol.clone())?;
     engine.set_uv_config(uv_config);
@@ -798,10 +830,17 @@ fn run_cryo_uv_engine(
 
     // Create spike event writer for raw spike data (enables UV enrichment calculation)
     let spike_events_path = events_path.with_file_name("spike_events.jsonl");
-    let spike_writer_file = std::fs::File::create(&spike_events_path)
-        .with_context(|| format!("Failed to create spike_events.jsonl at {}", spike_events_path.display()))?;
+    let spike_writer_file = std::fs::File::create(&spike_events_path).with_context(|| {
+        format!(
+            "Failed to create spike_events.jsonl at {}",
+            spike_events_path.display()
+        )
+    })?;
     let mut spike_writer = std::io::BufWriter::new(spike_writer_file);
-    log::info!("  Spike events will be saved to: {}", spike_events_path.display());
+    log::info!(
+        "  Spike events will be saved to: {}",
+        spike_events_path.display()
+    );
 
     // Run ablation protocol: Baseline -> CryoOnly -> CryoUv
     // If skip_ablation is true, only run CryoUv phase (3x faster)
@@ -813,7 +852,10 @@ fn run_cryo_uv_engine(
 
     let phases_to_run: Vec<_> = if config.skip_ablation {
         log::info!("Ablation SKIPPED: running only Cryo+UV phase");
-        all_phases.iter().filter(|(p, _, _)| *p == AblationPhase::CryoUv).collect()
+        all_phases
+            .iter()
+            .filter(|(p, _, _)| *p == AblationPhase::CryoUv)
+            .collect()
     } else {
         all_phases.iter().collect()
     };
@@ -831,7 +873,11 @@ fn run_cryo_uv_engine(
     let mut max_spike_intensity_last_10k = 0.0f32;
 
     for (replicate_id, _) in (0..config.replicates).enumerate() {
-        log::info!("=== Replicate {}/{} ===", replicate_id + 1, config.replicates);
+        log::info!(
+            "=== Replicate {}/{} ===",
+            replicate_id + 1,
+            config.replicates
+        );
 
         for (phase, phase_name, phase_idx) in &phases_to_run {
             log::info!("  Phase: {}", phase_name);
@@ -844,9 +890,17 @@ fn run_cryo_uv_engine(
             // Baseline: runs at constant 300K for warm_hold_steps only
             // Cryo phases: run full cold_hold -> ramp -> warm_hold sequence
             engine.set_temperature_protocol(NhsTemperatureProtocol {
-                start_temp: if *phase == AblationPhase::Baseline { 300.0 } else { config.start_temp },
+                start_temp: if *phase == AblationPhase::Baseline {
+                    300.0
+                } else {
+                    config.start_temp
+                },
                 end_temp: config.end_temp,
-                ramp_steps: if *phase == AblationPhase::Baseline { 0 } else { config.cold_hold_steps + config.ramp_steps },
+                ramp_steps: if *phase == AblationPhase::Baseline {
+                    0
+                } else {
+                    config.cold_hold_steps + config.ramp_steps
+                },
                 hold_steps: config.warm_hold_steps,
                 current_step: 0,
             })?;
@@ -895,7 +949,8 @@ fn run_cryo_uv_engine(
                         let spike_nearby_residues = spike.nearby_residues;
 
                         // Save raw spike event for UV enrichment calculation
-                        let nearby_res_vec: Vec<i32> = spike_nearby_residues[..spike_n_residues.min(8) as usize]
+                        let nearby_res_vec: Vec<i32> = spike_nearby_residues
+                            [..spike_n_residues.min(8) as usize]
                             .iter()
                             .filter(|&&r| r >= 0)
                             .copied()
@@ -917,7 +972,8 @@ fn run_cryo_uv_engine(
                         // Track statistics
                         let volume = estimate_pocket_volume(spike_n_residues, spike_intensity);
                         max_candidate_volume_last_10k = max_candidate_volume_last_10k.max(volume);
-                        max_spike_intensity_last_10k = max_spike_intensity_last_10k.max(spike_intensity);
+                        max_spike_intensity_last_10k =
+                            max_spike_intensity_last_10k.max(spike_intensity);
 
                         // Build residue list from nearby_residues
                         let n_res = (spike_n_residues as usize).min(8);
@@ -936,7 +992,10 @@ fn run_cryo_uv_engine(
                             replicate_id,
                             frame_idx: step as usize,
                             residues,
-                            confidence: compute_spike_confidence(spike_intensity, result.temperature),
+                            confidence: compute_spike_confidence(
+                                spike_intensity,
+                                result.temperature,
+                            ),
                             wavelength_nm: if enable_uv && result.uv_burst_active {
                                 result.current_wavelength_nm
                             } else {
@@ -975,10 +1034,16 @@ fn run_cryo_uv_engine(
 
     let elapsed = start_time.elapsed();
     let n_phases = if config.skip_ablation { 1 } else { 3 };
-    let steps_per_sec = (total_cryo_steps as usize * config.replicates * n_phases) as f64 / elapsed.as_secs_f64();
+    let steps_per_sec =
+        (total_cryo_steps as usize * config.replicates * n_phases) as f64 / elapsed.as_secs_f64();
 
-    log::info!("Engine complete: raw_candidates={} events_written={} in {:.2}s ({:.0} steps/s)",
-        raw_candidates_found, events_written_total, elapsed.as_secs_f64(), steps_per_sec);
+    log::info!(
+        "Engine complete: raw_candidates={} events_written={} in {:.2}s ({:.0} steps/s)",
+        raw_candidates_found,
+        events_written_total,
+        elapsed.as_secs_f64(),
+        steps_per_sec
+    );
 
     Ok(EngineResult {
         total_events,
@@ -1098,22 +1163,30 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
         );
     }
 
-    println!("Events:   {} ({} events)", args.events.display(), event_count);
+    println!(
+        "Events:   {} ({} events)",
+        args.events.display(),
+        event_count
+    );
     println!("Topology: {}", args.topology.display());
     println!("Output:   {}", args.out.display());
     println!("Seed:     {}", args.seed);
     println!();
 
     // Save PDB path for later use in seed config (before it gets moved)
-    let pdb_path_str = args.pdb.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+    let pdb_path_str = args
+        .pdb
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
 
     // Build minimal config - PDB is for visuals only, not for spatial metrics
     let config = ReportConfig {
         input_pdb: args.pdb.unwrap_or_else(|| args.out.join("reference.pdb")),
         output_dir: args.out.clone(),
-        holo_pdb: args.holo.clone(),          // Tier1 correlation (optional)
+        holo_pdb: args.holo.clone(), // Tier1 correlation (optional)
         truth_residues: args.truth_residues.clone(), // Tier2 correlation (optional)
-        contact_cutoff: Some(args.contact_cutoff),   // Auto-truth extraction cutoff
+        contact_cutoff: Some(args.contact_cutoff), // Auto-truth extraction cutoff
         replicates: args.replicates, // For replica agreement filtering
         output_formats: prism_report::config::OutputFormats {
             html: true,
@@ -1138,8 +1211,11 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
     };
 
     if args.replicates > 1 && args.min_replica_agreement > 0.0 {
-        log::info!("Replica agreement filtering ENABLED: requiring sites in ≥{:.0}% of {} replicates",
-                   args.min_replica_agreement * 100.0, args.replicates);
+        log::info!(
+            "Replica agreement filtering ENABLED: requiring sites in ≥{:.0}% of {} replicates",
+            args.min_replica_agreement * 100.0,
+            args.replicates
+        );
     } else if args.replicates > 1 {
         log::info!("Replica agreement filtering DISABLED (min_replica_agreement=0.0)");
     }
@@ -1156,7 +1232,11 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
     )?;
 
     // Auto-detect spike_events.jsonl for true UV enrichment calculation
-    let events_base_dir = args.events.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+    let events_base_dir = args
+        .events
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
     stage.auto_detect_event_paths(&events_base_dir);
 
     let start_time = std::time::Instant::now();
@@ -1177,7 +1257,7 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
             version: prism_report::PRISM4D_RELEASE.to_string(),
             input_pdb: pdb_path_str.clone(),
             temperature: TemperatureParams {
-                start_temp: 50.0,  // Default - engine params not available in finalize-only mode
+                start_temp: 50.0, // Default - engine params not available in finalize-only mode
                 end_temp: 300.0,
                 cold_hold_steps: 20000,
                 ramp_steps: 30000,
@@ -1232,7 +1312,10 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
     println!("============================================================");
     println!();
     println!("Results: {}", result.output_dir.display());
-    println!("Sites:   {} ({} druggable)", result.n_sites, result.n_druggable);
+    println!(
+        "Sites:   {} ({} druggable)",
+        result.n_sites, result.n_druggable
+    );
     println!("Seed:    {} (saved to seed_config.json)", args.seed);
     println!("Runtime: {:.2}s", elapsed.as_secs_f64());
     println!();
@@ -1246,7 +1329,10 @@ fn run_finalize(args: FinalizeArgs) -> Result<()> {
 
 fn run_pipeline(args: RunArgs) -> Result<()> {
     println!("============================================================");
-    println!("  PRISM4D v{} - Cryptic Binding Site Detection", prism_report::VERSION);
+    println!(
+        "  PRISM4D v{} - Cryptic Binding Site Detection",
+        prism_report::VERSION
+    );
     println!("  Mode: {}", args.mode);
     println!("============================================================");
     println!();
@@ -1281,7 +1367,12 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
         println!("└─────────────────────────────────────────────────────────────┘");
 
         let topology_path = args.out.join("topology.json");
-        run_prep_stage(&args.pdb, &topology_path, !args.no_amber, args.prep_script.as_ref())?;
+        run_prep_stage(
+            &args.pdb,
+            &topology_path,
+            !args.no_amber,
+            args.prep_script.as_ref(),
+        )?;
         topology_path
     };
 
@@ -1312,7 +1403,7 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
         wavelengths: args.wavelengths.clone(),
         holo_pdb: args.holo.clone(),
         truth_residues: args.truth_residues.clone(),
-        contact_cutoff: Some(args.contact_cutoff),  // Auto-truth extraction cutoff
+        contact_cutoff: Some(args.contact_cutoff), // Auto-truth extraction cutoff
         temperature_protocol: TemperatureProtocol {
             start_temp: args.start_temp,
             end_temp: args.end_temp,
@@ -1385,8 +1476,10 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
     println!("    Baseline:   {}", engine_result.events_by_phase[0]);
     println!("    Cryo-only:  {}", engine_result.events_by_phase[1]);
     println!("    Cryo+UV:    {}", engine_result.events_by_phase[2]);
-    println!("    Time:       {:.2}s ({:.0} steps/s)",
-        engine_result.elapsed_seconds, engine_result.steps_per_second);
+    println!(
+        "    Time:       {:.2}s ({:.0} steps/s)",
+        engine_result.elapsed_seconds, engine_result.steps_per_second
+    );
     println!();
 
     // =========================================================================
@@ -1395,10 +1488,16 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
     if args.no_finalize {
         println!("[Stage 2/2] Finalize stage skipped (--no-finalize)");
         println!();
-        println!("Engine output available at: {}", report_config.output_dir.display());
+        println!(
+            "Engine output available at: {}",
+            report_config.output_dir.display()
+        );
         println!("To generate evidence pack, run:");
-        println!("  prism4d finalize --events {} --out {}",
-            events_path.display(), report_config.output_dir.display());
+        println!(
+            "  prism4d finalize --events {} --out {}",
+            events_path.display(),
+            report_config.output_dir.display()
+        );
         return Ok(());
     }
 
@@ -1429,9 +1528,26 @@ fn run_pipeline(args: RunArgs) -> Result<()> {
     println!();
     println!("Results saved to: {}", result.output_dir.display());
     println!();
-    println!("Sites detected:    {} ({} druggable)", result.n_sites, result.n_druggable);
-    println!("Cryo contrast:     {}", if result.cryo_significant { "SIGNIFICANT" } else { "not significant" });
-    println!("UV response:       {}", if result.uv_significant { "SIGNIFICANT" } else { "not significant" });
+    println!(
+        "Sites detected:    {} ({} druggable)",
+        result.n_sites, result.n_druggable
+    );
+    println!(
+        "Cryo contrast:     {}",
+        if result.cryo_significant {
+            "SIGNIFICANT"
+        } else {
+            "not significant"
+        }
+    );
+    println!(
+        "UV response:       {}",
+        if result.uv_significant {
+            "SIGNIFICANT"
+        } else {
+            "not significant"
+        }
+    );
     println!();
 
     // Verify output contract
@@ -1534,7 +1650,11 @@ fn show_version() -> Result<()> {
     println!("prism-report {}", prism_report::VERSION);
     println!();
     println!("Build info:");
-    println!("  Platform: {}-{}", std::env::consts::OS, std::env::consts::ARCH);
+    println!(
+        "  Platform: {}-{}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
     #[cfg(feature = "gpu")]
     println!("  GPU:      enabled");
     #[cfg(not(feature = "gpu"))]
@@ -1547,18 +1667,9 @@ fn show_version() -> Result<()> {
 fn verify_output_contract(output_dir: &PathBuf) -> Result<()> {
     println!("Verifying output contract...");
 
-    let required_files = [
-        "report.html",
-        "summary.json",
-        "correlation.csv",
-    ];
+    let required_files = ["report.html", "summary.json", "correlation.csv"];
 
-    let required_dirs = [
-        "sites",
-        "volumes",
-        "trajectories",
-        "provenance",
-    ];
+    let required_dirs = ["sites", "volumes", "trajectories", "provenance"];
 
     let provenance_files = [
         "provenance/manifest.json",
@@ -1601,14 +1712,70 @@ fn verify_output_contract(output_dir: &PathBuf) -> Result<()> {
 
     println!();
     println!("Output Contract Checklist:");
-    println!("  [{}] report.html", if output_dir.join("report.html").exists() { "x" } else { " " });
-    println!("  [{}] report.pdf", if output_dir.join("report.pdf").exists() { "x" } else { " " });
-    println!("  [{}] summary.json", if output_dir.join("summary.json").exists() { "x" } else { " " });
-    println!("  [{}] correlation.csv", if output_dir.join("correlation.csv").exists() { "x" } else { " " });
-    println!("  [{}] sites/", if output_dir.join("sites").is_dir() { "x" } else { " " });
-    println!("  [{}] volumes/", if output_dir.join("volumes").is_dir() { "x" } else { " " });
-    println!("  [{}] trajectories/", if output_dir.join("trajectories").is_dir() { "x" } else { " " });
-    println!("  [{}] provenance/", if output_dir.join("provenance").is_dir() { "x" } else { " " });
+    println!(
+        "  [{}] report.html",
+        if output_dir.join("report.html").exists() {
+            "x"
+        } else {
+            " "
+        }
+    );
+    println!(
+        "  [{}] report.pdf",
+        if output_dir.join("report.pdf").exists() {
+            "x"
+        } else {
+            " "
+        }
+    );
+    println!(
+        "  [{}] summary.json",
+        if output_dir.join("summary.json").exists() {
+            "x"
+        } else {
+            " "
+        }
+    );
+    println!(
+        "  [{}] correlation.csv",
+        if output_dir.join("correlation.csv").exists() {
+            "x"
+        } else {
+            " "
+        }
+    );
+    println!(
+        "  [{}] sites/",
+        if output_dir.join("sites").is_dir() {
+            "x"
+        } else {
+            " "
+        }
+    );
+    println!(
+        "  [{}] volumes/",
+        if output_dir.join("volumes").is_dir() {
+            "x"
+        } else {
+            " "
+        }
+    );
+    println!(
+        "  [{}] trajectories/",
+        if output_dir.join("trajectories").is_dir() {
+            "x"
+        } else {
+            " "
+        }
+    );
+    println!(
+        "  [{}] provenance/",
+        if output_dir.join("provenance").is_dir() {
+            "x"
+        } else {
+            " "
+        }
+    );
 
     Ok(())
 }

@@ -11,8 +11,8 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 // ============================================================================
 // CORE MANIFEST STRUCTURE
@@ -59,7 +59,6 @@ pub struct ProteinTarget {
     pub has_glycans: bool,
 
     // ========== v3.1.1 META-LEARNING ENHANCEMENTS ==========
-
     /// Residues with attached glycans (for glycan shield tracking)
     /// When these move away from target_residues, it indicates shield opening
     #[serde(default)]
@@ -85,9 +84,15 @@ pub struct ProteinTarget {
     pub known_binders: Vec<String>,
 }
 
-fn default_expected_sasa() -> f32 { 100.0 }
-fn default_site_value() -> f32 { 1.0 }
-fn default_mechanism() -> String { "unknown".to_string() }
+fn default_expected_sasa() -> f32 {
+    100.0
+}
+fn default_site_value() -> f32 {
+    1.0
+}
+fn default_mechanism() -> String {
+    "unknown".to_string()
+}
 
 // ============================================================================
 // TRAINING PARAMETERS (DQN + Reward Weights)
@@ -111,12 +116,24 @@ pub struct TrainingParameters {
     pub reward_weighting: RewardWeighting,
 }
 
-fn default_lr() -> f32 { 1e-4 }
-fn default_batch() -> usize { 32 }
-fn default_gamma() -> f32 { 0.99 }
-fn default_eps_start() -> f32 { 1.0 }
-fn default_eps_end() -> f32 { 0.05 }
-fn default_eps_decay() -> f32 { 0.995 }
+fn default_lr() -> f32 {
+    1e-4
+}
+fn default_batch() -> usize {
+    32
+}
+fn default_gamma() -> f32 {
+    0.99
+}
+fn default_eps_start() -> f32 {
+    1.0
+}
+fn default_eps_end() -> f32 {
+    0.05
+}
+fn default_eps_decay() -> f32 {
+    0.995
+}
 
 impl Default for TrainingParameters {
     fn default() -> Self {
@@ -174,7 +191,6 @@ pub struct RewardWeighting {
     pub clash_distance: f32,
 
     // ========== v3.1.1 META-LEARNING REWARD ENHANCEMENTS ==========
-
     /// Bonus multiplier for glycan-correlated discovery
     /// Rewards exposure that correlates with glycan shield displacement
     /// This teaches the agent that "moving glycan = biologically meaningful opening"
@@ -196,16 +212,36 @@ pub struct RewardWeighting {
     pub adjacent_bonus: f32,
 }
 
-fn default_exposure_weight() -> f32 { 10.0 }
-fn default_rmsd_weight() -> f32 { 5.0 }
-fn default_stability_threshold() -> f32 { 2.5 }
-fn default_target_bonus() -> f32 { 50.0 }
-fn default_clash_penalty() -> f32 { 1.0 }
-fn default_clash_distance() -> f32 { 1.5 }
-fn default_glycan_discovery_bonus() -> f32 { 25.0 }
-fn default_glycan_displacement_threshold() -> f32 { 3.0 }
-fn default_site_value_weight() -> f32 { 1.0 }
-fn default_adjacent_bonus() -> f32 { 2.0 }
+fn default_exposure_weight() -> f32 {
+    10.0
+}
+fn default_rmsd_weight() -> f32 {
+    5.0
+}
+fn default_stability_threshold() -> f32 {
+    2.5
+}
+fn default_target_bonus() -> f32 {
+    50.0
+}
+fn default_clash_penalty() -> f32 {
+    1.0
+}
+fn default_clash_distance() -> f32 {
+    1.5
+}
+fn default_glycan_discovery_bonus() -> f32 {
+    25.0
+}
+fn default_glycan_displacement_threshold() -> f32 {
+    3.0
+}
+fn default_site_value_weight() -> f32 {
+    1.0
+}
+fn default_adjacent_bonus() -> f32 {
+    2.0
+}
 
 impl Default for RewardWeighting {
     fn default() -> Self {
@@ -249,10 +285,18 @@ pub struct PhysicsParameterRanges {
     pub bias_strength: [f32; 2],
 }
 
-fn default_temp_range() -> [f32; 2] { [0.1, 5.0] }
-fn default_friction_range() -> [f32; 2] { [0.01, 1.0] }
-fn default_spring_range() -> [f32; 2] { [0.1, 10.0] }
-fn default_bias_range() -> [f32; 2] { [0.0, 2.0] }
+fn default_temp_range() -> [f32; 2] {
+    [0.1, 5.0]
+}
+fn default_friction_range() -> [f32; 2] {
+    [0.01, 1.0]
+}
+fn default_spring_range() -> [f32; 2] {
+    [0.1, 10.0]
+}
+fn default_bias_range() -> [f32; 2] {
+    [0.0, 2.0]
+}
 
 impl Default for PhysicsParameterRanges {
     fn default() -> Self {
@@ -285,18 +329,25 @@ impl PhysicsParameterRanges {
     /// * `fric_idx` - Friction bin [0-4]
     /// * `spring_idx` - Spring constant bin [0-4]
     /// * `bias_idx` - Bias strength bin [0-4]
-    pub fn indices_to_params(&self, temp_idx: usize, fric_idx: usize, spring_idx: usize, bias_idx: usize) -> PhysicsParams {
+    pub fn indices_to_params(
+        &self,
+        temp_idx: usize,
+        fric_idx: usize,
+        spring_idx: usize,
+        bias_idx: usize,
+    ) -> PhysicsParams {
         let bins = Self::BINS as f32;
 
         PhysicsParams {
-            temperature: self.temperature[0] +
-                (temp_idx as f32 / (bins - 1.0)) * (self.temperature[1] - self.temperature[0]),
-            friction: self.friction[0] +
-                (fric_idx as f32 / (bins - 1.0)) * (self.friction[1] - self.friction[0]),
-            spring_k: self.spring_k[0] +
-                (spring_idx as f32 / (bins - 1.0)) * (self.spring_k[1] - self.spring_k[0]),
-            bias_strength: self.bias_strength[0] +
-                (bias_idx as f32 / (bins - 1.0)) * (self.bias_strength[1] - self.bias_strength[0]),
+            temperature: self.temperature[0]
+                + (temp_idx as f32 / (bins - 1.0)) * (self.temperature[1] - self.temperature[0]),
+            friction: self.friction[0]
+                + (fric_idx as f32 / (bins - 1.0)) * (self.friction[1] - self.friction[0]),
+            spring_k: self.spring_k[0]
+                + (spring_idx as f32 / (bins - 1.0)) * (self.spring_k[1] - self.spring_k[0]),
+            bias_strength: self.bias_strength[0]
+                + (bias_idx as f32 / (bins - 1.0))
+                    * (self.bias_strength[1] - self.bias_strength[0]),
         }
     }
 
@@ -309,17 +360,22 @@ impl PhysicsParameterRanges {
         let bias_idx = action % 5;
 
         let params = self.indices_to_params(temp_idx, fric_idx, spring_idx, bias_idx);
-        (params.temperature, params.friction, params.spring_k, params.bias_strength)
+        (
+            params.temperature,
+            params.friction,
+            params.spring_k,
+            params.bias_strength,
+        )
     }
 
     /// Total number of discrete actions (5^4 = 625, but factorized = 4×5 = 20 logits)
     pub fn action_space_size(&self) -> usize {
-        625  // Flat size (for backward compatibility)
+        625 // Flat size (for backward compatibility)
     }
 
     /// Number of logits in factorized representation
     pub fn factorized_logits(&self) -> usize {
-        4 * Self::BINS  // 20
+        4 * Self::BINS // 20
     }
 
     /// Get parameter names for logging
@@ -355,10 +411,18 @@ pub struct MacroStepConfig {
     pub macro_gamma: f32,
 }
 
-fn default_macro_steps() -> usize { 10 }
-fn default_steps_per_macro() -> u64 { 100_000 }
-fn default_allow_action_change() -> bool { true }
-fn default_macro_gamma() -> f32 { 0.95 }
+fn default_macro_steps() -> usize {
+    10
+}
+fn default_steps_per_macro() -> u64 {
+    100_000
+}
+fn default_allow_action_change() -> bool {
+    true
+}
+fn default_macro_gamma() -> f32 {
+    0.95
+}
 
 impl Default for MacroStepConfig {
     fn default() -> Self {
@@ -424,7 +488,6 @@ pub struct FeatureConfig {
     pub include_mechanism: bool,
 
     // ========== v3.1.1 BIO-CHEMISTRY FEATURES ==========
-
     /// Include bio-chemistry features (3 dims: hydrophobic exposure, anisotropy, frustration)
     /// NEW in v3.1.1 - Adds chemical intelligence to geometry
     /// - Hydrophobic ΔΔ SASA: Exposure of "greasy" residues (drug targets love these)
@@ -434,7 +497,6 @@ pub struct FeatureConfig {
     pub include_bio_chemistry: bool,
 
     // ========== GPU ACCELERATION ==========
-
     /// Use GPU-accelerated feature extraction for bio-chemistry features
     /// NEW in v3.1.1 - Unlocks ~40% more GPU utilization by moving
     /// feature extraction loops from CPU to CUDA kernels.
@@ -444,10 +506,18 @@ pub struct FeatureConfig {
     pub use_gpu_features: bool,
 }
 
-fn default_neighbor_cutoff() -> f32 { 8.0 }
-fn default_contact_cutoff() -> f32 { 6.0 }
-fn default_true() -> bool { true }
-fn default_false() -> bool { false }
+fn default_neighbor_cutoff() -> f32 {
+    8.0
+}
+fn default_contact_cutoff() -> f32 {
+    6.0
+}
+fn default_true() -> bool {
+    true
+}
+fn default_false() -> bool {
+    false
+}
 
 impl Default for FeatureConfig {
     fn default() -> Self {
@@ -478,15 +548,33 @@ impl FeatureConfig {
     /// With bio-chemistry: +3 = 40 (full atomic-aware)
     pub fn feature_dim(&self) -> usize {
         let mut dim = 0;
-        if self.include_global { dim += 3; }              // Size, Rg, Density
-        if self.include_target_neighborhood { dim += 8; } // Target-aware features
-        if self.include_stability { dim += 4; }           // RMSD, clashes, displacement
-        if self.include_family_flags { dim += 4; }        // Family conditioning
-        if self.include_temporal { dim += 4; }            // Change features
-        if self.include_difficulty { dim += 4; }          // Difficulty one-hot
-        if self.include_glycan_awareness { dim += 4; }    // Glycan shield dynamics
-        if self.include_mechanism { dim += 6; }           // Mechanism one-hot
-        if self.include_bio_chemistry { dim += 3; }       // Hydrophobic, anisotropy, frustration
+        if self.include_global {
+            dim += 3;
+        } // Size, Rg, Density
+        if self.include_target_neighborhood {
+            dim += 8;
+        } // Target-aware features
+        if self.include_stability {
+            dim += 4;
+        } // RMSD, clashes, displacement
+        if self.include_family_flags {
+            dim += 4;
+        } // Family conditioning
+        if self.include_temporal {
+            dim += 4;
+        } // Change features
+        if self.include_difficulty {
+            dim += 4;
+        } // Difficulty one-hot
+        if self.include_glycan_awareness {
+            dim += 4;
+        } // Glycan shield dynamics
+        if self.include_mechanism {
+            dim += 6;
+        } // Mechanism one-hot
+        if self.include_bio_chemistry {
+            dim += 3;
+        } // Hydrophobic, anisotropy, frustration
         dim
     }
 }
@@ -505,15 +593,28 @@ impl CalibrationManifest {
         let manifest: CalibrationManifest = serde_json::from_str(&contents)
             .with_context(|| format!("Failed to parse manifest JSON: {}", path.display()))?;
 
-        log::info!("Loaded manifest '{}' with {} targets",
-                  manifest.dataset_name, manifest.targets.len());
-        log::info!("  Reward weights: exposure={}, rmsd={}, threshold={}Å",
-                  manifest.training_parameters.reward_weighting.exposure_weight,
-                  manifest.training_parameters.reward_weighting.rmsd_weight,
-                  manifest.training_parameters.reward_weighting.stability_threshold);
-        log::info!("  Macro-steps: {} × {} steps",
-                  manifest.macro_step_config.num_macro_steps,
-                  manifest.macro_step_config.steps_per_macro);
+        log::info!(
+            "Loaded manifest '{}' with {} targets",
+            manifest.dataset_name,
+            manifest.targets.len()
+        );
+        log::info!(
+            "  Reward weights: exposure={}, rmsd={}, threshold={}Å",
+            manifest
+                .training_parameters
+                .reward_weighting
+                .exposure_weight,
+            manifest.training_parameters.reward_weighting.rmsd_weight,
+            manifest
+                .training_parameters
+                .reward_weighting
+                .stability_threshold
+        );
+        log::info!(
+            "  Macro-steps: {} × {} steps",
+            manifest.macro_step_config.num_macro_steps,
+            manifest.macro_step_config.steps_per_macro
+        );
         log::info!("  Feature dim: {}", manifest.feature_config.feature_dim());
 
         Ok(manifest)
@@ -522,8 +623,8 @@ impl CalibrationManifest {
     /// Save manifest to JSON file
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
-        let contents = serde_json::to_string_pretty(self)
-            .context("Failed to serialize manifest")?;
+        let contents =
+            serde_json::to_string_pretty(self).context("Failed to serialize manifest")?;
 
         fs::write(path, contents)
             .with_context(|| format!("Failed to write manifest: {}", path.display()))?;
@@ -538,7 +639,10 @@ impl CalibrationManifest {
                 anyhow::bail!("Apo PDB file not found: {}", target.apo_pdb);
             }
         }
-        log::info!("All PDB files validated for manifest '{}'", self.dataset_name);
+        log::info!(
+            "All PDB files validated for manifest '{}'",
+            self.dataset_name
+        );
         Ok(())
     }
 

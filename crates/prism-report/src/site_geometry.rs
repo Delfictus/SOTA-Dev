@@ -267,7 +267,9 @@ pub fn compute_site_geometry(
                 let gx = vmin[0] + x;
                 let gy = vmin[1] + y;
                 let gz = vmin[2] + z;
-                if gx < density_grid.dims[0] && gy < density_grid.dims[1] && gz < density_grid.dims[2]
+                if gx < density_grid.dims[0]
+                    && gy < density_grid.dims[1]
+                    && gz < density_grid.dims[2]
                 {
                     local_density.set(x, y, z, density_grid.get(gx, gy, gz));
                 }
@@ -276,11 +278,8 @@ pub fn compute_site_geometry(
     }
 
     // Step 2: Build protein_solid mask
-    let protein_solid = build_protein_solid_mask(
-        &local_density,
-        protein_atoms,
-        config.probe_radius,
-    );
+    let protein_solid =
+        build_protein_solid_mask(&local_density, protein_atoms, config.probe_radius);
 
     // Step 3: Compute pocket threshold using robust statistics
     let t_pocket = compute_pocket_threshold(&local_density);
@@ -310,16 +309,19 @@ pub fn compute_site_geometry(
     let bulk_solvent = compute_bulk_solvent(&protein_solid);
 
     // Step 7: Identify mouth voxels and faces
-    let (mouth_voxels, solvent_faces) =
-        compute_mouth_voxels_and_faces(&pocket_mask, &bulk_solvent);
+    let (mouth_voxels, solvent_faces) = compute_mouth_voxels_and_faces(&pocket_mask, &bulk_solvent);
 
     if mouth_voxels.is_empty() {
         return SiteGeometryResult::default();
     }
 
     // Step 8: Compute openings via connected components
-    let (n_openings, opening_areas) =
-        compute_openings(&mouth_voxels, &solvent_faces, &pocket_mask, local_density.spacing);
+    let (n_openings, opening_areas) = compute_openings(
+        &mouth_voxels,
+        &solvent_faces,
+        &pocket_mask,
+        local_density.spacing,
+    );
 
     let mouth_area_total = opening_areas.iter().sum::<f32>();
     let mouth_area_proxy = opening_areas.iter().cloned().fold(0.0f32, f32::max);
@@ -328,7 +330,10 @@ pub fn compute_site_geometry(
     let depths_to_mouth = compute_depths_bfs(&pocket_mask, &mouth_voxels, local_density.spacing);
 
     let depth_proxy_pocket = if !depths_to_mouth.is_empty() {
-        Some(percentile_nearest_rank(&depths_to_mouth, config.depth_percentile))
+        Some(percentile_nearest_rank(
+            &depths_to_mouth,
+            config.depth_percentile,
+        ))
     } else {
         None
     };
@@ -410,7 +415,8 @@ fn compute_pocket_threshold(grid: &LocalGrid) -> f32 {
 
     // Compute statistics
     let mean: f32 = positive.iter().sum::<f32>() / positive.len() as f32;
-    let variance: f32 = positive.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / positive.len() as f32;
+    let variance: f32 =
+        positive.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / positive.len() as f32;
     let std = variance.sqrt();
 
     let p90 = percentile_nearest_rank(&positive, 90.0);
@@ -607,10 +613,8 @@ fn compute_openings(
     }
 
     // Build mouth voxel set for quick lookup
-    let mouth_set: HashSet<(usize, usize, usize)> = mouth_voxels
-        .iter()
-        .map(|v| (v[0], v[1], v[2]))
-        .collect();
+    let mouth_set: HashSet<(usize, usize, usize)> =
+        mouth_voxels.iter().map(|v| (v[0], v[1], v[2])).collect();
 
     // Map from voxel to index in mouth_voxels
     let voxel_to_idx: std::collections::HashMap<(usize, usize, usize), usize> = mouth_voxels
@@ -811,7 +815,10 @@ fn compute_surface_depth(
     if pocket_surface_distances.is_empty() {
         None
     } else {
-        Some(percentile_nearest_rank(&pocket_surface_distances, percentile))
+        Some(percentile_nearest_rank(
+            &pocket_surface_distances,
+            percentile,
+        ))
     }
 }
 
@@ -948,8 +955,8 @@ pub fn compute_shape_from_points(points: &[[f32; 3]]) -> Option<ShapeAnalysisRes
 
         for i in 0..3 {
             let proj = dx * sorted_eigenvectors[i][0]
-                     + dy * sorted_eigenvectors[i][1]
-                     + dz * sorted_eigenvectors[i][2];
+                + dy * sorted_eigenvectors[i][1]
+                + dz * sorted_eigenvectors[i][2];
             min_proj[i] = min_proj[i].min(proj);
             max_proj[i] = max_proj[i].max(proj);
         }
@@ -961,7 +968,8 @@ pub fn compute_shape_from_points(points: &[[f32; 3]]) -> Option<ShapeAnalysisRes
         (max_proj[2] - min_proj[2]).max(0.1),
     ];
 
-    let oriented_bbox_volume = oriented_bbox_dims[0] * oriented_bbox_dims[1] * oriented_bbox_dims[2];
+    let oriented_bbox_volume =
+        oriented_bbox_dims[0] * oriented_bbox_dims[1] * oriented_bbox_dims[2];
 
     Some(ShapeAnalysisResult {
         aspect_ratio,
@@ -1004,7 +1012,11 @@ fn jacobi_eigendecomposition_3x3(mut a: [[f64; 3]; 3]) -> Option<([f64; 3], [[f6
         // Compute rotation angle
         let diff = a[q][q] - a[p][p];
         let t = if diff.abs() < EPSILON {
-            if a[p][q] >= 0.0 { 1.0 } else { -1.0 }
+            if a[p][q] >= 0.0 {
+                1.0
+            } else {
+                -1.0
+            }
         } else {
             let phi = diff / (2.0 * a[p][q]);
             if phi >= 0.0 {
@@ -1131,9 +1143,11 @@ pub fn compute_volume_statistics(volumes: &[f64]) -> Option<VolumeStatisticsResu
     };
 
     // Standard deviation
-    let variance = volumes.iter()
+    let variance = volumes
+        .iter()
         .map(|v| (v - volume_mean).powi(2))
-        .sum::<f64>() / n_f;
+        .sum::<f64>()
+        / n_f;
     let volume_std = variance.sqrt();
 
     // Breathing amplitude (actual range, not heuristic)
@@ -1192,8 +1206,16 @@ mod tests {
         let result = compute_shape_from_points(&points).unwrap();
 
         // Sphere should have aspect_ratio close to 1
-        assert!(result.aspect_ratio < 1.15, "Sphere aspect_ratio should be ~1, got {}", result.aspect_ratio);
-        assert!(result.sphericity > 0.85, "Sphere sphericity should be ~1, got {}", result.sphericity);
+        assert!(
+            result.aspect_ratio < 1.15,
+            "Sphere aspect_ratio should be ~1, got {}",
+            result.aspect_ratio
+        );
+        assert!(
+            result.sphericity > 0.85,
+            "Sphere sphericity should be ~1, got {}",
+            result.sphericity
+        );
     }
 
     /// Test PCA on an elongated rod (should have high aspect_ratio)
@@ -1213,8 +1235,16 @@ mod tests {
         let result = compute_shape_from_points(&points).unwrap();
 
         // Rod should have high aspect_ratio
-        assert!(result.aspect_ratio > 5.0, "Rod aspect_ratio should be high, got {}", result.aspect_ratio);
-        assert!(result.sphericity < 0.3, "Rod sphericity should be low, got {}", result.sphericity);
+        assert!(
+            result.aspect_ratio > 5.0,
+            "Rod aspect_ratio should be high, got {}",
+            result.aspect_ratio
+        );
+        assert!(
+            result.sphericity < 0.3,
+            "Rod sphericity should be low, got {}",
+            result.sphericity
+        );
     }
 
     /// Test volume statistics
@@ -1308,7 +1338,11 @@ mod tests {
         // p95 using nearest-rank on values 0..10
         // N=11, p=95, rank = ceil(0.95*11) = ceil(10.45) = 11, index = 11-1=10
         let p95 = percentile_nearest_rank(&depths, 95.0);
-        assert!((p95 - 10.0).abs() < 0.001, "p95 should be 10.0, got {}", p95);
+        assert!(
+            (p95 - 10.0).abs() < 0.001,
+            "p95 should be 10.0, got {}",
+            p95
+        );
     }
 
     /// Test 3: two openings with different areas
@@ -1359,7 +1393,10 @@ mod tests {
         assert!((total - 13.0).abs() < 0.001, "Total area should be 13.0");
 
         let max_area = areas.iter().cloned().fold(0.0f32, f32::max);
-        assert!((max_area - 9.0).abs() < 0.001, "Max opening area should be 9.0");
+        assert!(
+            (max_area - 9.0).abs() < 0.001,
+            "Max opening area should be 9.0"
+        );
     }
 
     #[test]

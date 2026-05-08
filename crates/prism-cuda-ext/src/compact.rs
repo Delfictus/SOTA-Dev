@@ -7,7 +7,9 @@
 use anyhow::{Context, Result};
 
 #[cfg(feature = "cuda")]
-use cudarc::driver::{CudaContext, CudaStream, CudaModule, CudaSlice, CudaFunction, LaunchConfig, PushKernelArg};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+};
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 
@@ -34,15 +36,15 @@ pub struct DeviceCompactor {
 
 #[cfg(feature = "cuda")]
 impl DeviceCompactor {
-    pub fn new(
-        stream: &Arc<CudaStream>,
-        module: &Arc<CudaModule>,
-    ) -> Result<Self> {
-        let compact_fn = module.load_function("device_compact_and_push")
+    pub fn new(stream: &Arc<CudaStream>, module: &Arc<CudaModule>) -> Result<Self> {
+        let compact_fn = module
+            .load_function("device_compact_and_push")
             .context("device_compact_and_push not found")?;
-        let update_prev_fn = module.load_function("update_prev_spike_count")
+        let update_prev_fn = module
+            .load_function("update_prev_spike_count")
             .context("update_prev_spike_count not found")?;
-        let compute_grid_fn = module.load_function("compute_compact_grid_size")
+        let compute_grid_fn = module
+            .load_function("compute_compact_grid_size")
             .context("compute_compact_grid_size not found")?;
 
         let d_prev_count_a = stream.alloc_zeros::<i32>(1)?;
@@ -58,10 +60,15 @@ impl DeviceCompactor {
         stream.memcpy_htod(&[1u32], &mut d_grid_dim_b)?;
 
         Ok(Self {
-            compact_fn, update_prev_fn, compute_grid_fn,
-            d_prev_count_a, d_prev_count_b,
-            d_grid_dim_a, d_grid_dim_b,
-            d_exhaust_dummy_buf, d_exhaust_dummy_head,
+            compact_fn,
+            update_prev_fn,
+            compute_grid_fn,
+            d_prev_count_a,
+            d_prev_count_b,
+            d_grid_dim_a,
+            d_grid_dim_b,
+            d_exhaust_dummy_buf,
+            d_exhaust_dummy_head,
         })
     }
 
@@ -78,8 +85,8 @@ impl DeviceCompactor {
         &mut self,
         stream: &Arc<CudaStream>,
         // Engine A's GPU buffers (read-only)
-        spike_buf_a: &CudaSlice<u8>,       // d_spike_events
-        spike_count_a: &CudaSlice<i32>,    // d_spike_count
+        spike_buf_a: &CudaSlice<u8>,    // d_spike_events
+        spike_count_a: &CudaSlice<i32>, // d_spike_count
         // Ring buffer A (write)
         ring_buffer: &mut CudaSlice<u8>,
         ring_head: &mut CudaSlice<u32>,
@@ -87,12 +94,15 @@ impl DeviceCompactor {
         ring_capacity: u32,
     ) -> Result<()> {
         let single_cfg = LaunchConfig {
-            grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0,
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
         };
 
         // Step 1: compute grid size from spike counts (device-side)
         unsafe {
-            stream.launch_builder(&self.compute_grid_fn)
+            stream
+                .launch_builder(&self.compute_grid_fn)
                 .arg(spike_count_a)
                 .arg(&self.d_prev_count_a)
                 .arg(&mut self.d_grid_dim_a)
@@ -104,7 +114,7 @@ impl DeviceCompactor {
         // For now, we read d_grid_dim_a back to host to set the launch config.
         // The CUDA Graph with device-updated params will eliminate this read.
         let mut grid_dim_host = [1u32];
-        stream.synchronize()?;  // ensure compute_grid_size finished
+        stream.synchronize()?; // ensure compute_grid_size finished
         stream.memcpy_dtoh(&self.d_grid_dim_a, &mut grid_dim_host)?;
 
         let compact_cfg = LaunchConfig {
@@ -114,7 +124,8 @@ impl DeviceCompactor {
         };
 
         unsafe {
-            stream.launch_builder(&self.compact_fn)
+            stream
+                .launch_builder(&self.compact_fn)
                 .arg(spike_buf_a)
                 .arg(&self.d_prev_count_a)
                 .arg(spike_count_a)
@@ -127,7 +138,8 @@ impl DeviceCompactor {
 
         // Step 3: update prev_count
         unsafe {
-            stream.launch_builder(&self.update_prev_fn)
+            stream
+                .launch_builder(&self.update_prev_fn)
                 .arg(&mut self.d_prev_count_a)
                 .arg(spike_count_a)
                 .launch(single_cfg)?;
@@ -149,7 +161,9 @@ impl DeviceCompactor {
         ring_capacity: u32,
     ) -> Result<()> {
         let single_cfg = LaunchConfig {
-            grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0,
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
         };
         let max_blocks = (ring_capacity + 255) / 256;
         let compact_cfg = LaunchConfig {
@@ -161,7 +175,8 @@ impl DeviceCompactor {
         let exhaust_cap = 0u32;
 
         unsafe {
-            stream.launch_builder(&self.compact_fn)
+            stream
+                .launch_builder(&self.compact_fn)
                 .arg(spike_buf)
                 .arg(&self.d_prev_count_a)
                 .arg(spike_count)
@@ -169,13 +184,14 @@ impl DeviceCompactor {
                 .arg(ring_head)
                 .arg(ring_overflow)
                 .arg(&ring_capacity)
-                .arg(&self.d_exhaust_dummy_buf)  // exhaust disabled → dummy
+                .arg(&self.d_exhaust_dummy_buf) // exhaust disabled → dummy
                 .arg(&self.d_exhaust_dummy_head)
                 .arg(&exhaust_cap)
                 .arg(&exhaust_en)
                 .launch(compact_cfg)?;
 
-            stream.launch_builder(&self.update_prev_fn)
+            stream
+                .launch_builder(&self.update_prev_fn)
                 .arg(&mut self.d_prev_count_a)
                 .arg(spike_count)
                 .launch(single_cfg)?;
@@ -195,7 +211,9 @@ impl DeviceCompactor {
         ring_capacity: u32,
     ) -> Result<()> {
         let single_cfg = LaunchConfig {
-            grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0,
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
         };
         let max_blocks = (ring_capacity + 255) / 256;
         let compact_cfg = LaunchConfig {
@@ -207,7 +225,8 @@ impl DeviceCompactor {
         let exhaust_cap = 0u32;
 
         unsafe {
-            stream.launch_builder(&self.compact_fn)
+            stream
+                .launch_builder(&self.compact_fn)
                 .arg(spike_buf)
                 .arg(&self.d_prev_count_b)
                 .arg(spike_count)
@@ -221,7 +240,8 @@ impl DeviceCompactor {
                 .arg(&exhaust_en)
                 .launch(compact_cfg)?;
 
-            stream.launch_builder(&self.update_prev_fn)
+            stream
+                .launch_builder(&self.update_prev_fn)
                 .arg(&mut self.d_prev_count_b)
                 .arg(spike_count)
                 .launch(single_cfg)?;
@@ -241,11 +261,14 @@ impl DeviceCompactor {
         ring_capacity: u32,
     ) -> Result<()> {
         let single_cfg = LaunchConfig {
-            grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0,
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
         };
 
         unsafe {
-            stream.launch_builder(&self.compute_grid_fn)
+            stream
+                .launch_builder(&self.compute_grid_fn)
                 .arg(spike_count_b)
                 .arg(&self.d_prev_count_b)
                 .arg(&mut self.d_grid_dim_b)
@@ -264,7 +287,8 @@ impl DeviceCompactor {
         };
 
         unsafe {
-            stream.launch_builder(&self.compact_fn)
+            stream
+                .launch_builder(&self.compact_fn)
                 .arg(spike_buf_b)
                 .arg(&self.d_prev_count_b)
                 .arg(spike_count_b)
@@ -276,7 +300,8 @@ impl DeviceCompactor {
         }
 
         unsafe {
-            stream.launch_builder(&self.update_prev_fn)
+            stream
+                .launch_builder(&self.update_prev_fn)
                 .arg(&mut self.d_prev_count_b)
                 .arg(spike_count_b)
                 .launch(single_cfg)?;

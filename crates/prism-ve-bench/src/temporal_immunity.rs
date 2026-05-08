@@ -7,12 +7,12 @@
 //! We were doing point-in-time lookups, not temporal integration.
 
 use anyhow::Result;
-use std::collections::HashMap;
 use chrono::NaiveDate;
+use std::collections::HashMap;
 
 use crate::data_loader::CountryData;
-use crate::vasil_data::{VasilEnhancedData, PNeutData};
 use crate::gpu_benchmark::get_lineage_epitope_escape_scores;
+use crate::vasil_data::{PNeutData, VasilEnhancedData};
 
 /// Pre-computed cross-neutralization matrix for performance
 /// Stores P_neut(days, variant_x, variant_y) for fast lookup
@@ -30,15 +30,15 @@ impl CrossNeutralizationCache {
     const MAX_DAYS: usize = 600;
 
     /// Pre-compute cross-neutralization for all variant pairs
-    pub fn precompute(
-        all_variants: &[String],
-        t_max: f32,
-        t_half: f32,
-    ) -> Self {
+    pub fn precompute(all_variants: &[String], t_max: f32, t_half: f32) -> Self {
         let n_variants = all_variants.len();
 
-        log::info!("Pre-computing cross-neutralization matrix: {} variants × {} variants × {} days",
-                   n_variants, n_variants, Self::MAX_DAYS);
+        log::info!(
+            "Pre-computing cross-neutralization matrix: {} variants × {} variants × {} days",
+            n_variants,
+            n_variants,
+            Self::MAX_DAYS
+        );
 
         let mut variant_to_idx = HashMap::new();
         for (idx, variant) in all_variants.iter().enumerate() {
@@ -58,11 +58,7 @@ impl CrossNeutralizationCache {
                 // Compute for all days
                 for day in 0..Self::MAX_DAYS {
                     let p_neut = Self::compute_p_neut_static(
-                        &escape_x,
-                        &escape_y,
-                        day as f32,
-                        t_max,
-                        t_half,
+                        &escape_x, &escape_y, day as f32, t_max, t_half,
                     );
                     matrix[i][j][day] = p_neut;
                 }
@@ -73,8 +69,10 @@ impl CrossNeutralizationCache {
             }
         }
 
-        log::info!("  Cross-neutralization matrix ready ({} MB)",
-                   (n_variants * n_variants * Self::MAX_DAYS * 4) / 1_000_000);
+        log::info!(
+            "  Cross-neutralization matrix ready ({} MB)",
+            (n_variants * n_variants * Self::MAX_DAYS * 4) / 1_000_000
+        );
 
         Self {
             variant_to_idx,
@@ -87,7 +85,7 @@ impl CrossNeutralizationCache {
     pub fn get_p_neut(&self, variant_x: &str, variant_y: &str, days_since: f32) -> f32 {
         let idx_x = match self.variant_to_idx.get(variant_x) {
             Some(&i) => i,
-            None => return 0.5,  // Unknown variant, default
+            None => return 0.5, // Unknown variant, default
         };
 
         let idx_y = match self.variant_to_idx.get(variant_y) {
@@ -163,15 +161,18 @@ impl TemporalImmunityComputer {
 
         Self {
             country_populations: pops,
-            t_max: 14.0,   // Days to peak antibody (from VASIL paper)
-            t_half: 47.0,  // Half-life median (from our PK fitting)
-            cross_neut_cache: None,  // Build separately
+            t_max: 14.0,            // Days to peak antibody (from VASIL paper)
+            t_half: 47.0,           // Half-life median (from our PK fitting)
+            cross_neut_cache: None, // Build separately
         }
     }
 
     /// Build with pre-computed cross-neutralization matrix (200x speedup!)
     pub fn with_cache(mut self, all_variants: Vec<String>) -> Self {
-        log::info!("Building cross-neutralization cache for {} variants...", all_variants.len());
+        log::info!(
+            "Building cross-neutralization cache for {} variants...",
+            all_variants.len()
+        );
 
         self.cross_neut_cache = Some(CrossNeutralizationCache::precompute(
             &all_variants,
@@ -196,7 +197,6 @@ impl TemporalImmunityComputer {
         country_data: &CountryData,
         vasil_data: Option<&VasilEnhancedData>,
     ) -> Result<f64> {
-
         let mut accumulated_immunity = 0.0;
 
         // Get date range to integrate over (past 600 days)
@@ -211,23 +211,22 @@ impl TemporalImmunityComputer {
             let days_since = (target_date - *infection_date).num_days() as f32;
 
             // Estimate incidence on this day
-            let incidence = self.estimate_incidence(
-                country,
-                *infection_date,
-                country_data,
-                vasil_data,
-            );
+            let incidence =
+                self.estimate_incidence(country, *infection_date, country_data, vasil_data);
 
             // For each variant circulating on that day
-            for (lineage_idx, past_variant) in country_data.frequencies.lineages.iter().enumerate() {
-                let frequency = country_data.frequencies.frequencies
+            for (lineage_idx, past_variant) in country_data.frequencies.lineages.iter().enumerate()
+            {
+                let frequency = country_data
+                    .frequencies
+                    .frequencies
                     .get(date_idx)
                     .and_then(|row| row.get(lineage_idx))
                     .copied()
                     .unwrap_or(0.0);
 
                 if frequency < 0.001 {
-                    continue;  // Skip negligible variants
+                    continue; // Skip negligible variants
                 }
 
                 // Compute cross-neutralization: Does past infection with X protect against Y?
@@ -263,22 +262,30 @@ impl TemporalImmunityComputer {
         vasil_data: Option<&VasilEnhancedData>,
     ) -> f32 {
         // Compute total frequency (sum across all lineages) at the given date
-        let date_idx = frequencies.frequencies.dates.iter()
+        let date_idx = frequencies
+            .frequencies
+            .dates
+            .iter()
             .position(|d| d == &date);
 
         let total_freq: f32 = if let Some(idx) = date_idx {
-            frequencies.frequencies.frequencies
+            frequencies
+                .frequencies
+                .frequencies
                 .get(idx)
                 .map(|row| row.iter().sum())
                 .unwrap_or(1.0)
         } else {
-            1.0  // Fallback if date not found
+            1.0 // Fallback if date not found
         };
 
         // Get population for this country (as f32 for compatibility)
-        let population = (self.country_populations.get(country)
+        let population = (self
+            .country_populations
+            .get(country)
             .copied()
-            .unwrap_or(50.0) * 1_000_000.0) as f32;
+            .unwrap_or(50.0)
+            * 1_000_000.0) as f32;
 
         // Use phi correction if available
         if let Some(vd) = vasil_data {
@@ -328,8 +335,9 @@ impl TemporalImmunityComputer {
 
         // Step 3: Neutralization probability
         // Higher fold-resistance → need more antibody → lower P_neut
-        let ic50 = 1.0;  // Normalized (from VASIL calibration)
-        let p_neut = antibody_concentration / (total_fold_resistance * ic50 + antibody_concentration);
+        let ic50 = 1.0; // Normalized (from VASIL calibration)
+        let p_neut =
+            antibody_concentration / (total_fold_resistance * ic50 + antibody_concentration);
 
         p_neut
     }
@@ -373,39 +381,51 @@ impl TemporalImmunityComputer {
             vasil_data,
         )?;
 
-        let population = self.country_populations.get(country)
+        let population = self
+            .country_populations
+            .get(country)
             .copied()
-            .unwrap_or(50.0) * 1_000_000.0;  // Convert to individuals
+            .unwrap_or(50.0)
+            * 1_000_000.0; // Convert to individuals
 
         let susceptible_y = population - immune_count;
 
         // Compute average susceptibles across currently circulating variants
-        let date_idx = country_data.frequencies.dates.iter()
+        let date_idx = country_data
+            .frequencies
+            .dates
+            .iter()
             .position(|d| d == &target_date)
             .unwrap_or(0);
 
         let mut weighted_susceptible_sum = 0.0;
         let mut total_frequency = 0.0;
 
-        for (lineage_idx, competitor_variant) in country_data.frequencies.lineages.iter().enumerate() {
-            let freq = country_data.frequencies.frequencies
+        for (lineage_idx, competitor_variant) in
+            country_data.frequencies.lineages.iter().enumerate()
+        {
+            let freq = country_data
+                .frequencies
+                .frequencies
                 .get(date_idx)
                 .and_then(|row| row.get(lineage_idx))
                 .copied()
                 .unwrap_or(0.0);
 
             if freq < 0.01 {
-                continue;  // Skip low-frequency variants
+                continue; // Skip low-frequency variants
             }
 
             // Compute susceptibles for competitor
-            let competitor_immune = self.compute_immunity_integral(
-                country,
-                competitor_variant,
-                target_date,
-                country_data,
-                vasil_data,
-            ).unwrap_or(0.0);
+            let competitor_immune = self
+                .compute_immunity_integral(
+                    country,
+                    competitor_variant,
+                    target_date,
+                    country_data,
+                    vasil_data,
+                )
+                .unwrap_or(0.0);
 
             let competitor_susceptible = population - competitor_immune;
 
@@ -416,7 +436,7 @@ impl TemporalImmunityComputer {
         let avg_susceptible = if total_frequency > 0.0 {
             weighted_susceptible_sum / total_frequency as f64
         } else {
-            population * 0.5  // Default: half population susceptible
+            population * 0.5 // Default: half population susceptible
         };
 
         // Relative fitness
@@ -450,9 +470,7 @@ mod tests {
 
         // Same variant should have high neutralization
         let p_neut = computer.compute_cross_neutralization(
-            "BA.5",
-            "BA.5",
-            30.0,  // 30 days post-infection
+            "BA.5", "BA.5", 30.0, // 30 days post-infection
             None,
         );
 

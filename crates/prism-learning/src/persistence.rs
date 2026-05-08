@@ -9,9 +9,9 @@
 //! - **Opening Events**: Number of open→close transitions (fewer = more stable)
 //! - **Max Continuous Open**: Longest stretch of continuous exposure
 
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 use prism_io::sovereign_types::Atom;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Configuration for persistence tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,8 +28,8 @@ impl Default for PersistenceConfig {
     fn default() -> Self {
         Self {
             num_samples: 20,           // Sample 20 times during simulation
-            exposure_threshold: 2.0,    // 2Å displacement = exposed
-            pocket_open_fraction: 0.3,  // 30% of target residues exposed = pocket open
+            exposure_threshold: 2.0,   // 2Å displacement = exposed
+            pocket_open_fraction: 0.3, // 30% of target residues exposed = pocket open
         }
     }
 }
@@ -181,7 +181,9 @@ impl PersistenceTracker {
             return false;
         }
 
-        let exposed_count = self.target_residues.iter()
+        let exposed_count = self
+            .target_residues
+            .iter()
             .filter(|&&res_id| {
                 displacements
                     .get(&(res_id as u32))
@@ -254,24 +256,24 @@ impl PersistenceTracker {
         };
 
         // Build per-residue histories
-        let residue_histories: Vec<ResidueExposureHistory> = self.target_residues.iter()
+        let residue_histories: Vec<ResidueExposureHistory> = self
+            .target_residues
+            .iter()
             .filter_map(|&res_id| {
                 let timeline = residue_timelines.get(&(res_id as u32))?;
                 if timeline.is_empty() {
                     return None;
                 }
 
-                let exposed_timeline: Vec<bool> = timeline.iter()
+                let exposed_timeline: Vec<bool> = timeline
+                    .iter()
                     .map(|&d| d >= self.config.exposure_threshold)
                     .collect();
 
-                let exposure_fraction = exposed_timeline.iter()
-                    .filter(|&&x| x)
-                    .count() as f32 / exposed_timeline.len() as f32;
+                let exposure_fraction = exposed_timeline.iter().filter(|&&x| x).count() as f32
+                    / exposed_timeline.len() as f32;
 
-                let max_displacement = timeline.iter()
-                    .cloned()
-                    .fold(0.0f32, f32::max);
+                let max_displacement = timeline.iter().cloned().fold(0.0f32, f32::max);
 
                 let mean_displacement = timeline.iter().sum::<f32>() / timeline.len() as f32;
 
@@ -400,10 +402,22 @@ mod tests {
 
     #[test]
     fn test_persistence_assessment() {
-        assert_eq!(PersistenceAssessment::from_ratio(0.8), PersistenceAssessment::Stable);
-        assert_eq!(PersistenceAssessment::from_ratio(0.6), PersistenceAssessment::Moderate);
-        assert_eq!(PersistenceAssessment::from_ratio(0.4), PersistenceAssessment::Transient);
-        assert_eq!(PersistenceAssessment::from_ratio(0.2), PersistenceAssessment::Unstable);
+        assert_eq!(
+            PersistenceAssessment::from_ratio(0.8),
+            PersistenceAssessment::Stable
+        );
+        assert_eq!(
+            PersistenceAssessment::from_ratio(0.6),
+            PersistenceAssessment::Moderate
+        );
+        assert_eq!(
+            PersistenceAssessment::from_ratio(0.4),
+            PersistenceAssessment::Transient
+        );
+        assert_eq!(
+            PersistenceAssessment::from_ratio(0.2),
+            PersistenceAssessment::Unstable
+        );
     }
 
     #[test]
@@ -420,8 +434,8 @@ mod tests {
         let timeline = vec![true, true, false, true, true, true, false];
         let (events, max_open, durations) = tracker.analyze_transitions(&timeline);
 
-        assert_eq!(events, 2);      // Two opening events
-        assert_eq!(max_open, 3);    // Longest open stretch is 3
+        assert_eq!(events, 2); // Two opening events
+        assert_eq!(max_open, 3); // Longest open stretch is 3
         assert_eq!(durations, vec![2, 3]); // Two open periods: 2 frames and 3 frames
     }
 

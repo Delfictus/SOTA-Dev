@@ -15,7 +15,9 @@
 use std::os::raw::{c_char, c_int, c_void};
 
 // Used to free host-side arrays allocated by SDST C functions (malloc'd in libsdst)
-extern "C" { fn free(ptr: *mut c_void); }
+extern "C" {
+    fn free(ptr: *mut c_void);
+}
 
 pub type MortonCode = u32;
 pub type SpikeId = u32;
@@ -38,9 +40,15 @@ pub enum SdstError {
 }
 
 impl SdstError {
-    pub fn is_ok(self) -> bool { self == SdstError::Success }
+    pub fn is_ok(self) -> bool {
+        self == SdstError::Success
+    }
     pub fn check(self) -> Result<(), SdstError> {
-        if self.is_ok() { Ok(()) } else { Err(self) }
+        if self.is_ok() {
+            Ok(())
+        } else {
+            Err(self)
+        }
     }
 }
 
@@ -49,20 +57,20 @@ impl SdstError {
 #[repr(C, align(4))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SpikeEvent {
-    pub voxel: MortonCode,          // u32 @ 0
-    pub timestamp: u32,             // u32 @ 4
-    pub parent_spike: SpikeId,      // u32 @ 8
-    pub avalanche_id: AvalancheId,  // u32 @ 12
-    pub wavefront_id: WavefrontId,  // u32 @ 16
-    pub amplitude: u16,             // u16 @ 20
-    pub local_temp: u16,            // u16 @ 22
-    pub energy_gradient: u16,       // u16 @ 24
-    pub solvent_exposure: u16,      // u16 @ 26
-    pub wavefront_velocity: u16,    // u16 @ 28
-    pub wavefront_coherence: u16,   // u16 @ 30
-    pub phase_id: PhaseId,          // u8  @ 32
-    pub tcl_flags: u8,              // u8  @ 33
-    // 2 bytes implicit trailing padding → sizeof = 36
+    pub voxel: MortonCode,         // u32 @ 0
+    pub timestamp: u32,            // u32 @ 4
+    pub parent_spike: SpikeId,     // u32 @ 8
+    pub avalanche_id: AvalancheId, // u32 @ 12
+    pub wavefront_id: WavefrontId, // u32 @ 16
+    pub amplitude: u16,            // u16 @ 20
+    pub local_temp: u16,           // u16 @ 22
+    pub energy_gradient: u16,      // u16 @ 24
+    pub solvent_exposure: u16,     // u16 @ 26
+    pub wavefront_velocity: u16,   // u16 @ 28
+    pub wavefront_coherence: u16,  // u16 @ 30
+    pub phase_id: PhaseId,         // u8  @ 32
+    pub tcl_flags: u8,             // u8  @ 33
+                                   // 2 bytes implicit trailing padding → sizeof = 36
 }
 
 #[repr(C)]
@@ -82,9 +90,12 @@ pub struct SpikeInput {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct SpatialRegion {
-    pub x_min: u32, pub x_max: u32,
-    pub y_min: u32, pub y_max: u32,
-    pub z_min: u32, pub z_max: u32,
+    pub x_min: u32,
+    pub x_max: u32,
+    pub y_min: u32,
+    pub y_max: u32,
+    pub z_min: u32,
+    pub z_max: u32,
 }
 
 #[repr(C)]
@@ -242,14 +253,17 @@ extern "C" {
     ) -> SdstError;
     pub fn sdst_query_voxel(
         handle: SdstHandle,
-        x: u32, y: u32, z: u32,
+        x: u32,
+        y: u32,
+        z: u32,
         events: *mut *mut SpikeEvent,
         count: *mut u32,
         stream: *mut c_void,
     ) -> SdstError;
     pub fn sdst_query_timerange(
         handle: SdstHandle,
-        t_start: u32, t_end: u32,
+        t_start: u32,
+        t_end: u32,
         events: *mut *mut SpikeEvent,
         count: *mut u32,
         stream: *mut c_void,
@@ -421,7 +435,8 @@ impl Sdst {
                 inputs.as_ptr(),
                 inputs.len() as u32,
                 std::ptr::null_mut(),
-            ).check()
+            )
+            .check()
         }
     }
 
@@ -443,7 +458,9 @@ impl Sdst {
         ramp_down: u32,
     ) -> Result<(), SdstError> {
         let count = nhs_events.len() / nhs_stride as usize;
-        if count == 0 { return Ok(()); }
+        if count == 0 {
+            return Ok(());
+        }
         unsafe {
             sdst_insert_from_nhs_buffer(
                 self.handle,
@@ -457,7 +474,8 @@ impl Sdst {
                 warm_hold,
                 ramp_down,
                 std::ptr::null_mut(),
-            ).check()
+            )
+            .check()
         }
     }
 
@@ -475,8 +493,13 @@ impl Sdst {
 
     /// Batched GPU-native CCNS for caller-specified spatial regions.
     /// One GPU call for all regions. Returns one CcnsResult per region.
-    pub fn ccns_for_regions(&self, regions: &[SpatialRegion]) -> Result<Vec<CcnsResult>, SdstError> {
-        if regions.is_empty() { return Ok(Vec::new()); }
+    pub fn ccns_for_regions(
+        &self,
+        regions: &[SpatialRegion],
+    ) -> Result<Vec<CcnsResult>, SdstError> {
+        if regions.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut results = vec![CcnsResult::default(); regions.len()];
         unsafe {
             sdst_ccns_for_regions(
@@ -485,7 +508,8 @@ impl Sdst {
                 regions.len() as u32,
                 results.as_mut_ptr(),
                 std::ptr::null_mut(),
-            ).check()?;
+            )
+            .check()?;
         }
         Ok(results)
     }
@@ -493,19 +517,32 @@ impl Sdst {
     pub fn ccns_region(&self, region: &SpatialRegion) -> Result<CcnsResult, SdstError> {
         let mut result = std::mem::MaybeUninit::<CcnsResult>::uninit();
         unsafe {
-            sdst_ccns_region(self.handle, region, result.as_mut_ptr(), std::ptr::null_mut()).check()?;
+            sdst_ccns_region(
+                self.handle,
+                region,
+                result.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+            .check()?;
             Ok(result.assume_init())
         }
     }
 
-    pub fn hysteresis_region(&self, region: &SpatialRegion, threshold: f32)
-        -> Result<HysteresisResult, SdstError>
-    {
+    pub fn hysteresis_region(
+        &self,
+        region: &SpatialRegion,
+        threshold: f32,
+    ) -> Result<HysteresisResult, SdstError> {
         let mut result = std::mem::MaybeUninit::<HysteresisResult>::uninit();
         unsafe {
             sdst_hysteresis_region(
-                self.handle, region, threshold, result.as_mut_ptr(), std::ptr::null_mut()
-            ).check()?;
+                self.handle,
+                region,
+                threshold,
+                result.as_mut_ptr(),
+                std::ptr::null_mut(),
+            )
+            .check()?;
             Ok(result.assume_init())
         }
     }
@@ -550,7 +587,8 @@ impl Sdst {
                 &mut ptr,
                 &mut count,
                 std::ptr::null_mut(),
-            ).check()?;
+            )
+            .check()?;
             if count == 0 || ptr.is_null() {
                 return Ok(Vec::new());
             }
@@ -566,8 +604,13 @@ impl Sdst {
         let mut count = 0u32;
         unsafe {
             sdst_avalanche_stats(
-                self.handle, phase_filter as c_int, &mut ptr, &mut count, std::ptr::null_mut(),
-            ).check()?;
+                self.handle,
+                phase_filter as c_int,
+                &mut ptr,
+                &mut count,
+                std::ptr::null_mut(),
+            )
+            .check()?;
             if count == 0 || ptr.is_null() {
                 return Ok(Vec::new());
             }
@@ -585,14 +628,21 @@ impl Sdst {
         let mut count = 0u32;
         unsafe {
             sdst_ccns_all_pockets_gpu(
-                self.handle, &mut results_ptr, &mut regions_ptr, &mut count, std::ptr::null_mut(),
-            ).check()?;
+                self.handle,
+                &mut results_ptr,
+                &mut regions_ptr,
+                &mut count,
+                std::ptr::null_mut(),
+            )
+            .check()?;
             if count == 0 || results_ptr.is_null() {
                 return Ok(Vec::new());
             }
             let results = std::slice::from_raw_parts(results_ptr, count as usize);
             let regions = std::slice::from_raw_parts(regions_ptr, count as usize);
-            let v: Vec<(CcnsResult, SpatialRegion)> = results.iter().copied()
+            let v: Vec<(CcnsResult, SpatialRegion)> = results
+                .iter()
+                .copied()
                 .zip(regions.iter().copied())
                 .collect();
             free(results_ptr as *mut c_void);
@@ -609,14 +659,21 @@ impl Sdst {
         let mut count = 0u32;
         unsafe {
             sdst_ccns_all_pockets(
-                self.handle, &mut results_ptr, &mut regions_ptr, &mut count, std::ptr::null_mut(),
-            ).check()?;
+                self.handle,
+                &mut results_ptr,
+                &mut regions_ptr,
+                &mut count,
+                std::ptr::null_mut(),
+            )
+            .check()?;
             if count == 0 || results_ptr.is_null() {
                 return Ok(Vec::new());
             }
             let results = std::slice::from_raw_parts(results_ptr, count as usize);
             let regions = std::slice::from_raw_parts(regions_ptr, count as usize);
-            let v: Vec<(CcnsResult, SpatialRegion)> = results.iter().copied()
+            let v: Vec<(CcnsResult, SpatialRegion)> = results
+                .iter()
+                .copied()
                 .zip(regions.iter().copied())
                 .collect();
             free(results_ptr as *mut c_void);
@@ -628,7 +685,9 @@ impl Sdst {
 
 impl Drop for Sdst {
     fn drop(&mut self) {
-        unsafe { sdst_destroy(self.handle); }
+        unsafe {
+            sdst_destroy(self.handle);
+        }
     }
 }
 
@@ -645,26 +704,30 @@ mod tests {
 
     #[test]
     fn test_spike_event_size() {
-        assert_eq!(std::mem::size_of::<SpikeEvent>(), 36,
-            "SpikeEvent: C=36, Rust={}", std::mem::size_of::<SpikeEvent>());
+        assert_eq!(
+            std::mem::size_of::<SpikeEvent>(),
+            36,
+            "SpikeEvent: C=36, Rust={}",
+            std::mem::size_of::<SpikeEvent>()
+        );
     }
 
     #[test]
     fn test_spike_event_field_offsets() {
         use std::mem::offset_of;
-        assert_eq!(offset_of!(SpikeEvent, voxel),               0);
-        assert_eq!(offset_of!(SpikeEvent, timestamp),           4);
-        assert_eq!(offset_of!(SpikeEvent, parent_spike),        8);
-        assert_eq!(offset_of!(SpikeEvent, avalanche_id),       12);
-        assert_eq!(offset_of!(SpikeEvent, wavefront_id),       16);
-        assert_eq!(offset_of!(SpikeEvent, amplitude),          20);
-        assert_eq!(offset_of!(SpikeEvent, local_temp),         22);
-        assert_eq!(offset_of!(SpikeEvent, energy_gradient),    24);
-        assert_eq!(offset_of!(SpikeEvent, solvent_exposure),   26);
+        assert_eq!(offset_of!(SpikeEvent, voxel), 0);
+        assert_eq!(offset_of!(SpikeEvent, timestamp), 4);
+        assert_eq!(offset_of!(SpikeEvent, parent_spike), 8);
+        assert_eq!(offset_of!(SpikeEvent, avalanche_id), 12);
+        assert_eq!(offset_of!(SpikeEvent, wavefront_id), 16);
+        assert_eq!(offset_of!(SpikeEvent, amplitude), 20);
+        assert_eq!(offset_of!(SpikeEvent, local_temp), 22);
+        assert_eq!(offset_of!(SpikeEvent, energy_gradient), 24);
+        assert_eq!(offset_of!(SpikeEvent, solvent_exposure), 26);
         assert_eq!(offset_of!(SpikeEvent, wavefront_velocity), 28);
-        assert_eq!(offset_of!(SpikeEvent, wavefront_coherence),30);
-        assert_eq!(offset_of!(SpikeEvent, phase_id),           32);
-        assert_eq!(offset_of!(SpikeEvent, tcl_flags),          33);
+        assert_eq!(offset_of!(SpikeEvent, wavefront_coherence), 30);
+        assert_eq!(offset_of!(SpikeEvent, phase_id), 32);
+        assert_eq!(offset_of!(SpikeEvent, tcl_flags), 33);
     }
 
     #[test]

@@ -28,13 +28,16 @@
 //! ```
 
 use rand::Rng;
-use rand_distr::{Normal, Distribution};
+use rand_distr::{Distribution, Normal};
 
 use crate::amber_ff14sb::{AmberTopology, GpuTopology, PdbAtom};
 
 // GPU support (optional)
 #[cfg(feature = "cuda")]
-use prism_gpu::amber_forces::{AmberBondedForces, Bond, Angle, Dihedral, Pair14, BondParam, AngleParam, DihedralParam, NB14Param};
+use prism_gpu::amber_forces::{
+    AmberBondedForces, Angle, AngleParam, Bond, BondParam, Dihedral, DihedralParam, NB14Param,
+    Pair14,
+};
 
 /// Simulation configuration
 #[derive(Debug, Clone)]
@@ -58,13 +61,13 @@ pub struct AmberSimConfig {
 impl Default for AmberSimConfig {
     fn default() -> Self {
         Self {
-            temperature: 300.0,      // Room temperature
-            timestep: 2.0,           // 2 fs (standard for proteins with SHAKE)
-            n_leapfrog_steps: 10,    // 10 steps per HMC move
-            friction: 1.0,           // 1/ps friction for Langevin
-            use_langevin: true,      // Langevin is more stable
+            temperature: 300.0,   // Room temperature
+            timestep: 2.0,        // 2 fs (standard for proteins with SHAKE)
+            n_leapfrog_steps: 10, // 10 steps per HMC move
+            friction: 1.0,        // 1/ps friction for Langevin
+            use_langevin: true,   // Langevin is more stable
             seed: 42,
-            use_gpu: true,           // Use GPU when available
+            use_gpu: true, // Use GPU when available
         }
     }
 }
@@ -174,7 +177,8 @@ impl AmberSimulator {
         let _n_atoms = atoms.len(); // Used for validation
 
         // Extract positions from input atoms
-        let positions: Vec<[f64; 3]> = atoms.iter()
+        let positions: Vec<[f64; 3]> = atoms
+            .iter()
             .map(|a| [a.x as f64, a.y as f64, a.z as f64])
             .collect();
 
@@ -185,8 +189,16 @@ impl AmberSimulator {
         // Get LJ parameters from topology
         // Note: AMBER uses rmin_half, convert to sigma: sigma = rmin_half * 2^(5/6)
         let rmin_to_sigma = 2.0_f64.powf(5.0 / 6.0);
-        let lj_epsilon: Vec<f64> = topology.lj_params.iter().map(|p| p.epsilon as f64).collect();
-        let lj_sigma: Vec<f64> = topology.lj_params.iter().map(|p| (p.rmin_half as f64) * rmin_to_sigma).collect();
+        let lj_epsilon: Vec<f64> = topology
+            .lj_params
+            .iter()
+            .map(|p| p.epsilon as f64)
+            .collect();
+        let lj_sigma: Vec<f64> = topology
+            .lj_params
+            .iter()
+            .map(|p| (p.rmin_half as f64) * rmin_to_sigma)
+            .collect();
 
         // Initialize velocities from Maxwell-Boltzmann distribution
         let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
@@ -197,7 +209,10 @@ impl AmberSimulator {
         let (gpu_forces, gpu_active) = if config.use_gpu {
             match Self::init_gpu_forces(&topology, atoms.len()) {
                 Ok(forces) => {
-                    log::info!("🚀 GPU acceleration enabled for AMBER dynamics ({} atoms)", atoms.len());
+                    log::info!(
+                        "🚀 GPU acceleration enabled for AMBER dynamics ({} atoms)",
+                        atoms.len()
+                    );
                     (Some(forces), true)
                 }
                 Err(e) => {
@@ -234,7 +249,10 @@ impl AmberSimulator {
 
     /// Initialize GPU force calculator
     #[cfg(feature = "cuda")]
-    fn init_gpu_forces(topology: &AmberTopology, n_atoms: usize) -> anyhow::Result<AmberBondedForces> {
+    fn init_gpu_forces(
+        topology: &AmberTopology,
+        n_atoms: usize,
+    ) -> anyhow::Result<AmberBondedForces> {
         use cudarc::driver::CudaContext;
 
         // Get CUDA context (CudaContext::new already returns Arc<CudaContext>)
@@ -244,7 +262,9 @@ impl AmberSimulator {
         let mut forces = AmberBondedForces::new(context, n_atoms)?;
 
         // Convert topology to GPU format
-        let bonds: Vec<Bond> = topology.bonds.iter()
+        let bonds: Vec<Bond> = topology
+            .bonds
+            .iter()
             .zip(topology.bond_params.iter())
             .map(|(&(i, j), p)| Bond {
                 atom_i: i,
@@ -253,13 +273,18 @@ impl AmberSimulator {
             })
             .collect();
 
-        let angles: Vec<Angle> = topology.angles.iter()
+        let angles: Vec<Angle> = topology
+            .angles
+            .iter()
             .zip(topology.angle_params.iter())
             .map(|(&(i, j, k), p)| Angle {
                 atom_i: i,
                 atom_j: j,
                 atom_k: k,
-                params: AngleParam { k: p.k, theta0: p.theta0 },
+                params: AngleParam {
+                    k: p.k,
+                    theta0: p.theta0,
+                },
             })
             .collect();
 
@@ -283,12 +308,30 @@ impl AmberSimulator {
         }
 
         // 1-4 pairs with scaled LJ/Coulomb
-        let pairs_14: Vec<Pair14> = topology.pairs_14.iter()
+        let pairs_14: Vec<Pair14> = topology
+            .pairs_14
+            .iter()
             .map(|&(i, j)| {
-                let eps_i = topology.lj_params.get(i as usize).map(|p| p.epsilon).unwrap_or(0.1);
-                let eps_j = topology.lj_params.get(j as usize).map(|p| p.epsilon).unwrap_or(0.1);
-                let sig_i = topology.lj_params.get(i as usize).map(|p| p.rmin_half * 1.78179743628).unwrap_or(1.7);
-                let sig_j = topology.lj_params.get(j as usize).map(|p| p.rmin_half * 1.78179743628).unwrap_or(1.7);
+                let eps_i = topology
+                    .lj_params
+                    .get(i as usize)
+                    .map(|p| p.epsilon)
+                    .unwrap_or(0.1);
+                let eps_j = topology
+                    .lj_params
+                    .get(j as usize)
+                    .map(|p| p.epsilon)
+                    .unwrap_or(0.1);
+                let sig_i = topology
+                    .lj_params
+                    .get(i as usize)
+                    .map(|p| p.rmin_half * 1.78179743628)
+                    .unwrap_or(1.7);
+                let sig_j = topology
+                    .lj_params
+                    .get(j as usize)
+                    .map(|p| p.rmin_half * 1.78179743628)
+                    .unwrap_or(1.7);
                 let qi = topology.charges.get(i as usize).copied().unwrap_or(0.0);
                 let qj = topology.charges.get(j as usize).copied().unwrap_or(0.0);
 
@@ -324,8 +367,11 @@ impl AmberSimulator {
             // Move atoms along force direction (steepest descent)
             let mut max_f = 0.0;
             for i in 0..self.positions.len() {
-                let f_mag = (forces[i][0].powi(2) + forces[i][1].powi(2) + forces[i][2].powi(2)).sqrt();
-                if f_mag > max_f { max_f = f_mag; }
+                let f_mag =
+                    (forces[i][0].powi(2) + forces[i][1].powi(2) + forces[i][2].powi(2)).sqrt();
+                if f_mag > max_f {
+                    max_f = f_mag;
+                }
 
                 if f_mag > 0.01 {
                     let scale = step_size.min(step_size * max_force / f_mag);
@@ -337,19 +383,28 @@ impl AmberSimulator {
 
             if step % 100 == 0 && step > 0 {
                 let pe = self.compute_potential_energy();
-                eprintln!("  Minimization step {}: PE = {:.1} kcal/mol, max_f = {:.2}", step, pe, max_f);
+                eprintln!(
+                    "  Minimization step {}: PE = {:.1} kcal/mol, max_f = {:.2}",
+                    step, pe, max_f
+                );
             }
 
             // Converged if max force is small
             if max_f < 1.0 {
                 let final_pe = self.compute_potential_energy();
-                eprintln!("  Minimization converged at step {}: PE = {:.1} kcal/mol", step, final_pe);
+                eprintln!(
+                    "  Minimization converged at step {}: PE = {:.1} kcal/mol",
+                    step, final_pe
+                );
                 return;
             }
         }
 
         let final_pe = self.compute_potential_energy();
-        eprintln!("  Minimization finished: final PE = {:.1} kcal/mol", final_pe);
+        eprintln!(
+            "  Minimization finished: final PE = {:.1} kcal/mol",
+            final_pe
+        );
     }
 
     /// Run simulation for given number of HMC moves
@@ -402,8 +457,10 @@ impl AmberSimulator {
         let rmsf = compute_rmsf_from_trajectory(&trajectory, &self.topology);
 
         // Compute statistics
-        let avg_pe = trajectory.iter().map(|f| f.potential_energy).sum::<f64>() / trajectory.len() as f64;
-        let avg_temp = trajectory.iter().map(|f| f.temperature).sum::<f64>() / trajectory.len() as f64;
+        let avg_pe =
+            trajectory.iter().map(|f| f.potential_energy).sum::<f64>() / trajectory.len() as f64;
+        let avg_temp =
+            trajectory.iter().map(|f| f.temperature).sum::<f64>() / trajectory.len() as f64;
 
         let acceptance_rate = if self.attempted > 0 {
             self.accepted as f64 / self.attempted as f64
@@ -478,7 +535,8 @@ impl AmberSimulator {
         for i in 0..n_atoms {
             let inv_m = 1.0 / self.masses[i];
             for d in 0..3 {
-                self.velocities[i][d] += 0.5 * dt * forces_new[i][d] * inv_m * FORCE_CONVERSION_FACTOR;
+                self.velocities[i][d] +=
+                    0.5 * dt * forces_new[i][d] * inv_m * FORCE_CONVERSION_FACTOR;
             }
         }
 
@@ -516,7 +574,8 @@ impl AmberSimulator {
         let old_h = old_pe + old_ke;
 
         // Resample momenta from Maxwell-Boltzmann
-        self.velocities = initialize_velocities(&self.masses, self.config.temperature, &mut self.rng);
+        self.velocities =
+            initialize_velocities(&self.masses, self.config.temperature, &mut self.rng);
 
         // Run leapfrog integration
         self.leapfrog_integrate(self.config.n_leapfrog_steps);
@@ -528,7 +587,9 @@ impl AmberSimulator {
 
         // Metropolis acceptance
         let delta_h = new_h - old_h;
-        let accept_prob = (-delta_h / (KB_KCAL * self.config.temperature)).exp().min(1.0);
+        let accept_prob = (-delta_h / (KB_KCAL * self.config.temperature))
+            .exp()
+            .min(1.0);
 
         if self.rng.gen::<f64>() < accept_prob {
             self.accepted += 1;
@@ -553,7 +614,8 @@ impl AmberSimulator {
             for i in 0..n_atoms {
                 let inv_m = 1.0 / self.masses[i];
                 for d in 0..3 {
-                    self.velocities[i][d] += 0.5 * dt * forces[i][d] * inv_m * FORCE_CONVERSION_FACTOR;
+                    self.velocities[i][d] +=
+                        0.5 * dt * forces[i][d] * inv_m * FORCE_CONVERSION_FACTOR;
                 }
             }
 
@@ -571,7 +633,8 @@ impl AmberSimulator {
             for i in 0..n_atoms {
                 let inv_m = 1.0 / self.masses[i];
                 for d in 0..3 {
-                    self.velocities[i][d] += 0.5 * dt * forces_new[i][d] * inv_m * FORCE_CONVERSION_FACTOR;
+                    self.velocities[i][d] +=
+                        0.5 * dt * forces_new[i][d] * inv_m * FORCE_CONVERSION_FACTOR;
                 }
             }
 
@@ -653,9 +716,14 @@ impl AmberSimulator {
     /// Non-bonded forces (LJ + Coulomb) are still computed on CPU because
     /// GPU non-bonded would require neighbor list construction.
     #[cfg(feature = "cuda")]
-    fn compute_forces_gpu_internal(&self, gpu_forces: &mut AmberBondedForces) -> anyhow::Result<Vec<[f64; 3]>> {
+    fn compute_forces_gpu_internal(
+        &self,
+        gpu_forces: &mut AmberBondedForces,
+    ) -> anyhow::Result<Vec<[f64; 3]>> {
         // Flatten positions for GPU upload
-        let positions_flat: Vec<f32> = self.positions.iter()
+        let positions_flat: Vec<f32> = self
+            .positions
+            .iter()
             .flat_map(|p| [p[0] as f32, p[1] as f32, p[2] as f32])
             .collect();
 
@@ -666,7 +734,8 @@ impl AmberSimulator {
         let (_energy, forces_flat) = gpu_forces.compute()?;
 
         // Convert back to Vec<[f64; 3]>
-        let forces: Vec<[f64; 3]> = forces_flat.chunks(3)
+        let forces: Vec<[f64; 3]> = forces_flat
+            .chunks(3)
             .map(|chunk| [chunk[0] as f64, chunk[1] as f64, chunk[2] as f64])
             .collect();
 
@@ -693,7 +762,9 @@ impl AmberSimulator {
             ];
             let dist = (r_ij[0] * r_ij[0] + r_ij[1] * r_ij[1] + r_ij[2] * r_ij[2]).sqrt();
 
-            if dist < 1e-10 { continue; }
+            if dist < 1e-10 {
+                continue;
+            }
 
             // F = -dV/dr = -2k(r - r0) * (r_ij / r)
             let force_mag = -2.0 * k * (dist - r0);
@@ -731,7 +802,9 @@ impl AmberSimulator {
             let r1 = (r_ji[0] * r_ji[0] + r_ji[1] * r_ji[1] + r_ji[2] * r_ji[2]).sqrt();
             let r2 = (r_jk[0] * r_jk[0] + r_jk[1] * r_jk[1] + r_jk[2] * r_jk[2]).sqrt();
 
-            if r1 < 1e-10 || r2 < 1e-10 { continue; }
+            if r1 < 1e-10 || r2 < 1e-10 {
+                continue;
+            }
 
             // Compute angle
             let dot = r_ji[0] * r_jk[0] + r_ji[1] * r_jk[1] + r_ji[2] * r_jk[2];
@@ -757,7 +830,9 @@ impl AmberSimulator {
 
     /// Add dihedral torsion forces
     fn add_dihedral_forces(&self, forces: &mut Vec<[f64; 3]>) {
-        for (dih_idx, &(atom_i, atom_j, atom_k, atom_l)) in self.topology.dihedrals.iter().enumerate() {
+        for (dih_idx, &(atom_i, atom_j, atom_k, atom_l)) in
+            self.topology.dihedrals.iter().enumerate()
+        {
             let i = atom_i as usize;
             let j = atom_j as usize;
             let k = atom_k as usize;
@@ -787,12 +862,16 @@ impl AmberSimulator {
             let n1_len = (n1[0] * n1[0] + n1[1] * n1[1] + n1[2] * n1[2]).sqrt();
             let n2_len = (n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]).sqrt();
 
-            if n1_len < 1e-10 || n2_len < 1e-10 { continue; }
+            if n1_len < 1e-10 || n2_len < 1e-10 {
+                continue;
+            }
 
             // Dihedral angle
             let m1 = cross(&n1, &b2);
             let m1_len = (m1[0] * m1[0] + m1[1] * m1[1] + m1[2] * m1[2]).sqrt();
-            if m1_len < 1e-10 { continue; }
+            if m1_len < 1e-10 {
+                continue;
+            }
 
             let x = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2];
             let y = m1[0] * n2[0] + m1[1] * n2[1] + m1[2] * n2[2];
@@ -812,7 +891,9 @@ impl AmberSimulator {
             // Distribute forces to atoms (simplified gradient)
             // This is approximate - full implementation needs proper chain rule
             let b2_len = (b2[0] * b2[0] + b2[1] * b2[1] + b2[2] * b2[2]).sqrt();
-            if b2_len < 1e-10 { continue; }
+            if b2_len < 1e-10 {
+                continue;
+            }
 
             for d in 0..3 {
                 let f_scale = total_dv_dphi / (n1_len * n2_len * b2_len);
@@ -852,7 +933,9 @@ impl AmberSimulator {
         for i in 0..n {
             for j in (i + 1)..n {
                 // Check exclusions (1-2, 1-3 pairs)
-                if self.is_excluded(i, j) { continue; }
+                if self.is_excluded(i, j) {
+                    continue;
+                }
 
                 let r_ij = [
                     self.positions[j][0] - self.positions[i][0],
@@ -861,7 +944,9 @@ impl AmberSimulator {
                 ];
                 let dist_sq = r_ij[0] * r_ij[0] + r_ij[1] * r_ij[1] + r_ij[2] * r_ij[2];
 
-                if dist_sq > cutoff_sq { continue; }
+                if dist_sq > cutoff_sq {
+                    continue;
+                }
 
                 // Get LJ parameters (combining rules: Lorentz-Berthelot)
                 let eps_i = self.get_lj_epsilon(i);
@@ -894,7 +979,11 @@ impl AmberSimulator {
                 let lj_force_mag = 24.0 * eps * inv_r_eff * (2.0 * term12 - term6) * chain_factor;
 
                 // Apply 1-4 LJ scaling
-                let lj_force = if is_14 { lj_force_mag * lj_14_scale } else { lj_force_mag };
+                let lj_force = if is_14 {
+                    lj_force_mag * lj_14_scale
+                } else {
+                    lj_force_mag
+                };
 
                 // Coulomb force with soft-core distance
                 let qi = self.get_charge(i);
@@ -903,7 +992,11 @@ impl AmberSimulator {
                 let coul_force_mag = coulomb_k * qi * qj * inv_r2_eff * chain_factor;
 
                 // Apply 1-4 Coulomb scaling
-                let coul_force = if is_14 { coul_force_mag * coul_14_scale } else { coul_force_mag };
+                let coul_force = if is_14 {
+                    coul_force_mag * coul_14_scale
+                } else {
+                    coul_force_mag
+                };
 
                 let total_force = lj_force + coul_force;
 
@@ -936,11 +1029,7 @@ impl AmberSimulator {
 
         // Angle energy: E = k(θ - θ0)²
         for (angle_idx, &(atom_i, atom_j, atom_k)) in self.topology.angles.iter().enumerate() {
-            let theta = self.compute_angle(
-                atom_i as usize,
-                atom_j as usize,
-                atom_k as usize,
-            );
+            let theta = self.compute_angle(atom_i as usize, atom_j as usize, atom_k as usize);
             let params = &self.topology.angle_params[angle_idx];
             let theta0 = params.theta0 as f64;
             let k = params.k as f64;
@@ -948,7 +1037,9 @@ impl AmberSimulator {
         }
 
         // Dihedral energy: E = Σ k(1 + cos(nφ - phase))
-        for (dih_idx, &(atom_i, atom_j, atom_k, atom_l)) in self.topology.dihedrals.iter().enumerate() {
+        for (dih_idx, &(atom_i, atom_j, atom_k, atom_l)) in
+            self.topology.dihedrals.iter().enumerate()
+        {
             let phi = self.compute_dihedral(
                 atom_i as usize,
                 atom_j as usize,
@@ -1000,8 +1091,15 @@ impl AmberSimulator {
         }
 
         // Dihedral energy
-        for (dih_idx, &(atom_i, atom_j, atom_k, atom_l)) in self.topology.dihedrals.iter().enumerate() {
-            let phi = self.compute_dihedral(atom_i as usize, atom_j as usize, atom_k as usize, atom_l as usize);
+        for (dih_idx, &(atom_i, atom_j, atom_k, atom_l)) in
+            self.topology.dihedrals.iter().enumerate()
+        {
+            let phi = self.compute_dihedral(
+                atom_i as usize,
+                atom_j as usize,
+                atom_k as usize,
+                atom_l as usize,
+            );
             for params in &self.topology.dihedral_params[dih_idx] {
                 let k = params.k as f64;
                 let n = params.n as f64;
@@ -1013,21 +1111,36 @@ impl AmberSimulator {
         let nb_energy = self.compute_nonbonded_energy();
 
         // Statistics
-        let avg_stretch = if bond_stretches.is_empty() { 0.0 } else {
+        let avg_stretch = if bond_stretches.is_empty() {
+            0.0
+        } else {
             bond_stretches.iter().sum::<f64>() / bond_stretches.len() as f64
         };
         let max_stretch = bond_stretches.iter().cloned().fold(0.0, f64::max);
 
         eprintln!("  Energy Diagnostic:");
-        eprintln!("    Bonds:     {:12.1} kcal/mol ({} bonds, avg stretch {:.3} Å, max {:.3} Å)",
-                  bond_energy, self.topology.bonds.len(), avg_stretch, max_stretch);
-        eprintln!("    Angles:    {:12.1} kcal/mol ({} angles)",
-                  angle_energy, self.topology.angles.len());
-        eprintln!("    Dihedrals: {:12.1} kcal/mol ({} dihedrals)",
-                  dihedral_energy, self.topology.dihedrals.len());
+        eprintln!(
+            "    Bonds:     {:12.1} kcal/mol ({} bonds, avg stretch {:.3} Å, max {:.3} Å)",
+            bond_energy,
+            self.topology.bonds.len(),
+            avg_stretch,
+            max_stretch
+        );
+        eprintln!(
+            "    Angles:    {:12.1} kcal/mol ({} angles)",
+            angle_energy,
+            self.topology.angles.len()
+        );
+        eprintln!(
+            "    Dihedrals: {:12.1} kcal/mol ({} dihedrals)",
+            dihedral_energy,
+            self.topology.dihedrals.len()
+        );
         eprintln!("    Non-bonded:{:12.1} kcal/mol", nb_energy);
-        eprintln!("    Total:     {:12.1} kcal/mol",
-                  bond_energy + angle_energy + dihedral_energy + nb_energy);
+        eprintln!(
+            "    Total:     {:12.1} kcal/mol",
+            bond_energy + angle_energy + dihedral_energy + nb_energy
+        );
     }
 
     /// Compute non-bonded energy (LJ + Coulomb) with soft-core potential
@@ -1049,14 +1162,18 @@ impl AmberSimulator {
 
         for i in 0..n {
             for j in (i + 1)..n {
-                if self.is_excluded(i, j) { continue; }
+                if self.is_excluded(i, j) {
+                    continue;
+                }
 
                 let dx = self.positions[j][0] - self.positions[i][0];
                 let dy = self.positions[j][1] - self.positions[i][1];
                 let dz = self.positions[j][2] - self.positions[i][2];
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if dist_sq > cutoff_sq { continue; }
+                if dist_sq > cutoff_sq {
+                    continue;
+                }
 
                 // Soft-core effective distance
                 let effective_dist_sq = dist_sq.max(min_dist_sq) + soft_core_delta_sq;
@@ -1086,8 +1203,16 @@ impl AmberSimulator {
                 let coul_energy = coulomb_k * qi * qj * inv_r_eff;
 
                 // Apply 1-4 scaling
-                let lj_scaled = if is_14 { lj_energy * lj_14_scale } else { lj_energy };
-                let coul_scaled = if is_14 { coul_energy * coul_14_scale } else { coul_energy };
+                let lj_scaled = if is_14 {
+                    lj_energy * lj_14_scale
+                } else {
+                    lj_energy
+                };
+                let coul_scaled = if is_14 {
+                    coul_energy * coul_14_scale
+                } else {
+                    coul_energy
+                };
 
                 energy += lj_scaled + coul_scaled;
             }
@@ -1172,7 +1297,11 @@ impl AmberSimulator {
 
     /// Check if pair is excluded (1-2 or 1-3 bonded)
     fn is_excluded(&self, i: usize, j: usize) -> bool {
-        let (a, b) = if i < j { (i as u32, j as u32) } else { (j as u32, i as u32) };
+        let (a, b) = if i < j {
+            (i as u32, j as u32)
+        } else {
+            (j as u32, i as u32)
+        };
         self.topology.exclusions.iter().any(|&(x, y)| {
             let (x, y) = if x < y { (x, y) } else { (y, x) };
             x == a && y == b
@@ -1181,7 +1310,11 @@ impl AmberSimulator {
 
     /// Check if pair is a 1-4 interaction (scaled non-bonded)
     fn is_14_pair(&self, i: usize, j: usize) -> bool {
-        let (a, b) = if i < j { (i as u32, j as u32) } else { (j as u32, i as u32) };
+        let (a, b) = if i < j {
+            (i as u32, j as u32)
+        } else {
+            (j as u32, i as u32)
+        };
         self.topology.pairs_14.iter().any(|&(x, y)| {
             let (x, y) = if x < y { (x, y) } else { (y, x) };
             x == a && y == b
@@ -1250,7 +1383,10 @@ fn initialize_velocities<R: Rng>(masses: &[f64], temperature: f64, rng: &mut R) 
 
 /// Compute per-residue RMSF from trajectory
 /// Note: topology is reserved for future per-residue grouping
-fn compute_rmsf_from_trajectory(trajectory: &[TrajectoryFrame], _topology: &AmberTopology) -> Vec<f64> {
+fn compute_rmsf_from_trajectory(
+    trajectory: &[TrajectoryFrame],
+    _topology: &AmberTopology,
+) -> Vec<f64> {
     if trajectory.is_empty() {
         return vec![];
     }

@@ -93,27 +93,27 @@ impl ResidueType {
 /// Original scale: -4.5 (ARG) to +4.5 (ILE)
 /// Normalized: 0.0 (most hydrophilic) to 1.0 (most hydrophobic)
 pub const HYDROPHOBICITY: [f32; 21] = [
-    0.64,  // ALA: 1.8 → 0.64
-    0.00,  // ARG: -4.5 → 0.00 (most hydrophilic - charged)
-    0.36,  // ASN: -3.5 → 0.11 (polar)
-    0.33,  // ASP: -3.5 → 0.11 (charged)
-    0.78,  // CYS: 2.5 → 0.78 (can be in hydrophobic core)
-    0.36,  // GLN: -3.5 → 0.11
-    0.33,  // GLU: -3.5 → 0.11 (charged)
-    0.53,  // GLY: -0.4 → 0.46
-    0.47,  // HIS: -3.2 → 0.14 (can be charged)
-    1.00,  // ILE: 4.5 → 1.00 (MOST hydrophobic - GREAT target)
-    0.97,  // LEU: 3.8 → 0.92 (very hydrophobic)
-    0.07,  // LYS: -3.9 → 0.07 (charged)
-    0.83,  // MET: 1.9 → 0.71
-    0.94,  // PHE: 2.8 → 0.81 (aromatic - GREAT target)
-    0.39,  // PRO: -1.6 → 0.32
-    0.42,  // SER: -0.8 → 0.41 (polar)
-    0.44,  // THR: -0.7 → 0.42 (polar)
-    0.89,  // TRP: -0.9 → 0.40 (aromatic but can H-bond)
-    0.72,  // TYR: -1.3 → 0.36 (aromatic, polar -OH)
-    0.97,  // VAL: 4.2 → 0.97 (very hydrophobic)
-    0.50,  // UNK: neutral default
+    0.64, // ALA: 1.8 → 0.64
+    0.00, // ARG: -4.5 → 0.00 (most hydrophilic - charged)
+    0.36, // ASN: -3.5 → 0.11 (polar)
+    0.33, // ASP: -3.5 → 0.11 (charged)
+    0.78, // CYS: 2.5 → 0.78 (can be in hydrophobic core)
+    0.36, // GLN: -3.5 → 0.11
+    0.33, // GLU: -3.5 → 0.11 (charged)
+    0.53, // GLY: -0.4 → 0.46
+    0.47, // HIS: -3.2 → 0.14 (can be charged)
+    1.00, // ILE: 4.5 → 1.00 (MOST hydrophobic - GREAT target)
+    0.97, // LEU: 3.8 → 0.92 (very hydrophobic)
+    0.07, // LYS: -3.9 → 0.07 (charged)
+    0.83, // MET: 1.9 → 0.71
+    0.94, // PHE: 2.8 → 0.81 (aromatic - GREAT target)
+    0.39, // PRO: -1.6 → 0.32
+    0.42, // SER: -0.8 → 0.41 (polar)
+    0.44, // THR: -0.7 → 0.42 (polar)
+    0.89, // TRP: -0.9 → 0.40 (aromatic but can H-bond)
+    0.72, // TYR: -1.3 → 0.36 (aromatic, polar -OH)
+    0.97, // VAL: 4.2 → 0.97 (very hydrophobic)
+    0.50, // UNK: neutral default
 ];
 
 /// Get hydrophobicity score for a residue type (0.0-1.0)
@@ -130,19 +130,19 @@ pub fn get_hydrophobicity(res_type: ResidueType) -> f32 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AtomType {
     // Backbone atoms
-    BackboneN,      // Amide nitrogen: -0.4157
-    BackboneH,      // Amide hydrogen: +0.2719
-    BackboneCa,     // Alpha carbon: +0.0337
-    BackboneHa,     // Alpha hydrogen: +0.0823
-    BackboneC,      // Carbonyl carbon: +0.5973
-    BackboneO,      // Carbonyl oxygen: -0.5679
+    BackboneN,  // Amide nitrogen: -0.4157
+    BackboneH,  // Amide hydrogen: +0.2719
+    BackboneCa, // Alpha carbon: +0.0337
+    BackboneHa, // Alpha hydrogen: +0.0823
+    BackboneC,  // Carbonyl carbon: +0.5973
+    BackboneO,  // Carbonyl oxygen: -0.5679
 
     // Sidechain types (simplified)
-    SidechainNonpolar,  // CH2, CH3 groups: ~0.0
-    SidechainPolar,     // OH, NH2 groups: partial charges
-    SidechainPositive,  // NH3+, guanidinium: +1.0 distributed
-    SidechainNegative,  // COO-: -1.0 distributed
-    SidechainAromatic,  // Ring carbons: slight negative
+    SidechainNonpolar, // CH2, CH3 groups: ~0.0
+    SidechainPolar,    // OH, NH2 groups: partial charges
+    SidechainPositive, // NH3+, guanidinium: +1.0 distributed
+    SidechainNegative, // COO-: -1.0 distributed
+    SidechainAromatic, // Ring carbons: slight negative
 
     Unknown,
 }
@@ -168,32 +168,32 @@ pub fn get_atom_charge(atom_name: &str, res_type: ResidueType) -> f32 {
         // Charged residues
         ResidueType::ARG => {
             match atom_name {
-                "NE" | "NH1" | "NH2" => 0.34,   // Guanidinium nitrogens
-                "CZ" => 0.64,                    // Central carbon
+                "NE" | "NH1" | "NH2" => 0.34, // Guanidinium nitrogens
+                "CZ" => 0.64,                 // Central carbon
                 "HE" | "HH11" | "HH12" | "HH21" | "HH22" => 0.35,
-                _ => 0.0
+                _ => 0.0,
             }
         }
         ResidueType::LYS => {
             match atom_name {
-                "NZ" => -0.385,  // NH3+ nitrogen
-                "HZ1" | "HZ2" | "HZ3" => 0.34,  // NH3+ hydrogens
+                "NZ" => -0.385,                // NH3+ nitrogen
+                "HZ1" | "HZ2" | "HZ3" => 0.34, // NH3+ hydrogens
                 "CE" => 0.21,
-                _ => 0.0
+                _ => 0.0,
             }
         }
         ResidueType::ASP => {
             match atom_name {
                 "CG" => 0.55,
-                "OD1" | "OD2" => -0.65,  // Carboxylate oxygens
-                _ => 0.0
+                "OD1" | "OD2" => -0.65, // Carboxylate oxygens
+                _ => 0.0,
             }
         }
         ResidueType::GLU => {
             match atom_name {
                 "CD" => 0.55,
-                "OE1" | "OE2" => -0.65,  // Carboxylate oxygens
-                _ => 0.0
+                "OE1" | "OE2" => -0.65, // Carboxylate oxygens
+                _ => 0.0,
             }
         }
         ResidueType::HIS => {
@@ -204,67 +204,57 @@ pub fn get_atom_charge(atom_name: &str, res_type: ResidueType) -> f32 {
                 "CE1" => 0.21,
                 "NE2" => -0.57,
                 "CD2" => 0.13,
-                _ => 0.0
+                _ => 0.0,
             }
         }
 
         // Polar residues
-        ResidueType::SER => {
-            match atom_name {
-                "OG" => -0.65,
-                "HG" => 0.43,
-                _ => 0.0
-            }
-        }
-        ResidueType::THR => {
-            match atom_name {
-                "OG1" => -0.68,
-                "HG1" => 0.42,
-                _ => 0.0
-            }
-        }
-        ResidueType::ASN => {
-            match atom_name {
-                "OD1" => -0.59,
-                "ND2" => -0.92,
-                "HD21" | "HD22" => 0.42,
-                _ => 0.0
-            }
-        }
-        ResidueType::GLN => {
-            match atom_name {
-                "OE1" => -0.59,
-                "NE2" => -0.91,
-                "HE21" | "HE22" => 0.43,
-                _ => 0.0
-            }
-        }
+        ResidueType::SER => match atom_name {
+            "OG" => -0.65,
+            "HG" => 0.43,
+            _ => 0.0,
+        },
+        ResidueType::THR => match atom_name {
+            "OG1" => -0.68,
+            "HG1" => 0.42,
+            _ => 0.0,
+        },
+        ResidueType::ASN => match atom_name {
+            "OD1" => -0.59,
+            "ND2" => -0.92,
+            "HD21" | "HD22" => 0.42,
+            _ => 0.0,
+        },
+        ResidueType::GLN => match atom_name {
+            "OE1" => -0.59,
+            "NE2" => -0.91,
+            "HE21" | "HE22" => 0.43,
+            _ => 0.0,
+        },
         ResidueType::TYR => {
             match atom_name {
                 "OH" => -0.56,
                 "HH" => 0.40,
                 // Ring carbons have slight charges
                 "CG" | "CD1" | "CD2" | "CE1" | "CE2" | "CZ" => -0.02,
-                _ => 0.0
+                _ => 0.0,
             }
         }
-        ResidueType::TRP => {
-            match atom_name {
-                "NE1" => -0.34,
-                "HE1" => 0.34,
-                _ => 0.0
-            }
-        }
+        ResidueType::TRP => match atom_name {
+            "NE1" => -0.34,
+            "HE1" => 0.34,
+            _ => 0.0,
+        },
         ResidueType::CYS => {
             match atom_name {
                 "SG" => -0.31,
-                "HG" => 0.19,  // If protonated
-                _ => 0.0
+                "HG" => 0.19, // If protonated
+                _ => 0.0,
             }
         }
 
         // Nonpolar residues - minimal sidechain charges
-        _ => 0.0
+        _ => 0.0,
     }
 }
 
@@ -275,7 +265,10 @@ pub fn get_atom_charge(atom_name: &str, res_type: ResidueType) -> f32 {
 /// Check if atom is a backbone atom
 #[inline]
 pub fn is_backbone_atom(atom_name: &str) -> bool {
-    matches!(atom_name.trim(), "N" | "H" | "HN" | "CA" | "HA" | "C" | "O" | "OXT")
+    matches!(
+        atom_name.trim(),
+        "N" | "H" | "HN" | "CA" | "HA" | "C" | "O" | "OXT"
+    )
 }
 
 /// Check if atom is the alpha carbon (Cα) - key for backbone tracking
@@ -287,9 +280,10 @@ pub fn is_alpha_carbon(atom_name: &str) -> bool {
 /// Check if residue is charged at physiological pH
 #[inline]
 pub fn is_charged_residue(res_type: ResidueType) -> bool {
-    matches!(res_type,
+    matches!(
+        res_type,
         ResidueType::ARG | ResidueType::LYS |  // Positive
-        ResidueType::ASP | ResidueType::GLU    // Negative
+        ResidueType::ASP | ResidueType::GLU // Negative
     )
 }
 
@@ -299,7 +293,7 @@ pub fn get_residue_formal_charge(res_type: ResidueType) -> i32 {
     match res_type {
         ResidueType::ARG | ResidueType::LYS => 1,
         ResidueType::ASP | ResidueType::GLU => -1,
-        _ => 0
+        _ => 0,
     }
 }
 
@@ -466,7 +460,8 @@ impl AtomicMetadata {
 
     /// Get total charge in a region (list of atom indices)
     pub fn region_charge(&self, atom_indices: &[usize]) -> f32 {
-        atom_indices.iter()
+        atom_indices
+            .iter()
             .filter_map(|&i| self.atom_charges.get(i))
             .sum()
     }
@@ -501,7 +496,9 @@ pub fn calculate_hydrophobic_exposure(
         let hydrophobicity = metadata.residue_hydrophobicity(res_idx);
 
         // Find atoms belonging to this residue
-        let res_atoms: Vec<usize> = metadata.atom_to_residue.iter()
+        let res_atoms: Vec<usize> = metadata
+            .atom_to_residue
+            .iter()
             .enumerate()
             .filter(|(_, &r)| r == res_idx)
             .map(|(i, _)| i)
@@ -536,7 +533,8 @@ pub fn calculate_anisotropy(
     positions: &[f32],
     initial_positions: &[f32],
     metadata: &AtomicMetadata,
-) -> (f32, f32) {  // Returns (max_anisotropy, mean_anisotropy)
+) -> (f32, f32) {
+    // Returns (max_anisotropy, mean_anisotropy)
     let ca_indices = &metadata.ca_indices;
 
     if ca_indices.len() < 3 {
@@ -548,17 +546,20 @@ pub fn calculate_anisotropy(
     let mut count = 0;
 
     // Calculate displacement for each Cα
-    let displacements: Vec<f32> = ca_indices.iter().map(|&idx| {
-        let base = idx * 3;
-        if base + 2 < positions.len() && base + 2 < initial_positions.len() {
-            let dx = positions[base] - initial_positions[base];
-            let dy = positions[base + 1] - initial_positions[base + 1];
-            let dz = positions[base + 2] - initial_positions[base + 2];
-            (dx * dx + dy * dy + dz * dz).sqrt()
-        } else {
-            0.0
-        }
-    }).collect();
+    let displacements: Vec<f32> = ca_indices
+        .iter()
+        .map(|&idx| {
+            let base = idx * 3;
+            if base + 2 < positions.len() && base + 2 < initial_positions.len() {
+                let dx = positions[base] - initial_positions[base];
+                let dy = positions[base + 1] - initial_positions[base + 1];
+                let dz = positions[base + 2] - initial_positions[base + 2];
+                (dx * dx + dy * dy + dz * dz).sqrt()
+            } else {
+                0.0
+            }
+        })
+        .collect();
 
     // Calculate anisotropy for each internal Cα
     for i in 1..displacements.len() - 1 {
@@ -599,7 +600,9 @@ pub fn calculate_electrostatic_frustration(
     let mut total_frustration = 0.0;
 
     // Only look at atoms in charged residues
-    let charged_atoms: Vec<usize> = metadata.is_charged.iter()
+    let charged_atoms: Vec<usize> = metadata
+        .is_charged
+        .iter()
         .enumerate()
         .filter(|(_, &is_charged)| is_charged)
         .map(|(i, _)| i)
@@ -611,7 +614,7 @@ pub fn calculate_electrostatic_frustration(
         let q_i = metadata.atom_charges[idx_i];
 
         if q_i.abs() < 0.01 {
-            continue;  // Skip neutral atoms
+            continue; // Skip neutral atoms
         }
 
         let base_i = idx_i * 3;
@@ -645,7 +648,8 @@ pub fn calculate_electrostatic_frustration(
             let dz = zi - zj;
             let dist_sq = dx * dx + dy * dy + dz * dz;
 
-            if dist_sq < cutoff_sq && dist_sq > 1.0 {  // Avoid self and clashes
+            if dist_sq < cutoff_sq && dist_sq > 1.0 {
+                // Avoid self and clashes
                 let dist = dist_sq.sqrt();
                 // Coulomb: E = k * q1 * q2 / r
                 // Positive when like charges (frustration)
@@ -732,7 +736,7 @@ mod tests {
         // ASP carboxylate should be negative
         assert!(get_atom_charge("OD1", ResidueType::ASP) < 0.0);
         // LYS amino group should contribute positive
-        assert!(get_atom_charge("NZ", ResidueType::LYS) < 0.0);  // N is negative
+        assert!(get_atom_charge("NZ", ResidueType::LYS) < 0.0); // N is negative
         assert!(get_atom_charge("HZ1", ResidueType::LYS) > 0.0); // H is positive
     }
 

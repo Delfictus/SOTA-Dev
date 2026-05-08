@@ -48,17 +48,17 @@ pub struct CmaOptimizer {
     covariance: Vec<Vec<f32>>,
 
     // Evolution paths
-    ps: Vec<f32>,   // Path for sigma
-    _pc: Vec<f32>,  // Path for C (reserved for full CMA-ES)
+    ps: Vec<f32>,  // Path for sigma
+    _pc: Vec<f32>, // Path for C (reserved for full CMA-ES)
 
     // Adaptation parameters
     c_sigma: f32,
     d_sigma: f32,
-    _c_c: f32,      // Reserved for covariance update
-    _c_1: f32,      // Reserved for rank-one update
-    _c_mu: f32,     // Reserved for rank-mu update
+    _c_c: f32,  // Reserved for covariance update
+    _c_1: f32,  // Reserved for rank-one update
+    _c_mu: f32, // Reserved for rank-mu update
     chi_n: f32,
-    _mu_eff: f32,   // Reserved for effective selection mass
+    _mu_eff: f32, // Reserved for effective selection mass
     weights: Vec<f32>,
 
     // State

@@ -6,10 +6,10 @@
 //! - Time-travel debugging
 //! - Reactive UI updates
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tokio::sync::broadcast;
-use anyhow::Result;
 
 /// Unique event identifier
 pub type EventId = u64;
@@ -20,7 +20,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // Command Events (User/System initiated)
     // ═══════════════════════════════════════════════════════════════════
-
     /// Load a graph file
     LoadGraph { path: String },
 
@@ -45,7 +44,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // Pipeline Events (from PipelineActor)
     // ═══════════════════════════════════════════════════════════════════
-
     /// Graph loaded successfully
     GraphLoaded {
         vertices: usize,
@@ -55,10 +53,7 @@ pub enum PrismEvent {
     },
 
     /// Phase started
-    PhaseStarted {
-        phase: PhaseId,
-        name: String,
-    },
+    PhaseStarted { phase: PhaseId, name: String },
 
     /// Phase progress update
     PhaseProgress {
@@ -79,10 +74,7 @@ pub enum PrismEvent {
     },
 
     /// Phase failed
-    PhaseFailed {
-        phase: PhaseId,
-        error: String,
-    },
+    PhaseFailed { phase: PhaseId, error: String },
 
     /// New best solution found
     NewBestSolution {
@@ -102,7 +94,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // GPU Events (from GpuActor)
     // ═══════════════════════════════════════════════════════════════════
-
     /// GPU status update
     GpuStatus {
         device_id: usize,
@@ -122,15 +113,11 @@ pub enum PrismEvent {
     },
 
     /// Kernel completed
-    KernelCompleted {
-        name: String,
-        duration_us: u64,
-    },
+    KernelCompleted { name: String, duration_us: u64 },
 
     // ═══════════════════════════════════════════════════════════════════
     // Thermodynamic Events (Phase 2)
     // ═══════════════════════════════════════════════════════════════════
-
     /// Replica state update
     ReplicaUpdate {
         replica_id: usize,
@@ -150,7 +137,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // Quantum Events (Phase 3)
     // ═══════════════════════════════════════════════════════════════════
-
     /// Quantum state update
     QuantumState {
         coherence: f64,
@@ -167,7 +153,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // Dendritic Events (Phase 0)
     // ═══════════════════════════════════════════════════════════════════
-
     /// Dendritic reservoir update
     DendriticUpdate {
         active_neurons: usize,
@@ -179,7 +164,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // FluxNet RL Events
     // ═══════════════════════════════════════════════════════════════════
-
     /// RL action selected
     RlAction {
         state: String,
@@ -189,15 +173,11 @@ pub enum PrismEvent {
     },
 
     /// RL reward received
-    RlReward {
-        reward: f64,
-        cumulative_reward: f64,
-    },
+    RlReward { reward: f64, cumulative_reward: f64 },
 
     // ═══════════════════════════════════════════════════════════════════
     // Telemetry Events
     // ═══════════════════════════════════════════════════════════════════
-
     /// Metric recorded
     MetricRecorded {
         name: String,
@@ -208,7 +188,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // LBS Events (Biomolecular Mode)
     // ═══════════════════════════════════════════════════════════════════
-
     /// Protein structure loaded
     ProteinLoaded {
         pdb_id: String,
@@ -218,10 +197,7 @@ pub enum PrismEvent {
     },
 
     /// LBS phase started
-    LbsPhaseStarted {
-        phase: LbsPhaseId,
-        name: String,
-    },
+    LbsPhaseStarted { phase: LbsPhaseId, name: String },
 
     /// LBS phase progress
     LbsPhaseProgress {
@@ -277,7 +253,6 @@ pub enum PrismEvent {
     // ═══════════════════════════════════════════════════════════════════
     // System Events
     // ═══════════════════════════════════════════════════════════════════
-
     /// Error occurred
     Error {
         source: String,
@@ -452,7 +427,9 @@ mod tests {
             edges: 12500,
             density: 0.1,
             estimated_chromatic: 48,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         let event = rx.recv().await.unwrap();
         match event {

@@ -1,6 +1,6 @@
 use anyhow::Result;
-use prism_niv_bench::structure_types::{NivBenchDataset, CrypticSite};
 use prism_niv_bench::pdb_fetcher;
+use prism_niv_bench::structure_types::{CrypticSite, NivBenchDataset};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
@@ -11,12 +11,15 @@ fn is_buried(residue_idx: usize, coords: &[(f32, f32, f32)]) -> bool {
     let center = coords[residue_idx];
     let mut neighbors = 0;
     for (i, &other) in coords.iter().enumerate() {
-        if i == residue_idx { continue; }
+        if i == residue_idx {
+            continue;
+        }
         let dx = center.0 - other.0;
         let dy = center.1 - other.1;
         let dz = center.2 - other.2;
-        let dist_sq = dx*dx + dy*dy + dz*dz;
-        if dist_sq < 100.0 { // 10 Angstrom radius
+        let dist_sq = dx * dx + dy * dy + dz * dz;
+        if dist_sq < 100.0 {
+            // 10 Angstrom radius
             neighbors += 1;
         }
     }
@@ -46,12 +49,12 @@ fn main() -> Result<()> {
     if let Some(epitopes) = dataset.epitopes.get("8XPS") {
         for epitope in epitopes {
             let mut buried_residues = Vec::new();
-            
+
             for &seq_num in &epitope.interface_residues {
                 // Map sequence number to index (assuming 1-based, contiguous for now)
                 // Real mapping needs seq alignment, but 8XPS is clean
                 let idx = (seq_num as usize).saturating_sub(1);
-                
+
                 if idx < coords.len() {
                     if is_buried(idx, &coords) {
                         buried_residues.push(seq_num);
@@ -64,7 +67,7 @@ fn main() -> Result<()> {
                 cryptic_count += 1;
                 cryptic_sites.push(CrypticSite {
                     residues: buried_residues,
-                    sasa_apo: vec![0.0], // Placeholder
+                    sasa_apo: vec![0.0],    // Placeholder
                     sasa_holo: vec![100.0], // Placeholder
                     p_rmsd: 0.0,
                     description: format!("Cryptic part of {}", epitope.name),
@@ -76,8 +79,10 @@ fn main() -> Result<()> {
     println!("Found {} potentially cryptic epitopes.", cryptic_count);
 
     // 4. Save Updates
-    dataset.cryptic_sites.insert("8XPS".to_string(), cryptic_sites);
-    
+    dataset
+        .cryptic_sites
+        .insert("8XPS".to_string(), cryptic_sites);
+
     let outfile = File::create(json_path)?;
     let writer = BufWriter::new(outfile);
     serde_json::to_writer_pretty(writer, &dataset)?;

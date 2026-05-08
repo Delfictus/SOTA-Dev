@@ -14,11 +14,7 @@
 //! - Sequential residue numbering for continuous chain visualization
 
 use clap::Parser;
-use prism_io::{
-    holographic::PtbStructure,
-    sovereign_types::Atom,
-    Result,
-};
+use prism_io::{holographic::PtbStructure, sovereign_types::Atom, Result};
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
@@ -71,10 +67,26 @@ fn residue_name_from_id(residue_id: u16) -> &'static str {
     // For molecular dynamics visualization, we use a simplified mapping
     // Real production would require sequence data for accurate residue names
     match residue_id % 20 {
-        0 => "ALA", 1 => "ARG", 2 => "ASN", 3 => "ASP", 4 => "CYS",
-        5 => "GLN", 6 => "GLU", 7 => "GLY", 8 => "HIS", 9 => "ILE",
-        10 => "LEU", 11 => "LYS", 12 => "MET", 13 => "PHE", 14 => "PRO",
-        15 => "SER", 16 => "THR", 17 => "TRP", 18 => "TYR", 19 => "VAL",
+        0 => "ALA",
+        1 => "ARG",
+        2 => "ASN",
+        3 => "ASP",
+        4 => "CYS",
+        5 => "GLN",
+        6 => "GLU",
+        7 => "GLY",
+        8 => "HIS",
+        9 => "ILE",
+        10 => "LEU",
+        11 => "LYS",
+        12 => "MET",
+        13 => "PHE",
+        14 => "PRO",
+        15 => "SER",
+        16 => "THR",
+        17 => "TRP",
+        18 => "TYR",
+        19 => "VAL",
         _ => "UNK",
     }
 }
@@ -83,14 +95,15 @@ fn residue_name_from_id(residue_id: u16) -> &'static str {
 fn atom_name_from_element(element: u8, atom_index: usize) -> String {
     let element_str = element_symbol(element);
     match element {
-        6 => match atom_index % 4 { // Carbon atoms
-            0 => "CA".to_string(),   // Alpha carbon
-            1 => "CB".to_string(),   // Beta carbon
-            2 => "CG".to_string(),   // Gamma carbon
+        6 => match atom_index % 4 {
+            // Carbon atoms
+            0 => "CA".to_string(), // Alpha carbon
+            1 => "CB".to_string(), // Beta carbon
+            2 => "CG".to_string(), // Gamma carbon
             _ => format!("C{}", atom_index),
         },
-        7 => "N".to_string(),        // Nitrogen
-        8 => "O".to_string(),        // Oxygen
+        7 => "N".to_string(), // Nitrogen
+        8 => "O".to_string(), // Oxygen
         _ => element_str.to_string(),
     }
 }
@@ -100,23 +113,18 @@ fn is_atom_line(line: &str) -> bool {
     line.starts_with("ATOM  ") || line.starts_with("HETATM")
 }
 
-
 /// Process template PDB file and replace coordinates with PTB data using strict column slicing
-fn process_template_mode(
-    template_path: &str,
-    atoms: &[Atom],
-    output_path: &str,
-) -> Result<usize> {
+fn process_template_mode(template_path: &str, atoms: &[Atom], output_path: &str) -> Result<usize> {
     tracing::info!("📋 Processing template PDB: {}", template_path);
 
     // Open template file
-    let template_file = File::open(template_path)
-        .map_err(|e| prism_io::PrismIoError::IoError(e))?;
+    let template_file =
+        File::open(template_path).map_err(|e| prism_io::PrismIoError::IoError(e))?;
     let reader = BufReader::new(template_file);
 
     // Open output file
-    let mut output_file = File::create(output_path)
-        .map_err(|e| prism_io::PrismIoError::IoError(e))?;
+    let mut output_file =
+        File::create(output_path).map_err(|e| prism_io::PrismIoError::IoError(e))?;
 
     let mut atom_idx = 0;
     let mut total_atoms_processed = 0;
@@ -136,7 +144,10 @@ fn process_template_mode(
                 let suffix = if line.len() > 54 { &line[54..] } else { "" };
 
                 // Format new coords from the PTB atom
-                let coords = format!("{:8.3}{:8.3}{:8.3}", atom.coords[0], atom.coords[1], atom.coords[2]);
+                let coords = format!(
+                    "{:8.3}{:8.3}{:8.3}",
+                    atom.coords[0], atom.coords[1], atom.coords[2]
+                );
 
                 // Construct the new line
                 let new_line = format!("{}{}{}", prefix, coords, suffix);
@@ -160,20 +171,23 @@ fn process_template_mode(
             }
         } else {
             // Keep headers/remarks unchanged
-            writeln!(output_file, "{}", line)
-                .map_err(|e| prism_io::PrismIoError::IoError(e))?;
+            writeln!(output_file, "{}", line).map_err(|e| prism_io::PrismIoError::IoError(e))?;
         }
     }
 
     // Safety check: ensure atom counts match
     if atom_idx != atoms.len() {
-        return Err(prism_io::PrismIoError::FormatError(
-            format!("Atom count mismatch: Template has {} atoms, PTB has {} atoms",
-                atom_idx, atoms.len())
-        ));
+        return Err(prism_io::PrismIoError::FormatError(format!(
+            "Atom count mismatch: Template has {} atoms, PTB has {} atoms",
+            atom_idx,
+            atoms.len()
+        )));
     }
 
-    tracing::info!("✅ Template processing complete: {} atoms updated with strict slicing", total_atoms_processed);
+    tracing::info!(
+        "✅ Template processing complete: {} atoms updated with strict slicing",
+        total_atoms_processed
+    );
     Ok(total_atoms_processed)
 }
 
@@ -209,17 +223,17 @@ fn atoms_to_pdb_lines(atoms: &[Atom], chain: char, bfactor: f32) -> Vec<String> 
 
         let line = format!(
             "{:<6}{:>5} {:<4} {:>3} {}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}          {:>2}",
-            "ATOM",           // Record type
-            serial,           // Serial number
-            atom_name,        // Atom name
-            residue_name,     // Residue name
-            chain,            // Chain identifier
-            residue_seq,      // Residue sequence number
-            atom.coords[0],   // X coordinate
-            atom.coords[1],   // Y coordinate
-            atom.coords[2],   // Z coordinate
-            1.00,             // Occupancy (default: fully occupied)
-            bfactor,          // B-factor (temperature factor)
+            "ATOM",                       // Record type
+            serial,                       // Serial number
+            atom_name,                    // Atom name
+            residue_name,                 // Residue name
+            chain,                        // Chain identifier
+            residue_seq,                  // Residue sequence number
+            atom.coords[0],               // X coordinate
+            atom.coords[1],               // Y coordinate
+            atom.coords[2],               // Z coordinate
+            1.00,                         // Occupancy (default: fully occupied)
+            bfactor,                      // B-factor (temperature factor)
             element_symbol(atom.element)  // Element symbol
         );
 
@@ -275,7 +289,10 @@ fn main() -> Result<()> {
             tracing::info!("📊 Output: {}", args.output);
             tracing::info!("🎭 Metadata preserved from template for PyMOL cartoon rendering");
 
-            println!("✅ Successfully updated {} atoms using template {}", atoms_processed, template_path);
+            println!(
+                "✅ Successfully updated {} atoms using template {}",
+                atoms_processed, template_path
+            );
             println!("🎭 PyMOL-compatible PDB ready: {}", args.output);
         }
         None => {
@@ -291,12 +308,24 @@ fn main() -> Result<()> {
             let mut file = File::create(&args.output)?;
 
             // Write PDB header
-            writeln!(file, "HEADER    MOLECULAR DYNAMICS                      01-JAN-26   PRSM")?;
-            writeln!(file, "TITLE     PRISM4D NIPAH VIRUS G GLYCOPROTEIN DYNAMICS")?;
-            writeln!(file, "REMARK   1 GENERATED BY PRISM4D EXPORT TOOL (SKELETON MODE)")?;
+            writeln!(
+                file,
+                "HEADER    MOLECULAR DYNAMICS                      01-JAN-26   PRSM"
+            )?;
+            writeln!(
+                file,
+                "TITLE     PRISM4D NIPAH VIRUS G GLYCOPROTEIN DYNAMICS"
+            )?;
+            writeln!(
+                file,
+                "REMARK   1 GENERATED BY PRISM4D EXPORT TOOL (SKELETON MODE)"
+            )?;
             writeln!(file, "REMARK   2 CONVERTED FROM HOLOGRAPHIC BINARY FORMAT")?;
             writeln!(file, "REMARK   3 SOURCE: {}", args.input)?;
-            writeln!(file, "REMARK   4 WARNING: Skeleton mode - use --template for PyMOL compatibility")?;
+            writeln!(
+                file,
+                "REMARK   4 WARNING: Skeleton mode - use --template for PyMOL compatibility"
+            )?;
 
             // Write atom records
             for line in pdb_lines {
@@ -306,11 +335,18 @@ fn main() -> Result<()> {
             // Write PDB footer
             writeln!(file, "END")?;
 
-            tracing::info!("✅ Skeleton PDB export complete: {} atoms written", atoms.len());
+            tracing::info!(
+                "✅ Skeleton PDB export complete: {} atoms written",
+                atoms.len()
+            );
             tracing::info!("📊 Output: {}", args.output);
             tracing::info!("⚠️  Note: Basic structure only - PyMOL may not render cartoons");
 
-            println!("✅ Successfully exported {} atoms to {}", atoms.len(), args.output);
+            println!(
+                "✅ Successfully exported {} atoms to {}",
+                atoms.len(),
+                args.output
+            );
             println!("📊 Basic PDB structure ready for molecular visualization");
             println!("💡 For PyMOL cartoon rendering, use: --template original.pdb");
         }

@@ -10,12 +10,12 @@
 //! cargo run --bin conservation_demo --release
 
 use anyhow::Result;
-use prism_niv_bench::{
-    structure_types::NivBenchDataset,
-    conservation_analysis::{ConservationAnalyzer, ConservationParams, MultipleSequenceAlignment},
-};
 use cudarc::driver::CudaContext;
-use std::{sync::Arc, fs::File, io::BufReader, time::Instant};
+use prism_niv_bench::{
+    conservation_analysis::{ConservationAnalyzer, ConservationParams, MultipleSequenceAlignment},
+    structure_types::NivBenchDataset,
+};
+use std::{fs::File, io::BufReader, sync::Arc, time::Instant};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -29,8 +29,13 @@ fn main() -> Result<()> {
     // Load Nipah virus dataset
     println!("📁 Loading Nipah virus dataset...");
     let dataset_path = "../../data/niv_bench_dataset.json";
-    let file = File::open(dataset_path)
-        .map_err(|e| anyhow::anyhow!("Failed to open dataset {}: {}\\nNote: Run from crate root with dataset", dataset_path, e))?;
+    let file = File::open(dataset_path).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to open dataset {}: {}\\nNote: Run from crate root with dataset",
+            dataset_path,
+            e
+        )
+    })?;
     let reader = BufReader::new(file);
     let dataset: NivBenchDataset = serde_json::from_reader(reader)
         .map_err(|e| anyhow::anyhow!("Failed to parse dataset: {}", e))?;
@@ -39,40 +44,49 @@ fn main() -> Result<()> {
 
     // Initialize CUDA context
     println!("🔧 Initializing CUDA context...");
-    let cuda_context = Arc::new(CudaContext::new(0)
-        .map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?);
+    let cuda_context = Arc::new(
+        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?,
+    );
 
     println!("✅ CUDA initialized: {}", cuda_context.name()?);
 
     // Initialize conservation analyzer
     println!("🧬 Initializing Conservation Analyzer...");
     let conservation_params = ConservationParams {
-        min_sequence_identity: 0.3,      // 30% minimum identity
-        max_sequence_identity: 0.95,     // 95% maximum identity
-        max_sequences: 500,              // Limit for demo performance
-        pseudocount: 0.05,               // Small pseudocount
+        min_sequence_identity: 0.3,  // 30% minimum identity
+        max_sequence_identity: 0.95, // 95% maximum identity
+        max_sequences: 500,          // Limit for demo performance
+        pseudocount: 0.05,           // Small pseudocount
         use_background_frequencies: true,
-        conservation_threshold: 0.75,    // Top 25% conservation
+        conservation_threshold: 0.75, // Top 25% conservation
         use_gpu: true,
     };
 
-    let mut conservation_analyzer = ConservationAnalyzer::new(
-        cuda_context.clone(),
-        conservation_params.clone(),
-    )?;
+    let mut conservation_analyzer =
+        ConservationAnalyzer::new(cuda_context.clone(), conservation_params.clone())?;
 
     // Load conservation kernels
     conservation_analyzer.load_kernels()?;
 
-    println!("✅ Conservation analyzer ready: {} max sequences, {:.1}% identity range",
-             conservation_params.max_sequences,
-             (conservation_params.max_sequence_identity - conservation_params.min_sequence_identity) * 100.0);
+    println!(
+        "✅ Conservation analyzer ready: {} max sequences, {:.1}% identity range",
+        conservation_params.max_sequences,
+        (conservation_params.max_sequence_identity - conservation_params.min_sequence_identity)
+            * 100.0
+    );
     println!();
 
     // Demo structure: Focus on first structure
     let demo_structure = &dataset.structures[0];
-    println!("🧬 Demo structure: {} ({} residues)", demo_structure.pdb_id, demo_structure.residues.len());
-    println!("   Virus: {:?}, Protein: {:?}", demo_structure.virus, demo_structure.protein);
+    println!(
+        "🧬 Demo structure: {} ({} residues)",
+        demo_structure.pdb_id,
+        demo_structure.residues.len()
+    );
+    println!(
+        "   Virus: {:?}, Protein: {:?}",
+        demo_structure.virus, demo_structure.protein
+    );
     println!();
 
     // === PHASE 2.6: CONSERVATION ANALYSIS ===
@@ -80,16 +94,17 @@ fn main() -> Result<()> {
 
     // Create synthetic multiple sequence alignment for demo
     let msa = create_synthetic_msa(demo_structure)?;
-    println!("   Generated MSA: {} sequences, {} alignment length",
-             msa.sequences.len(), msa.alignment_length);
+    println!(
+        "   Generated MSA: {} sequences, {} alignment length",
+        msa.sequences.len(),
+        msa.alignment_length
+    );
 
     let conservation_start_time = Instant::now();
 
     // Perform conservation analysis
-    let conservation_results = conservation_analyzer.analyze_conservation(
-        &msa,
-        &demo_structure.pdb_id,
-    )?;
+    let conservation_results =
+        conservation_analyzer.analyze_conservation(&msa, &demo_structure.pdb_id)?;
 
     let conservation_total_time = conservation_start_time.elapsed();
 
@@ -98,35 +113,73 @@ fn main() -> Result<()> {
     println!("🎯 PHASE 2.6 CONSERVATION RESULTS");
     println!("=================================");
     println!("Structure: {}", conservation_results.structure_id);
-    println!("Total computation time: {:.1}ms", conservation_results.computation_time_ms);
+    println!(
+        "Total computation time: {:.1}ms",
+        conservation_results.computation_time_ms
+    );
 
     if conservation_results.computation_time_ms <= 100.0 {
-        println!("🎯 PERFORMANCE TARGET MET: {:.1}ms <= 100ms", conservation_results.computation_time_ms);
+        println!(
+            "🎯 PERFORMANCE TARGET MET: {:.1}ms <= 100ms",
+            conservation_results.computation_time_ms
+        );
     } else {
-        println!("⚠️  Performance: {:.1}ms > 100ms target", conservation_results.computation_time_ms);
+        println!(
+            "⚠️  Performance: {:.1}ms > 100ms target",
+            conservation_results.computation_time_ms
+        );
     }
 
     println!();
     println!("🧬 Conservation Analysis:");
-    println!("   Sequence length: {} positions", conservation_results.pssm.sequence_length);
-    println!("   Highly conserved positions: {}", conservation_results.highly_conserved_positions.len());
-    println!("   Variable positions: {}", conservation_results.variable_positions.len());
+    println!(
+        "   Sequence length: {} positions",
+        conservation_results.pssm.sequence_length
+    );
+    println!(
+        "   Highly conserved positions: {}",
+        conservation_results.highly_conserved_positions.len()
+    );
+    println!(
+        "   Variable positions: {}",
+        conservation_results.variable_positions.len()
+    );
 
     // Conservation statistics
-    let avg_conservation = conservation_results.residue_conservation.iter().sum::<f32>()
+    let avg_conservation = conservation_results
+        .residue_conservation
+        .iter()
+        .sum::<f32>()
         / conservation_results.residue_conservation.len() as f32;
-    let max_conservation = conservation_results.residue_conservation.iter().cloned()
+    let max_conservation = conservation_results
+        .residue_conservation
+        .iter()
+        .cloned()
         .fold(f32::NEG_INFINITY, f32::max);
-    let min_conservation = conservation_results.residue_conservation.iter().cloned()
+    let min_conservation = conservation_results
+        .residue_conservation
+        .iter()
+        .cloned()
         .fold(f32::INFINITY, f32::min);
 
     println!("   Average conservation: {:.3}", avg_conservation);
-    println!("   Conservation range: {:.3} - {:.3}", min_conservation, max_conservation);
+    println!(
+        "   Conservation range: {:.3} - {:.3}",
+        min_conservation, max_conservation
+    );
 
     // Shannon entropy statistics
-    let avg_entropy = conservation_results.pssm.shannon_entropy.iter().sum::<f32>()
+    let avg_entropy = conservation_results
+        .pssm
+        .shannon_entropy
+        .iter()
+        .sum::<f32>()
         / conservation_results.pssm.shannon_entropy.len() as f32;
-    let max_entropy = conservation_results.pssm.shannon_entropy.iter().cloned()
+    let max_entropy = conservation_results
+        .pssm
+        .shannon_entropy
+        .iter()
+        .cloned()
         .fold(f32::NEG_INFINITY, f32::max);
 
     println!("   Average Shannon entropy: {:.3} bits", avg_entropy);
@@ -135,7 +188,8 @@ fn main() -> Result<()> {
     // Top conserved positions analysis
     println!();
     println!("🔒 Top 10 Most Conserved Positions:");
-    let mut conservation_with_index: Vec<(usize, f32)> = conservation_results.residue_conservation
+    let mut conservation_with_index: Vec<(usize, f32)> = conservation_results
+        .residue_conservation
         .iter()
         .enumerate()
         .map(|(i, &score)| (i, score))
@@ -144,14 +198,20 @@ fn main() -> Result<()> {
 
     for (rank, (position, score)) in conservation_with_index.iter().take(10).enumerate() {
         let entropy = conservation_results.pssm.shannon_entropy[*position];
-        println!("   {}. Position {}: Score={:.3}, Entropy={:.3} bits",
-                rank + 1, position + 1, score, entropy);
+        println!(
+            "   {}. Position {}: Score={:.3}, Entropy={:.3} bits",
+            rank + 1,
+            position + 1,
+            score,
+            entropy
+        );
     }
 
     // Variable positions analysis
     println!();
     println!("🔄 Top 10 Most Variable Positions:");
-    let mut variable_positions: Vec<(usize, f32)> = conservation_results.residue_conservation
+    let mut variable_positions: Vec<(usize, f32)> = conservation_results
+        .residue_conservation
         .iter()
         .enumerate()
         .map(|(i, &score)| (i, score))
@@ -160,8 +220,13 @@ fn main() -> Result<()> {
 
     for (rank, (position, score)) in variable_positions.iter().take(10).enumerate() {
         let entropy = conservation_results.pssm.shannon_entropy[*position];
-        println!("   {}. Position {}: Score={:.3}, Entropy={:.3} bits",
-                rank + 1, position + 1, score, entropy);
+        println!(
+            "   {}. Position {}: Score={:.3}, Entropy={:.3} bits",
+            rank + 1,
+            position + 1,
+            score,
+            entropy
+        );
     }
 
     // PSSM analysis for representative positions
@@ -172,18 +237,26 @@ fn main() -> Result<()> {
         let pssm_row = &conservation_results.pssm.pssm_matrix[*position];
 
         // Find top 3 amino acids
-        let amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L',
-                          'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'];
-        let mut aa_with_freq: Vec<(char, f32)> = amino_acids.iter()
+        let amino_acids = [
+            'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
+            'V', 'W', 'Y',
+        ];
+        let mut aa_with_freq: Vec<(char, f32)> = amino_acids
+            .iter()
             .zip(pssm_row.iter())
             .map(|(&aa, &freq)| (aa, freq))
             .collect();
         aa_with_freq.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
-        println!("      Top amino acids: {}: {:.3}, {}: {:.3}, {}: {:.3}",
-                aa_with_freq[0].0, aa_with_freq[0].1,
-                aa_with_freq[1].0, aa_with_freq[1].1,
-                aa_with_freq[2].0, aa_with_freq[2].1);
+        println!(
+            "      Top amino acids: {}: {:.3}, {}: {:.3}, {}: {:.3}",
+            aa_with_freq[0].0,
+            aa_with_freq[0].1,
+            aa_with_freq[1].0,
+            aa_with_freq[1].1,
+            aa_with_freq[2].0,
+            aa_with_freq[2].1
+        );
     }
 
     // Synthetic cryptic site correlation analysis
@@ -202,33 +275,46 @@ fn main() -> Result<()> {
         })
         .collect();
 
-    let correlation = conservation_analyzer.correlate_with_cryptic_sites(
-        &conservation_results,
-        &cryptic_scores,
-    )?;
+    let correlation = conservation_analyzer
+        .correlate_with_cryptic_sites(&conservation_results, &cryptic_scores)?;
 
-    println!("   Correlation coefficient: {:.3}", correlation.correlation_coefficient);
-    println!("   Statistical significance (p-value): {:.3}", correlation.p_value);
+    println!(
+        "   Correlation coefficient: {:.3}",
+        correlation.correlation_coefficient
+    );
+    println!(
+        "   Statistical significance (p-value): {:.3}",
+        correlation.p_value
+    );
     println!("   Effect size (Cohen's d): {:.3}", correlation.effect_size);
-    println!("   Cryptic sites avg conservation: {:.3}",
-             correlation.cryptic_conservation.iter().sum::<f32>() /
-             correlation.cryptic_conservation.len().max(1) as f32);
-    println!("   Surface sites avg conservation: {:.3}",
-             correlation.surface_conservation.iter().sum::<f32>() /
-             correlation.surface_conservation.len().max(1) as f32);
+    println!(
+        "   Cryptic sites avg conservation: {:.3}",
+        correlation.cryptic_conservation.iter().sum::<f32>()
+            / correlation.cryptic_conservation.len().max(1) as f32
+    );
+    println!(
+        "   Surface sites avg conservation: {:.3}",
+        correlation.surface_conservation.iter().sum::<f32>()
+            / correlation.surface_conservation.len().max(1) as f32
+    );
 
     // Performance analysis
     println!();
     println!("⚡ Performance Analysis:");
-    let positions_per_ms = conservation_results.pssm.sequence_length as f64 /
-                          conservation_results.computation_time_ms;
-    let sequences_per_second = msa.sequences.len() as f64 * 1000.0 /
-                              conservation_results.computation_time_ms;
+    let positions_per_ms =
+        conservation_results.pssm.sequence_length as f64 / conservation_results.computation_time_ms;
+    let sequences_per_second =
+        msa.sequences.len() as f64 * 1000.0 / conservation_results.computation_time_ms;
 
     println!("   Processing rate: {:.1} positions/ms", positions_per_ms);
-    println!("   Sequence processing rate: {:.1} sequences/second", sequences_per_second);
-    println!("   Analysis efficiency: {:.2} ms/position",
-             conservation_results.computation_time_ms / conservation_results.pssm.sequence_length as f64);
+    println!(
+        "   Sequence processing rate: {:.1} sequences/second",
+        sequences_per_second
+    );
+    println!(
+        "   Analysis efficiency: {:.2} ms/position",
+        conservation_results.computation_time_ms / conservation_results.pssm.sequence_length as f64
+    );
 
     // Breakthrough validation
     println!();
@@ -238,12 +324,15 @@ fn main() -> Result<()> {
     println!("   ✅ PSSM Generation: Position-specific scoring from MSA data");
     println!("   ✅ GPU Optimization: <100ms execution with CUDA acceleration");
     println!("   ✅ Conservation Classification: High/variable position identification");
-    println!("   ✅ Cryptic Correlation: Statistical analysis of conservation-cryptic relationship");
+    println!(
+        "   ✅ Cryptic Correlation: Statistical analysis of conservation-cryptic relationship"
+    );
     println!("   ✅ No External Dependencies: Zero ESM or external ML model requirements");
 
-    if conservation_results.computation_time_ms <= 100.0 &&
-       !conservation_results.highly_conserved_positions.is_empty() &&
-       !conservation_results.variable_positions.is_empty() {
+    if conservation_results.computation_time_ms <= 100.0
+        && !conservation_results.highly_conserved_positions.is_empty()
+        && !conservation_results.variable_positions.is_empty()
+    {
         println!("   🏆 ALL TARGETS MET: Performance, sovereignty, conservation analysis");
     }
 
@@ -262,9 +351,12 @@ fn main() -> Result<()> {
 }
 
 /// Create synthetic multiple sequence alignment for demonstration
-fn create_synthetic_msa(structure: &prism_niv_bench::structure_types::StructureData) -> Result<MultipleSequenceAlignment> {
+fn create_synthetic_msa(
+    structure: &prism_niv_bench::structure_types::StructureData,
+) -> Result<MultipleSequenceAlignment> {
     // Extract reference sequence from structure
-    let reference_sequence: String = structure.residues
+    let reference_sequence: String = structure
+        .residues
         .iter()
         .map(|residue| residue.amino_acid.chars().next().unwrap_or('X'))
         .collect();
@@ -284,15 +376,15 @@ fn create_synthetic_msa(structure: &prism_niv_bench::structure_types::StructureD
         for (pos, ref_aa) in reference_sequence.chars().enumerate() {
             // Conservation probability based on position (some positions more conserved)
             let conservation_prob = if pos % 7 == 0 {
-                0.95  // Highly conserved positions
+                0.95 // Highly conserved positions
             } else if pos % 3 == 0 {
-                0.8   // Moderately conserved
+                0.8 // Moderately conserved
             } else {
-                0.6   // Variable positions
+                0.6 // Variable positions
             };
 
             let variant_aa = if fastrand::f32() < conservation_prob {
-                ref_aa  // Keep original amino acid
+                ref_aa // Keep original amino acid
             } else {
                 // Replace with similar amino acid
                 match ref_aa {

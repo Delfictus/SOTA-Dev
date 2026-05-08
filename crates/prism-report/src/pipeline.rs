@@ -143,6 +143,9 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("DEPRECATED"), "Should mention deprecation");
-        assert!(err.contains("FinalizeStage"), "Should mention FinalizeStage");
+        assert!(
+            err.contains("FinalizeStage"),
+            "Should mention FinalizeStage"
+        );
     }
 }

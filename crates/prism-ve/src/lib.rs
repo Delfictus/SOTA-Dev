@@ -34,17 +34,14 @@
 pub mod data;
 pub mod prediction;
 
+use chrono::NaiveDate;
+use cudarc::driver::CudaContext;
 use prism_core::PrismError;
-use prism_gpu::{MegaFusedGpu, MegaFusedConfig, FitnessParams};
+use prism_gpu::{FitnessParams, MegaFusedConfig, MegaFusedGpu};
 use std::path::Path;
 use std::sync::Arc;
-use cudarc::driver::CudaContext;
-use chrono::NaiveDate;
 
-pub use prediction::{
-    VariantAssessment, VariantPrediction, TimeHorizon,
-    Phase, CycleState,
-};
+pub use prediction::{CycleState, Phase, TimeHorizon, VariantAssessment, VariantPrediction};
 
 /// Unified PRISM-VE Predictor
 ///
@@ -69,7 +66,7 @@ impl PRISMVEPredictor {
         // Initialize GPU context
         let context = Arc::new(
             CudaContext::new(0)
-                .map_err(|e| PrismError::gpu("prism_ve", format!("Init CUDA: {}", e)))?
+                .map_err(|e| PrismError::gpu("prism_ve", format!("Init CUDA: {}", e)))?,
         );
 
         // Load mega_fused kernel (includes Stages 7-8)
@@ -115,7 +112,12 @@ impl PRISMVEPredictor {
         country: &str,
         date: &str,
     ) -> Result<VariantPrediction, PrismError> {
-        log::info!("Assessing variant dynamics: {} in {} on {}", lineage, country, date);
+        log::info!(
+            "Assessing variant dynamics: {} in {} on {}",
+            lineage,
+            country,
+            date
+        );
 
         // This is a simplified version for now
         // Full version would:
@@ -164,7 +166,12 @@ impl PRISMVEPredictor {
         country: &str,
         date: &str,
     ) -> Result<Vec<VariantPrediction>, PrismError> {
-        log::info!("Batch assessing {} variants for {} on {}", lineages.len(), country, date);
+        log::info!(
+            "Batch assessing {} variants for {} on {}",
+            lineages.len(),
+            country,
+            date
+        );
 
         // Process all variants
         let mut predictions = Vec::new();

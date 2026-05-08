@@ -85,11 +85,7 @@ impl ProgramGroup {
     }
 
     /// Create a miss program group
-    pub fn create_miss(
-        ctx: &OptixContext,
-        module: &Module,
-        entry_function: &str,
-    ) -> Result<Self> {
+    pub fn create_miss(ctx: &OptixContext, module: &Module, entry_function: &str) -> Result<Self> {
         let api = OptixApi::get()?;
 
         let entry_fn = CString::new(entry_function)
@@ -119,26 +115,29 @@ impl ProgramGroup {
         is_module: Option<&Module>,
         is_entry: Option<&str>,
     ) -> Result<Self> {
-        let ch_entry_cstr = ch_entry
-            .map(|s| CString::new(s).ok())
-            .flatten();
-        let ah_entry_cstr = ah_entry
-            .map(|s| CString::new(s).ok())
-            .flatten();
-        let is_entry_cstr = is_entry
-            .map(|s| CString::new(s).ok())
-            .flatten();
+        let ch_entry_cstr = ch_entry.map(|s| CString::new(s).ok()).flatten();
+        let ah_entry_cstr = ah_entry.map(|s| CString::new(s).ok()).flatten();
+        let is_entry_cstr = is_entry.map(|s| CString::new(s).ok()).flatten();
 
         let desc = OptixProgramGroupDesc {
             kind: OptixProgramGroupKind::OPTIX_PROGRAM_GROUP_KIND_HITGROUP,
             __bindgen_anon_1: OptixProgramGroupDesc__bindgen_ty_1 {
                 hitgroup: OptixProgramGroupHitgroup {
                     moduleCH: ch_module.map(|m| m.handle()).unwrap_or(ptr::null_mut()),
-                    entryFunctionNameCH: ch_entry_cstr.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
+                    entryFunctionNameCH: ch_entry_cstr
+                        .as_ref()
+                        .map(|s| s.as_ptr())
+                        .unwrap_or(ptr::null()),
                     moduleAH: ah_module.map(|m| m.handle()).unwrap_or(ptr::null_mut()),
-                    entryFunctionNameAH: ah_entry_cstr.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
+                    entryFunctionNameAH: ah_entry_cstr
+                        .as_ref()
+                        .map(|s| s.as_ptr())
+                        .unwrap_or(ptr::null()),
                     moduleIS: is_module.map(|m| m.handle()).unwrap_or(ptr::null_mut()),
-                    entryFunctionNameIS: is_entry_cstr.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
+                    entryFunctionNameIS: is_entry_cstr
+                        .as_ref()
+                        .map(|s| s.as_ptr())
+                        .unwrap_or(ptr::null()),
                 },
             },
             flags: 0,
@@ -179,7 +178,9 @@ impl ProgramGroup {
         check_optix(result, "OptiX operation")?;
 
         if program_group.is_null() {
-            return Err(OptixError::PipelineError("Program group creation returned null".to_string()));
+            return Err(OptixError::PipelineError(
+                "Program group creation returned null".to_string(),
+            ));
         }
 
         Ok(Self {
@@ -204,9 +205,8 @@ impl ProgramGroup {
         }
 
         let api = OptixApi::get()?;
-        let result = unsafe {
-            api.sbt_record_pack_header(self.handle, record.as_mut_ptr() as *mut _)
-        };
+        let result =
+            unsafe { api.sbt_record_pack_header(self.handle, record.as_mut_ptr() as *mut _) };
         check_optix(result, "OptiX operation")
     }
 }
@@ -230,9 +230,7 @@ pub struct PipelineLinkOptions {
 
 impl Default for PipelineLinkOptions {
     fn default() -> Self {
-        Self {
-            max_trace_depth: 2,
-        }
+        Self { max_trace_depth: 2 }
     }
 }
 
@@ -252,11 +250,19 @@ impl Pipeline {
     ) -> Result<Self> {
         let api = OptixApi::get()?;
 
-        let launch_params_name = CString::new(compile_options.pipeline_launch_params_variable_name.as_str())
-            .map_err(|_| OptixError::PipelineError("Invalid launch params name".to_string()))?;
+        let launch_params_name = CString::new(
+            compile_options
+                .pipeline_launch_params_variable_name
+                .as_str(),
+        )
+        .map_err(|_| OptixError::PipelineError("Invalid launch params name".to_string()))?;
 
         let pipeline_compile_options = OptixPipelineCompileOptions {
-            usesMotionBlur: if compile_options.uses_motion_blur { 1 } else { 0 },
+            usesMotionBlur: if compile_options.uses_motion_blur {
+                1
+            } else {
+                0
+            },
             traversableGraphFlags: compile_options.traversable_graph_flags,
             numPayloadValues: compile_options.num_payload_values as i32,
             numAttributeValues: compile_options.num_attribute_values as i32,
@@ -304,7 +310,9 @@ impl Pipeline {
         check_optix(result, "OptiX operation")?;
 
         if pipeline.is_null() {
-            return Err(OptixError::PipelineError("Pipeline creation returned null".to_string()));
+            return Err(OptixError::PipelineError(
+                "Pipeline creation returned null".to_string(),
+            ));
         }
 
         Ok(Self {

@@ -51,11 +51,11 @@ use crate::mbrl::{DynaFluxNet, KernelState, RuntimeConfigDelta};
 use crate::ultra_controller::{DiscreteAction, DiscreteState};
 
 #[cfg(feature = "mbrl")]
+use crate::core::controller::UniversalRLController;
+#[cfg(feature = "mbrl")]
 use std::path::Path;
 #[cfg(feature = "mbrl")]
 use std::sync::Arc;
-#[cfg(feature = "mbrl")]
-use crate::core::controller::UniversalRLController;
 
 /// MBRL Integration wrapper for UltraFluxNetController
 ///
@@ -138,7 +138,7 @@ impl MBRLIntegration {
                 // Create a dummy UniversalRLController for DynaFluxNet
                 // This is wrapped in Arc to satisfy DynaFluxNet's constructor
                 let dummy_controller = Arc::new(UniversalRLController::new(
-                    crate::core::controller::RLConfig::default()
+                    crate::core::controller::RLConfig::default(),
                 ));
 
                 match DynaFluxNet::new(dummy_controller, path) {
@@ -407,7 +407,9 @@ impl MBRLIntegration {
         self.planning_horizon = horizon;
         #[cfg(feature = "mbrl")]
         if let Some(ref mut model) = self.world_model {
-            model.world_model_mut().set_rollout_params(self.num_candidates, horizon);
+            model
+                .world_model_mut()
+                .set_rollout_params(self.num_candidates, horizon);
         }
     }
 
@@ -419,7 +421,9 @@ impl MBRLIntegration {
         self.num_candidates = num;
         #[cfg(feature = "mbrl")]
         if let Some(ref mut model) = self.world_model {
-            model.world_model_mut().set_rollout_params(num, self.planning_horizon);
+            model
+                .world_model_mut()
+                .set_rollout_params(num, self.planning_horizon);
         }
     }
 

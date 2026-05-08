@@ -20,7 +20,8 @@ fn create_deterministic_events(seed: u64) -> Vec<PocketEvent> {
 
     for i in 0..50 {
         // Deterministic pseudo-random based on seed and index
-        let pseudo_rand = ((seed.wrapping_mul(1103515245).wrapping_add(12345)) ^ (i as u64 * 7919)) as f32;
+        let pseudo_rand =
+            ((seed.wrapping_mul(1103515245).wrapping_add(12345)) ^ (i as u64 * 7919)) as f32;
         let x = 10.0 + (pseudo_rand % 100.0) / 10.0;
         let y = 15.0 + ((pseudo_rand * 1.3) % 100.0) / 10.0;
         let z = 20.0 + ((pseudo_rand * 1.7) % 100.0) / 10.0;
@@ -49,7 +50,11 @@ fn create_deterministic_events(seed: u64) -> Vec<PocketEvent> {
             temp_phase,
             replicate_id: i % 3,
             frame_idx: 100 + i * 10,
-            residues: vec![1 + (i as u32 % 10), 2 + (i as u32 % 10), 3 + (i as u32 % 10)],
+            residues: vec![
+                1 + (i as u32 % 10),
+                2 + (i as u32 % 10),
+                3 + (i as u32 % 10),
+            ],
             confidence: 0.5 + ((i as f32) % 5.0) / 10.0,
             wavelength_nm: if phase == AblationPhase::CryoUv {
                 Some(280.0)
@@ -123,7 +128,9 @@ fn test_finalize_determinism() {
     )
     .unwrap();
 
-    let stage1 = FinalizeStage::new_with_topology(config1, events_path1, topology_path1, MASTER_SEED).unwrap();
+    let stage1 =
+        FinalizeStage::new_with_topology(config1, events_path1, topology_path1, MASTER_SEED)
+            .unwrap();
     let result1 = stage1.run().unwrap();
 
     // Run 2
@@ -148,7 +155,9 @@ fn test_finalize_determinism() {
     )
     .unwrap();
 
-    let stage2 = FinalizeStage::new_with_topology(config2, events_path2, topology_path2, MASTER_SEED).unwrap();
+    let stage2 =
+        FinalizeStage::new_with_topology(config2, events_path2, topology_path2, MASTER_SEED)
+            .unwrap();
     let result2 = stage2.run().unwrap();
 
     // Verify determinism
@@ -201,9 +210,7 @@ fn test_finalize_determinism() {
         match value {
             serde_json::Value::Object(map) => {
                 if let Some(serde_json::Value::Array(residues)) = map.get_mut("residues") {
-                    residues.sort_by(|a, b| {
-                        a.as_u64().unwrap_or(0).cmp(&b.as_u64().unwrap_or(0))
-                    });
+                    residues.sort_by(|a, b| a.as_u64().unwrap_or(0).cmp(&b.as_u64().unwrap_or(0)));
                 }
                 for (_, v) in map.iter_mut() {
                     sort_residues_in_value(v);
@@ -311,11 +318,7 @@ fn test_clustering_determinism() {
     );
 
     for (c1, c2) in clusters1.iter().zip(clusters2.iter()) {
-        assert_eq!(
-            c1.len(),
-            c2.len(),
-            "Cluster sizes should be deterministic"
-        );
+        assert_eq!(c1.len(), c2.len(), "Cluster sizes should be deterministic");
     }
 
     println!("✓ Clustering determinism verified");

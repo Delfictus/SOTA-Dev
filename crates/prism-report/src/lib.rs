@@ -19,51 +19,53 @@
 //!     [--holo HOLO.pdb] [--truth-residues truth.json]
 //! ```
 
+pub mod ablation;
+pub mod alignment;
 pub mod config;
 pub mod correlation;
+pub mod event_cloud;
+pub mod figures;
+pub mod finalize;
 pub mod inputs;
 pub mod outputs;
 pub mod pipeline;
-pub mod sites;
-pub mod ablation;
-pub mod figures;
-pub mod sessions;
 pub mod reports;
-pub mod event_cloud;
-pub mod voxelize;
-pub mod alignment;
-pub mod finalize;
+pub mod sessions;
 pub mod site_geometry;
 pub mod site_metrics;
+pub mod sites;
 pub mod temporal_analytics;
+pub mod voxelize;
 
 // Re-exports
-pub use config::{ReportConfig, AblationConfig};
+pub use config::{AblationConfig, ReportConfig};
 // Tier1/Tier2 correlation REMOVED per user requirement
-pub use inputs::{CryoProbeResults};
-pub use outputs::{OutputContract, SiteOutput};
-pub use pipeline::{ReportPipeline, PipelineResult};
-pub use sites::{CrypticSite, SiteMetrics, SiteRanking};
-pub use ablation::{AblationResults, AblationMode};
-pub use reports::{HtmlReport, PdfReport};
+pub use ablation::{AblationMode, AblationResults};
+pub use alignment::{
+    align_structures, compute_voxel_ligand_overlap, kabsch_align, Alignment, VoxelLigandOverlap,
+};
+pub use event_cloud::{
+    read_events, read_spike_events, AblationPhase, EventCloud, EventWriter, PocketEvent,
+    RawSpikeEvent, TempPhase,
+};
+pub use finalize::{FinalizeResult, FinalizeStage};
+pub use inputs::CryoProbeResults;
 pub use outputs::SummaryJson;
-pub use event_cloud::{EventCloud, PocketEvent, RawSpikeEvent, AblationPhase, TempPhase, EventWriter, read_events, read_spike_events};
-pub use voxelize::{VoxelGrid, Voxelizer, VoxelizationResult, write_mrc, voxelize_event_cloud};
-pub use alignment::{Alignment, VoxelLigandOverlap, kabsch_align, align_structures, compute_voxel_ligand_overlap};
-pub use finalize::{FinalizeStage, FinalizeResult};
+pub use outputs::{OutputContract, SiteOutput};
+pub use pipeline::{PipelineResult, ReportPipeline};
+pub use reports::{HtmlReport, PdfReport};
+pub use sites::{CrypticSite, SiteMetrics, SiteRanking};
+pub use voxelize::{voxelize_event_cloud, write_mrc, VoxelGrid, VoxelizationResult, Voxelizer};
 // New site_metrics exports
 pub use site_metrics::{
+    sort_sites_deterministic, validate_coordinate_frames, SiteMetricsComputer,
     TopologyData as MetricsTopologyData,
-    SiteMetricsComputer,
-    validate_coordinate_frames,
-    sort_sites_deterministic,
 };
 
 // Temporal analytics exports
 pub use temporal_analytics::{
-    TrajectorySnapshot, TemporalTopology,
-    compute_temporal_metrics, compute_spike_lifetime_stats,
-    compute_phase_stats, compute_inter_site_correlation,
+    compute_inter_site_correlation, compute_phase_stats, compute_spike_lifetime_stats,
+    compute_temporal_metrics, TemporalTopology, TrajectorySnapshot,
 };
 
 /// Crate version (from Cargo.toml)
@@ -130,7 +132,8 @@ Installation options:
   Conda:         conda install -c conda-forge pymol-open-source
 
 Or download from: https://pymol.org/
-"#.to_string(),
+"#
+        .to_string(),
         "chimerax" => r#"
 UCSF ChimeraX is required for .cxs session generation.
 
@@ -139,7 +142,8 @@ Installation:
 
 Ubuntu/Debian: Download .deb and: sudo dpkg -i chimerax*.deb
 macOS:         Download .dmg and drag to Applications
-"#.to_string(),
+"#
+        .to_string(),
         "pdf" => r#"
 A PDF renderer is required for report.pdf generation.
 
@@ -147,7 +151,8 @@ Options (install any one):
   wkhtmltopdf:  sudo apt install wkhtmltopdf  # Recommended
   playwright:   npm install -g playwright && playwright install
   chromium:     sudo apt install chromium-browser
-"#.to_string(),
+"#
+        .to_string(),
         _ => format!("Unknown dependency: {}", dep),
     }
 }

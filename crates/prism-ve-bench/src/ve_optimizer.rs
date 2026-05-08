@@ -12,9 +12,9 @@
 //! 3. Feature normalization using Z-scores - temporal stability
 //! 4. Escape dominance feature - relative fitness measure
 
-use anyhow::{Result, Context};
-use std::collections::HashMap;
+use anyhow::{Context, Result};
 use rand::Rng;
+use std::collections::HashMap;
 
 /// State representation for VE prediction - RAW FEATURES ONLY
 /// NO pre-computed gamma - RL learns optimal weights!
@@ -94,9 +94,9 @@ impl VEState {
             spike_velocity: 0.0,
             spike_emergence: 0.0,
             spike_momentum: 0.0,
-            time_varying_immunity: 0.5,  // Default mid-range
-            phi_normalized_freq: frequency,  // Default to raw freq
-            p_neut_escape: 0.25,  // Default escape
+            time_varying_immunity: 0.5,     // Default mid-range
+            phi_normalized_freq: frequency, // Default to raw freq
+            p_neut_escape: 0.25,            // Default escape
         }
     }
 
@@ -118,8 +118,8 @@ impl VEState {
             ddg_stability,
             expression,
             epitope_escape,
-            effective_escape: escape,  // Default to raw escape
-            relative_fitness: 0.5,  // Default to neutral
+            effective_escape: escape, // Default to raw escape
+            relative_fitness: 0.5,    // Default to neutral
             frequency_velocity: 0.0,  // Default to stable
             spike_velocity: 0.0,
             spike_emergence: 0.0,
@@ -211,9 +211,19 @@ impl VEState {
         spike_momentum: f32,
     ) -> Self {
         Self::new_full_with_vasil(
-            escape, transmit, frequency, ddg_binding, ddg_stability, expression,
-            epitope_escape, effective_escape, relative_fitness, frequency_velocity,
-            spike_velocity, spike_emergence, spike_momentum,
+            escape,
+            transmit,
+            frequency,
+            ddg_binding,
+            ddg_stability,
+            expression,
+            epitope_escape,
+            effective_escape,
+            relative_fitness,
+            frequency_velocity,
+            spike_velocity,
+            spike_emergence,
+            spike_momentum,
             0.5,       // time_varying_immunity (will be populated in main)
             frequency, // phi_normalized_freq
             0.25,      // p_neut_escape
@@ -264,12 +274,15 @@ impl VEState {
     /// Uses class weights: A+B (class 1) = 0.3, C (class 2) = 0.25,
     /// D1+D2+E12+E3 (class 3) = 0.3, F1+F2+F3 (class 4) = 0.15
     pub fn weighted_epitope_escape(&self) -> f32 {
-        let class1 = (self.epitope_escape[0] + self.epitope_escape[1]) / 2.0;  // A, B
-        let class2 = self.epitope_escape[2];  // C
-        let class3 = (self.epitope_escape[3] + self.epitope_escape[4]
-                    + self.epitope_escape[5] + self.epitope_escape[6]) / 4.0;  // D1, D2, E12, E3
-        let class4 = (self.epitope_escape[7] + self.epitope_escape[8]
-                    + self.epitope_escape[9]) / 3.0;  // F1, F2, F3
+        let class1 = (self.epitope_escape[0] + self.epitope_escape[1]) / 2.0; // A, B
+        let class2 = self.epitope_escape[2]; // C
+        let class3 = (self.epitope_escape[3]
+            + self.epitope_escape[4]
+            + self.epitope_escape[5]
+            + self.epitope_escape[6])
+            / 4.0; // D1, D2, E12, E3
+        let class4 =
+            (self.epitope_escape[7] + self.epitope_escape[8] + self.epitope_escape[9]) / 3.0; // F1, F2, F3
 
         // Weights based on Barnes antibody class prevalence
         0.30 * class1 + 0.25 * class2 + 0.30 * class3 + 0.15 * class4
@@ -312,9 +325,8 @@ impl VEState {
             + ddg_stab_bin * 64     // 4^3
             + expr_bin * 16         // 4^2
             + spike_vel_bin * 4     // 4^1
-            + spike_emerge_bin      // 4^0
+            + spike_emerge_bin // 4^0
     }
-
 }
 
 /// Action: predict RISE or FALL
@@ -415,7 +427,7 @@ impl AdaptiveVEOptimizer {
     /// Now uses LEARNED weights via grid search, not Q-learning
     /// State space: 4^8 = 65536 (8 features × 4 bins each)
     pub fn new() -> Self {
-        let num_states = 65536;  // 8 features × 4 bins = 4^8
+        let num_states = 65536; // 8 features × 4 bins = 4^8
         let fall_base_rate = 0.64;
 
         let q_init = [0.0, 0.0];
@@ -432,7 +444,7 @@ impl AdaptiveVEOptimizer {
             training_samples: 0,
             num_states,
             fall_base_rate,
-            spike_weight: 0.0,  // Stage 8.5 spike weight (will be tuned)
+            spike_weight: 0.0, // Stage 8.5 spike weight (will be tuned)
         }
     }
 
@@ -468,7 +480,8 @@ impl AdaptiveVEOptimizer {
             let q_fall = self.q_table[state_idx][1];
 
             // UCB bonus for less-visited actions (encourages exploration)
-            let total_visits = (self.visit_counts[state_idx][0] + self.visit_counts[state_idx][1]) as f32;
+            let total_visits =
+                (self.visit_counts[state_idx][0] + self.visit_counts[state_idx][1]) as f32;
             let rise_visits = self.visit_counts[state_idx][0] as f32;
             let fall_visits = self.visit_counts[state_idx][1] as f32;
 
@@ -564,7 +577,11 @@ impl AdaptiveVEOptimizer {
     /// Train on a dataset of (state, observed_direction) pairs
     /// Uses asymmetric rewards to handle class imbalance (36% RISE, 64% FALL)
     pub fn train_on_dataset(&mut self, data: &[(VEState, &str)], epochs: usize) {
-        log::info!("Training VE optimizer on {} samples for {} epochs", data.len(), epochs);
+        log::info!(
+            "Training VE optimizer on {} samples for {} epochs",
+            data.len(),
+            epochs
+        );
 
         // Compute class weights inversely proportional to frequency
         let rise_count = data.iter().filter(|(_, o)| *o == "RISE").count();
@@ -572,7 +589,11 @@ impl AdaptiveVEOptimizer {
         let rise_weight = (data.len() as f32) / (2.0 * rise_count as f32);
         let fall_weight = (data.len() as f32) / (2.0 * fall_count as f32);
 
-        log::info!("Class weights: RISE={:.2}, FALL={:.2}", rise_weight, fall_weight);
+        log::info!(
+            "Class weights: RISE={:.2}, FALL={:.2}",
+            rise_weight,
+            fall_weight
+        );
 
         for epoch in 0..epochs {
             let mut correct = 0;
@@ -602,7 +623,7 @@ impl AdaptiveVEOptimizer {
                 } else {
                     // Penalize misses more for minority class
                     if is_rise {
-                        -rise_weight * 1.5  // Extra penalty for missing RISE
+                        -rise_weight * 1.5 // Extra penalty for missing RISE
                     } else {
                         -fall_weight
                     }
@@ -642,8 +663,13 @@ impl AdaptiveVEOptimizer {
             };
 
             if epoch % 10 == 0 || epoch == epochs - 1 {
-                log::info!("Epoch {}: accuracy={:.3}, rise_recall={:.3}, epsilon={:.3}",
-                          epoch, accuracy, rise_recall, self.epsilon);
+                log::info!(
+                    "Epoch {}: accuracy={:.3}, rise_recall={:.3}, epsilon={:.3}",
+                    epoch,
+                    accuracy,
+                    rise_recall,
+                    self.epsilon
+                );
             }
         }
     }
@@ -679,51 +705,95 @@ impl AdaptiveVEOptimizer {
         // Separate data by class for balanced evaluation
         let rise_samples: Vec<_> = data.iter().filter(|(_, o)| *o == "RISE").collect();
         let fall_samples: Vec<_> = data.iter().filter(|(_, o)| *o == "FALL").collect();
-        println!("  Training: {} RISE, {} FALL", rise_samples.len(), fall_samples.len());
+        println!(
+            "  Training: {} RISE, {} FALL",
+            rise_samples.len(),
+            fall_samples.len()
+        );
 
         // Analyze ALL discriminative features
-        let rise_vel: Vec<f32> = rise_samples.iter().map(|(s, _)| s.frequency_velocity).collect();
-        let fall_vel: Vec<f32> = fall_samples.iter().map(|(s, _)| s.frequency_velocity).collect();
+        let rise_vel: Vec<f32> = rise_samples
+            .iter()
+            .map(|(s, _)| s.frequency_velocity)
+            .collect();
+        let fall_vel: Vec<f32> = fall_samples
+            .iter()
+            .map(|(s, _)| s.frequency_velocity)
+            .collect();
         let rise_vel_mean = rise_vel.iter().sum::<f32>() / rise_vel.len().max(1) as f32;
         let fall_vel_mean = fall_vel.iter().sum::<f32>() / fall_vel.len().max(1) as f32;
-        println!("  RISE velocity mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_vel_mean, fall_vel_mean, rise_vel_mean - fall_vel_mean);
+        println!(
+            "  RISE velocity mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_vel_mean,
+            fall_vel_mean,
+            rise_vel_mean - fall_vel_mean
+        );
 
         let rise_esc: Vec<f32> = rise_samples.iter().map(|(s, _)| s.escape).collect();
         let fall_esc: Vec<f32> = fall_samples.iter().map(|(s, _)| s.escape).collect();
         let rise_esc_mean = rise_esc.iter().sum::<f32>() / rise_esc.len().max(1) as f32;
         let fall_esc_mean = fall_esc.iter().sum::<f32>() / fall_esc.len().max(1) as f32;
-        println!("  RISE escape mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_esc_mean, fall_esc_mean, rise_esc_mean - fall_esc_mean);
+        println!(
+            "  RISE escape mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_esc_mean,
+            fall_esc_mean,
+            rise_esc_mean - fall_esc_mean
+        );
 
-        let rise_eff: Vec<f32> = rise_samples.iter().map(|(s, _)| s.effective_escape).collect();
-        let fall_eff: Vec<f32> = fall_samples.iter().map(|(s, _)| s.effective_escape).collect();
+        let rise_eff: Vec<f32> = rise_samples
+            .iter()
+            .map(|(s, _)| s.effective_escape)
+            .collect();
+        let fall_eff: Vec<f32> = fall_samples
+            .iter()
+            .map(|(s, _)| s.effective_escape)
+            .collect();
         let rise_eff_mean = rise_eff.iter().sum::<f32>() / rise_eff.len().max(1) as f32;
         let fall_eff_mean = fall_eff.iter().sum::<f32>() / fall_eff.len().max(1) as f32;
-        println!("  RISE effective_escape mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_eff_mean, fall_eff_mean, rise_eff_mean - fall_eff_mean);
+        println!(
+            "  RISE effective_escape mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_eff_mean,
+            fall_eff_mean,
+            rise_eff_mean - fall_eff_mean
+        );
 
-        let rise_fit: Vec<f32> = rise_samples.iter().map(|(s, _)| s.relative_fitness).collect();
-        let fall_fit: Vec<f32> = fall_samples.iter().map(|(s, _)| s.relative_fitness).collect();
+        let rise_fit: Vec<f32> = rise_samples
+            .iter()
+            .map(|(s, _)| s.relative_fitness)
+            .collect();
+        let fall_fit: Vec<f32> = fall_samples
+            .iter()
+            .map(|(s, _)| s.relative_fitness)
+            .collect();
         let rise_fit_mean = rise_fit.iter().sum::<f32>() / rise_fit.len().max(1) as f32;
         let fall_fit_mean = fall_fit.iter().sum::<f32>() / fall_fit.len().max(1) as f32;
-        println!("  RISE relative_fitness mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_fit_mean, fall_fit_mean, rise_fit_mean - fall_fit_mean);
+        println!(
+            "  RISE relative_fitness mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_fit_mean,
+            fall_fit_mean,
+            rise_fit_mean - fall_fit_mean
+        );
 
         let rise_trans: Vec<f32> = rise_samples.iter().map(|(s, _)| s.transmit).collect();
         let fall_trans: Vec<f32> = fall_samples.iter().map(|(s, _)| s.transmit).collect();
         let rise_trans_mean = rise_trans.iter().sum::<f32>() / rise_trans.len().max(1) as f32;
         let fall_trans_mean = fall_trans.iter().sum::<f32>() / fall_trans.len().max(1) as f32;
-        println!("  RISE transmit mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_trans_mean, fall_trans_mean, rise_trans_mean - fall_trans_mean);
+        println!(
+            "  RISE transmit mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_trans_mean,
+            fall_trans_mean,
+            rise_trans_mean - fall_trans_mean
+        );
 
         // Stage 8.5 spike features (GPU-computed, currently broken due to nullptr)
         let rise_spike: Vec<f32> = rise_samples.iter().map(|(s, _)| s.spike_momentum).collect();
         let fall_spike: Vec<f32> = fall_samples.iter().map(|(s, _)| s.spike_momentum).collect();
         let rise_spike_mean = rise_spike.iter().sum::<f32>() / rise_spike.len().max(1) as f32;
         let fall_spike_mean = fall_spike.iter().sum::<f32>() / fall_spike.len().max(1) as f32;
-        println!("  RISE spike_momentum mean: {:.3}, FALL: {:.3} (GPU nullptr issue - not useful)",
-                 rise_spike_mean, fall_spike_mean);
+        println!(
+            "  RISE spike_momentum mean: {:.3}, FALL: {:.3} (GPU nullptr issue - not useful)",
+            rise_spike_mean, fall_spike_mean
+        );
 
         let mut best_balanced_acc = 0.0f32;
         let mut best_velocity_weight = 1.0f32;
@@ -734,13 +804,23 @@ impl AdaptiveVEOptimizer {
 
         // Test Model 1: Velocity-only (baseline - but note velocity is BACKWARD looking!)
         println!("\n  Testing Model 1: Velocity-only (backward-looking signal)...");
-        let vel_rise_correct = rise_samples.iter().filter(|(s, _)| s.frequency_velocity > 0.0).count();
-        let vel_fall_correct = fall_samples.iter().filter(|(s, _)| s.frequency_velocity <= 0.0).count();
+        let vel_rise_correct = rise_samples
+            .iter()
+            .filter(|(s, _)| s.frequency_velocity > 0.0)
+            .count();
+        let vel_fall_correct = fall_samples
+            .iter()
+            .filter(|(s, _)| s.frequency_velocity <= 0.0)
+            .count();
         let vel_rise_acc = vel_rise_correct as f32 / rise_samples.len().max(1) as f32;
         let vel_fall_acc = vel_fall_correct as f32 / fall_samples.len().max(1) as f32;
         let vel_balanced = (vel_rise_acc + vel_fall_acc) / 2.0;
-        println!("  Velocity-only: RISE_acc={:.1}%, FALL_acc={:.1}%, balanced={:.1}%",
-                 vel_rise_acc * 100.0, vel_fall_acc * 100.0, vel_balanced * 100.0);
+        println!(
+            "  Velocity-only: RISE_acc={:.1}%, FALL_acc={:.1}%, balanced={:.1}%",
+            vel_rise_acc * 100.0,
+            vel_fall_acc * 100.0,
+            vel_balanced * 100.0
+        );
 
         if vel_balanced > best_balanced_acc {
             best_balanced_acc = vel_balanced;
@@ -748,7 +828,7 @@ impl AdaptiveVEOptimizer {
             best_escape_weight = 0.0;
             best_effective_weight = 0.0;
             best_fitness_weight = 0.0;
-            best_threshold = 0.0;  // velocity > 0 threshold
+            best_threshold = 0.0; // velocity > 0 threshold
         }
 
         // Test Model 1a: INVERSE Velocity (momentum peak = about to fall)
@@ -756,20 +836,30 @@ impl AdaptiveVEOptimizer {
         println!("  Testing Model 1a: INVERSE Velocity (momentum peak => FALL)...");
         for vel_thresh in [-0.2, -0.1, -0.05, 0.0, 0.05, 0.1, 0.15, 0.2] {
             // INVERSE: Low velocity => RISE (growing), High velocity => FALL (peaking)
-            let inv_rise_correct = rise_samples.iter().filter(|(s, _)| s.frequency_velocity < vel_thresh).count();
-            let inv_fall_correct = fall_samples.iter().filter(|(s, _)| s.frequency_velocity >= vel_thresh).count();
+            let inv_rise_correct = rise_samples
+                .iter()
+                .filter(|(s, _)| s.frequency_velocity < vel_thresh)
+                .count();
+            let inv_fall_correct = fall_samples
+                .iter()
+                .filter(|(s, _)| s.frequency_velocity >= vel_thresh)
+                .count();
             let inv_rise_acc = inv_rise_correct as f32 / rise_samples.len().max(1) as f32;
             let inv_fall_acc = inv_fall_correct as f32 / fall_samples.len().max(1) as f32;
             let inv_balanced = (inv_rise_acc + inv_fall_acc) / 2.0;
 
             if inv_balanced > best_balanced_acc {
                 best_balanced_acc = inv_balanced;
-                best_velocity_weight = -1.0;  // Negative = inverse velocity
+                best_velocity_weight = -1.0; // Negative = inverse velocity
                 best_escape_weight = 0.0;
                 best_effective_weight = 0.0;
-                best_fitness_weight = -5.0;  // Flag for inverse velocity model
+                best_fitness_weight = -5.0; // Flag for inverse velocity model
                 best_threshold = vel_thresh;
-                println!("    NEW BEST: velocity < {:.2} => RISE, balanced={:.1}%", vel_thresh, inv_balanced * 100.0);
+                println!(
+                    "    NEW BEST: velocity < {:.2} => RISE, balanced={:.1}%",
+                    vel_thresh,
+                    inv_balanced * 100.0
+                );
             }
         }
 
@@ -778,8 +868,14 @@ impl AdaptiveVEOptimizer {
         println!("  Testing Model 0: SATURATION MODEL (high freq => FALL)...");
         for freq_thresh in [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40] {
             // Saturation: High frequency => FALL (herd immunity), Low freq => RISE (room to grow)
-            let sat_rise_correct = rise_samples.iter().filter(|(s, _)| s.frequency < freq_thresh).count();
-            let sat_fall_correct = fall_samples.iter().filter(|(s, _)| s.frequency >= freq_thresh).count();
+            let sat_rise_correct = rise_samples
+                .iter()
+                .filter(|(s, _)| s.frequency < freq_thresh)
+                .count();
+            let sat_fall_correct = fall_samples
+                .iter()
+                .filter(|(s, _)| s.frequency >= freq_thresh)
+                .count();
             let sat_rise_acc = sat_rise_correct as f32 / rise_samples.len().max(1) as f32;
             let sat_fall_acc = sat_fall_correct as f32 / fall_samples.len().max(1) as f32;
             let sat_balanced = (sat_rise_acc + sat_fall_acc) / 2.0;
@@ -789,9 +885,13 @@ impl AdaptiveVEOptimizer {
                 best_velocity_weight = 0.0;
                 best_escape_weight = 0.0;
                 best_effective_weight = 0.0;
-                best_fitness_weight = -6.0;  // Flag for saturation model
+                best_fitness_weight = -6.0; // Flag for saturation model
                 best_threshold = freq_thresh;
-                println!("    NEW BEST: freq < {:.2} => RISE (saturation), balanced={:.1}%", freq_thresh, sat_balanced * 100.0);
+                println!(
+                    "    NEW BEST: freq < {:.2} => RISE (saturation), balanced={:.1}%",
+                    freq_thresh,
+                    sat_balanced * 100.0
+                );
             }
         }
 
@@ -829,7 +929,7 @@ impl AdaptiveVEOptimizer {
                         best_velocity_weight = freq_w;
                         best_escape_weight = fit_w;
                         best_effective_weight = 0.0;
-                        best_fitness_weight = -7.0;  // Flag for combined saturation+fitness
+                        best_fitness_weight = -7.0; // Flag for combined saturation+fitness
                         best_threshold = thresh;
                         println!("    NEW BEST: growth_pot×{:.1} + fit×{:.1} > {:.2} => RISE, balanced={:.1}%",
                                  freq_w, fit_w, thresh, balanced * 100.0);
@@ -844,8 +944,14 @@ impl AdaptiveVEOptimizer {
         // Wider range to find optimal threshold
         for freq_thresh_pct in (1..=50).step_by(1) {
             let freq_thresh = freq_thresh_pct as f32 / 100.0;
-            let freq_rise_correct = rise_samples.iter().filter(|(s, _)| s.frequency < freq_thresh).count();
-            let freq_fall_correct = fall_samples.iter().filter(|(s, _)| s.frequency >= freq_thresh).count();
+            let freq_rise_correct = rise_samples
+                .iter()
+                .filter(|(s, _)| s.frequency < freq_thresh)
+                .count();
+            let freq_fall_correct = fall_samples
+                .iter()
+                .filter(|(s, _)| s.frequency >= freq_thresh)
+                .count();
             let freq_rise_acc = freq_rise_correct as f32 / rise_samples.len().max(1) as f32;
             let freq_fall_acc = freq_fall_correct as f32 / fall_samples.len().max(1) as f32;
             let freq_balanced = (freq_rise_acc + freq_fall_acc) / 2.0;
@@ -855,9 +961,13 @@ impl AdaptiveVEOptimizer {
                 best_velocity_weight = 0.0;
                 best_escape_weight = 0.0;
                 best_effective_weight = 0.0;
-                best_fitness_weight = -1.0;  // Use negative fitness as proxy for low frequency
+                best_fitness_weight = -1.0; // Use negative fitness as proxy for low frequency
                 best_threshold = freq_thresh;
-                println!("    NEW BEST: freq < {:.2} => RISE, balanced={:.1}%", freq_thresh, freq_balanced * 100.0);
+                println!(
+                    "    NEW BEST: freq < {:.2} => RISE, balanced={:.1}%",
+                    freq_thresh,
+                    freq_balanced * 100.0
+                );
             }
         }
 
@@ -866,8 +976,14 @@ impl AdaptiveVEOptimizer {
         for freq_thresh_pct in (1..=50).step_by(1) {
             let freq_thresh = freq_thresh_pct as f32 / 100.0;
             // Inverse logic: high freq predicts FALL
-            let freq_fall_correct = fall_samples.iter().filter(|(s, _)| s.frequency >= freq_thresh).count();
-            let freq_rise_correct = rise_samples.iter().filter(|(s, _)| s.frequency < freq_thresh).count();
+            let freq_fall_correct = fall_samples
+                .iter()
+                .filter(|(s, _)| s.frequency >= freq_thresh)
+                .count();
+            let freq_rise_correct = rise_samples
+                .iter()
+                .filter(|(s, _)| s.frequency < freq_thresh)
+                .count();
             let freq_rise_acc = freq_rise_correct as f32 / rise_samples.len().max(1) as f32;
             let freq_fall_acc = freq_fall_correct as f32 / fall_samples.len().max(1) as f32;
             let freq_balanced = (freq_rise_acc + freq_fall_acc) / 2.0;
@@ -879,7 +995,11 @@ impl AdaptiveVEOptimizer {
                 best_effective_weight = 0.0;
                 best_fitness_weight = -1.0;
                 best_threshold = freq_thresh;
-                println!("    NEW BEST (inverse): freq >= {:.2} => FALL, balanced={:.1}%", freq_thresh, freq_balanced * 100.0);
+                println!(
+                    "    NEW BEST (inverse): freq >= {:.2} => FALL, balanced={:.1}%",
+                    freq_thresh,
+                    freq_balanced * 100.0
+                );
             }
         }
 
@@ -888,8 +1008,14 @@ impl AdaptiveVEOptimizer {
         // This is already normalized within each time point
         println!("  Testing Model 2: Relative Fitness (escape advantage)...");
         for fit_thresh in [0.45, 0.48, 0.50, 0.52, 0.55, 0.58, 0.60] {
-            let fit_rise_correct = rise_samples.iter().filter(|(s, _)| s.relative_fitness > fit_thresh).count();
-            let fit_fall_correct = fall_samples.iter().filter(|(s, _)| s.relative_fitness <= fit_thresh).count();
+            let fit_rise_correct = rise_samples
+                .iter()
+                .filter(|(s, _)| s.relative_fitness > fit_thresh)
+                .count();
+            let fit_fall_correct = fall_samples
+                .iter()
+                .filter(|(s, _)| s.relative_fitness <= fit_thresh)
+                .count();
             let fit_rise_acc = fit_rise_correct as f32 / rise_samples.len().max(1) as f32;
             let fit_fall_acc = fit_fall_correct as f32 / fall_samples.len().max(1) as f32;
             let fit_balanced = (fit_rise_acc + fit_fall_acc) / 2.0;
@@ -899,9 +1025,13 @@ impl AdaptiveVEOptimizer {
                 best_velocity_weight = 0.0;
                 best_escape_weight = 0.0;
                 best_effective_weight = 0.0;
-                best_fitness_weight = -4.0;  // Flag for relative fitness model
+                best_fitness_weight = -4.0; // Flag for relative fitness model
                 best_threshold = fit_thresh;
-                println!("    NEW BEST: relative_fitness > {:.2} => RISE, balanced={:.1}%", fit_thresh, fit_balanced * 100.0);
+                println!(
+                    "    NEW BEST: relative_fitness > {:.2} => RISE, balanced={:.1}%",
+                    fit_thresh,
+                    fit_balanced * 100.0
+                );
             }
         }
 
@@ -909,8 +1039,14 @@ impl AdaptiveVEOptimizer {
         // Transmit is FORWARD-LOOKING: variants with higher R0 tend to rise
         println!("  Testing Model 2b: Transmissibility-based (R0 advantage)...");
         for trans_thresh in [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80] {
-            let trans_rise_correct = rise_samples.iter().filter(|(s, _)| s.transmit > trans_thresh).count();
-            let trans_fall_correct = fall_samples.iter().filter(|(s, _)| s.transmit <= trans_thresh).count();
+            let trans_rise_correct = rise_samples
+                .iter()
+                .filter(|(s, _)| s.transmit > trans_thresh)
+                .count();
+            let trans_fall_correct = fall_samples
+                .iter()
+                .filter(|(s, _)| s.transmit <= trans_thresh)
+                .count();
             let trans_rise_acc = trans_rise_correct as f32 / rise_samples.len().max(1) as f32;
             let trans_fall_acc = trans_fall_correct as f32 / fall_samples.len().max(1) as f32;
             let trans_balanced = (trans_rise_acc + trans_fall_acc) / 2.0;
@@ -920,9 +1056,13 @@ impl AdaptiveVEOptimizer {
                 best_velocity_weight = 0.0;
                 best_escape_weight = 0.0;
                 best_effective_weight = 0.0;
-                best_fitness_weight = -2.0;  // Flag for transmit-based model
+                best_fitness_weight = -2.0; // Flag for transmit-based model
                 best_threshold = trans_thresh;
-                println!("    NEW BEST: transmit > {:.2} => RISE, balanced={:.1}%", trans_thresh, trans_balanced * 100.0);
+                println!(
+                    "    NEW BEST: transmit > {:.2} => RISE, balanced={:.1}%",
+                    trans_thresh,
+                    trans_balanced * 100.0
+                );
             }
         }
 
@@ -936,7 +1076,8 @@ impl AdaptiveVEOptimizer {
 
                     for (state, observed) in data.iter() {
                         // Score: weighted velocity + transmit (centered around 0.65)
-                        let score = vel_w * state.frequency_velocity + trans_w * (state.transmit - 0.65);
+                        let score =
+                            vel_w * state.frequency_velocity + trans_w * (state.transmit - 0.65);
                         let predicted = if score > thresh { "RISE" } else { "FALL" };
 
                         if *observed == "RISE" && predicted == "RISE" {
@@ -953,16 +1094,21 @@ impl AdaptiveVEOptimizer {
                     if balanced > best_balanced_acc {
                         best_balanced_acc = balanced;
                         best_velocity_weight = vel_w;
-                        best_escape_weight = trans_w;  // Repurpose for transmit weight
+                        best_escape_weight = trans_w; // Repurpose for transmit weight
                         best_effective_weight = 0.0;
-                        best_fitness_weight = -3.0;  // Flag for velocity+transmit model
+                        best_fitness_weight = -3.0; // Flag for velocity+transmit model
                         best_threshold = thresh;
                     }
                 }
             }
         }
-        println!("  Best Model 3: vel_w={:.2}, trans_w={:.2}, thresh={:.3}, acc={:.1}%",
-                 best_velocity_weight, best_escape_weight, best_threshold, best_balanced_acc * 100.0);
+        println!(
+            "  Best Model 3: vel_w={:.2}, trans_w={:.2}, thresh={:.3}, acc={:.1}%",
+            best_velocity_weight,
+            best_escape_weight,
+            best_threshold,
+            best_balanced_acc * 100.0
+        );
 
         // Test Model 4: Full combination with effective_escape and relative_fitness
         println!("  Testing Model 4: Full feature combination...");
@@ -1025,10 +1171,15 @@ impl AdaptiveVEOptimizer {
         self.spike_weight = best_fitness_weight;
 
         println!("\n  === FINAL MODEL ===");
-        println!("  Learned: velocity_w={:.2}, escape_w={:.2}, effective_w={:.2}, fitness_w={:.2}",
-                 best_velocity_weight, best_escape_weight, best_effective_weight, best_fitness_weight);
+        println!(
+            "  Learned: velocity_w={:.2}, escape_w={:.2}, effective_w={:.2}, fitness_w={:.2}",
+            best_velocity_weight, best_escape_weight, best_effective_weight, best_fitness_weight
+        );
         println!("  Learned threshold: score > {:.4} => RISE", best_threshold);
-        println!("  Balanced training accuracy: {:.1}%", best_balanced_acc * 100.0);
+        println!(
+            "  Balanced training accuracy: {:.1}%",
+            best_balanced_acc * 100.0
+        );
     }
 
     /// Evaluate with detailed diagnostics
@@ -1037,8 +1188,14 @@ impl AdaptiveVEOptimizer {
         let fall_samples: Vec<_> = data.iter().filter(|(_, o)| *o == "FALL").collect();
 
         // Analyze feature distributions in this dataset
-        let rise_vel: Vec<f32> = rise_samples.iter().map(|(s, _)| s.frequency_velocity).collect();
-        let fall_vel: Vec<f32> = fall_samples.iter().map(|(s, _)| s.frequency_velocity).collect();
+        let rise_vel: Vec<f32> = rise_samples
+            .iter()
+            .map(|(s, _)| s.frequency_velocity)
+            .collect();
+        let fall_vel: Vec<f32> = fall_samples
+            .iter()
+            .map(|(s, _)| s.frequency_velocity)
+            .collect();
         let rise_vel_mean = rise_vel.iter().sum::<f32>() / rise_vel.len().max(1) as f32;
         let fall_vel_mean = fall_vel.iter().sum::<f32>() / fall_vel.len().max(1) as f32;
 
@@ -1057,23 +1214,53 @@ impl AdaptiveVEOptimizer {
         let rise_freq_mean = rise_freq.iter().sum::<f32>() / rise_freq.len().max(1) as f32;
         let fall_freq_mean = fall_freq.iter().sum::<f32>() / fall_freq.len().max(1) as f32;
 
-        let rise_fit: Vec<f32> = rise_samples.iter().map(|(s, _)| s.relative_fitness).collect();
-        let fall_fit: Vec<f32> = fall_samples.iter().map(|(s, _)| s.relative_fitness).collect();
+        let rise_fit: Vec<f32> = rise_samples
+            .iter()
+            .map(|(s, _)| s.relative_fitness)
+            .collect();
+        let fall_fit: Vec<f32> = fall_samples
+            .iter()
+            .map(|(s, _)| s.relative_fitness)
+            .collect();
         let rise_fit_mean = rise_fit.iter().sum::<f32>() / rise_fit.len().max(1) as f32;
         let fall_fit_mean = fall_fit.iter().sum::<f32>() / fall_fit.len().max(1) as f32;
 
         println!("\n  {} SET DIAGNOSTICS ({} samples):", label, data.len());
-        println!("    {} RISE, {} FALL", rise_samples.len(), fall_samples.len());
-        println!("    RISE velocity mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_vel_mean, fall_vel_mean, rise_vel_mean - fall_vel_mean);
-        println!("    RISE escape mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_esc_mean, fall_esc_mean, rise_esc_mean - fall_esc_mean);
-        println!("    RISE transmit mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_trans_mean, fall_trans_mean, rise_trans_mean - fall_trans_mean);
-        println!("    RISE frequency mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_freq_mean, fall_freq_mean, rise_freq_mean - fall_freq_mean);
-        println!("    RISE relative_fitness mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
-                 rise_fit_mean, fall_fit_mean, rise_fit_mean - fall_fit_mean);
+        println!(
+            "    {} RISE, {} FALL",
+            rise_samples.len(),
+            fall_samples.len()
+        );
+        println!(
+            "    RISE velocity mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_vel_mean,
+            fall_vel_mean,
+            rise_vel_mean - fall_vel_mean
+        );
+        println!(
+            "    RISE escape mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_esc_mean,
+            fall_esc_mean,
+            rise_esc_mean - fall_esc_mean
+        );
+        println!(
+            "    RISE transmit mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_trans_mean,
+            fall_trans_mean,
+            rise_trans_mean - fall_trans_mean
+        );
+        println!(
+            "    RISE frequency mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_freq_mean,
+            fall_freq_mean,
+            rise_freq_mean - fall_freq_mean
+        );
+        println!(
+            "    RISE relative_fitness mean: {:.3}, FALL: {:.3} (DELTA={:.3})",
+            rise_fit_mean,
+            fall_fit_mean,
+            rise_fit_mean - fall_fit_mean
+        );
 
         // Check prediction distribution
         let mut rise_correct = 0;
@@ -1102,8 +1289,15 @@ impl AdaptiveVEOptimizer {
         let fall_acc = fall_correct as f32 / fall_samples.len().max(1) as f32;
         let balanced = (rise_acc + fall_acc) / 2.0;
 
-        println!("    Predictions: {} RISE, {} FALL", predicted_rise, predicted_fall);
-        println!("    RISE accuracy: {:.1}%, FALL accuracy: {:.1}%", rise_acc * 100.0, fall_acc * 100.0);
+        println!(
+            "    Predictions: {} RISE, {} FALL",
+            predicted_rise, predicted_fall
+        );
+        println!(
+            "    RISE accuracy: {:.1}%, FALL accuracy: {:.1}%",
+            rise_acc * 100.0,
+            fall_acc * 100.0
+        );
         println!("    Balanced accuracy: {:.1}%", balanced * 100.0);
     }
 
@@ -1179,8 +1373,8 @@ impl AdaptiveVEOptimizer {
         // Model -3: velocity + transmit combination
         if (self.spike_weight - (-3.0)).abs() < 0.01 {
             // alpha = velocity_weight, gamma = transmit_weight (repurposed)
-            let score = self.alpha * state.frequency_velocity
-                + self.gamma * (state.transmit - 0.65);
+            let score =
+                self.alpha * state.frequency_velocity + self.gamma * (state.transmit - 0.65);
             if score > self.epsilon {
                 return VEAction::Rise;
             } else {
@@ -1223,7 +1417,13 @@ impl AdaptiveVEOptimizer {
 
     /// Get all learned weights
     pub fn get_all_weights(&self) -> (f32, f32, f32, f32, f32) {
-        (self.alpha, self.gamma, self.epsilon_min, self.spike_weight, self.epsilon)
+        (
+            self.alpha,
+            self.gamma,
+            self.epsilon_min,
+            self.spike_weight,
+            self.epsilon,
+        )
     }
 }
 

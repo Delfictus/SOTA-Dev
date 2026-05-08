@@ -14,7 +14,7 @@
 //! The Python pipeline achieved 69.7% because it used this full model.
 //! The Rust benchmark got 50% because it was missing immunity context.
 
-use chrono::{NaiveDate, Duration};
+use chrono::{Duration, NaiveDate};
 use std::collections::HashMap;
 
 /// Antibody pharmacokinetics parameters
@@ -89,12 +89,7 @@ pub struct ImmunityEvent {
 }
 
 impl ImmunityEvent {
-    pub fn vaccination(
-        date: NaiveDate,
-        vaccine_type: &str,
-        coverage: f32,
-        pk: AntibodyPK,
-    ) -> Self {
+    pub fn vaccination(date: NaiveDate, vaccine_type: &str, coverage: f32, pk: AntibodyPK) -> Self {
         let epitope_profile = match vaccine_type {
             "Wuhan" => {
                 // Original vaccines: Target D1, D2, E epitopes strongly
@@ -116,7 +111,11 @@ impl ImmunityEvent {
             epitope_profile,
             pk_params: pk,
             magnitude: coverage,
-            description: format!("Vaccination: {} ({:.0}% coverage)", vaccine_type, coverage * 100.0),
+            description: format!(
+                "Vaccination: {} ({:.0}% coverage)",
+                vaccine_type,
+                coverage * 100.0
+            ),
         }
     }
 
@@ -138,7 +137,11 @@ impl ImmunityEvent {
             epitope_profile,
             pk_params: AntibodyPK::natural_infection(),
             magnitude: attack_rate,
-            description: format!("Infection wave: {} ({:.0}% attack rate)", dominant_variant, attack_rate * 100.0),
+            description: format!(
+                "Infection wave: {} ({:.0}% attack rate)",
+                dominant_variant,
+                attack_rate * 100.0
+            ),
         }
     }
 }
@@ -197,7 +200,7 @@ impl PopulationImmunityLandscape {
         self.immunity_events.push(ImmunityEvent::vaccination(
             NaiveDate::from_ymd_opt(2021, 12, 1).unwrap(),
             "Wuhan",
-            0.50, // Booster campaign
+            0.50,               // Booster campaign
             AntibodyPK::fast(), // Boosters have faster initial response
         ));
 
@@ -274,7 +277,10 @@ impl PopulationImmunityLandscape {
             0.25,
         ));
 
-        log::info!("Loaded {} immunity events for Germany", self.immunity_events.len());
+        log::info!(
+            "Loaded {} immunity events for Germany",
+            self.immunity_events.len()
+        );
         for event in &self.immunity_events {
             log::debug!("  {}: {}", event.date, event.description);
         }
@@ -301,9 +307,8 @@ impl PopulationImmunityLandscape {
 
             // Add contribution to each epitope class
             for epitope_idx in 0..10 {
-                let contribution = event.magnitude
-                    * antibody_level
-                    * event.epitope_profile[epitope_idx];
+                let contribution =
+                    event.magnitude * antibody_level * event.epitope_profile[epitope_idx];
                 immunity[epitope_idx] += contribution;
             }
         }
@@ -492,13 +497,22 @@ impl CrossReactivityMatrix {
     fn get_variant_family_idx(&self, lineage: &str) -> usize {
         let lin = lineage.to_uppercase();
 
-        if lin.starts_with("XBB") || lin.starts_with("EG.") || lin.starts_with("HK.")
-            || lin.starts_with("FY.") || lin.starts_with("JN.") || lin.starts_with("FL.") {
+        if lin.starts_with("XBB")
+            || lin.starts_with("EG.")
+            || lin.starts_with("HK.")
+            || lin.starts_with("FY.")
+            || lin.starts_with("JN.")
+            || lin.starts_with("FL.")
+        {
             9 // XBB family
         } else if lin.starts_with("BQ.") || lin.starts_with("BE.") || lin.starts_with("BF.") {
             8 // BQ.1 family
-        } else if lin.starts_with("BA.5") || lin.starts_with("BA.4") || lin.starts_with("BZ.")
-            || lin.starts_with("CJ.") || lin.starts_with("CK.") {
+        } else if lin.starts_with("BA.5")
+            || lin.starts_with("BA.4")
+            || lin.starts_with("BZ.")
+            || lin.starts_with("CJ.")
+            || lin.starts_with("CK.")
+        {
             7 // BA.4/5 family
         } else if lin.starts_with("BA.2") || lin.starts_with("BS.") || lin.starts_with("BR.") {
             6 // BA.2 family
@@ -557,41 +571,66 @@ impl PopulationImmunityLandscape {
 
         // Vaccinations
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(), "Wuhan", 0.15, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
+            "Wuhan",
+            0.15,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Wuhan", 0.45, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Wuhan",
+            0.45,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(), "Wuhan", 0.55, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
+            "Wuhan",
+            0.55,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 12, 1).unwrap(), "Wuhan", 0.35, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2021, 12, 1).unwrap(),
+            "Wuhan",
+            0.35,
+            AntibodyPK::fast(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(), "BA.5", 0.15, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(),
+            "BA.5",
+            0.15,
+            AntibodyPK::medium(),
         ));
 
         // Infection waves
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(), "Alpha", 0.15,
+            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(),
+            "Alpha",
+            0.15,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(), "Delta", 0.25,
+            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
+            "Delta",
+            0.25,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.40,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.40,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 5, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(), "BA.5", 0.35,
+            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(),
+            "BA.5",
+            0.35,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 11, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2023, 2, 1).unwrap(), "BQ.1", 0.20,
+            NaiveDate::from_ymd_opt(2023, 2, 1).unwrap(),
+            "BQ.1",
+            0.20,
         ));
     }
 
@@ -600,36 +639,59 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 1, 15).unwrap(), "Wuhan", 0.25, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 1, 15).unwrap(),
+            "Wuhan",
+            0.25,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(), "Wuhan", 0.55, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(),
+            "Wuhan",
+            0.55,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(), "Wuhan", 0.70, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
+            "Wuhan",
+            0.70,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(), "Wuhan", 0.55, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
+            "Wuhan",
+            0.55,
+            AntibodyPK::fast(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(), "BA.1", 0.25, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(),
+            "BA.1",
+            0.25,
+            AntibodyPK::medium(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(), "Alpha", 0.25,
+            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(),
+            "Alpha",
+            0.25,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(), "Delta", 0.30,
+            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(),
+            "Delta",
+            0.30,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 12, 15).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 2, 15).unwrap(), "BA.1", 0.45,
+            NaiveDate::from_ymd_opt(2022, 2, 15).unwrap(),
+            "BA.1",
+            0.45,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(), "BA.5", 0.30,
+            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(),
+            "BA.5",
+            0.30,
         ));
     }
 
@@ -638,32 +700,53 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(), "Wuhan", 0.10, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(),
+            "Wuhan",
+            0.10,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(), "Wuhan", 0.50, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
+            "Wuhan",
+            0.50,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(), "Wuhan", 0.75, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            "Wuhan",
+            0.75,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(), "Wuhan", 0.60, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
+            "Wuhan",
+            0.60,
+            AntibodyPK::fast(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(), "BA.5", 0.30, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(),
+            "BA.5",
+            0.30,
+            AntibodyPK::medium(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(), "Delta", 0.08,
+            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            "Delta",
+            0.08,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(), "BA.1", 0.25,
+            NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
+            "BA.1",
+            0.25,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(), "BA.5", 0.35,
+            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(),
+            "BA.5",
+            0.35,
         ));
     }
 
@@ -672,33 +755,53 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(), "Wuhan", 0.15, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(),
+            "Wuhan",
+            0.15,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(), "Wuhan", 0.45, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
+            "Wuhan",
+            0.45,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(), "Wuhan", 0.65, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
+            "Wuhan",
+            0.65,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(), "Wuhan", 0.40, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
+            "Wuhan",
+            0.40,
+            AntibodyPK::fast(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(), "Gamma", 0.35,
+            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(),
+            "Gamma",
+            0.35,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(), "Delta", 0.30,
+            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(),
+            "Delta",
+            0.30,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.45,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.45,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(), "BA.5", 0.35,
+            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(),
+            "BA.5",
+            0.35,
         ));
     }
 
@@ -707,36 +810,59 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(), "Wuhan", 0.12, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
+            "Wuhan",
+            0.12,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Wuhan", 0.40, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Wuhan",
+            0.40,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(), "Wuhan", 0.65, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
+            "Wuhan",
+            0.65,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(), "Wuhan", 0.50, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+            "Wuhan",
+            0.50,
+            AntibodyPK::fast(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(), "BA.5", 0.20, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(),
+            "BA.5",
+            0.20,
+            AntibodyPK::medium(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Alpha", 0.20,
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Alpha",
+            0.20,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(), "Delta", 0.25,
+            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            "Delta",
+            0.25,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.40,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.40,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(), "BA.5", 0.30,
+            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(),
+            "BA.5",
+            0.30,
         ));
     }
 
@@ -745,37 +871,59 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(), "Wuhan", 0.10, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
+            "Wuhan",
+            0.10,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Wuhan", 0.50, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Wuhan",
+            0.50,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(), "Wuhan", 0.72, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
+            "Wuhan",
+            0.72,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(), "Wuhan", 0.50, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+            "Wuhan",
+            0.50,
+            AntibodyPK::fast(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 6, 1).unwrap(), "Alpha", 0.15,
+            NaiveDate::from_ymd_opt(2021, 6, 1).unwrap(),
+            "Alpha",
+            0.15,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(), "Delta", 0.18,
+            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
+            "Delta",
+            0.18,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.40,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.40,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(), "BA.2", 0.25,
+            NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
+            "BA.2",
+            0.25,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(), "BA.5", 0.30,
+            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(),
+            "BA.5",
+            0.30,
         ));
     }
 
@@ -784,32 +932,53 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(), "Wuhan", 0.15, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
+            "Wuhan",
+            0.15,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Wuhan", 0.55, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Wuhan",
+            0.55,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(), "Wuhan", 0.78, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
+            "Wuhan",
+            0.78,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 12, 1).unwrap(), "Wuhan", 0.60, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2021, 12, 1).unwrap(),
+            "Wuhan",
+            0.60,
+            AntibodyPK::fast(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(), "BA.5", 0.30, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2022, 10, 1).unwrap(),
+            "BA.5",
+            0.30,
+            AntibodyPK::medium(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.50,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.50,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 5, 1).unwrap(), "BA.2", 0.40,
+            NaiveDate::from_ymd_opt(2022, 5, 1).unwrap(),
+            "BA.2",
+            0.40,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(), "BA.5", 0.25,
+            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(),
+            "BA.5",
+            0.25,
         ));
     }
 
@@ -818,30 +987,48 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(), "Wuhan", 0.08, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(),
+            "Wuhan",
+            0.08,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(), "Wuhan", 0.45, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
+            "Wuhan",
+            0.45,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(), "Wuhan", 0.75, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
+            "Wuhan",
+            0.75,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "Wuhan", 0.55, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "Wuhan",
+            0.55,
+            AntibodyPK::fast(),
         ));
 
         // Australia had low infection rates until Omicron
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.50,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.50,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(), "BA.2", 0.35,
+            NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
+            "BA.2",
+            0.35,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(), "BA.5", 0.40,
+            NaiveDate::from_ymd_opt(2022, 9, 1).unwrap(),
+            "BA.5",
+            0.40,
         ));
     }
 
@@ -850,38 +1037,60 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(), "Wuhan", 0.08, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
+            "Wuhan",
+            0.08,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Wuhan", 0.40, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Wuhan",
+            0.40,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(), "Wuhan", 0.68, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
+            "Wuhan",
+            0.68,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(), "Wuhan", 0.45, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+            "Wuhan",
+            0.45,
+            AntibodyPK::fast(),
         ));
 
         // Sweden had higher early infection rates
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2020, 10, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(), "Wuhan", 0.18,
+            NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
+            "Wuhan",
+            0.18,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Alpha", 0.20,
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Alpha",
+            0.20,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 8, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(), "Delta", 0.22,
+            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
+            "Delta",
+            0.22,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.45,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.45,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(), "BA.5", 0.28,
+            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(),
+            "BA.5",
+            0.28,
         ));
     }
 
@@ -890,33 +1099,53 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(), "Wuhan", 0.08, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(),
+            "Wuhan",
+            0.08,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(), "Wuhan", 0.35, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
+            "Wuhan",
+            0.35,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(), "Wuhan", 0.55, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
+            "Wuhan",
+            0.55,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(), "Wuhan", 0.30, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
+            "Wuhan",
+            0.30,
+            AntibodyPK::fast(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(), "Wuhan", 0.25,
+            NaiveDate::from_ymd_opt(2021, 4, 1).unwrap(),
+            "Wuhan",
+            0.25,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(), "Delta", 0.35,
+            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            "Delta",
+            0.35,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.40,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.40,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(), "BA.5", 0.30,
+            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(),
+            "BA.5",
+            0.30,
         ));
     }
 
@@ -925,35 +1154,54 @@ impl PopulationImmunityLandscape {
         self.immunity_events.clear();
 
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(), "Wuhan", 0.08, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+            "Wuhan",
+            0.08,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(), "Wuhan", 0.25, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(),
+            "Wuhan",
+            0.25,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(), "Wuhan", 0.32, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+            "Wuhan",
+            0.32,
+            AntibodyPK::medium(),
         ));
 
         // High natural immunity from multiple waves
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2020, 8, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2020, 10, 1).unwrap(), "Wuhan", 0.20,
+            NaiveDate::from_ymd_opt(2020, 10, 1).unwrap(),
+            "Wuhan",
+            0.20,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2020, 12, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(), "Beta", 0.35,
+            NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
+            "Beta",
+            0.35,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(), "Delta", 0.40,
+            NaiveDate::from_ymd_opt(2021, 9, 1).unwrap(),
+            "Delta",
+            0.40,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 11, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(), "BA.1", 0.50,
+            NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+            "BA.1",
+            0.50,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 5, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 7, 1).unwrap(), "BA.5", 0.35,
+            NaiveDate::from_ymd_opt(2022, 7, 1).unwrap(),
+            "BA.5",
+            0.35,
         ));
     }
 
@@ -963,26 +1211,41 @@ impl PopulationImmunityLandscape {
 
         // Generic Western country profile
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(), "Wuhan", 0.15, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 3, 1).unwrap(),
+            "Wuhan",
+            0.15,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(), "Wuhan", 0.50, AntibodyPK::medium(),
+            NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
+            "Wuhan",
+            0.50,
+            AntibodyPK::medium(),
         ));
         self.immunity_events.push(ImmunityEvent::vaccination(
-            NaiveDate::from_ymd_opt(2021, 12, 1).unwrap(), "Wuhan", 0.45, AntibodyPK::fast(),
+            NaiveDate::from_ymd_opt(2021, 12, 1).unwrap(),
+            "Wuhan",
+            0.45,
+            AntibodyPK::fast(),
         ));
 
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2021, 7, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(), "Delta", 0.20,
+            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            "Delta",
+            0.20,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(), "BA.1", 0.40,
+            NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+            "BA.1",
+            0.40,
         ));
         self.immunity_events.push(ImmunityEvent::infection_wave(
             NaiveDate::from_ymd_opt(2022, 6, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(), "BA.5", 0.30,
+            NaiveDate::from_ymd_opt(2022, 8, 1).unwrap(),
+            "BA.5",
+            0.30,
         ));
     }
 
@@ -1051,13 +1314,15 @@ impl PopulationImmunityLandscape {
         cross_reactive_protection = cross_reactive_protection.min(0.95);
 
         // Compute weighted escape score
-        let raw_escape = raw_epitope_escape.iter()
+        let raw_escape = raw_epitope_escape
+            .iter()
             .zip(current_immunity.iter())
             .map(|(&escape, &immunity)| escape * (1.0 - immunity))
-            .sum::<f32>() / 10.0;
+            .sum::<f32>()
+            / 10.0;
 
         // Effective escape = raw escape × (1 - cross-reactive protection)
-        raw_escape * (1.0 - cross_reactive_protection * 0.5)  // 0.5 dampening factor
+        raw_escape * (1.0 - cross_reactive_protection * 0.5) // 0.5 dampening factor
     }
 }
 
@@ -1087,15 +1352,12 @@ mod tests {
         immunity.load_germany_history();
 
         // Check immunity at different dates
-        let immunity_jan_2021 = immunity.compute_overall_immunity(
-            NaiveDate::from_ymd_opt(2021, 1, 15).unwrap()
-        );
-        let immunity_jul_2022 = immunity.compute_overall_immunity(
-            NaiveDate::from_ymd_opt(2022, 7, 1).unwrap()
-        );
-        let immunity_jan_2023 = immunity.compute_overall_immunity(
-            NaiveDate::from_ymd_opt(2023, 1, 1).unwrap()
-        );
+        let immunity_jan_2021 =
+            immunity.compute_overall_immunity(NaiveDate::from_ymd_opt(2021, 1, 15).unwrap());
+        let immunity_jul_2022 =
+            immunity.compute_overall_immunity(NaiveDate::from_ymd_opt(2022, 7, 1).unwrap());
+        let immunity_jan_2023 =
+            immunity.compute_overall_immunity(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap());
 
         // Immunity should increase over time (more events)
         println!("Immunity Jan 2021: {:.3}", immunity_jan_2021);

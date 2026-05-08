@@ -134,8 +134,8 @@ impl WaterMolecule {
         // Simple pseudo-random rotation using seed
         // This is deterministic for reproducibility
         let seed = rng_seed.wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
-        let theta = (seed as f32 / u64::MAX as f32) * 2.0 * PI;  // Rotation around z
-        let phi = ((seed >> 16) as f32 / (u64::MAX >> 16) as f32) * PI;  // Tilt
+        let theta = (seed as f32 / u64::MAX as f32) * 2.0 * PI; // Rotation around z
+        let phi = ((seed >> 16) as f32 / (u64::MAX >> 16) as f32) * PI; // Tilt
 
         let h_x = tip3p.oh_bond * half_angle.cos();
         let h_y = tip3p.oh_bond * half_angle.sin();
@@ -167,8 +167,16 @@ impl WaterMolecule {
 
         Self {
             o_pos: center,
-            h1_pos: [center[0] + h1_rot[0], center[1] + h1_rot[1], center[2] + h1_rot[2]],
-            h2_pos: [center[0] + h2_rot[0], center[1] + h2_rot[1], center[2] + h2_rot[2]],
+            h1_pos: [
+                center[0] + h1_rot[0],
+                center[1] + h1_rot[1],
+                center[2] + h1_rot[2],
+            ],
+            h2_pos: [
+                center[0] + h2_rot[0],
+                center[1] + h2_rot[1],
+                center[2] + h2_rot[2],
+            ],
             o_index: 0,
         }
     }
@@ -179,9 +187,18 @@ impl WaterMolecule {
         let total_mass = tip3p.molecule_mass();
 
         [
-            (self.o_pos[0] * tip3p.o_mass + self.h1_pos[0] * tip3p.h_mass + self.h2_pos[0] * tip3p.h_mass) / total_mass,
-            (self.o_pos[1] * tip3p.o_mass + self.h1_pos[1] * tip3p.h_mass + self.h2_pos[1] * tip3p.h_mass) / total_mass,
-            (self.o_pos[2] * tip3p.o_mass + self.h1_pos[2] * tip3p.h_mass + self.h2_pos[2] * tip3p.h_mass) / total_mass,
+            (self.o_pos[0] * tip3p.o_mass
+                + self.h1_pos[0] * tip3p.h_mass
+                + self.h2_pos[0] * tip3p.h_mass)
+                / total_mass,
+            (self.o_pos[1] * tip3p.o_mass
+                + self.h1_pos[1] * tip3p.h_mass
+                + self.h2_pos[1] * tip3p.h_mass)
+                / total_mass,
+            (self.o_pos[2] * tip3p.o_mass
+                + self.h1_pos[2] * tip3p.h_mass
+                + self.h2_pos[2] * tip3p.h_mass)
+                / total_mass,
         ]
     }
 
@@ -316,7 +333,7 @@ mod tests {
         assert!((tip3p.hoh_angle_deg - 104.52).abs() < 0.01);
 
         // Verify derived parameters
-        assert!((tip3p.hh_distance - 1.5139).abs() < 0.001);  // Known value for TIP3P
+        assert!((tip3p.hh_distance - 1.5139).abs() < 0.001); // Known value for TIP3P
         assert!((tip3p.molecule_mass() - 18.0154).abs() < 0.001);
     }
 
@@ -362,6 +379,9 @@ mod tests {
     fn test_charge_neutrality() {
         let tip3p = TIP3PWater::new();
         let total_charge = tip3p.o_charge + 2.0 * tip3p.h_charge;
-        assert!(total_charge.abs() < 0.001, "TIP3P water should be charge neutral");
+        assert!(
+            total_charge.abs() < 0.001,
+            "TIP3P water should be charge neutral"
+        );
     }
 }

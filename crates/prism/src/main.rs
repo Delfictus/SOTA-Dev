@@ -267,7 +267,9 @@ fn main() -> Result<()> {
 
     // Handle biomolecular mode separately - no TUI, direct LBS pipeline
     // Also auto-detect biomolecular mode for .pdb files in batch mode
-    let is_pdb_input = args.input.as_ref()
+    let is_pdb_input = args
+        .input
+        .as_ref()
         .map(|p| p.to_lowercase().ends_with(".pdb"))
         .unwrap_or(false);
 
@@ -301,7 +303,10 @@ fn run_biomolecular(args: Args) -> Result<()> {
     // Determine output path - use --output if provided, else default to lbs_results/
     let (output_json, output_dir) = if let Some(ref out_path) = args.output {
         let out = std::path::PathBuf::from(out_path);
-        let dir = out.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
+        let dir = out
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
         (Some(out), dir)
     } else {
         (None, std::path::PathBuf::from("lbs_results"))
@@ -329,11 +334,14 @@ fn run_biomolecular(args: Args) -> Result<()> {
     }
 
     // Load protein structure directly
-    if !quiet { println!("  Loading protein structure..."); }
+    if !quiet {
+        println!("  Loading protein structure...");
+    }
     let structure = ProteinStructure::from_pdb_file(Path::new(input_path))?;
 
     if !quiet {
-        println!("  Loaded: {} residues, {} atoms, {} chains",
+        println!(
+            "  Loaded: {} residues, {} atoms, {} chains",
             structure.residues.len(),
             structure.atoms.len(),
             structure.chain_residue_indices.len()
@@ -341,32 +349,52 @@ fn run_biomolecular(args: Args) -> Result<()> {
     }
 
     // Create LBS predictor with default config (GPU-accelerated)
-    if !quiet { println!("\n  Initializing PRISM-LBS predictor (GPU: {})...", args.gpu); }
+    if !quiet {
+        println!(
+            "\n  Initializing PRISM-LBS predictor (GPU: {})...",
+            args.gpu
+        );
+    }
     let mut config = LbsConfig::default();
     config.use_gpu = args.gpu;
 
     let predictor = PrismLbs::new(config)?;
 
     // Run prediction
-    if !quiet { println!("  Running 7-phase binding site detection...\n"); }
+    if !quiet {
+        println!("  Running 7-phase binding site detection...\n");
+    }
     let start = std::time::Instant::now();
     let pockets = predictor.predict(&structure)?;
     let duration = start.elapsed();
 
     // Write results
-    if !quiet { println!("\n  Writing results..."); }
+    if !quiet {
+        println!("\n  Writing results...");
+    }
 
     // If custom output path specified (batch mode), write JSON there directly
     if let Some(ref json_path) = output_json {
         prism_lbs::output::write_pockets_json(&pockets, &structure, json_path)?;
     } else {
         // Default behavior: write to lbs_results/
-        prism_lbs::output::write_pockets_pdb(&pockets, &structure, &output_dir.join("pockets.pdb"))?;
-        prism_lbs::output::write_pockets_json(&pockets, &structure, &output_dir.join("pockets.json"))?;
+        prism_lbs::output::write_pockets_pdb(
+            &pockets,
+            &structure,
+            &output_dir.join("pockets.pdb"),
+        )?;
+        prism_lbs::output::write_pockets_json(
+            &pockets,
+            &structure,
+            &output_dir.join("pockets.json"),
+        )?;
     }
 
     if !quiet && output_dir.join("visualize_pockets.pml").exists() {
-        println!("  PyMOL script: {}/visualize_pockets.pml", output_dir.display());
+        println!(
+            "  PyMOL script: {}/visualize_pockets.pml",
+            output_dir.display()
+        );
     }
 
     // Print summary (always show for successful batch runs, but minimal)
@@ -374,7 +402,10 @@ fn run_biomolecular(args: Args) -> Result<()> {
         // Batch mode: just output pocket count for scripts to parse
         println!("{}", pockets.len());
     } else {
-        println!("\n✅ LBS prediction complete in {:.2}s!", duration.as_secs_f64());
+        println!(
+            "\n✅ LBS prediction complete in {:.2}s!",
+            duration.as_secs_f64()
+        );
         if let Some(ref json_path) = output_json {
             println!("   Results saved to: {}", json_path.display());
         } else {
@@ -1066,8 +1097,14 @@ fn run_headless(args: Args) -> Result<()> {
                 Ok(evolved_solution) => {
                     let memetic_duration = memetic_start.elapsed();
 
-                    log::info!("Memetic evolution completed in {:.3}s", memetic_duration.as_secs_f64());
-                    log::info!("  Final chromatic number: {}", evolved_solution.chromatic_number);
+                    log::info!(
+                        "Memetic evolution completed in {:.3}s",
+                        memetic_duration.as_secs_f64()
+                    );
+                    log::info!(
+                        "  Final chromatic number: {}",
+                        evolved_solution.chromatic_number
+                    );
                     log::info!("  Final conflicts: {}", evolved_solution.conflicts);
 
                     if evolved_solution.chromatic_number < solution.chromatic_number

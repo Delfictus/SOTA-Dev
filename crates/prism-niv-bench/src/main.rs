@@ -2,14 +2,14 @@
 //!
 //! CLI implementation for NiV-Bench.
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use log::{info, warn, error};
-use std::path::Path;
-use prism_niv_bench::structure_types::{ParamyxoStructure, VirusType, ProteinType};
-use prism_niv_bench::pdb_fetcher;
+use log::{error, info, warn};
 use prism_niv_bench::data_loader::DataLoader;
 use prism_niv_bench::ground_truth;
+use prism_niv_bench::pdb_fetcher;
+use prism_niv_bench::structure_types::{ParamyxoStructure, ProteinType, VirusType};
+use std::path::Path;
 // use prism_niv_bench::{PackedBatch, BatchStructureDesc};  // Disabled for now
 // use prism_niv_bench::gpu_parallel::ParallelGpuPipeline;  // Disabled until vendored fixed
 // use prism_niv_bench::glycan_mask::GlycanMask;  // Disabled for now
@@ -43,7 +43,7 @@ enum Commands {
     Train {
         #[arg(long, default_value = "10")]
         generations: usize,
-    }
+    },
 }
 
 #[tokio::main]
@@ -102,21 +102,21 @@ fn run_training(_generations: usize) -> Result<()> {
     // 2. Initialize GPU Pipeline
     let mut pipeline = ParallelGpuPipeline::new()?;
     let ptx_path = std::path::Path::new("kernels/ptx");
-    
+
     // 3. Initialize Evolution Strategy
     let evo_config = EvolutionConfig::default();
     let mut evo = EvolutionGpu::new(pipeline.device.clone(), ptx_path, evo_config.clone())?;
-    
+
     // Initialize Mean Weights on GPU
     let mut mean_weights = pipeline.stream.alloc_zeros::<f32>(evo_config.n_params)?;
-    
+
     // 4. Prepare Training Data (8XPS)
     // We compute features ONCE on GPU to save time
     let pdb_path = "data/niv_structures/8XPS.pdb";
     let mut structure = pdb_fetcher::parse_pdb(pdb_path).context("Failed to parse 8XPS")?;
-    
+
     // Fake sequence for masking
-    let seq: String = structure.residues.iter().map(|_| 'A').collect(); 
+    let seq: String = structure.residues.iter().map(|_| 'A').collect();
     structure.sequence = seq.clone();
     let mut seq_map = std::collections::HashMap::new();
     seq_map.insert("8XPS".to_string(), seq);
@@ -130,23 +130,23 @@ fn run_training(_generations: usize) -> Result<()> {
     // `ParallelGpuPipeline` doesn't expose features easily.
     // For this demo, we will run the FULL pipeline for each individual.
     // It's 42ms * 64 = 2.6s per generation. Acceptable.
-    
+
     println!("Training for {} generations (Pop: {})", generations, evo_config.population_size);
-    
+
     for gen in 0..generations {
         let start = std::time::Instant::now();
-        
+
         // A. Perturb Weights
         evo.perturb(&mean_weights)?;
-        
+
         // B. Evaluate Population
         let mut fitness_scores = vec![0.0f32; evo_config.population_size];
         let mut total_reward = 0.0;
-        
+
         for i in 0..evo_config.population_size {
             // 1. Get weights for individual i
             let ind_weights = evo.get_individual(i)?;
-            
+
             // 2. Load into FluxNet (Device to Device copy would be better, but CPU roundtrip works)
             // ind_weights is Vec<f32>. We need to upload as bytes.
             let byte_slice = unsafe {
@@ -156,10 +156,10 @@ fn run_training(_generations: usize) -> Result<()> {
                 )
             };
             pipeline.stream.memcpy_htod(byte_slice, &mut pipeline.fluxnet_gpu.weights_buffer)?;
-            
+
             // 3. Run Inference
             let result = pipeline.execute_batch(&mut batch, Some(&seq_map))?;
-            
+
             // 4. Compute Reward
             // Sum rewards across all residues in 8XPS
             let mut ind_reward = 0.0;
@@ -171,34 +171,34 @@ fn run_training(_generations: usize) -> Result<()> {
                     for k in 1..4 {
                         if chunk[k] > max_q { max_q = chunk[k]; best_action = k; }
                     }
-                    
+
                     let action = CrypticAction::from(best_action);
                     let is_cryptic = ground_truth.is_cryptic("8XPS", res_idx);
                     let is_epitope = ground_truth.is_epitope("8XPS", res_idx);
-                    
+
                     ind_reward += compute_cryptic_reward(action, is_cryptic, is_epitope, 1.0);
                 }
             }
-            
+
             fitness_scores[i] = ind_reward;
             total_reward += ind_reward;
         }
-        
+
         // C. Update Weights
         let mut d_fitness = pipeline.stream.alloc_zeros::<f32>(evo_config.population_size)?;
         pipeline.stream.memcpy_htod(&fitness_scores, &mut d_fitness)?;
-        
+
         evo.update(&mut mean_weights, &d_fitness)?;
-        
+
         let avg_reward = total_reward / evo_config.population_size as f32;
         println!("Generation {}: Avg Reward = {:.2} (Time: {:.2?} ms)", gen, avg_reward, start.elapsed().as_millis());
     }
-    
+
     // Save Best Weights (Mean of Population)
     println!("Saving best weights to models/fluxnet_best.bin...");
     let mut best_weights_vec = vec![0.0f32; evo_config.n_params];
     pipeline.stream.memcpy_dtoh(&mean_weights, &mut best_weights_vec)?;
-    
+
     // Check for NaNs
     if best_weights_vec.iter().any(|&x| x.is_nan()) {
         log::error!("TRAINING FAILED: Evolved weights contain NaN. Skipping save.");
@@ -224,12 +224,9 @@ async fn download_structures(output_dir: &str) -> Result<()> {
     info!("Downloading NiV/HeV PDB structures to {}", output_dir);
     // ... (Same download logic as before) ...
     let niv_structures = vec![
-        "8XPS", "8XQ3", "7UPK", "7UPD", "7UPB",
-        "8ZPV", "7SKT", "7TY0"
+        "8XPS", "8XQ3", "7UPK", "7UPD", "7UPB", "8ZPV", "7SKT", "7TY0",
     ];
-    let hev_structures = vec![
-        "2X9M", "5EJB", "6CMG", "7UPH"
-    ];
+    let hev_structures = vec!["2X9M", "5EJB", "6CMG", "7UPH"];
 
     std::fs::create_dir_all(output_dir).context("Failed to create output directory")?;
     let client = reqwest::Client::new();
@@ -247,7 +244,11 @@ async fn download_structures(output_dir: &str) -> Result<()> {
         if response.status().is_success() {
             let content = response.text().await?;
             std::fs::write(&output_path, content)?;
-            info!("Downloaded {} ({} bytes)", pdb_id, std::fs::metadata(&output_path)?.len());
+            info!(
+                "Downloaded {} ({} bytes)",
+                pdb_id,
+                std::fs::metadata(&output_path)?.len()
+            );
         } else {
             warn!("Failed to download {}: HTTP {}", pdb_id, response.status());
         }
@@ -285,7 +286,7 @@ fn run_data_benchmark() -> Result<()> {
             Ok(s) => {
                 println!("  ✓ {} residues, {} atoms", s.residues.len(), s.atoms.len());
                 structures.push(s);
-            },
+            }
             Err(e) => {
                 error!("  ✗ Parse failed: {}", e);
             }
@@ -299,17 +300,19 @@ fn run_data_benchmark() -> Result<()> {
             println!("  Structures: {}", dataset.structures.len());
             println!("  Cryptic sites: {}", dataset.cryptic_sites.len());
             println!("  Epitopes: {}", dataset.epitopes.len());
-            println!("  Train/Test/Val splits: {}/{}/{}",
+            println!(
+                "  Train/Test/Val splits: {}/{}/{}",
                 dataset.train_structures.len(),
                 dataset.test_structures.len(),
-                dataset.validation_structures.len());
+                dataset.validation_structures.len()
+            );
 
             // Save dataset
             let output_path = "data/niv_bench_dataset_validated.json";
             let file = std::fs::File::create(output_path)?;
             serde_json::to_writer_pretty(file, &dataset)?;
             println!("\n✓ Dataset saved to {}", output_path);
-        },
+        }
         Err(e) => {
             error!("Ground truth extraction failed: {}", e);
         }
@@ -326,14 +329,14 @@ fn create_batch_from_structure(structure: &ParamyxoStructure) -> Result<PackedBa
     let mut residue_types_packed = Vec::new();
     let mut bfactor_packed = Vec::new();
     let mut burial_packed = Vec::new();
-    
+
     // Flatten atoms
     for atom in &structure.atoms {
         atoms_packed.push(atom.x);
         atoms_packed.push(atom.y);
         atoms_packed.push(atom.z);
     }
-    
+
     // Find CA indices
     for res in &structure.residues {
         // Find CA atom index in the flattened list (stride 3)
@@ -352,7 +355,7 @@ fn create_batch_from_structure(structure: &ParamyxoStructure) -> Result<PackedBa
                  ca_indices_packed.push(0);
              }
         }
-        
+
         // Residue type (simplified mapping)
         let type_id = match res.name.as_str() {
             "ALA" => 0, "CYS" => 1, "ASP" => 2, "GLU" => 3, "PHE" => 4,
@@ -362,12 +365,12 @@ fn create_batch_from_structure(structure: &ParamyxoStructure) -> Result<PackedBa
             _ => 20, // Unknown
         };
         residue_types_packed.push(type_id);
-        
+
         // B-factor (avg of atoms or CA)
         // let b = res.atoms.iter().map(|a| 0.0).sum::<f32>(); // PDB parser didn't extract B-factor!
         // My parser didn't parse B-factor. I should update it or use 0.0
         bfactor_packed.push(0.0);
-        
+
         // Default burial to 1.0 (Exposed). Glycan masking (Stage 0) will set to 0.0 (Buried).
         burial_packed.push(1.0);
     }
@@ -401,4 +404,5 @@ fn create_batch_from_structure(structure: &ParamyxoStructure) -> Result<PackedBa
         epitope_escape_packed: vec![],
     })
 }
-*/  // END DISABLED GPU batch processing
+*/
+ // END DISABLED GPU batch processing

@@ -69,13 +69,21 @@ impl PhaseSpikes {
     /// Cold phase fraction
     pub fn cold_fraction(&self) -> f64 {
         let total = self.total();
-        if total == 0 { 0.0 } else { self.cold as f64 / total as f64 }
+        if total == 0 {
+            0.0
+        } else {
+            self.cold as f64 / total as f64
+        }
     }
 
     /// Ramp phase fraction
     pub fn ramp_fraction(&self) -> f64 {
         let total = self.total();
-        if total == 0 { 0.0 } else { self.ramp as f64 / total as f64 }
+        if total == 0 {
+            0.0
+        } else {
+            self.ramp as f64 / total as f64
+        }
     }
 }
 
@@ -269,18 +277,48 @@ impl HoloStructure {
                 // Parse CA atoms
                 let atom_name = line.get(12..16).unwrap_or("").trim();
                 if atom_name == "CA" {
-                    let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-                    let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-                    let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+                    let x: f32 = line
+                        .get(30..38)
+                        .unwrap_or("0")
+                        .trim()
+                        .parse()
+                        .unwrap_or(0.0);
+                    let y: f32 = line
+                        .get(38..46)
+                        .unwrap_or("0")
+                        .trim()
+                        .parse()
+                        .unwrap_or(0.0);
+                    let z: f32 = line
+                        .get(46..54)
+                        .unwrap_or("0")
+                        .trim()
+                        .parse()
+                        .unwrap_or(0.0);
                     ca_positions.push([x, y, z]);
                 }
             } else if line.starts_with("HETATM") {
                 let resname = line.get(17..20).unwrap_or("").trim();
                 if !skip_resnames.contains(&resname) {
                     let atom_name = line.get(12..16).unwrap_or("").trim().to_string();
-                    let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-                    let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-                    let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+                    let x: f32 = line
+                        .get(30..38)
+                        .unwrap_or("0")
+                        .trim()
+                        .parse()
+                        .unwrap_or(0.0);
+                    let y: f32 = line
+                        .get(38..46)
+                        .unwrap_or("0")
+                        .trim()
+                        .parse()
+                        .unwrap_or(0.0);
+                    let z: f32 = line
+                        .get(46..54)
+                        .unwrap_or("0")
+                        .trim()
+                        .parse()
+                        .unwrap_or(0.0);
                     let element = line.get(76..78).unwrap_or("").trim().to_string();
 
                     ligand_atoms.push(LigandAtom {
@@ -375,7 +413,11 @@ impl TruthResidues {
             return 0.0;
         }
         let pred_set: std::collections::HashSet<_> = predicted.iter().collect();
-        let correct = self.residues.iter().filter(|r| pred_set.contains(r)).count();
+        let correct = self
+            .residues
+            .iter()
+            .filter(|r| pred_set.contains(r))
+            .count();
         correct as f64 / self.residues.len() as f64
     }
 

@@ -16,15 +16,15 @@
 //!   - P_neut = 1 - ∏(1 - P_neut_ab)
 
 use anyhow::Result;
-use std::sync::Arc;
-use std::collections::HashMap;
-use cudarc::driver::CudaContext;
 use chrono::NaiveDate;
+use cudarc::driver::CudaContext;
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use prism_gpu::ve_swarm::VeSwarmPrediction;
-use prism_gpu::ve_swarm::agents::N_AGENTS;
 use crate::gpu_benchmark::VariantStructure;
 use crate::vasil_data::VasilEnhancedData;
+use prism_gpu::ve_swarm::agents::N_AGENTS;
+use prism_gpu::ve_swarm::VeSwarmPrediction;
 
 /// CPU-based VE-Swarm predictor (fallback while GPU kernels are debugged)
 ///
@@ -48,7 +48,7 @@ struct SwarmWeights {
     freq_weight: f32,
     spatial_weight: f32,
     trajectory_weight: f32,
-    transmit_weight: f32,  // NEW: Transmissibility signal
+    transmit_weight: f32, // NEW: Transmissibility signal
     threshold: f32,
 }
 
@@ -58,13 +58,13 @@ impl Default for SwarmWeights {
             // Optimized for observed data patterns:
             // RISE velocity=0.018, FALL velocity=0.098 (5x higher!)
             // RISE transmit=0.851, FALL transmit=0.836 (RISE slightly higher)
-            velocity_weight: -0.5,   // Strong negative (high velocity = FALL)
-            escape_weight: 0.1,      // Escape advantage helps
-            freq_weight: -0.3,       // High freq = saturated = FALL
-            spatial_weight: 0.15,    // ACE2 interface fitness
-            trajectory_weight: 0.2,  // S-curve trajectory patterns
-            transmit_weight: 0.3,    // NEW: Higher transmit = RISE
-            threshold: 0.47,         // Tuned for 40% RISE base rate
+            velocity_weight: -0.5,  // Strong negative (high velocity = FALL)
+            escape_weight: 0.1,     // Escape advantage helps
+            freq_weight: -0.3,      // High freq = saturated = FALL
+            spatial_weight: 0.15,   // ACE2 interface fitness
+            trajectory_weight: 0.2, // S-curve trajectory patterns
+            transmit_weight: 0.3,   // NEW: Higher transmit = RISE
+            threshold: 0.47,        // Tuned for 40% RISE base rate
         }
     }
 }
@@ -90,8 +90,8 @@ impl VeSwarmPredictor {
     pub fn predict_from_structure(
         &mut self,
         structure: &VariantStructure,
-        combined_features: &[f32],  // [N_residues x 125] from MegaFusedBatchGpu
-        freq_history: &[f32],       // Up to 52 weeks of frequency data
+        combined_features: &[f32], // [N_residues x 125] from MegaFusedBatchGpu
+        freq_history: &[f32],      // Up to 52 weeks of frequency data
         current_freq: f32,
         current_velocity: f32,
     ) -> Result<VeSwarmPrediction> {
@@ -104,7 +104,8 @@ impl VeSwarmPredictor {
         // Key ACE2 interface residue positions (in RBD 331-531 numbering)
         // These are the most important sites for immune escape
         let ace2_interface = [417, 452, 478, 484, 501];
-        let ace2_indices: Vec<usize> = ace2_interface.iter()
+        let ace2_indices: Vec<usize> = ace2_interface
+            .iter()
             .filter_map(|&pos| {
                 if pos >= 331 && pos <= 531 {
                     Some((pos - 331) as usize)
@@ -153,41 +154,42 @@ impl VeSwarmPredictor {
 
         // 5. SWARM CONSENSUS: Combine signals with learned weights
         // KEY: velocity inversion + transmissibility advantage
-        let rise_score =
-            self.weights.velocity_weight * corrected_velocity +
+        let rise_score = self.weights.velocity_weight * corrected_velocity +
             self.weights.escape_weight * escape_score +
             self.weights.freq_weight * (1.0 - current_freq) +  // Room to grow
             self.weights.spatial_weight * spatial_score +
             self.weights.trajectory_weight * trajectory_score +
-            self.weights.transmit_weight * (transmit_score - 0.84);  // Center around mean
+            self.weights.transmit_weight * (transmit_score - 0.84); // Center around mean
 
         // Normalize to probability
-        let rise_prob = 1.0 / (1.0 + (-rise_score * 2.0).exp());  // Sigmoid
+        let rise_prob = 1.0 / (1.0 + (-rise_score * 2.0).exp()); // Sigmoid
 
         let predicted_rise = rise_prob > self.weights.threshold;
 
         // Generate real per-agent predictions with agent-specific weight perturbations
         // Each agent has slightly different weight emphasis (simulating evolved specialization)
         // TODO: When GPU SwarmAgents is wired up, replace with actual learned agent features
-        let phase_step = std::f32::consts::TAU / N_AGENTS as f32;  // 2π / N_AGENTS
-        let agent_predictions: Vec<f32> = (0..N_AGENTS).map(|agent_id| {
-            // Agent-specific weight perturbations (deterministic based on agent_id)
-            let phase = (agent_id as f32) * phase_step;
-            let velocity_pert = 1.0 + 0.3 * phase.sin();
-            let escape_pert = 1.0 + 0.2 * (phase + 1.0).cos();
-            let transmit_pert = 1.0 + 0.25 * (phase * 2.0).sin();
+        let phase_step = std::f32::consts::TAU / N_AGENTS as f32; // 2π / N_AGENTS
+        let agent_predictions: Vec<f32> = (0..N_AGENTS)
+            .map(|agent_id| {
+                // Agent-specific weight perturbations (deterministic based on agent_id)
+                let phase = (agent_id as f32) * phase_step;
+                let velocity_pert = 1.0 + 0.3 * phase.sin();
+                let escape_pert = 1.0 + 0.2 * (phase + 1.0).cos();
+                let transmit_pert = 1.0 + 0.25 * (phase * 2.0).sin();
 
-            let agent_rise_score =
-                self.weights.velocity_weight * velocity_pert * corrected_velocity +
-                self.weights.escape_weight * escape_pert * escape_score +
-                self.weights.freq_weight * (1.0 - current_freq) +
-                self.weights.spatial_weight * spatial_score +
-                self.weights.trajectory_weight * trajectory_score +
-                self.weights.transmit_weight * transmit_pert * (transmit_score - 0.84);
+                let agent_rise_score =
+                    self.weights.velocity_weight * velocity_pert * corrected_velocity
+                        + self.weights.escape_weight * escape_pert * escape_score
+                        + self.weights.freq_weight * (1.0 - current_freq)
+                        + self.weights.spatial_weight * spatial_score
+                        + self.weights.trajectory_weight * trajectory_score
+                        + self.weights.transmit_weight * transmit_pert * (transmit_score - 0.84);
 
-            // Sigmoid per agent
-            1.0 / (1.0 + (-agent_rise_score * 2.0).exp())
-        }).collect();
+                // Sigmoid per agent
+                1.0 / (1.0 + (-agent_rise_score * 2.0).exp())
+            })
+            .collect();
 
         Ok(VeSwarmPrediction {
             rise_prob,
@@ -215,7 +217,7 @@ impl VeSwarmPredictor {
         } else if frequency < 0.1 {
             // True early growth: positive velocity is real signal
             if velocity > 0.0 {
-                velocity * 1.5  // Amplify early growth
+                velocity * 1.5 // Amplify early growth
             } else {
                 velocity
             }
@@ -232,31 +234,29 @@ impl VeSwarmPredictor {
         }
 
         // Calculate velocity over time
-        let velocities: Vec<f32> = freq_history.windows(2)
-            .map(|w| w[1] - w[0])
-            .collect();
+        let velocities: Vec<f32> = freq_history.windows(2).map(|w| w[1] - w[0]).collect();
 
         // Calculate acceleration
-        let accelerations: Vec<f32> = velocities.windows(2)
-            .map(|w| w[1] - w[0])
-            .collect();
+        let accelerations: Vec<f32> = velocities.windows(2).map(|w| w[1] - w[0]).collect();
 
         // S-curve signature: Positive acceleration followed by deceleration
         // Early stage: Look for positive acceleration (inflection point)
-        let early_acc = accelerations.iter().take(accelerations.len() / 2)
-            .sum::<f32>() / (accelerations.len() / 2).max(1) as f32;
+        let early_acc = accelerations
+            .iter()
+            .take(accelerations.len() / 2)
+            .sum::<f32>()
+            / (accelerations.len() / 2).max(1) as f32;
 
         // Recent trend: positive = still growing
-        let recent_vel = velocities.iter().rev().take(3)
-            .sum::<f32>() / 3.0;
+        let recent_vel = velocities.iter().rev().take(3).sum::<f32>() / 3.0;
 
         // Combine signals
         if early_acc > 0.01 && recent_vel > 0.0 {
-            0.5 + early_acc.min(0.3)  // Early growth phase
+            0.5 + early_acc.min(0.3) // Early growth phase
         } else if recent_vel < -0.02 {
-            -0.3  // Declining
+            -0.3 // Declining
         } else {
-            0.0  // Plateau
+            0.0 // Plateau
         }
     }
 
@@ -301,9 +301,9 @@ impl VeSwarmPredictor {
     ///   - fold_reduction = exp(Σ escape[epitope] × immunity[epitope])
     pub fn predict_with_vasil_data(
         &mut self,
-        escape_per_epitope: &[f32],    // [10] per epitope escape scores
-        immunity_per_epitope: &[f32],  // [10] population immunity per epitope
-        transmissibility: f32,         // R₀ proxy from structure
+        escape_per_epitope: &[f32],   // [10] per epitope escape scores
+        immunity_per_epitope: &[f32], // [10] population immunity per epitope
+        transmissibility: f32,        // R₀ proxy from structure
         vasil_data: Option<&VasilEnhancedData>,
         frequency: f32,
         velocity: f32,
@@ -314,8 +314,8 @@ impl VeSwarmPredictor {
         self.prediction_count += 1;
 
         // VASIL parameters (from paper)
-        const ALPHA: f32 = 0.65;  // Immune escape weight
-        const BETA: f32 = 0.35;   // Transmissibility weight
+        const ALPHA: f32 = 0.65; // Immune escape weight
+        const BETA: f32 = 0.35; // Transmissibility weight
 
         // Step 1: Compute fold_reduction = exp(Σ escape[i] × immunity[i])
         let mut escape_immunity_sum = 0.0f32;
@@ -337,12 +337,15 @@ impl VeSwarmPredictor {
             let phi_factor = if phi > 100.0 { 100.0 / phi } else { 1.0 };
 
             // Get P_neut-based immune escape
-            let p_neut_escape = if variant_type.contains("Omicron") || variant_type.contains("BA.") {
-                vd.p_neut_omicron.as_ref()
+            let p_neut_escape = if variant_type.contains("Omicron") || variant_type.contains("BA.")
+            {
+                vd.p_neut_omicron
+                    .as_ref()
                     .map(|p| p.compute_escape(days_since_outbreak))
                     .unwrap_or(0.3)
             } else {
-                vd.p_neut_delta.as_ref()
+                vd.p_neut_delta
+                    .as_ref()
                     .map(|p| p.compute_escape(days_since_outbreak))
                     .unwrap_or(0.2)
             };
@@ -379,8 +382,8 @@ impl VeSwarmPredictor {
     /// Used when full VasilEnhancedData is not available
     pub fn compute_vasil_gamma(
         &self,
-        escape_score: f32,      // Mean DMS escape score
-        transmissibility: f32,  // R₀ proxy
+        escape_score: f32,     // Mean DMS escape score
+        transmissibility: f32, // R₀ proxy
         frequency: f32,
         velocity: f32,
     ) -> f32 {
@@ -406,7 +409,7 @@ impl VeSwarmPredictor {
 ///
 /// Returns the frequency time series for the past N weeks leading up to the given date
 pub fn build_frequency_history(
-    country_frequencies: &[Vec<f32>],  // [N_dates x N_lineages]
+    country_frequencies: &[Vec<f32>], // [N_dates x N_lineages]
     lineage_idx: usize,
     current_date_idx: usize,
     weeks_back: usize,
@@ -438,7 +441,9 @@ pub fn build_frequency_history(
 ///
 /// Atoms are stored as flattened [x, y, z, x, y, z, ...] in VariantStructure
 pub fn extract_ca_coords_from_structure(structure: &VariantStructure) -> Vec<[f32; 3]> {
-    structure.ca_indices.iter()
+    structure
+        .ca_indices
+        .iter()
         .map(|&idx| {
             let atom_idx = idx as usize;
             let base = atom_idx * 3;
@@ -505,11 +510,11 @@ pub struct VasilEnhancedPredictor {
     prediction_count: usize,
     correct_count: usize,
     /// VASIL formula weights (learned)
-    alpha: f32,  // Immune escape weight
-    beta: f32,   // Transmissibility weight
-    phi_weight: f32,  // Phi normalization weight
-    p_neut_weight: f32,  // P_neut escape weight
-    velocity_weight: f32,  // Velocity inversion weight
+    alpha: f32, // Immune escape weight
+    beta: f32,            // Transmissibility weight
+    phi_weight: f32,      // Phi normalization weight
+    p_neut_weight: f32,   // P_neut escape weight
+    velocity_weight: f32, // Velocity inversion weight
 }
 
 impl VasilEnhancedPredictor {
@@ -525,7 +530,7 @@ impl VasilEnhancedPredictor {
             // Additional weights (tuned from data analysis)
             phi_weight: 0.15,
             p_neut_weight: 0.25,
-            velocity_weight: -0.20,  // Negative: high velocity at peak = FALL
+            velocity_weight: -0.20, // Negative: high velocity at peak = FALL
         }
     }
 
@@ -546,10 +551,11 @@ impl VasilEnhancedPredictor {
         date: &NaiveDate,
         raw_frequency: f32,
         velocity: f32,
-        escape_score: f32,         // Raw DMS escape
-        transmissibility: f32,     // R₀ proxy
+        escape_score: f32,          // Raw DMS escape
+        transmissibility: f32,      // R₀ proxy
         epitope_escape: &[f32; 10], // Per-epitope escape
-    ) -> (bool, f32) {  // Returns (predicted_rise, confidence)
+    ) -> (bool, f32) {
+        // Returns (predicted_rise, confidence)
         self.prediction_count += 1;
 
         // Get VASIL data for country
@@ -575,17 +581,19 @@ impl VasilEnhancedPredictor {
                 vd.p_neut_delta.as_ref()
             };
 
-            p_neut.map(|p| p.compute_escape(days_since_outbreak))
+            p_neut
+                .map(|p| p.compute_escape(days_since_outbreak))
                 .unwrap_or(0.25)
         } else {
-            0.25  // Default escape
+            0.25 // Default escape
         };
 
         // 3. POPULATION IMMUNITY LANDSCAPE
         // Models how much immunity the population has at this time
         let population_immunity = if let Some(vd) = vd {
-            vd.landscape_immunized.as_ref()
-                .map(|l| l.get_mean_immunity_at_date(date) / 100000.0)  // Normalize to [0,1]
+            vd.landscape_immunized
+                .as_ref()
+                .map(|l| l.get_mean_immunity_at_date(date) / 100000.0) // Normalize to [0,1]
                 .unwrap_or(0.5)
         } else {
             0.5
@@ -594,7 +602,8 @@ impl VasilEnhancedPredictor {
         // 4. EPITOPE-SPECIFIC IMMUNITY MODULATION
         // Adjusts escape score based on which epitopes are targeted
         let epitope_immunity = if let Some(vd) = vd {
-            vd.epitope_pk.as_ref()
+            vd.epitope_pk
+                .as_ref()
                 .map(|e| e.get_mean_epitope_immunity(days_since_outbreak))
                 .unwrap_or(0.5)
         } else {
@@ -608,7 +617,7 @@ impl VasilEnhancedPredictor {
             // Weight epitope escape by remaining immunity (non-escaped population)
             escape_immunity_sum += epitope_escape[i] * (1.0 - epitope_immunity * 0.5);
         }
-        let fold_reduction = (escape_immunity_sum * 0.3).exp();  // Scale factor
+        let fold_reduction = (escape_immunity_sum * 0.3).exp(); // Scale factor
 
         // 6. VASIL GAMMA CALCULATION
         // γ = -α × log(fold_reduction) + β × R₀
@@ -650,7 +659,8 @@ impl VasilEnhancedPredictor {
         let velocity_factor = corrected_velocity * self.velocity_weight;
 
         // 9. FINAL GAMMA (combines VASIL + VE-Swarm innovations)
-        let final_gamma = gamma_base + phi_factor + p_neut_factor + immunity_factor + velocity_factor;
+        let final_gamma =
+            gamma_base + phi_factor + p_neut_factor + immunity_factor + velocity_factor;
 
         // 10. CONVERT TO PROBABILITY
         // Use steeper sigmoid for more decisive predictions
@@ -696,7 +706,13 @@ impl VasilEnhancedPredictor {
     /// Tune weights via grid search on training data
     pub fn tune_weights(&mut self, train_data: &[(PredictionInput, bool)]) {
         let mut best_accuracy = 0.0f32;
-        let mut best_weights = (self.alpha, self.beta, self.phi_weight, self.p_neut_weight, self.velocity_weight);
+        let mut best_weights = (
+            self.alpha,
+            self.beta,
+            self.phi_weight,
+            self.p_neut_weight,
+            self.velocity_weight,
+        );
 
         // Grid search over weight combinations
         for alpha in [0.55, 0.60, 0.65, 0.70, 0.75] {
@@ -748,8 +764,14 @@ impl VasilEnhancedPredictor {
         self.p_neut_weight = best_weights.3;
         self.velocity_weight = best_weights.4;
 
-        log::info!("Tuned VASIL weights: alpha={:.2}, beta={:.2}, phi={:.2}, p_neut={:.2}, vel={:.2}",
-                   self.alpha, self.beta, self.phi_weight, self.p_neut_weight, self.velocity_weight);
+        log::info!(
+            "Tuned VASIL weights: alpha={:.2}, beta={:.2}, phi={:.2}, p_neut={:.2}, vel={:.2}",
+            self.alpha,
+            self.beta,
+            self.phi_weight,
+            self.p_neut_weight,
+            self.velocity_weight
+        );
         log::info!("Best training accuracy: {:.1}%", best_accuracy * 100.0);
     }
 }
@@ -794,7 +816,7 @@ fn estimate_days_since_outbreak(country: &str, date: &NaiveDate) -> i32 {
     };
 
     // Find most recent wave before the target date
-    let mut min_days = 120i32;  // Default 4 months
+    let mut min_days = 120i32; // Default 4 months
 
     for (wave_date, _) in wave_dates {
         let days = (*date - wave_date).num_days() as i32;
@@ -803,7 +825,7 @@ fn estimate_days_since_outbreak(country: &str, date: &NaiveDate) -> i32 {
         }
     }
 
-    min_days.max(14)  // Minimum 2 weeks
+    min_days.max(14) // Minimum 2 weeks
 }
 
 /// Determine variant type from lineage name
@@ -830,35 +852,35 @@ mod tests {
     #[test]
     fn test_build_frequency_history() {
         let freqs = vec![
-            vec![0.1, 0.2],  // day 0
-            vec![0.15, 0.25],  // day 1
-            vec![0.2, 0.3],  // day 2
-            vec![0.25, 0.35],  // day 3
-            vec![0.3, 0.4],  // day 4
-            vec![0.35, 0.45],  // day 5
-            vec![0.4, 0.5],  // day 6
-            vec![0.45, 0.55],  // day 7
-            vec![0.5, 0.6],  // day 8
-            vec![0.55, 0.65],  // day 9
-            vec![0.6, 0.7],  // day 10
-            vec![0.65, 0.75],  // day 11
-            vec![0.7, 0.8],  // day 12
-            vec![0.75, 0.85],  // day 13
-            vec![0.8, 0.9],  // day 14 (week 2)
+            vec![0.1, 0.2],   // day 0
+            vec![0.15, 0.25], // day 1
+            vec![0.2, 0.3],   // day 2
+            vec![0.25, 0.35], // day 3
+            vec![0.3, 0.4],   // day 4
+            vec![0.35, 0.45], // day 5
+            vec![0.4, 0.5],   // day 6
+            vec![0.45, 0.55], // day 7
+            vec![0.5, 0.6],   // day 8
+            vec![0.55, 0.65], // day 9
+            vec![0.6, 0.7],   // day 10
+            vec![0.65, 0.75], // day 11
+            vec![0.7, 0.8],   // day 12
+            vec![0.75, 0.85], // day 13
+            vec![0.8, 0.9],   // day 14 (week 2)
         ];
 
         let history = build_frequency_history(&freqs, 0, 14, 2);
-        assert!(history.len() >= 8);  // Should have at least 8 points
+        assert!(history.len() >= 8); // Should have at least 8 points
     }
 
     #[test]
     fn test_compute_velocity() {
         let history = vec![0.1, 0.15, 0.2, 0.25, 0.3];
         let vel = compute_velocity(&history);
-        assert!(vel > 0.0);  // Positive growth
+        assert!(vel > 0.0); // Positive growth
 
         let history2 = vec![0.5, 0.4, 0.3, 0.2, 0.1];
         let vel2 = compute_velocity(&history2);
-        assert!(vel2 < 0.0);  // Negative (decline)
+        assert!(vel2 < 0.0); // Negative (decline)
     }
 }

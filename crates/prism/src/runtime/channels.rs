@@ -113,14 +113,16 @@ impl SlidingStats {
     }
 
     pub fn min(&self) -> f64 {
-        self.values.to_vec()
+        self.values
+            .to_vec()
             .iter()
             .cloned()
             .fold(f64::INFINITY, f64::min)
     }
 
     pub fn max(&self) -> f64 {
-        self.values.to_vec()
+        self.values
+            .to_vec()
             .iter()
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max)
@@ -132,9 +134,8 @@ impl SlidingStats {
             return 0.0;
         }
         let mean = self.mean();
-        let variance = data.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / (data.len() - 1) as f64;
+        let variance =
+            data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (data.len() - 1) as f64;
         variance.sqrt()
     }
 

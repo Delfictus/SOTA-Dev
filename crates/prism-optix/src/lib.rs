@@ -82,10 +82,12 @@ mod pipeline;
 pub use accel::{AccelStructure, BvhBuildFlags, BvhInputType};
 pub use context::OptixContext;
 pub use error::{check_optix, OptixError, Result};
-pub use module::{Module, ModuleCompileOptions, PipelineCompileOptions, OptimizationLevel, DebugLevel};
+pub use module::{
+    DebugLevel, Module, ModuleCompileOptions, OptimizationLevel, PipelineCompileOptions,
+};
 pub use pipeline::{
-    Pipeline, PipelineLinkOptions, ProgramGroup, ShaderBindingTable,
-    SBT_RECORD_HEADER_SIZE, aligned_sbt_record_size,
+    aligned_sbt_record_size, Pipeline, PipelineLinkOptions, ProgramGroup, ShaderBindingTable,
+    SBT_RECORD_HEADER_SIZE,
 };
 
 /// OptiX version information
@@ -94,7 +96,11 @@ pub mod version {
 
     /// Get OptiX version as (major, minor, micro)
     pub fn version() -> (u32, u32, u32) {
-        (OPTIX_VERSION_MAJOR, OPTIX_VERSION_MINOR, OPTIX_VERSION_MICRO)
+        (
+            OPTIX_VERSION_MAJOR,
+            OPTIX_VERSION_MINOR,
+            OPTIX_VERSION_MICRO,
+        )
     }
 
     /// Get OptiX version as a combined integer (e.g., 90100 for 9.1.0)

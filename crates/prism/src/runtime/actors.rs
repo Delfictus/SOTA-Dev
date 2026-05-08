@@ -264,7 +264,10 @@ impl GpuActor {
 
     /// Main actor loop
     pub async fn run(self) -> Result<()> {
-        log::info!("GpuActor started (polling every {}ms)", self.poll_interval_ms);
+        log::info!(
+            "GpuActor started (polling every {}ms)",
+            self.poll_interval_ms
+        );
 
         let mut interval = tokio::time::interval(Duration::from_millis(self.poll_interval_ms));
 
@@ -652,10 +655,7 @@ mod tests {
             .spawn_telemetry_actor(state.clone(), event_bus.clone())
             .await
             .unwrap();
-        system
-            .spawn_gpu_actor(state, event_bus, 100)
-            .await
-            .unwrap();
+        system.spawn_gpu_actor(state, event_bus, 100).await.unwrap();
 
         assert_eq!(system.active_count().await, 2);
 

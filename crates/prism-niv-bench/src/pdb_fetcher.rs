@@ -1,10 +1,10 @@
 //! PDB structure fetching and parsing
 
-use crate::{Result, structure_types::*};
+use crate::{structure_types::*, Result};
+use anyhow::Context;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::collections::HashMap;
-use anyhow::Context;
 
 /// Download PDB structure from RCSB
 pub async fn download_pdb(pdb_id: &str, output_path: &str) -> Result<()> {
@@ -14,7 +14,8 @@ pub async fn download_pdb(pdb_id: &str, output_path: &str) -> Result<()> {
 
 /// Parse PDB file into ParamyxoStructure
 pub fn parse_pdb(pdb_path: &str) -> Result<ParamyxoStructure> {
-    let file = File::open(pdb_path).with_context(|| format!("Failed to open PDB file: {}", pdb_path))?;
+    let file =
+        File::open(pdb_path).with_context(|| format!("Failed to open PDB file: {}", pdb_path))?;
     let reader = BufReader::new(file);
 
     let file_stem = std::path::Path::new(pdb_path)
@@ -32,10 +33,10 @@ pub fn parse_pdb(pdb_path: &str) -> Result<ParamyxoStructure> {
     for line in reader.lines() {
         let line = line?;
         if line.starts_with("REMARK   2 RESOLUTION.") {
-             // Basic resolution parsing "REMARK   2 RESOLUTION.    2.35 ANGSTROMS."
-             if let Some(res_str) = line.split_whitespace().nth(3) {
-                 resolution = res_str.parse::<f32>().ok();
-             }
+            // Basic resolution parsing "REMARK   2 RESOLUTION.    2.35 ANGSTROMS."
+            if let Some(res_str) = line.split_whitespace().nth(3) {
+                resolution = res_str.parse::<f32>().ok();
+            }
         } else if line.starts_with("EXPDTA") {
             experimental_method = Some(line[10..].trim().to_string());
         } else if line.starts_with("ATOM  ") || line.starts_with("HETATM") {
@@ -50,9 +51,11 @@ pub fn parse_pdb(pdb_path: &str) -> Result<ParamyxoStructure> {
             // 31-38 X
             // 39-46 Y
             // 47-54 Z
-            
-            if line.len() < 54 { continue; }
-            
+
+            if line.len() < 54 {
+                continue;
+            }
+
             let serial = line[6..11].trim().parse().unwrap_or(0);
             let name = line[12..16].trim().to_string();
             let res_name = line[17..20].trim().to_string();
@@ -61,18 +64,20 @@ pub fn parse_pdb(pdb_path: &str) -> Result<ParamyxoStructure> {
             let x = line[30..38].trim().parse().unwrap_or(0.0);
             let y = line[38..46].trim().parse().unwrap_or(0.0);
             let z = line[46..54].trim().parse().unwrap_or(0.0);
-            
+
             let atom = Atom {
                 id: serial,
                 name: name.clone(),
                 element: name.chars().next().unwrap_or('X').to_string(), // Simplified element inference
-                x, y, z,
+                x,
+                y,
+                z,
                 residue_id: res_seq,
                 chain_id: chain_id.clone(),
             };
-            
+
             atoms.push(atom.clone());
-            
+
             let key = (chain_id.clone(), res_seq);
             let residue = residues_map.entry(key).or_insert_with(|| Residue {
                 id: res_seq,
@@ -82,40 +87,54 @@ pub fn parse_pdb(pdb_path: &str) -> Result<ParamyxoStructure> {
                 ca_coords: (0.0, 0.0, 0.0), // Updated later
                 atoms: Vec::new(),
             });
-            
+
             residue.atoms.push(atom);
             if name == "CA" {
                 residue.ca_coords = (x, y, z);
             }
-            
+
             chains_set.insert(chain_id.clone(), (res_seq, res_seq)); // Will update min/max
         }
     }
-    
+
     // Sort residues
     let mut residues: Vec<Residue> = residues_map.into_values().collect();
     residues.sort_by(|a, b| {
-        a.chain_id.cmp(&b.chain_id).then(a.sequence_number.cmp(&b.sequence_number))
+        a.chain_id
+            .cmp(&b.chain_id)
+            .then(a.sequence_number.cmp(&b.sequence_number))
     });
-    
+
     // Build chain info
-    let chains: Vec<ChainInfo> = chains_set.into_iter().map(|(id, (start, end))| {
-        // Need to calculate actual start/end from residues
-        let chain_residues: Vec<&Residue> = residues.iter().filter(|r| r.chain_id == id).collect();
-        let min_res = chain_residues.iter().map(|r| r.sequence_number).min().unwrap_or(start);
-        let max_res = chain_residues.iter().map(|r| r.sequence_number).max().unwrap_or(end);
-        
-        ChainInfo {
-            id,
-            protein_type: ProteinType::GProtein, // Default for 8XPS context
-            start_residue: min_res,
-            end_residue: max_res,
-        }
-    }).collect();
+    let chains: Vec<ChainInfo> = chains_set
+        .into_iter()
+        .map(|(id, (start, end))| {
+            // Need to calculate actual start/end from residues
+            let chain_residues: Vec<&Residue> =
+                residues.iter().filter(|r| r.chain_id == id).collect();
+            let min_res = chain_residues
+                .iter()
+                .map(|r| r.sequence_number)
+                .min()
+                .unwrap_or(start);
+            let max_res = chain_residues
+                .iter()
+                .map(|r| r.sequence_number)
+                .max()
+                .unwrap_or(end);
+
+            ChainInfo {
+                id,
+                protein_type: ProteinType::GProtein, // Default for 8XPS context
+                start_residue: min_res,
+                end_residue: max_res,
+            }
+        })
+        .collect();
 
     Ok(ParamyxoStructure {
         pdb_id: file_stem,
-        virus: VirusType::Nipah, // Default
+        virus: VirusType::Nipah,        // Default
         protein: ProteinType::GProtein, // Default
         chains,
         atoms,

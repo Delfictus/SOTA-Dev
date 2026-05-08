@@ -36,49 +36,64 @@ impl TelemetryCollector {
 
     /// Send a phase started event
     pub async fn phase_started(&self, name: &str) {
-        let _ = self.sender.send(PipelineEvent::PhaseStarted {
-            name: name.to_string(),
-        }).await;
+        let _ = self
+            .sender
+            .send(PipelineEvent::PhaseStarted {
+                name: name.to_string(),
+            })
+            .await;
     }
 
     /// Send a phase progress event
     pub async fn phase_progress(&self, name: &str, progress: f64) {
-        let _ = self.sender.send(PipelineEvent::PhaseProgress {
-            name: name.to_string(),
-            progress,
-        }).await;
+        let _ = self
+            .sender
+            .send(PipelineEvent::PhaseProgress {
+                name: name.to_string(),
+                progress,
+            })
+            .await;
     }
 
     /// Send a phase completed event
     pub async fn phase_completed(&self, name: &str, time_ms: u64) {
-        let _ = self.sender.send(PipelineEvent::PhaseCompleted {
-            name: name.to_string(),
-            time_ms,
-        }).await;
+        let _ = self
+            .sender
+            .send(PipelineEvent::PhaseCompleted {
+                name: name.to_string(),
+                time_ms,
+            })
+            .await;
     }
 
     /// Send a solution update
     pub async fn solution_updated(&self, colors: usize, conflicts: usize) {
-        let _ = self.sender.send(PipelineEvent::SolutionUpdated {
-            colors,
-            conflicts,
-        }).await;
+        let _ = self
+            .sender
+            .send(PipelineEvent::SolutionUpdated { colors, conflicts })
+            .await;
     }
 
     /// Send iteration completed
     pub async fn iteration_completed(&self, iteration: usize, temperature: f64) {
-        let _ = self.sender.send(PipelineEvent::IterationCompleted {
-            iteration,
-            temperature,
-        }).await;
+        let _ = self
+            .sender
+            .send(PipelineEvent::IterationCompleted {
+                iteration,
+                temperature,
+            })
+            .await;
     }
 
     /// Send optimization complete
     pub async fn optimization_complete(&self, colors: usize, conflicts: usize, time_s: f64) {
-        let _ = self.sender.send(PipelineEvent::OptimizationComplete {
-            colors,
-            conflicts,
-            time_s,
-        }).await;
+        let _ = self
+            .sender
+            .send(PipelineEvent::OptimizationComplete {
+                colors,
+                conflicts,
+                time_s,
+            })
+            .await;
     }
 }

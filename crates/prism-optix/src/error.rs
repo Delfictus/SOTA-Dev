@@ -80,9 +80,7 @@ impl OptixError {
             OptixResult::OPTIX_ERROR_INVALID_DEVICE_CONTEXT => {
                 OptixError::InvalidContext(context.to_string())
             }
-            OptixResult::OPTIX_ERROR_INVALID_VALUE => {
-                OptixError::InvalidValue(context.to_string())
-            }
+            OptixResult::OPTIX_ERROR_INVALID_VALUE => OptixError::InvalidValue(context.to_string()),
             OptixResult::OPTIX_ERROR_HOST_OUT_OF_MEMORY
             | OptixResult::OPTIX_ERROR_DEVICE_OUT_OF_MEMORY => {
                 OptixError::OutOfMemory(context.to_string())
@@ -90,9 +88,7 @@ impl OptixError {
             OptixResult::OPTIX_ERROR_CUDA_NOT_INITIALIZED => {
                 OptixError::CudaError(format!("CUDA not initialized: {}", context))
             }
-            OptixResult::OPTIX_ERROR_CUDA_ERROR => {
-                OptixError::CudaError(context.to_string())
-            }
+            OptixResult::OPTIX_ERROR_CUDA_ERROR => OptixError::CudaError(context.to_string()),
             OptixResult::OPTIX_ERROR_INTERNAL_ERROR => {
                 OptixError::InternalError(context.to_string())
             }
@@ -115,9 +111,10 @@ impl OptixError {
             OptixResult::OPTIX_ERROR_INVALID_LAUNCH_PARAMETER => {
                 OptixError::PipelineError(format!("Invalid launch parameter: {}", context))
             }
-            OptixResult::OPTIX_ERROR_NOT_COMPATIBLE => {
-                OptixError::AccelError(format!("Acceleration structure not compatible: {}", context))
-            }
+            OptixResult::OPTIX_ERROR_NOT_COMPATIBLE => OptixError::AccelError(format!(
+                "Acceleration structure not compatible: {}",
+                context
+            )),
             _ => OptixError::Unknown {
                 code: result as u32,
                 message: context.to_string(),
@@ -147,18 +144,14 @@ impl OptixError {
                 "OPTIX_ERROR_DISK_CACHE_INVALID_DATA"
             }
             OptixResult::OPTIX_ERROR_LAUNCH_FAILURE => "OPTIX_ERROR_LAUNCH_FAILURE",
-            OptixResult::OPTIX_ERROR_INVALID_DEVICE_CONTEXT => {
-                "OPTIX_ERROR_INVALID_DEVICE_CONTEXT"
-            }
+            OptixResult::OPTIX_ERROR_INVALID_DEVICE_CONTEXT => "OPTIX_ERROR_INVALID_DEVICE_CONTEXT",
             OptixResult::OPTIX_ERROR_CUDA_NOT_INITIALIZED => "OPTIX_ERROR_CUDA_NOT_INITIALIZED",
             OptixResult::OPTIX_ERROR_VALIDATION_FAILURE => "OPTIX_ERROR_VALIDATION_FAILURE",
             OptixResult::OPTIX_ERROR_INVALID_INPUT => "OPTIX_ERROR_INVALID_INPUT",
             OptixResult::OPTIX_ERROR_INVALID_LAUNCH_PARAMETER => {
                 "OPTIX_ERROR_INVALID_LAUNCH_PARAMETER"
             }
-            OptixResult::OPTIX_ERROR_INVALID_PAYLOAD_ACCESS => {
-                "OPTIX_ERROR_INVALID_PAYLOAD_ACCESS"
-            }
+            OptixResult::OPTIX_ERROR_INVALID_PAYLOAD_ACCESS => "OPTIX_ERROR_INVALID_PAYLOAD_ACCESS",
             OptixResult::OPTIX_ERROR_INVALID_ATTRIBUTE_ACCESS => {
                 "OPTIX_ERROR_INVALID_ATTRIBUTE_ACCESS"
             }
@@ -183,8 +176,12 @@ impl OptixError {
             }
             OptixResult::OPTIX_ERROR_NOT_COMPATIBLE => "OPTIX_ERROR_NOT_COMPATIBLE",
             OptixResult::OPTIX_ERROR_PAYLOAD_TYPE_MISMATCH => "OPTIX_ERROR_PAYLOAD_TYPE_MISMATCH",
-            OptixResult::OPTIX_ERROR_PAYLOAD_TYPE_RESOLUTION_FAILED => "OPTIX_ERROR_PAYLOAD_TYPE_RESOLUTION_FAILED",
-            OptixResult::OPTIX_ERROR_PAYLOAD_TYPE_ID_INVALID => "OPTIX_ERROR_PAYLOAD_TYPE_ID_INVALID",
+            OptixResult::OPTIX_ERROR_PAYLOAD_TYPE_RESOLUTION_FAILED => {
+                "OPTIX_ERROR_PAYLOAD_TYPE_RESOLUTION_FAILED"
+            }
+            OptixResult::OPTIX_ERROR_PAYLOAD_TYPE_ID_INVALID => {
+                "OPTIX_ERROR_PAYLOAD_TYPE_ID_INVALID"
+            }
             OptixResult::OPTIX_ERROR_NOT_SUPPORTED => "OPTIX_ERROR_NOT_SUPPORTED",
             OptixResult::OPTIX_ERROR_UNSUPPORTED_ABI_VERSION => {
                 "OPTIX_ERROR_UNSUPPORTED_ABI_VERSION"
@@ -196,12 +193,8 @@ impl OptixError {
                 "OPTIX_ERROR_INVALID_ENTRY_FUNCTION_OPTIONS"
             }
             OptixResult::OPTIX_ERROR_LIBRARY_NOT_FOUND => "OPTIX_ERROR_LIBRARY_NOT_FOUND",
-            OptixResult::OPTIX_ERROR_ENTRY_SYMBOL_NOT_FOUND => {
-                "OPTIX_ERROR_ENTRY_SYMBOL_NOT_FOUND"
-            }
-            OptixResult::OPTIX_ERROR_LIBRARY_UNLOAD_FAILURE => {
-                "OPTIX_ERROR_LIBRARY_UNLOAD_FAILURE"
-            }
+            OptixResult::OPTIX_ERROR_ENTRY_SYMBOL_NOT_FOUND => "OPTIX_ERROR_ENTRY_SYMBOL_NOT_FOUND",
+            OptixResult::OPTIX_ERROR_LIBRARY_UNLOAD_FAILURE => "OPTIX_ERROR_LIBRARY_UNLOAD_FAILURE",
             OptixResult::OPTIX_ERROR_DEVICE_OUT_OF_MEMORY => "OPTIX_ERROR_DEVICE_OUT_OF_MEMORY",
             OptixResult::OPTIX_ERROR_INVALID_POINTER => "OPTIX_ERROR_INVALID_POINTER",
             OptixResult::OPTIX_ERROR_SYMBOL_NOT_FOUND => "OPTIX_ERROR_SYMBOL_NOT_FOUND",
@@ -238,10 +231,7 @@ mod tests {
 
     #[test]
     fn test_error_conversion() {
-        let err = OptixError::from_result(
-            OptixResult::OPTIX_ERROR_INVALID_VALUE,
-            "test context",
-        );
+        let err = OptixError::from_result(OptixResult::OPTIX_ERROR_INVALID_VALUE, "test context");
         assert!(matches!(err, OptixError::InvalidValue(_)));
     }
 

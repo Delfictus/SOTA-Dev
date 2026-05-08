@@ -67,7 +67,7 @@ pub struct EpitopeDefinition {
     pub interface_residues: Vec<u32>,
     pub is_cryptic: bool,
     pub is_neutralizing: bool,
-    pub cross_reactive: bool, // Binds both NiV and HeV
+    pub cross_reactive: bool,  // Binds both NiV and HeV
     pub ic50_niv: Option<f32>, // IC50 for Nipah virus (if available)
     pub ic50_hev: Option<f32>, // IC50 for Hendra virus (if available)
 }
@@ -75,9 +75,9 @@ pub struct EpitopeDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrypticSite {
     pub residues: Vec<u32>,
-    pub sasa_apo: Vec<f32>,    // SASA in apo structure
-    pub sasa_holo: Vec<f32>,   // SASA in holo structure
-    pub p_rmsd: f32,           // Positional RMSD between states
+    pub sasa_apo: Vec<f32>,  // SASA in apo structure
+    pub sasa_holo: Vec<f32>, // SASA in holo structure
+    pub p_rmsd: f32,         // Positional RMSD between states
     pub description: String,
 }
 

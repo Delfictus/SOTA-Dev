@@ -30,21 +30,19 @@
 //! - Cross-reactivity: `/mnt/c/Users/Predator/Desktop/prism-ve/data/cross_reactivity_summary.json`
 //! - VASIL data: `/mnt/f/VASIL_Data/ByCountry/{country}/`
 
-use anyhow::{Result, Context};
-use std::collections::HashMap;
-use std::path::Path;
+use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
 
-use crate::gpu_benchmark::{VariantStructure, get_lineage_transmissibility};
-use crate::immunity_model::{PopulationImmunityLandscape, CrossReactivityMatrix};
+use crate::gpu_benchmark::{get_lineage_transmissibility, VariantStructure};
 use crate::immunity_dynamics::{
-    ImmunityDynamics,
-    EpitopeImmunity,
-    estimate_days_since_outbreak as estimate_days_internal,
+    estimate_days_since_outbreak as estimate_days_internal, EpitopeImmunity, ImmunityDynamics,
 };
-use crate::ve_swarm_integration::VeSwarmPredictor;
+use crate::immunity_model::{CrossReactivityMatrix, PopulationImmunityLandscape};
 use crate::vasil_data::VasilEnhancedData;
+use crate::ve_swarm_integration::VeSwarmPredictor;
 
 //=============================================================================
 // CORE TYPES
@@ -103,11 +101,11 @@ impl Default for HybridWeights {
             // Initial guesses - will be fitted via grid search
             w_fold_reduction: 0.35,
             w_transmissibility: 0.20,
-            w_velocity_inv: -0.25,     // Negative: high velocity = FALL
+            w_velocity_inv: -0.25, // Negative: high velocity = FALL
             w_structural_ddg: 0.10,
-            w_freq_saturation: -0.15,  // Negative: high freq = saturated
+            w_freq_saturation: -0.15, // Negative: high freq = saturated
             w_swarm_consensus: 0.20,
-            threshold: 0.45,           // Adjusted for 40% RISE base rate
+            threshold: 0.45, // Adjusted for 40% RISE base rate
         }
     }
 }
@@ -232,11 +230,13 @@ pub struct CrossReactivitySample {
 impl CrossReactivityData {
     /// Load from cross_reactivity_summary.json
     pub fn load_from_json(json_path: &Path) -> Result<Self> {
-        let file = std::fs::File::open(json_path)
-            .context(format!("Failed to open cross-reactivity file: {:?}", json_path))?;
+        let file = std::fs::File::open(json_path).context(format!(
+            "Failed to open cross-reactivity file: {:?}",
+            json_path
+        ))?;
 
-        let data: serde_json::Value = serde_json::from_reader(file)
-            .context("Failed to parse cross-reactivity JSON")?;
+        let data: serde_json::Value =
+            serde_json::from_reader(file).context("Failed to parse cross-reactivity JSON")?;
 
         let epitope_classes: Vec<String> = data["epitope_classes"]
             .as_array()
@@ -276,16 +276,22 @@ impl CrossReactivityData {
                 let max_cross = sample["max_cross_immunity"].as_f64().unwrap_or(1.0);
                 let min_cross = sample["min_cross_immunity"].as_f64().unwrap_or(1.0);
 
-                sample_values.insert(epitope.clone(), CrossReactivitySample {
-                    diagonal,
-                    max_cross_immunity: max_cross,
-                    min_cross_immunity: min_cross,
-                });
+                sample_values.insert(
+                    epitope.clone(),
+                    CrossReactivitySample {
+                        diagonal,
+                        max_cross_immunity: max_cross,
+                        min_cross_immunity: min_cross,
+                    },
+                );
             }
         }
 
-        log::info!("Loaded cross-reactivity data: {} epitopes, {} variants",
-                   epitope_classes.len(), variant_list.len());
+        log::info!(
+            "Loaded cross-reactivity data: {} epitopes, {} variants",
+            epitope_classes.len(),
+            variant_list.len()
+        );
 
         Ok(Self {
             epitope_classes,
@@ -319,18 +325,18 @@ impl CrossReactivityData {
 
             // Adjust based on lineage family
             let family_factor = if lineage.contains("XBB") || lineage.contains("EG.") {
-                0.3  // High escape lineages
+                0.3 // High escape lineages
             } else if lineage.contains("BQ.") || lineage.contains("BA.5") {
                 0.5
             } else if lineage.contains("BA.2") || lineage.contains("BA.1") {
                 0.7
             } else {
-                0.9  // Lower escape
+                0.9 // Lower escape
             };
 
             (factor * family_factor).clamp(0.1, 1.0)
         } else {
-            0.5  // Default
+            0.5 // Default
         }
     }
 }
@@ -354,11 +360,10 @@ impl PRISMVEPredictor {
         log::info!("Initializing PRISM-VE Hybrid Predictor...");
 
         // Load immunity dynamics from the immunity_dynamics module
-        let immunity_dynamics = ImmunityDynamics::load_from_vasil(data_dir)
-            .unwrap_or_else(|e| {
-                log::warn!("Failed to load immunity dynamics: {}, using defaults", e);
-                ImmunityDynamics::new()
-            });
+        let immunity_dynamics = ImmunityDynamics::load_from_vasil(data_dir).unwrap_or_else(|e| {
+            log::warn!("Failed to load immunity dynamics: {}, using defaults", e);
+            ImmunityDynamics::new()
+        });
 
         // Create cross-reactivity matrix (from immunity_model.rs)
         let cross_reactivity = CrossReactivityMatrix::new_sars_cov2();
@@ -366,8 +371,18 @@ impl PRISMVEPredictor {
         // Initialize per-country immunity landscapes
         let mut country_immunity = HashMap::new();
         let countries = [
-            "Germany", "USA", "UK", "Japan", "Brazil", "France",
-            "Canada", "Denmark", "Australia", "Sweden", "Mexico", "SouthAfrica"
+            "Germany",
+            "USA",
+            "UK",
+            "Japan",
+            "Brazil",
+            "France",
+            "Canada",
+            "Denmark",
+            "Australia",
+            "Sweden",
+            "Mexico",
+            "SouthAfrica",
         ];
 
         for country in &countries {
@@ -377,8 +392,18 @@ impl PRISMVEPredictor {
         }
 
         log::info!("  Loaded {} immunity landscapes", country_immunity.len());
-        log::info!("  {} PK parameter combinations", immunity_dynamics.num_pk_combinations());
-        log::info!("  VE-Swarm: {}", if ve_swarm.is_some() { "enabled" } else { "disabled" });
+        log::info!(
+            "  {} PK parameter combinations",
+            immunity_dynamics.num_pk_combinations()
+        );
+        log::info!(
+            "  VE-Swarm: {}",
+            if ve_swarm.is_some() {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
 
         Ok(Self {
             immunity_dynamics,
@@ -409,14 +434,16 @@ impl PRISMVEPredictor {
         self.prediction_count += 1;
 
         // 1. Get ACTUAL population immunity from VASIL time series (not computed!)
-        let population_immunity = self.vasil_enhanced.get(&input.country)
+        let population_immunity = self
+            .vasil_enhanced
+            .get(&input.country)
             .and_then(|vd| vd.landscape_immunized.as_ref())
             .and_then(|landscape| {
                 // Get PK parameter index from immunity_dynamics
-                let pk_idx = 10;  // Using fitted best PK combo (will be optimized)
+                let pk_idx = 10; // Using fitted best PK combo (will be optimized)
                 Some(landscape.get_immunity(&input.date, pk_idx))
             })
-            .unwrap_or(10000.0);  // Default mid-range immunity
+            .unwrap_or(10000.0); // Default mid-range immunity
 
         // Normalize to [0, 1] range - immunity values are 0-500,000
         let normalized_immunity = (population_immunity / 500000.0).clamp(0.0, 1.0);
@@ -442,8 +469,7 @@ impl PRISMVEPredictor {
         let swarm_consensus = self.get_swarm_consensus(input);
 
         // 7. Weighted combination (PRISM-VE formula)
-        let gamma =
-            self.weights.w_fold_reduction * log_fold_reduction +
+        let gamma = self.weights.w_fold_reduction * log_fold_reduction +
             self.weights.w_transmissibility * transmissibility +
             self.weights.w_velocity_inv * velocity_inv +
             self.weights.w_structural_ddg * (-ddg_binding) +  // Negative ddG = favorable
@@ -487,10 +513,9 @@ impl PRISMVEPredictor {
 
         for i in 0..10 {
             // Get cross-immunity factor for this epitope
-            let cross_immunity = self.cross_reactivity.get_cross_reactivity(
-                lineage,
-                self.cross_reactivity.get_variant_family(lineage),
-            );
+            let cross_immunity = self
+                .cross_reactivity
+                .get_cross_reactivity(lineage, self.cross_reactivity.get_variant_family(lineage));
 
             // Effective immunity = base immunity * cross-reactivity factor
             let effective_immunity = immunity.levels[i] * cross_immunity;
@@ -535,7 +560,11 @@ impl PRISMVEPredictor {
                     input.velocity,
                 ) {
                     Ok(pred) => {
-                        if pred.predicted_rise { 1.0 } else { -1.0 }
+                        if pred.predicted_rise {
+                            1.0
+                        } else {
+                            -1.0
+                        }
                     }
                     Err(_) => 0.0,
                 }
@@ -543,7 +572,7 @@ impl PRISMVEPredictor {
                 0.0
             }
         } else {
-            0.0  // No swarm, neutral contribution
+            0.0 // No swarm, neutral contribution
         }
     }
 
@@ -584,9 +613,11 @@ impl PRISMVEPredictor {
         use rand::seq::SliceRandom;
         use rand::thread_rng;
 
-        log::info!("Fitting PRISM-VE: {} PK combos × 6 weights on {} samples...",
-                   self.immunity_dynamics.num_pk_combinations(),
-                   training_data.len());
+        log::info!(
+            "Fitting PRISM-VE: {} PK combos × 6 weights on {} samples...",
+            self.immunity_dynamics.num_pk_combinations(),
+            training_data.len()
+        );
 
         // Subsample for speed
         let sample_size = 2000.min(training_data.len());
@@ -597,16 +628,18 @@ impl PRISMVEPredictor {
 
         let mut best_accuracy = 0.0f32;
         let mut best_weights = self.weights.clone();
-        let mut best_pk_idx = 37;  // Start with median
+        let mut best_pk_idx = 37; // Start with median
 
         // STAGE 1: Find best PK parameter combination (most important!)
         log::info!("Stage 1: Testing PK parameter combinations...");
-        for pk_idx in [10, 20, 30, 37, 40, 50, 60] {  // Test 7 PK combos
+        for pk_idx in [10, 20, 30, 37, 40, 50, 60] {
+            // Test 7 PK combos
             self.immunity_dynamics.select_pk_params(pk_idx);
 
             // Simple velocity-only test with this PK combo
             let mut correct = 0;
-            for &idx in sample_indices.iter().take(500) {  // Quick 500-sample test
+            for &idx in sample_indices.iter().take(500) {
+                // Quick 500-sample test
                 let (input, actual_rise) = &training_data[idx];
                 let pred = self.predict(input);
                 if pred.predicted_rise == *actual_rise {
@@ -624,7 +657,11 @@ impl PRISMVEPredictor {
 
         // Apply best PK
         self.immunity_dynamics.select_pk_params(best_pk_idx);
-        log::info!("Selected PK combination: {} ({:.1}%)", best_pk_idx, best_accuracy * 100.0);
+        log::info!(
+            "Selected PK combination: {} ({:.1}%)",
+            best_pk_idx,
+            best_accuracy * 100.0
+        );
 
         // STAGE 2: Tune hybrid weights with best PK
         log::info!("Stage 2: Tuning hybrid weights...");
@@ -633,7 +670,7 @@ impl PRISMVEPredictor {
         // FOCUSED grid - emphasize velocity (strongest signal)
         let fold_reduction_range = [0.20, 0.30, 0.40];
         let transmit_range = [0.10, 0.20, 0.30];
-        let velocity_range = [-0.40, -0.30, -0.20, -0.10];  // Negative = high vel = FALL
+        let velocity_range = [-0.40, -0.30, -0.20, -0.10]; // Negative = high vel = FALL
         let ddg_range = [0.00, 0.10, 0.20];
         let saturation_range = [-0.20, -0.10, 0.00];
         let swarm_range = [0.00, 0.10, 0.20];
@@ -685,8 +722,12 @@ impl PRISMVEPredictor {
                                         best_weights = self.weights.clone();
 
                                         if iterations % 1000 == 0 || accuracy > 0.70 {
-                                            log::info!("  [{}/{}] New best: {:.1}%",
-                                                       iterations, total_iterations, accuracy * 100.0);
+                                            log::info!(
+                                                "  [{}/{}] New best: {:.1}%",
+                                                iterations,
+                                                total_iterations,
+                                                accuracy * 100.0
+                                            );
                                         }
                                     }
                                 }
@@ -703,7 +744,10 @@ impl PRISMVEPredictor {
 
         log::info!("Best weights found:");
         log::info!("  w_fold_reduction: {:.2}", self.weights.w_fold_reduction);
-        log::info!("  w_transmissibility: {:.2}", self.weights.w_transmissibility);
+        log::info!(
+            "  w_transmissibility: {:.2}",
+            self.weights.w_transmissibility
+        );
         log::info!("  w_velocity_inv: {:.2}", self.weights.w_velocity_inv);
         log::info!("  w_structural_ddg: {:.2}", self.weights.w_structural_ddg);
         log::info!("  w_freq_saturation: {:.2}", self.weights.w_freq_saturation);
@@ -714,7 +758,10 @@ impl PRISMVEPredictor {
 
     /// Fit weights with adaptive step search (faster than grid search)
     pub fn fit_weights_adaptive(&mut self, training_data: &[(PRISMVEInput, bool)]) {
-        log::info!("Adaptive weight fitting on {} samples...", training_data.len());
+        log::info!(
+            "Adaptive weight fitting on {} samples...",
+            training_data.len()
+        );
 
         // Start from default weights
         let mut current = HybridWeights::default();
@@ -728,7 +775,15 @@ impl PRISMVEPredictor {
                 improved = false;
 
                 // Try adjusting each weight
-                let weight_names = ["fold", "transmit", "velocity", "ddg", "saturation", "swarm", "threshold"];
+                let weight_names = [
+                    "fold",
+                    "transmit",
+                    "velocity",
+                    "ddg",
+                    "saturation",
+                    "swarm",
+                    "threshold",
+                ];
 
                 for (idx, _name) in weight_names.iter().enumerate() {
                     // Try increasing
@@ -835,7 +890,10 @@ pub fn get_variant_type(lineage: &str) -> &'static str {
 /// Extract structural features from GPU batch output
 ///
 /// Extracts features 92-124 from the 125-dim MegaFusedBatchGpu output
-pub fn extract_structural_features(combined_features: &[f32], structure: Option<VariantStructure>) -> StructuralFeatures {
+pub fn extract_structural_features(
+    combined_features: &[f32],
+    structure: Option<VariantStructure>,
+) -> StructuralFeatures {
     let n_residues = combined_features.len() / 125;
 
     if n_residues == 0 {
@@ -858,7 +916,7 @@ pub fn extract_structural_features(combined_features: &[f32], structure: Option<
         ddg_stab_sum += combined_features.get(offset + 93).copied().unwrap_or(0.0);
         expr_sum += combined_features.get(offset + 94).copied().unwrap_or(0.0);
         transmit_sum += combined_features.get(offset + 95).copied().unwrap_or(0.0);
-        gamma_sum += combined_features.get(offset + 95).copied().unwrap_or(0.0);  // Same as transmit
+        gamma_sum += combined_features.get(offset + 95).copied().unwrap_or(0.0); // Same as transmit
         emerge_sum += combined_features.get(offset + 97).copied().unwrap_or(0.0);
         phase_sum += combined_features.get(offset + 96).copied().unwrap_or(0.0);
         // Stage 8.5 spike features
@@ -895,7 +953,7 @@ mod tests {
     fn test_hybrid_weights_default() {
         let weights = HybridWeights::default();
         assert!(weights.w_fold_reduction > 0.0);
-        assert!(weights.w_velocity_inv < 0.0);  // Should be negative
+        assert!(weights.w_velocity_inv < 0.0); // Should be negative
         assert!(weights.threshold > 0.0 && weights.threshold < 1.0);
     }
 
@@ -962,10 +1020,10 @@ mod tests {
 
         // Set some feature values
         for r in 0..3 {
-            features[r * 125 + 92] = 0.1;  // ddG binding
-            features[r * 125 + 93] = 0.2;  // ddG stability
-            features[r * 125 + 94] = 0.5;  // expression
-            features[r * 125 + 95] = 0.7;  // transmissibility
+            features[r * 125 + 92] = 0.1; // ddG binding
+            features[r * 125 + 93] = 0.2; // ddG stability
+            features[r * 125 + 94] = 0.5; // expression
+            features[r * 125 + 95] = 0.7; // transmissibility
         }
 
         let structural = extract_structural_features(&features, None);

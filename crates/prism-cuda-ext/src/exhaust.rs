@@ -23,8 +23,8 @@
 //! into the zero-shot student model.
 
 use anyhow::{Context, Result};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::sys;
@@ -46,7 +46,7 @@ pub struct SpikeExhaustBuffer {
     /// Atomic write head (updated by GPU via atomicAdd on the mapped counter)
     /// The GPU writes to device_ptr + write_head * 48.
     /// The CPU reads from host_ptr + read_head * 48.
-    write_head_ptr: *mut u32,       // mapped, GPU writes via atomicAdd
+    write_head_ptr: *mut u32, // mapped, GPU writes via atomicAdd
     write_head_device: sys::CUdeviceptr, // device pointer to the same u32
     /// CPU-side read head (only CPU touches this)
     read_head: AtomicU64,
@@ -74,8 +74,11 @@ impl SpikeExhaustBuffer {
                 sys::CU_MEMHOSTALLOC_DEVICEMAP | sys::CU_MEMHOSTALLOC_PORTABLE,
             );
             if result != sys::CUresult::CUDA_SUCCESS {
-                anyhow::bail!("cuMemHostAlloc failed for {} MB: {:?}",
-                    capacity_bytes / (1024 * 1024), result);
+                anyhow::bail!(
+                    "cuMemHostAlloc failed for {} MB: {:?}",
+                    capacity_bytes / (1024 * 1024),
+                    result
+                );
             }
             // Zero the buffer
             std::ptr::write_bytes(ptr as *mut u8, 0, capacity_bytes);
@@ -85,11 +88,8 @@ impl SpikeExhaustBuffer {
         // Get the device pointer for the mapped memory
         let device_ptr = unsafe {
             let mut dptr: sys::CUdeviceptr = 0;
-            let result = sys::cuMemHostGetDevicePointer_v2(
-                &mut dptr,
-                host_ptr as *mut std::ffi::c_void,
-                0,
-            );
+            let result =
+                sys::cuMemHostGetDevicePointer_v2(&mut dptr, host_ptr as *mut std::ffi::c_void, 0);
             if result != sys::CUresult::CUDA_SUCCESS {
                 // Free the host memory before returning error
                 sys::cuMemFreeHost(host_ptr as *mut std::ffi::c_void);
@@ -126,7 +126,8 @@ impl SpikeExhaustBuffer {
 
         log::info!(
             "SpikeExhaustBuffer: {} MB pinned host RAM ({} spike capacity), mapped to GPU",
-            capacity_bytes / (1024 * 1024), capacity_spikes
+            capacity_bytes / (1024 * 1024),
+            capacity_spikes
         );
 
         Ok(Self {
@@ -181,7 +182,9 @@ impl SpikeExhaustBuffer {
     pub fn harvest(&self, max_spikes: usize) -> Vec<[u8; 48]> {
         let available = self.available() as usize;
         let n = available.min(max_spikes);
-        if n == 0 { return Vec::new(); }
+        if n == 0 {
+            return Vec::new();
+        }
 
         let read_pos = self.read_head() as usize;
         let mut spikes = Vec::with_capacity(n);
@@ -191,11 +194,7 @@ impl SpikeExhaustBuffer {
             let offset = idx * 48;
             let mut spike = [0u8; 48];
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    self.host_ptr.add(offset),
-                    spike.as_mut_ptr(),
-                    48,
-                );
+                std::ptr::copy_nonoverlapping(self.host_ptr.add(offset), spike.as_mut_ptr(), 48);
             }
             spikes.push(spike);
         }

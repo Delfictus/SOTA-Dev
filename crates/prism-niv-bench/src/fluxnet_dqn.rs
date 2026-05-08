@@ -2,9 +2,9 @@
 //!
 //! Replaces the original Q-table approach with a Dueling DQN for continuous state space
 
-#[cfg(feature = "dqn")]
-use tch::{nn, Tensor, Device, Kind};
 use crate::Result;
+#[cfg(feature = "dqn")]
+use tch::{nn, Device, Kind, Tensor};
 
 #[cfg(feature = "dqn")]
 pub struct FluxNetDQN {

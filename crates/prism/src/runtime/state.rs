@@ -6,8 +6,8 @@
 //! - RwLock for complex state
 //! - Efficient snapshots for UI rendering
 
-use super::events::PhaseId;
 use super::channels::RingBuffer;
+use super::events::PhaseId;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};

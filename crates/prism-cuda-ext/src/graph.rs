@@ -19,9 +19,11 @@
 
 use anyhow::{Context, Result};
 use cudarc::driver::sys;
-use cudarc::driver::{CudaStream, CudaSlice, CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
-use std::sync::Arc;
+use cudarc::driver::{
+    CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+};
 use std::ptr;
+use std::sync::Arc;
 
 /// Check a CUDA driver result and convert to anyhow::Error.
 fn check_cuda(result: sys::CUresult, context: &str) -> Result<()> {
@@ -71,7 +73,9 @@ impl TwinCouplingGraph {
     pub fn capabilities_report() -> String {
         let supported = Self::is_supported();
         let mut version = 0i32;
-        unsafe { sys::cuDriverGetVersion(&mut version); }
+        unsafe {
+            sys::cuDriverGetVersion(&mut version);
+        }
 
         format!(
             "CUDA Graph Capabilities:\n\
@@ -80,8 +84,13 @@ impl TwinCouplingGraph {
              Device-updated parameters: {}\n\
              CU_GRAPH_COND_TYPE_WHILE = {}\n\
              CU_GRAPH_NODE_TYPE_CONDITIONAL = {}",
-            version / 1000, (version % 1000) / 10,
-            if supported { "YES" } else { "NO (requires CUDA 12.4+)" },
+            version / 1000,
+            (version % 1000) / 10,
+            if supported {
+                "YES"
+            } else {
+                "NO (requires CUDA 12.4+)"
+            },
             if version >= 12040 { "YES" } else { "NO" },
             sys::CUgraphConditionalNodeType::CU_GRAPH_COND_TYPE_WHILE as i32,
             sys::CUgraphNodeType::CU_GRAPH_NODE_TYPE_CONDITIONAL as i32,
@@ -96,10 +105,7 @@ impl TwinCouplingGraph {
     /// The graph uses a WHILE conditional node that decrements
     /// `d_step_counter` each iteration. The loop exits when
     /// the counter reaches 0.
-    pub fn build(
-        stream: &Arc<CudaStream>,
-        total_steps: u32,
-    ) -> Result<Self> {
+    pub fn build(stream: &Arc<CudaStream>, total_steps: u32) -> Result<Self> {
         if !Self::is_supported() {
             anyhow::bail!("CUDA conditional graph nodes require driver ≥ 12.4");
         }
@@ -111,10 +117,7 @@ impl TwinCouplingGraph {
         // Create the top-level graph
         let mut graph: sys::CUgraph = ptr::null_mut();
         unsafe {
-            check_cuda(
-                sys::cuGraphCreate(&mut graph, 0),
-                "cuGraphCreate",
-            )?;
+            check_cuda(sys::cuGraphCreate(&mut graph, 0), "cuGraphCreate")?;
         }
 
         // Create the conditional handle for the WHILE loop
@@ -123,10 +126,7 @@ impl TwinCouplingGraph {
         // Get the CUDA context from the stream
         let mut ctx: sys::CUcontext = ptr::null_mut();
         unsafe {
-            check_cuda(
-                sys::cuCtxGetCurrent(&mut ctx),
-                "cuCtxGetCurrent",
-            )?;
+            check_cuda(sys::cuCtxGetCurrent(&mut ctx), "cuCtxGetCurrent")?;
         }
 
         unsafe {
@@ -135,8 +135,8 @@ impl TwinCouplingGraph {
                     &mut cond_handle,
                     graph,
                     ctx,
-                    1,  // defaultLaunchValue: 1 = loop starts active
-                    0,  // flags
+                    1, // defaultLaunchValue: 1 = loop starts active
+                    0, // flags
                 ),
                 "cuGraphConditionalHandleCreate",
             )?;
@@ -167,7 +167,7 @@ impl TwinCouplingGraph {
                 sys::cuGraphAddNode(
                     &mut cond_node,
                     graph,
-                    ptr::null(),  // no dependencies (root node)
+                    ptr::null(), // no dependencies (root node)
                     0,
                     &mut node_params,
                 ),
@@ -175,7 +175,10 @@ impl TwinCouplingGraph {
             )?;
         }
 
-        log::info!("  CUDA Graph: WHILE conditional node created (body_graph={:?})", body_graph);
+        log::info!(
+            "  CUDA Graph: WHILE conditional node created (body_graph={:?})",
+            body_graph
+        );
 
         // The body_graph is where we add the coupling kernel nodes.
         // For now, we'll add a placeholder that just decrements the counter.
@@ -201,13 +204,17 @@ impl TwinCouplingGraph {
                 sys::cuGraphInstantiateWithFlags(
                     &mut graph_exec,
                     graph,
-                    0,  // flags (0 = default)
+                    0, // flags (0 = default)
                 ),
                 "cuGraphInstantiateWithFlags",
             )?;
         }
 
-        log::info!("  CUDA Graph: instantiated (graph={:?}, exec={:?})", graph, graph_exec);
+        log::info!(
+            "  CUDA Graph: instantiated (graph={:?}, exec={:?})",
+            graph,
+            graph_exec
+        );
 
         Ok(Self {
             graph,

@@ -7,10 +7,8 @@
 
 /// Standard amino acid 3-letter codes in alphabetical order
 pub const AA_ORDER: [&str; 20] = [
-    "ALA", "ARG", "ASN", "ASP", "CYS",
-    "GLN", "GLU", "GLY", "HIS", "ILE",
-    "LEU", "LYS", "MET", "PHE", "PRO",
-    "SER", "THR", "TRP", "TYR", "VAL",
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET",
+    "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
 ];
 
 /// Intrinsic flexibility factors for each amino acid.
@@ -24,27 +22,27 @@ pub const AA_ORDER: [&str; 20] = [
 /// - PRO (0.55): Ring constrains φ angle → very rigid
 /// - TRP (0.75): Large aromatic ring → rigid
 /// - LYS/ARG (~1.1-1.15): Long charged sidechains → flexible
-pub const RESIDUE_FLEXIBILITY: [(& str, f64); 20] = [
-    ("ALA", 0.90),  // Small sidechain, relatively rigid
-    ("ARG", 1.10),  // Long charged sidechain
-    ("ASN", 1.05),  // Short polar
-    ("ASP", 1.00),  // Short charged
-    ("CYS", 0.85),  // Can form disulfides → constrained
-    ("GLN", 1.10),  // Longer polar
-    ("GLU", 1.05),  // Longer charged
-    ("GLY", 1.40),  // No sidechain → maximum flexibility
-    ("HIS", 0.90),  // Aromatic, can be charged
-    ("ILE", 0.85),  // Branched β-carbon
-    ("LEU", 0.90),  // Hydrophobic, moderate
-    ("LYS", 1.15),  // Long flexible charged sidechain
-    ("MET", 1.00),  // Long flexible sidechain
-    ("PHE", 0.80),  // Rigid aromatic ring
-    ("PRO", 0.55),  // Ring constrains backbone φ → very rigid
-    ("SER", 1.05),  // Small polar, moderate flexibility
-    ("THR", 0.95),  // Branched β-carbon constrains
-    ("TRP", 0.75),  // Largest aromatic → very rigid
-    ("TYR", 0.80),  // Rigid aromatic + hydroxyl
-    ("VAL", 0.85),  // Branched β-carbon
+pub const RESIDUE_FLEXIBILITY: [(&str, f64); 20] = [
+    ("ALA", 0.90), // Small sidechain, relatively rigid
+    ("ARG", 1.10), // Long charged sidechain
+    ("ASN", 1.05), // Short polar
+    ("ASP", 1.00), // Short charged
+    ("CYS", 0.85), // Can form disulfides → constrained
+    ("GLN", 1.10), // Longer polar
+    ("GLU", 1.05), // Longer charged
+    ("GLY", 1.40), // No sidechain → maximum flexibility
+    ("HIS", 0.90), // Aromatic, can be charged
+    ("ILE", 0.85), // Branched β-carbon
+    ("LEU", 0.90), // Hydrophobic, moderate
+    ("LYS", 1.15), // Long flexible charged sidechain
+    ("MET", 1.00), // Long flexible sidechain
+    ("PHE", 0.80), // Rigid aromatic ring
+    ("PRO", 0.55), // Ring constrains backbone φ → very rigid
+    ("SER", 1.05), // Small polar, moderate flexibility
+    ("THR", 0.95), // Branched β-carbon constrains
+    ("TRP", 0.75), // Largest aromatic → very rigid
+    ("TYR", 0.80), // Rigid aromatic + hydroxyl
+    ("VAL", 0.85), // Branched β-carbon
 ];
 
 /// Residue classification for interaction type determination
@@ -61,8 +59,8 @@ pub enum ResidueClass {
     /// Aromatic: PHE, TYR, TRP
     Aromatic,
     /// Special cases
-    Glycine,  // Unique flexibility
-    Proline,  // Unique rigidity
+    Glycine, // Unique flexibility
+    Proline, // Unique rigidity
 }
 
 impl ResidueClass {
@@ -164,14 +162,16 @@ pub fn enhanced_pair_stiffness(res_i: &str, res_j: &str) -> f64 {
     let class_j = ResidueClass::from_name(res_j);
 
     // Salt bridge (opposite charges) - moderate bonus
-    if (class_i.is_positive() && class_j.is_negative()) ||
-       (class_i.is_negative() && class_j.is_positive()) {
+    if (class_i.is_positive() && class_j.is_negative())
+        || (class_i.is_negative() && class_j.is_positive())
+    {
         return base + 0.15;
     }
 
     // Same-charge repulsion (slight penalty)
-    if (class_i.is_positive() && class_j.is_positive()) ||
-       (class_i.is_negative() && class_j.is_negative()) {
+    if (class_i.is_positive() && class_j.is_positive())
+        || (class_i.is_negative() && class_j.is_negative())
+    {
         return (base - 0.1).max(0.5); // Floor at 0.5 to avoid negative springs
     }
 
@@ -181,8 +181,8 @@ pub fn enhanced_pair_stiffness(res_i: &str, res_j: &str) -> f64 {
     }
 
     // Hydrophobic core contacts - slight bonus
-    if matches!(class_i, ResidueClass::Hydrophobic) &&
-       matches!(class_j, ResidueClass::Hydrophobic) {
+    if matches!(class_i, ResidueClass::Hydrophobic) && matches!(class_j, ResidueClass::Hydrophobic)
+    {
         return base + 0.1;
     }
 

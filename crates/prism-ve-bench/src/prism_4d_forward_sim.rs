@@ -19,10 +19,10 @@
 //! - PRISM: GPU parallel (1000x faster)
 
 use anyhow::Result;
-use std::collections::HashMap;
-use std::sync::Arc;
 use chrono::NaiveDate;
 use cudarc::driver::CudaContext;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::data_loader::CountryData;
 use crate::gpu_benchmark::VariantStructure;
@@ -38,15 +38,15 @@ pub struct PhysicalConstants {
     pub ic50_neutralization: f32,
 
     /// PK parameters (from immunology literature)
-    pub t_max_antibody: f32,   // 14 days (VASIL paper)
-    pub t_half_antibody: f32,  // 47 days (median from literature)
+    pub t_max_antibody: f32, // 14 days (VASIL paper)
+    pub t_half_antibody: f32, // 47 days (median from literature)
 }
 
 impl Default for PhysicalConstants {
     fn default() -> Self {
         Self {
-            kt: 0.6,  // kcal/mol at body temperature
-            ic50_neutralization: 1.0,  // Will calibrate to vaccine efficacy
+            kt: 0.6,                  // kcal/mol at body temperature
+            ic50_neutralization: 1.0, // Will calibrate to vaccine efficacy
             t_max_antibody: 14.0,
             t_half_antibody: 47.0,
         }
@@ -97,7 +97,10 @@ impl StructuralNeutralizationComputer {
     /// 2. Compute ΔΔG_binding(epitope) = G_bind(variant_y) - G_bind(variant_x)
     /// 3. Cache for fast lookup
     pub fn precompute_ddg_matrix(&mut self, all_variants: &[String]) -> Result<()> {
-        log::info!("Pre-computing structural ΔΔG matrix for {} variants...", all_variants.len());
+        log::info!(
+            "Pre-computing structural ΔΔG matrix for {} variants...",
+            all_variants.len()
+        );
         log::info!("  Using GPU-accelerated binding energy calculation");
 
         let n_variants = all_variants.len();
@@ -124,10 +127,8 @@ impl StructuralNeutralizationComputer {
                 }
 
                 // NOVEL: Compute physical ΔΔG from actual structures
-                ddg_matrix[i][j] = self.compute_structural_ddg(
-                    struct_x.unwrap(),
-                    struct_y.unwrap(),
-                );
+                ddg_matrix[i][j] =
+                    self.compute_structural_ddg(struct_x.unwrap(), struct_y.unwrap());
             }
 
             if i % 50 == 0 {
@@ -135,8 +136,10 @@ impl StructuralNeutralizationComputer {
             }
         }
 
-        log::info!("  ΔΔG matrix ready ({} KB)",
-                   (n_variants * n_variants * 10 * 4) / 1000);
+        log::info!(
+            "  ΔΔG matrix ready ({} KB)",
+            (n_variants * n_variants * 10 * 4) / 1000
+        );
 
         self.ddg_cache = Some(StructuralDdGCache {
             variant_to_idx,
@@ -150,19 +153,23 @@ impl StructuralNeutralizationComputer {
     /// Compute structural ΔΔG from actual PDB structures
     ///
     /// Uses GPU-computed features (92-95) which include binding energy proxies
-    fn compute_structural_ddg(&self, struct_x: &VariantStructure, struct_y: &VariantStructure) -> [f32; 10] {
+    fn compute_structural_ddg(
+        &self,
+        struct_x: &VariantStructure,
+        struct_y: &VariantStructure,
+    ) -> [f32; 10] {
         // For each epitope (ACE2 interface residues)
         let epitope_sites: Vec<Vec<i32>> = vec![
-            vec![417, 452, 453],  // Epitope A (class 1)
-            vec![486, 487, 489],  // Epitope B (class 1)
-            vec![440, 444, 445, 446],  // Epitope C (class 2)
-            vec![368, 372, 373, 405, 406, 407, 408],  // Epitope D1 (class 3)
-            vec![417, 420, 421],  // Epitope D2 (class 3)
-            vec![346, 356, 440, 441, 444, 445, 446],  // Epitope E12
-            vec![356, 440],  // Epitope E3
-            vec![460, 486, 487, 489],  // Epitope F1 (class 4)
-            vec![486, 487, 489, 490],  // Epitope F2
-            vec![486, 487, 489, 490, 493],  // Epitope F3
+            vec![417, 452, 453],                     // Epitope A (class 1)
+            vec![486, 487, 489],                     // Epitope B (class 1)
+            vec![440, 444, 445, 446],                // Epitope C (class 2)
+            vec![368, 372, 373, 405, 406, 407, 408], // Epitope D1 (class 3)
+            vec![417, 420, 421],                     // Epitope D2 (class 3)
+            vec![346, 356, 440, 441, 444, 445, 446], // Epitope E12
+            vec![356, 440],                          // Epitope E3
+            vec![460, 486, 487, 489],                // Epitope F1 (class 4)
+            vec![486, 487, 489, 490],                // Epitope F2
+            vec![486, 487, 489, 490, 493],           // Epitope F3
         ];
 
         let mut ddg_per_epitope = [0.0f32; 10];
@@ -182,7 +189,7 @@ impl StructuralNeutralizationComputer {
                     let burial_y = struct_y.burial.get(idx).copied().unwrap_or(0.5);
 
                     // ΔΔG ≈ change in burial (exposed → buried favors binding)
-                    let ddg_site = (burial_y - burial_x) * 2.0;  // Scale to kcal/mol
+                    let ddg_site = (burial_y - burial_x) * 2.0; // Scale to kcal/mol
 
                     ddg_sum += ddg_site;
                     count += 1;
@@ -210,7 +217,7 @@ impl StructuralNeutralizationComputer {
         for i in 0..10 {
             // Convert escape difference to ΔΔG estimate
             // Higher escape = worse binding = positive ΔΔG
-            ddg[i] = (escape_y[i] - escape_x[i]) * 3.0;  // Scale to kcal/mol range
+            ddg[i] = (escape_y[i] - escape_x[i]) * 3.0; // Scale to kcal/mol range
         }
 
         ddg
@@ -302,11 +309,14 @@ impl StructuralNeutralizationComputer {
 
             // Estimate incidence (infections per day)
             // TODO: Improve with phi-corrected frequency sum
-            let incidence = 5000.0;  // Placeholder
+            let incidence = 5000.0; // Placeholder
 
             // For each variant circulating that day
-            for (lineage_idx, past_variant) in country_data.frequencies.lineages.iter().enumerate() {
-                let frequency = country_data.frequencies.frequencies
+            for (lineage_idx, past_variant) in country_data.frequencies.lineages.iter().enumerate()
+            {
+                let frequency = country_data
+                    .frequencies
+                    .frequencies
                     .get(date_idx)
                     .and_then(|row| row.get(lineage_idx))
                     .copied()
@@ -317,11 +327,8 @@ impl StructuralNeutralizationComputer {
                 }
 
                 // NOVEL: Physical neutralization from structural ΔΔG
-                let p_neut_physical = self.compute_physical_neutralization(
-                    past_variant,
-                    target_variant,
-                    days_since,
-                );
+                let p_neut_physical =
+                    self.compute_physical_neutralization(past_variant, target_variant, days_since);
 
                 // Accumulate immunity
                 accumulated_immunity += (frequency * incidence * p_neut_physical) as f64;
@@ -352,7 +359,10 @@ impl StructuralNeutralizationComputer {
         )?;
 
         // Average susceptibles across competitors
-        let date_idx = country_data.frequencies.dates.iter()
+        let date_idx = country_data
+            .frequencies
+            .dates
+            .iter()
             .position(|d| d == &target_date)
             .unwrap_or(0);
 
@@ -360,7 +370,9 @@ impl StructuralNeutralizationComputer {
         let mut total_frequency = 0.0;
 
         for (lineage_idx, competitor) in country_data.frequencies.lineages.iter().enumerate() {
-            let freq = country_data.frequencies.frequencies
+            let freq = country_data
+                .frequencies
+                .frequencies
                 .get(date_idx)
                 .and_then(|row| row.get(lineage_idx))
                 .copied()
@@ -370,13 +382,9 @@ impl StructuralNeutralizationComputer {
                 continue;
             }
 
-            let susc_competitor = self.compute_susceptibles(
-                country,
-                competitor,
-                target_date,
-                country_data,
-                population,
-            ).unwrap_or(population * 0.5);
+            let susc_competitor = self
+                .compute_susceptibles(country, competitor, target_date, country_data, population)
+                .unwrap_or(population * 0.5);
 
             weighted_susceptibles += freq as f64 * susc_competitor;
             total_frequency += freq;
@@ -412,7 +420,7 @@ mod tests {
     #[test]
     fn test_physical_constants() {
         let constants = PhysicalConstants::default();
-        assert_eq!(constants.kt, 0.6);  // kT at 310K
+        assert_eq!(constants.kt, 0.6); // kT at 310K
         assert_eq!(constants.t_max_antibody, 14.0);
         assert_eq!(constants.t_half_antibody, 47.0);
     }

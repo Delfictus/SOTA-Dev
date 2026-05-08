@@ -24,15 +24,41 @@ pub enum Event {
 /// Pipeline events from streaming
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
-    PhaseStarted { name: String },
-    PhaseProgress { name: String, progress: f64 },
-    PhaseCompleted { name: String, time_ms: u64 },
-    PhaseFailed { name: String, error: String },
-    SolutionUpdated { colors: usize, conflicts: usize },
-    IterationCompleted { iteration: usize, temperature: f64 },
-    ReplicaExchange { from: usize, to: usize },
-    QuantumMeasurement { amplitudes: Vec<(usize, f64)> },
-    OptimizationComplete { colors: usize, conflicts: usize, time_s: f64 },
+    PhaseStarted {
+        name: String,
+    },
+    PhaseProgress {
+        name: String,
+        progress: f64,
+    },
+    PhaseCompleted {
+        name: String,
+        time_ms: u64,
+    },
+    PhaseFailed {
+        name: String,
+        error: String,
+    },
+    SolutionUpdated {
+        colors: usize,
+        conflicts: usize,
+    },
+    IterationCompleted {
+        iteration: usize,
+        temperature: f64,
+    },
+    ReplicaExchange {
+        from: usize,
+        to: usize,
+    },
+    QuantumMeasurement {
+        amplitudes: Vec<(usize, f64)>,
+    },
+    OptimizationComplete {
+        colors: usize,
+        conflicts: usize,
+        time_s: f64,
+    },
 }
 
 /// GPU events

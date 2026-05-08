@@ -25,30 +25,23 @@
 //! Status is written to `{output}/hil_status.json` every episode.
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use clap::Parser;
 use log::{info, warn};
-use std::path::Path;
-use std::time::Instant;
-use std::fs;
-use serde::{Serialize, Deserialize};
-use chrono::Utc;
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
+use std::time::Instant;
 
-use prism_learning::{
-    CalibrationManifest,
-    FeatureExtractor,
-    DendriticAgent,
-    DendriticAgentConfig,
-    FactorizedAction,
-    Transition,
-    SimulationBuffers,
-    calculate_macro_step_reward,
-    NeuralStateExport,
-};
-use prism_physics::molecular_dynamics::{MolecularDynamicsEngine, MolecularDynamicsConfig};
 use prism_io::sovereign_types::Atom;
+use prism_learning::{
+    calculate_macro_step_reward, CalibrationManifest, DendriticAgent, DendriticAgentConfig,
+    FactorizedAction, FeatureExtractor, NeuralStateExport, SimulationBuffers, Transition,
+};
+use prism_physics::molecular_dynamics::{MolecularDynamicsConfig, MolecularDynamicsEngine};
 
 /// Command line arguments for Neuromorphic PRISM training
 #[derive(Parser)]
@@ -105,7 +98,6 @@ struct Args {
     verbose: bool,
 
     // ========== CONTINUAL LEARNING OPTIONS ==========
-
     /// Resume from checkpoint (load existing weights)
     #[arg(long)]
     resume: Option<String>,
@@ -285,7 +277,10 @@ fn write_neural_state(output_dir: &str, state: &NeuralStateExport) {
 /// Acknowledge HIL control command
 fn ack_hil_control(output_dir: &str, ack_id: u64) {
     let control_path = format!("{}/hil_control.json", output_dir);
-    let control = HilControl { ack: ack_id, ..Default::default() };
+    let control = HilControl {
+        ack: ack_id,
+        ..Default::default()
+    };
     if let Ok(json) = serde_json::to_string_pretty(&control) {
         let _ = fs::write(&control_path, json);
     }
@@ -339,7 +334,8 @@ fn interleave_targets_by_family(
     // Group target indices by family
     let mut family_indices: HashMap<String, Vec<usize>> = HashMap::new();
     for (idx, target) in targets.iter().enumerate() {
-        family_indices.entry(target.family.clone())
+        family_indices
+            .entry(target.family.clone())
             .or_default()
             .push(idx);
     }
@@ -381,7 +377,8 @@ fn interleave_targets_by_family(
 /// Sort targets by difficulty for curriculum learning
 /// Easy (low difficulty) first, hard (high difficulty) last
 fn curriculum_sort_targets(targets: &[prism_learning::ProteinTarget]) -> Vec<usize> {
-    let mut indexed: Vec<(usize, &str)> = targets.iter()
+    let mut indexed: Vec<(usize, &str)> = targets
+        .iter()
         .enumerate()
         .map(|(i, t)| (i, t.difficulty.as_str()))
         .collect();
@@ -412,7 +409,10 @@ fn main() -> Result<()> {
 
     // Print header
     println!();
-    println!("🧠 PRISM-Zero v{} NEUROMORPHIC Training Engine", prism_learning::PRISM_ZERO_VERSION);
+    println!(
+        "🧠 PRISM-Zero v{} NEUROMORPHIC Training Engine",
+        prism_learning::PRISM_ZERO_VERSION
+    );
     println!("⚡ Flashbulb Reservoir: E/I Balanced SNN + Reward-Modulated RLS");
     println!("🚀 NO PYTORCH REQUIRED - Pure Rust + CUDA");
     println!("{}", "═".repeat(70));
@@ -432,13 +432,16 @@ fn main() -> Result<()> {
 
     // Load manifest
     info!("📋 Loading manifest: {}", args.manifest);
-    let manifest = CalibrationManifest::load(&args.manifest)
-        .context("Failed to load calibration manifest")?;
+    let manifest =
+        CalibrationManifest::load(&args.manifest).context("Failed to load calibration manifest")?;
 
     info!("   Targets: {}", manifest.targets.len());
-    info!("   Macro-steps: {} × {} steps = {}M total per episode",
-          args.macro_steps, args.steps_per_macro,
-          (args.macro_steps as u64 * args.steps_per_macro) / 1_000_000);
+    info!(
+        "   Macro-steps: {} × {} steps = {}M total per episode",
+        args.macro_steps,
+        args.steps_per_macro,
+        (args.macro_steps as u64 * args.steps_per_macro) / 1_000_000
+    );
 
     // Create Dendritic Agent configuration
     // If resuming, start with lower epsilon (more exploitation)
@@ -447,7 +450,7 @@ fn main() -> Result<()> {
     let agent_config = DendriticAgentConfig {
         reservoir_size: args.reservoir_size,
         lambda: args.lambda,
-        tau: 0.005,  // Polyak averaging coefficient
+        tau: 0.005, // Polyak averaging coefficient
         epsilon_start,
         epsilon_min: args.epsilon_min,
         epsilon_decay: args.epsilon_decay,
@@ -456,7 +459,10 @@ fn main() -> Result<()> {
     };
 
     info!("🧬 Initializing Dendritic Agent:");
-    info!("   Reservoir: {} neurons (80% E / 20% I)", agent_config.reservoir_size);
+    info!(
+        "   Reservoir: {} neurons (80% E / 20% I)",
+        agent_config.reservoir_size
+    );
     info!("   Adaptive τ: 5-50ms (fast I, gradient E)");
     info!("   RLS lambda: {} (forgetting factor)", agent_config.lambda);
     info!("   Features: 23 raw → 46 expanded (+ velocity)");
@@ -472,10 +478,14 @@ fn main() -> Result<()> {
     // Load checkpoint if resuming
     if let Some(ref checkpoint_path) = args.resume {
         info!("📂 Loading checkpoint: {}", checkpoint_path);
-        agent.load(checkpoint_path)
+        agent
+            .load(checkpoint_path)
             .with_context(|| format!("Failed to load checkpoint: {}", checkpoint_path))?;
         info!("   ✅ Weights loaded successfully!");
-        info!("   Starting epsilon: {:.3} (lower = more exploitation of learned policy)", epsilon_start);
+        info!(
+            "   Starting epsilon: {:.3} (lower = more exploitation of learned policy)",
+            epsilon_start
+        );
     }
 
     // Set initial learning rate multiplier
@@ -501,7 +511,8 @@ fn main() -> Result<()> {
 
     // Initialize family performance tracking
     for target in &manifest.targets {
-        learning_monitor.family_performance
+        learning_monitor
+            .family_performance
             .entry(target.family.clone())
             .or_insert_with(FamilyStats::default)
             .targets_count += 1;
@@ -516,7 +527,10 @@ fn main() -> Result<()> {
         "INTERLEAVED"
     };
     info!("📚 Training Mode: {}", mode_str);
-    info!("   Epochs: {} (full passes through all targets)", args.epochs);
+    info!(
+        "   Epochs: {} (full passes through all targets)",
+        args.epochs
+    );
     if args.randomize {
         info!("   🎲 Order will be randomized each epoch for better generalization");
     }
@@ -529,17 +543,31 @@ fn main() -> Result<()> {
     // ========================================================================
     for epoch in 0..args.epochs {
         println!();
-        println!("{}",  "╔══════════════════════════════════════════════════════════════════════════╗");
-        info!("🔄 EPOCH {}/{} {}", epoch + 1, args.epochs,
-              if args.resume.is_some() { "(CONTINUAL LEARNING)" } else { "" });
-        println!("{}",  "╚══════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════════════════════╗"
+        );
+        info!(
+            "🔄 EPOCH {}/{} {}",
+            epoch + 1,
+            args.epochs,
+            if args.resume.is_some() {
+                "(CONTINUAL LEARNING)"
+            } else {
+                ""
+            }
+        );
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════════════════════╝"
+        );
 
         // Create target order for this epoch
         let epoch_seed = (epoch as u64).wrapping_mul(12345).wrapping_add(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs()
+                .as_secs(),
         );
 
         let interleaved_order = if args.curriculum {
@@ -552,7 +580,11 @@ fn main() -> Result<()> {
 
         // Log the training order for this epoch
         if epoch == 0 || args.randomize {
-            info!("🔀 {} ORDER (Epoch {}):", mode_str.to_uppercase(), epoch + 1);
+            info!(
+                "🔀 {} ORDER (Epoch {}):",
+                mode_str.to_uppercase(),
+                epoch + 1
+            );
             let mut current_round = 0;
             for (i, &idx) in interleaved_order.iter().enumerate() {
                 let target = &manifest.targets[idx];
@@ -561,7 +593,13 @@ fn main() -> Result<()> {
                     current_round = round;
                     info!("   --- Round {} ---", round + 1);
                 }
-                info!("   {}: {} [{}] ({})", i + 1, target.name, target.family, target.difficulty);
+                info!(
+                    "   {}: {} [{}] ({})",
+                    i + 1,
+                    target.name,
+                    target.family,
+                    target.difficulty
+                );
             }
             info!("");
         }
@@ -571,259 +609,307 @@ fn main() -> Result<()> {
             // Gradually decrease learning rate each epoch for fine-tuning
             let epoch_lr = args.lr_multiplier * (0.8_f32).powi(epoch as i32);
             agent.set_learning_rate_multiplier(epoch_lr);
-            info!("📈 Epoch {} learning rate: {:.2}x (progressive decay)", epoch + 1, epoch_lr);
+            info!(
+                "📈 Epoch {} learning rate: {:.2}x (progressive decay)",
+                epoch + 1,
+                epoch_lr
+            );
         }
 
-    for (order_idx, &target_idx) in interleaved_order.iter().enumerate() {
-        let target = &manifest.targets[target_idx];
-        // Calculate interleave round
-        let interleave_round = order_idx / num_families;
-        learning_monitor.interleave_round = interleave_round;
+        for (order_idx, &target_idx) in interleaved_order.iter().enumerate() {
+            let target = &manifest.targets[target_idx];
+            // Calculate interleave round
+            let interleave_round = order_idx / num_families;
+            learning_monitor.interleave_round = interleave_round;
 
-        println!();
-        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        info!("🎯 Target {}/{}: {} (Interleave Round {})",
-              order_idx + 1, total_targets, target.name, interleave_round + 1);
-        info!("   Family: {}, Difficulty: {}", target.family, target.difficulty);
-        info!("   Target residues: {:?}", target.target_residues);
-        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            println!();
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            info!(
+                "🎯 Target {}/{}: {} (Interleave Round {})",
+                order_idx + 1,
+                total_targets,
+                target.name,
+                interleave_round + 1
+            );
+            info!(
+                "   Family: {}, Difficulty: {}",
+                target.family, target.difficulty
+            );
+            info!("   Target residues: {:?}", target.target_residues);
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-        // Load protein structure from PDB file
-        let pdb_data = fs::read(&target.apo_pdb)
-            .with_context(|| format!("Failed to read PDB: {}", target.apo_pdb))?;
-        info!("   Loaded {} bytes from {}", pdb_data.len(), target.apo_pdb);
+            // Load protein structure from PDB file
+            let pdb_data = fs::read(&target.apo_pdb)
+                .with_context(|| format!("Failed to read PDB: {}", target.apo_pdb))?;
+            info!("   Loaded {} bytes from {}", pdb_data.len(), target.apo_pdb);
 
-        // Reset agent for new target (clears neuronal state, keeps weights)
-        agent.reset_episode()?;
+            // Reset agent for new target (clears neuronal state, keeps weights)
+            agent.reset_episode()?;
 
-        let mut best_episode_reward = f32::NEG_INFINITY;
-        let mut episodes_without_improvement = 0;
+            let mut best_episode_reward = f32::NEG_INFINITY;
+            let mut episodes_without_improvement = 0;
 
-        for episode in 0..args.max_episodes {
-            let episode_start = Instant::now();
+            for episode in 0..args.max_episodes {
+                let episode_start = Instant::now();
 
-            // ================================================================
-            // HIL Control: Check for commands before each episode
-            // ================================================================
-            let hil_control = read_hil_control(&args.output);
+                // ================================================================
+                // HIL Control: Check for commands before each episode
+                // ================================================================
+                let hil_control = read_hil_control(&args.output);
 
-            // Handle pause command
-            if hil_control.pause && !hil_paused {
-                hil_paused = true;
-                warn!("⏸️  HIL: Training PAUSED. Set 'pause: false' in hil_control.json to resume.");
-            }
-
-            // Wait while paused
-            while hil_paused {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                let ctrl = read_hil_control(&args.output);
-                if !ctrl.pause {
-                    hil_paused = false;
-                    info!("▶️  HIL: Training RESUMED");
+                // Handle pause command
+                if hil_control.pause && !hil_paused {
+                    hil_paused = true;
+                    warn!("⏸️  HIL: Training PAUSED. Set 'pause: false' in hil_control.json to resume.");
                 }
-            }
 
-            // Handle spike_exploration command
-            if hil_control.spike_exploration > 0 {
-                hil_spike_episodes_remaining = hil_control.spike_exploration;
-                agent.set_epsilon(0.8f64);
-                warn!("🔥 HIL: SPIKE EXPLORATION activated for {} episodes (ε=0.8)", hil_spike_episodes_remaining);
-                ack_hil_control(&args.output, hil_ack_counter);
-                hil_ack_counter += 1;
-            }
+                // Wait while paused
+                while hil_paused {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    let ctrl = read_hil_control(&args.output);
+                    if !ctrl.pause {
+                        hil_paused = false;
+                        info!("▶️  HIL: Training RESUMED");
+                    }
+                }
 
-            // Handle set_epsilon command
-            if let Some(new_eps) = hil_control.set_epsilon {
-                let clamped = (new_eps as f64).clamp(0.0, 1.0);
-                agent.set_epsilon(clamped);
-                warn!("🎚️  HIL: Epsilon set to {:.3}", clamped);
-                ack_hil_control(&args.output, hil_ack_counter);
-                hil_ack_counter += 1;
-            }
-
-            // Handle save_checkpoint command
-            if hil_control.save_checkpoint {
-                let checkpoint_path = format!("{}/hil_checkpoint_{}_{}.json", args.output, target.name, episode);
-                agent.save(&checkpoint_path)?;
-                warn!("💾 HIL: Forced checkpoint saved: {}", checkpoint_path);
-                ack_hil_control(&args.output, hil_ack_counter);
-                hil_ack_counter += 1;
-            }
-
-            // Handle learning_rate_multiplier command
-            if let Some(lr_mult) = hil_control.learning_rate_multiplier {
-                let clamped = lr_mult.clamp(0.1, 10.0);
-                if (clamped - hil_lr_multiplier).abs() > 0.001 {
-                    hil_lr_multiplier = clamped;
-                    agent.set_learning_rate_multiplier(clamped);
-                    warn!("📈 HIL: Learning rate multiplier set to {:.2}x", clamped);
+                // Handle spike_exploration command
+                if hil_control.spike_exploration > 0 {
+                    hil_spike_episodes_remaining = hil_control.spike_exploration;
+                    agent.set_epsilon(0.8f64);
+                    warn!(
+                        "🔥 HIL: SPIKE EXPLORATION activated for {} episodes (ε=0.8)",
+                        hil_spike_episodes_remaining
+                    );
                     ack_hil_control(&args.output, hil_ack_counter);
                     hil_ack_counter += 1;
                 }
-            }
 
-            // Decay spike exploration counter
-            if hil_spike_episodes_remaining > 0 {
-                hil_spike_episodes_remaining -= 1;
-                if hil_spike_episodes_remaining == 0 {
-                    info!("🔥 HIL: Spike exploration ended, resuming normal decay");
+                // Handle set_epsilon command
+                if let Some(new_eps) = hil_control.set_epsilon {
+                    let clamped = (new_eps as f64).clamp(0.0, 1.0);
+                    agent.set_epsilon(clamped);
+                    warn!("🎚️  HIL: Epsilon set to {:.3}", clamped);
+                    ack_hil_control(&args.output, hil_ack_counter);
+                    hil_ack_counter += 1;
                 }
-            }
-            // ================================================================
 
-            // Run one episode with macro-step training
-            let (episode_reward, transitions, steps) = run_macro_step_episode(
-                &mut agent,
-                &manifest,
-                target,
-                &pdb_data,
-                args.macro_steps,
-                args.steps_per_macro,
-            )?;
+                // Handle save_checkpoint command
+                if hil_control.save_checkpoint {
+                    let checkpoint_path = format!(
+                        "{}/hil_checkpoint_{}_{}.json",
+                        args.output, target.name, episode
+                    );
+                    agent.save(&checkpoint_path)?;
+                    warn!("💾 HIL: Forced checkpoint saved: {}", checkpoint_path);
+                    ack_hil_control(&args.output, hil_ack_counter);
+                    hil_ack_counter += 1;
+                }
 
-            stats.total_steps += steps;
-            stats.total_transitions += transitions.len();
+                // Handle learning_rate_multiplier command
+                if let Some(lr_mult) = hil_control.learning_rate_multiplier {
+                    let clamped = lr_mult.clamp(0.1, 10.0);
+                    if (clamped - hil_lr_multiplier).abs() > 0.001 {
+                        hil_lr_multiplier = clamped;
+                        agent.set_learning_rate_multiplier(clamped);
+                        warn!("📈 HIL: Learning rate multiplier set to {:.2}x", clamped);
+                        ack_hil_control(&args.output, hil_ack_counter);
+                        hil_ack_counter += 1;
+                    }
+                }
 
-            // Train on episode transitions (Reward-Modulated RLS)
-            let batch: Vec<_> = transitions.iter()
-                .map(|t| (t.state.clone(), t.action, t.reward, t.next_state.clone(), t.done))
-                .collect();
+                // Decay spike exploration counter
+                if hil_spike_episodes_remaining > 0 {
+                    hil_spike_episodes_remaining -= 1;
+                    if hil_spike_episodes_remaining == 0 {
+                        info!("🔥 HIL: Spike exploration ended, resuming normal decay");
+                    }
+                }
+                // ================================================================
 
-            let avg_error = agent.train(batch)?;
+                // Run one episode with macro-step training
+                let (episode_reward, transitions, steps) = run_macro_step_episode(
+                    &mut agent,
+                    &manifest,
+                    target,
+                    &pdb_data,
+                    args.macro_steps,
+                    args.steps_per_macro,
+                )?;
 
-            // Track best reward
-            if episode_reward > best_episode_reward {
-                best_episode_reward = episode_reward;
-                episodes_without_improvement = 0;
-            } else {
-                episodes_without_improvement += 1;
-            }
+                stats.total_steps += steps;
+                stats.total_transitions += transitions.len();
 
-            // Logging
-            let episode_time = episode_start.elapsed();
-            if episode % 10 == 0 || episode == args.max_episodes - 1 {
-                info!(
+                // Train on episode transitions (Reward-Modulated RLS)
+                let batch: Vec<_> = transitions
+                    .iter()
+                    .map(|t| {
+                        (
+                            t.state.clone(),
+                            t.action,
+                            t.reward,
+                            t.next_state.clone(),
+                            t.done,
+                        )
+                    })
+                    .collect();
+
+                let avg_error = agent.train(batch)?;
+
+                // Track best reward
+                if episode_reward > best_episode_reward {
+                    best_episode_reward = episode_reward;
+                    episodes_without_improvement = 0;
+                } else {
+                    episodes_without_improvement += 1;
+                }
+
+                // Logging
+                let episode_time = episode_start.elapsed();
+                if episode % 10 == 0 || episode == args.max_episodes - 1 {
+                    info!(
                     "   Episode {:4}: reward={:+.3}, best={:+.3}, ε={:.3}, RLS_err={:.4}, time={:.1}s",
                     episode, episode_reward, best_episode_reward,
                     agent.get_epsilon(), avg_error, episode_time.as_secs_f32()
                 );
-            }
+                }
 
-            stats.total_episodes += 1;
+                stats.total_episodes += 1;
 
-            // ================================================================
-            // HIL Status: Write status file for monitoring
-            // ================================================================
-            let total_time = training_start.elapsed().as_secs_f32();
-            let episodes_done = stats.total_episodes;
-            let episodes_remaining = (total_targets - target_idx - 1) * args.max_episodes
-                + (args.max_episodes - episode - 1);
-            let avg_episode_time = if episodes_done > 0 { total_time / episodes_done as f32 } else { 0.0 };
-            let eta_secs = episodes_remaining as f32 * avg_episode_time;
+                // ================================================================
+                // HIL Status: Write status file for monitoring
+                // ================================================================
+                let total_time = training_start.elapsed().as_secs_f32();
+                let episodes_done = stats.total_episodes;
+                let episodes_remaining = (total_targets - target_idx - 1) * args.max_episodes
+                    + (args.max_episodes - episode - 1);
+                let avg_episode_time = if episodes_done > 0 {
+                    total_time / episodes_done as f32
+                } else {
+                    0.0
+                };
+                let eta_secs = episodes_remaining as f32 * avg_episode_time;
 
-            // Update learning monitor with recent data
-            learning_monitor.recent_rewards.push(episode_reward);
-            if learning_monitor.recent_rewards.len() > 20 {
-                learning_monitor.recent_rewards.remove(0);
-            }
-            learning_monitor.recent_errors.push(avg_error);
-            if learning_monitor.recent_errors.len() > 20 {
-                learning_monitor.recent_errors.remove(0);
-            }
-            learning_monitor.reward_trend = calculate_trend(&learning_monitor.recent_rewards);
-            learning_monitor.error_trend = calculate_trend(&learning_monitor.recent_errors);
-            learning_monitor.avg_episode_time = if stats.total_episodes > 0 {
-                total_time / stats.total_episodes as f32
-            } else {
-                0.0
-            };
+                // Update learning monitor with recent data
+                learning_monitor.recent_rewards.push(episode_reward);
+                if learning_monitor.recent_rewards.len() > 20 {
+                    learning_monitor.recent_rewards.remove(0);
+                }
+                learning_monitor.recent_errors.push(avg_error);
+                if learning_monitor.recent_errors.len() > 20 {
+                    learning_monitor.recent_errors.remove(0);
+                }
+                learning_monitor.reward_trend = calculate_trend(&learning_monitor.recent_rewards);
+                learning_monitor.error_trend = calculate_trend(&learning_monitor.recent_errors);
+                learning_monitor.avg_episode_time = if stats.total_episodes > 0 {
+                    total_time / stats.total_episodes as f32
+                } else {
+                    0.0
+                };
 
-            // Update families in current round
-            learning_monitor.families_in_round = learning_monitor.family_performance
-                .keys().cloned().collect();
-            learning_monitor.families_in_round.sort();
+                // Update families in current round
+                learning_monitor.families_in_round = learning_monitor
+                    .family_performance
+                    .keys()
+                    .cloned()
+                    .collect();
+                learning_monitor.families_in_round.sort();
 
-            let status = HilStatus {
-                current_target: target.name.clone(),
-                current_family: target.family.clone(),
-                target_idx: order_idx + 1,
-                total_targets,
-                episode,
-                max_episodes: args.max_episodes,
-                epsilon: agent.get_epsilon(),
-                episode_reward,
-                best_reward: best_episode_reward,
-                episodes_without_improvement,
-                patience: args.patience,
-                rls_error: avg_error,
-                episode_time_secs: episode_time.as_secs_f32(),
-                total_time_secs: total_time,
-                eta_secs,
-                paused: hil_paused,
-                learning_rate_multiplier: hil_lr_multiplier,
-                stats: stats.clone(),
-                learning_monitor: learning_monitor.clone(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-            };
-            write_hil_status(&args.output, &status);
+                let status = HilStatus {
+                    current_target: target.name.clone(),
+                    current_family: target.family.clone(),
+                    target_idx: order_idx + 1,
+                    total_targets,
+                    episode,
+                    max_episodes: args.max_episodes,
+                    epsilon: agent.get_epsilon(),
+                    episode_reward,
+                    best_reward: best_episode_reward,
+                    episodes_without_improvement,
+                    patience: args.patience,
+                    rls_error: avg_error,
+                    episode_time_secs: episode_time.as_secs_f32(),
+                    total_time_secs: total_time,
+                    eta_secs,
+                    paused: hil_paused,
+                    learning_rate_multiplier: hil_lr_multiplier,
+                    stats: stats.clone(),
+                    learning_monitor: learning_monitor.clone(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                };
+                write_hil_status(&args.output, &status);
 
-            // Export neural network state for visualization dashboard
-            let neural_state = agent.export_neural_state(None);
-            write_neural_state(&args.output, &neural_state);
-            // ================================================================
+                // Export neural network state for visualization dashboard
+                let neural_state = agent.export_neural_state(None);
+                write_neural_state(&args.output, &neural_state);
+                // ================================================================
 
-            // Early stopping on target reward
-            if let Some(target_reward) = args.target_reward {
-                if best_episode_reward >= target_reward {
-                    info!("🎉 Target reward reached: {:.3} >= {:.3}", best_episode_reward, target_reward);
+                // Early stopping on target reward
+                if let Some(target_reward) = args.target_reward {
+                    if best_episode_reward >= target_reward {
+                        info!(
+                            "🎉 Target reward reached: {:.3} >= {:.3}",
+                            best_episode_reward, target_reward
+                        );
+                        break;
+                    }
+                }
+
+                // Early stopping on patience
+                if episodes_without_improvement >= args.patience {
+                    info!(
+                        "⏹️  Early stopping: {} episodes without improvement",
+                        args.patience
+                    );
                     break;
+                }
+
+                // Checkpoint
+                if episode > 0 && episode % args.checkpoint_interval == 0 {
+                    let checkpoint_path = format!(
+                        "{}/checkpoint_{}_{}.json",
+                        args.output, target.name, episode
+                    );
+                    agent.save(&checkpoint_path)?;
+                    info!("💾 Checkpoint saved: {}", checkpoint_path);
                 }
             }
 
-            // Early stopping on patience
-            if episodes_without_improvement >= args.patience {
-                info!("⏹️  Early stopping: {} episodes without improvement", args.patience);
-                break;
+            stats.targets_completed += 1;
+            stats.sum_best_rewards += best_episode_reward;
+            if best_episode_reward > stats.best_reward {
+                stats.best_reward = best_episode_reward;
             }
 
-            // Checkpoint
-            if episode > 0 && episode % args.checkpoint_interval == 0 {
-                let checkpoint_path = format!("{}/checkpoint_{}_{}.json", args.output, target.name, episode);
-                agent.save(&checkpoint_path)?;
-                info!("💾 Checkpoint saved: {}", checkpoint_path);
+            // Update family performance
+            if let Some(family_stats) = learning_monitor.family_performance.get_mut(&target.family)
+            {
+                family_stats.targets_completed += 1;
+                family_stats.sum_best_rewards += best_episode_reward;
+                family_stats.avg_best_reward = if family_stats.targets_completed > 0 {
+                    family_stats.sum_best_rewards / family_stats.targets_completed as f32
+                } else {
+                    0.0
+                };
             }
+
+            info!(
+                "✅ Target {} [{}] completed: best_reward={:+.3}",
+                target.name, target.family, best_episode_reward
+            );
+
+            // Log family progress
+            if let Some(fs) = learning_monitor.family_performance.get(&target.family) {
+                info!(
+                    "   📊 Family '{}' progress: {}/{} targets, avg_reward={:+.4}",
+                    target.family, fs.targets_completed, fs.targets_count, fs.avg_best_reward
+                );
+            }
+
+            // Save per-target checkpoint
+            let target_path = format!("{}/agent_after_{}.json", args.output, target.name);
+            agent.save(&target_path)?;
         }
-
-        stats.targets_completed += 1;
-        stats.sum_best_rewards += best_episode_reward;
-        if best_episode_reward > stats.best_reward {
-            stats.best_reward = best_episode_reward;
-        }
-
-        // Update family performance
-        if let Some(family_stats) = learning_monitor.family_performance.get_mut(&target.family) {
-            family_stats.targets_completed += 1;
-            family_stats.sum_best_rewards += best_episode_reward;
-            family_stats.avg_best_reward = if family_stats.targets_completed > 0 {
-                family_stats.sum_best_rewards / family_stats.targets_completed as f32
-            } else {
-                0.0
-            };
-        }
-
-        info!("✅ Target {} [{}] completed: best_reward={:+.3}",
-              target.name, target.family, best_episode_reward);
-
-        // Log family progress
-        if let Some(fs) = learning_monitor.family_performance.get(&target.family) {
-            info!("   📊 Family '{}' progress: {}/{} targets, avg_reward={:+.4}",
-                  target.family, fs.targets_completed, fs.targets_count, fs.avg_best_reward);
-        }
-
-        // Save per-target checkpoint
-        let target_path = format!("{}/agent_after_{}.json", args.output, target.name);
-        agent.save(&target_path)?;
-    }
 
         // End of epoch - save epoch checkpoint
         let epoch_path = format!("{}/agent_epoch_{}.json", args.output, epoch + 1);
@@ -832,12 +918,18 @@ fn main() -> Result<()> {
 
         // Epoch summary
         println!();
-        println!("{}",  "╔══════════════════════════════════════════════════════════════════════════╗");
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════════════════════╗"
+        );
         info!("📊 EPOCH {}/{} COMPLETE", epoch + 1, args.epochs);
         info!("   Targets this epoch: {}", manifest.targets.len());
         info!("   Total episodes: {}", stats.total_episodes);
         info!("   Best reward: {:+.6}", stats.best_reward);
-        println!("{}",  "╚══════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════════════════════╝"
+        );
     } // End of epoch loop
 
     // Final summary
@@ -849,11 +941,21 @@ fn main() -> Result<()> {
     println!("📊 Statistics:");
     println!("   Targets completed: {}", stats.targets_completed);
     println!("   Total episodes: {}", stats.total_episodes);
-    println!("   Total simulation steps: {} ({:.1}B)", stats.total_steps, stats.total_steps as f64 / 1e9);
+    println!(
+        "   Total simulation steps: {} ({:.1}B)",
+        stats.total_steps,
+        stats.total_steps as f64 / 1e9
+    );
     println!("   Total transitions: {}", stats.total_transitions);
-    println!("   Average best reward: {:+.3}", stats.sum_best_rewards / stats.targets_completed.max(1) as f32);
+    println!(
+        "   Average best reward: {:+.3}",
+        stats.sum_best_rewards / stats.targets_completed.max(1) as f32
+    );
     println!("   Best overall reward: {:+.3}", stats.best_reward);
-    println!("   Training time: {:.1} minutes", training_time.as_secs_f32() / 60.0);
+    println!(
+        "   Training time: {:.1} minutes",
+        training_time.as_secs_f32() / 60.0
+    );
     println!();
     println!("📁 Results saved to: {}/", args.output);
     println!();
@@ -884,9 +986,9 @@ fn run_macro_step_episode(
     // 1. Configure MD engine
     let md_config = MolecularDynamicsConfig {
         max_steps: steps_per_macro * num_macro_steps as u64,
-        dt: 0.002,          // 2 femtoseconds
-        friction: 1.0,      // Default, action will modify
-        temp_start: 300.0,  // Default, action will modify
+        dt: 0.002,         // 2 femtoseconds
+        friction: 1.0,     // Default, action will modify
+        temp_start: 300.0, // Default, action will modify
         temp_end: 150.0,
         annealing_steps: steps_per_macro / 2,
         cutoff_dist: 10.0,
@@ -925,12 +1027,14 @@ fn run_macro_step_episode(
 
     for macro_step in 0..num_macro_steps {
         // A. Run physics simulation for this chunk
-        engine.run_nlnm_breathing(steps_per_macro)
+        engine
+            .run_nlnm_breathing(steps_per_macro)
             .context("Physics simulation failed")?;
         total_steps += steps_per_macro;
 
         // B. Get current atom positions from GPU
-        let current_atoms = engine.get_current_atoms()
+        let current_atoms = engine
+            .get_current_atoms()
             .context("Failed to get current atoms")?;
 
         // C. Update SimulationBuffers with new positions

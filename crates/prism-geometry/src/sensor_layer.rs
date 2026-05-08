@@ -254,7 +254,8 @@ impl GeometrySensorLayer {
         };
 
         unsafe {
-            stream.launch_builder(&self.kernel_bbox)
+            stream
+                .launch_builder(&self.kernel_bbox)
                 .arg(d_positions)
                 .arg(&d_bbox)
                 .arg(&(num_vertices as u32))
@@ -293,7 +294,8 @@ impl GeometrySensorLayer {
         };
 
         unsafe {
-            stream.launch_builder(&self.kernel_overlap)
+            stream
+                .launch_builder(&self.kernel_overlap)
                 .arg(d_positions)
                 .arg(&d_overlap)
                 .arg(&(num_vertices as u32))
@@ -341,7 +343,8 @@ impl GeometrySensorLayer {
         };
 
         unsafe {
-            stream.launch_builder(&self.kernel_curvature)
+            stream
+                .launch_builder(&self.kernel_curvature)
                 .arg(d_positions)
                 .arg(&d_row_ptr)
                 .arg(&d_col_idx)
@@ -392,7 +395,8 @@ impl GeometrySensorLayer {
         };
 
         unsafe {
-            stream.launch_builder(&self.kernel_hotspots)
+            stream
+                .launch_builder(&self.kernel_hotspots)
                 .arg(d_positions)
                 .arg(&d_anchors)
                 .arg(&d_hotspot)

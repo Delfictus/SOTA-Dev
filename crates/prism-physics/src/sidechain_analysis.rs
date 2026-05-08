@@ -25,36 +25,31 @@ use std::collections::HashMap;
 ///        < 1.0 = more rigid
 pub const RESIDUE_FLEXIBILITY: &[(&str, f64)] = &[
     // Most flexible - small or no sidechain
-    ("GLY", 1.40),  // No sidechain, maximum backbone freedom
-
+    ("GLY", 1.40), // No sidechain, maximum backbone freedom
     // Flexible - small sidechains
-    ("SER", 1.10),  // Small hydroxyl, moderate H-bonding
-    ("THR", 1.05),  // Beta-branched but small
-    ("ASN", 1.08),  // Amide group, some H-bonding
-    ("ASP", 1.05),  // Carboxylate, charged
-
+    ("SER", 1.10), // Small hydroxyl, moderate H-bonding
+    ("THR", 1.05), // Beta-branched but small
+    ("ASN", 1.08), // Amide group, some H-bonding
+    ("ASP", 1.05), // Carboxylate, charged
     // Moderate flexibility
-    ("GLU", 1.02),  // Longer charged sidechain
-    ("GLN", 1.00),  // Longer amide
-    ("LYS", 1.05),  // Long flexible charged chain
-    ("ARG", 0.98),  // Large but multiple H-bonds constrain
-    ("HIS", 0.95),  // Aromatic, can be charged
-
+    ("GLU", 1.02), // Longer charged sidechain
+    ("GLN", 1.00), // Longer amide
+    ("LYS", 1.05), // Long flexible charged chain
+    ("ARG", 0.98), // Large but multiple H-bonds constrain
+    ("HIS", 0.95), // Aromatic, can be charged
     // Less flexible - bulky or constrained
-    ("ALA", 0.90),  // Small methyl, relatively rigid
-    ("VAL", 0.85),  // Beta-branched, restricts backbone
-    ("ILE", 0.82),  // Beta-branched, bulky
-    ("LEU", 0.88),  // Bulky but not beta-branched
-    ("MET", 0.90),  // Long but sulfur provides some flexibility
-
+    ("ALA", 0.90), // Small methyl, relatively rigid
+    ("VAL", 0.85), // Beta-branched, restricts backbone
+    ("ILE", 0.82), // Beta-branched, bulky
+    ("LEU", 0.88), // Bulky but not beta-branched
+    ("MET", 0.90), // Long but sulfur provides some flexibility
     // Aromatic - rigid rings
-    ("PHE", 0.80),  // Large aromatic ring
-    ("TYR", 0.78),  // Large aromatic + hydroxyl
-    ("TRP", 0.72),  // Largest aromatic, most rigid
-
+    ("PHE", 0.80), // Large aromatic ring
+    ("TYR", 0.78), // Large aromatic + hydroxyl
+    ("TRP", 0.72), // Largest aromatic, most rigid
     // Special cases
-    ("CYS", 0.85),  // Disulfide potential constrains
-    ("PRO", 0.60),  // Ring structure, very rigid backbone
+    ("CYS", 0.85), // Disulfide potential constrains
+    ("PRO", 0.60), // Ring structure, very rigid backbone
 ];
 
 /// Get flexibility factor for a single residue
@@ -350,7 +345,7 @@ mod tests {
         assert_eq!(factors.len(), 5);
         // GLY should be most flexible
         assert!(factors[1] > factors[0]); // GLY > ALA
-        // PRO should be most rigid
+                                          // PRO should be most rigid
         assert!(factors[2] < factors[0]); // PRO < ALA
     }
 
@@ -417,9 +412,21 @@ mod tests {
 
     #[test]
     fn test_category_classification() {
-        assert_eq!(SidechainCategory::from_residue("GLY"), SidechainCategory::None);
-        assert_eq!(SidechainCategory::from_residue("PRO"), SidechainCategory::Special);
-        assert_eq!(SidechainCategory::from_residue("PHE"), SidechainCategory::Aromatic);
-        assert_eq!(SidechainCategory::from_residue("LYS"), SidechainCategory::PositiveCharge);
+        assert_eq!(
+            SidechainCategory::from_residue("GLY"),
+            SidechainCategory::None
+        );
+        assert_eq!(
+            SidechainCategory::from_residue("PRO"),
+            SidechainCategory::Special
+        );
+        assert_eq!(
+            SidechainCategory::from_residue("PHE"),
+            SidechainCategory::Aromatic
+        );
+        assert_eq!(
+            SidechainCategory::from_residue("LYS"),
+            SidechainCategory::PositiveCharge
+        );
     }
 }

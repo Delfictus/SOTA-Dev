@@ -15,11 +15,7 @@
 //! - Provides cryptic epitope analysis without PyMOL dependency
 
 use clap::Parser;
-use prism_io::{
-    holographic::PtbStructure,
-    sovereign_types::Atom,
-    Result,
-};
+use prism_io::{holographic::PtbStructure, sovereign_types::Atom, Result};
 use std::path::Path;
 
 #[derive(Parser)]
@@ -133,12 +129,20 @@ fn print_cryptic_epitope_report(movements: &[AtomMovement], top_count: usize) {
 
     println!("📈 Summary:");
     println!("   Total moving atoms: {}", movements.len());
-    println!("   Average displacement: {:.3} Å",
-        movements.iter().map(|m| m.displacement).sum::<f64>() / movements.len() as f64);
-    println!("   Maximum displacement: {:.3} Å", movements[0].displacement);
+    println!(
+        "   Average displacement: {:.3} Å",
+        movements.iter().map(|m| m.displacement).sum::<f64>() / movements.len() as f64
+    );
+    println!(
+        "   Maximum displacement: {:.3} Å",
+        movements[0].displacement
+    );
     println!();
 
-    println!("🎯 TOP {} MOST MOBILE REGIONS:", top_count.min(movements.len()));
+    println!(
+        "🎯 TOP {} MOST MOBILE REGIONS:",
+        top_count.min(movements.len())
+    );
     println!("=================================");
 
     for (rank, movement) in movements.iter().take(top_count).enumerate() {
@@ -152,24 +156,26 @@ fn print_cryptic_epitope_report(movements: &[AtomMovement], top_count: usize) {
 
         // Show coordinate change for top 5
         if rank < 5 {
-            println!("     From: ({:>7.3}, {:>7.3}, {:>7.3})",
+            println!(
+                "     From: ({:>7.3}, {:>7.3}, {:>7.3})",
                 movement.original_coords[0],
                 movement.original_coords[1],
                 movement.original_coords[2]
             );
-            println!("     To:   ({:>7.3}, {:>7.3}, {:>7.3})",
-                movement.relaxed_coords[0],
-                movement.relaxed_coords[1],
-                movement.relaxed_coords[2]
+            println!(
+                "     To:   ({:>7.3}, {:>7.3}, {:>7.3})",
+                movement.relaxed_coords[0], movement.relaxed_coords[1], movement.relaxed_coords[2]
             );
         }
         println!();
     }
 
     // Analyze movement patterns by residue
-    let mut residue_movements: std::collections::HashMap<u16, Vec<f64>> = std::collections::HashMap::new();
+    let mut residue_movements: std::collections::HashMap<u16, Vec<f64>> =
+        std::collections::HashMap::new();
     for movement in movements {
-        residue_movements.entry(movement.residue_id)
+        residue_movements
+            .entry(movement.residue_id)
             .or_insert_with(Vec::new)
             .push(movement.displacement);
     }
@@ -182,16 +188,27 @@ fn print_cryptic_epitope_report(movements: &[AtomMovement], top_count: usize) {
         .map(|(residue_id, displacements)| {
             let avg_displacement = displacements.iter().sum::<f64>() / displacements.len() as f64;
             let max_displacement = displacements.iter().fold(0.0f64, |max, &d| max.max(d));
-            (*residue_id, avg_displacement, max_displacement, displacements.len())
+            (
+                *residue_id,
+                avg_displacement,
+                max_displacement,
+                displacements.len(),
+            )
         })
         .collect();
 
     residue_analysis.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap()); // Sort by average displacement
 
-    for (i, (residue_id, avg_disp, max_disp, atom_count)) in residue_analysis.iter().take(10).enumerate() {
+    for (i, (residue_id, avg_disp, max_disp, atom_count)) in
+        residue_analysis.iter().take(10).enumerate()
+    {
         println!(
             "{:2}. Residue {:>4}: {:.3} Å avg ({:.3} Å max) - {} atoms moving",
-            i + 1, residue_id, avg_disp, max_disp, atom_count
+            i + 1,
+            residue_id,
+            avg_disp,
+            max_disp,
+            atom_count
         );
     }
 

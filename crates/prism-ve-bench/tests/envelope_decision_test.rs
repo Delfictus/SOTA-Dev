@@ -7,7 +7,7 @@
 //!
 //! This is a CRITICAL test for scientific integrity.
 
-use prism_ve_bench::{EnvelopeDecision, DayDirection};
+use prism_ve_bench::{DayDirection, EnvelopeDecision};
 
 #[test]
 fn test_envelope_entirely_positive_is_rising() {
@@ -18,10 +18,17 @@ fn test_envelope_entirely_positive_is_rising() {
 
     let decision = EnvelopeDecision::from_envelope(min, max);
 
-    assert_eq!(decision, EnvelopeDecision::Rising,
-        "Entirely positive envelope (min={}, max={}) should be Rising", min, max);
-    assert!(decision.is_decided(),
-        "Entirely positive envelope should be decided");
+    assert_eq!(
+        decision,
+        EnvelopeDecision::Rising,
+        "Entirely positive envelope (min={}, max={}) should be Rising",
+        min,
+        max
+    );
+    assert!(
+        decision.is_decided(),
+        "Entirely positive envelope should be decided"
+    );
 }
 
 #[test]
@@ -33,10 +40,17 @@ fn test_envelope_entirely_negative_is_falling() {
 
     let decision = EnvelopeDecision::from_envelope(min, max);
 
-    assert_eq!(decision, EnvelopeDecision::Falling,
-        "Entirely negative envelope (min={}, max={}) should be Falling", min, max);
-    assert!(decision.is_decided(),
-        "Entirely negative envelope should be decided");
+    assert_eq!(
+        decision,
+        EnvelopeDecision::Falling,
+        "Entirely negative envelope (min={}, max={}) should be Falling",
+        min,
+        max
+    );
+    assert!(
+        decision.is_decided(),
+        "Entirely negative envelope should be decided"
+    );
 }
 
 #[test]
@@ -49,12 +63,22 @@ fn test_envelope_crosses_zero_is_undecided() {
 
     let decision = EnvelopeDecision::from_envelope(min, max);
 
-    assert_eq!(decision, EnvelopeDecision::Undecided,
-        "Envelope crossing zero (min={}, max={}) should be Undecided", min, max);
-    assert!(!decision.is_decided(),
-        "Envelope crossing zero should NOT be decided");
-    assert_eq!(decision.to_day_direction(), None,
-        "Undecided envelope should not have direction");
+    assert_eq!(
+        decision,
+        EnvelopeDecision::Undecided,
+        "Envelope crossing zero (min={}, max={}) should be Undecided",
+        min,
+        max
+    );
+    assert!(
+        !decision.is_decided(),
+        "Envelope crossing zero should NOT be decided"
+    );
+    assert_eq!(
+        decision.to_day_direction(),
+        None,
+        "Undecided envelope should not have direction"
+    );
 }
 
 #[test]
@@ -67,8 +91,11 @@ fn test_envelope_edge_case_zero_min() {
     let decision = EnvelopeDecision::from_envelope(min, max);
 
     // With min=0, envelope includes zero → Undecided
-    assert_eq!(decision, EnvelopeDecision::Undecided,
-        "Envelope with min=0 (edge case) should be Undecided");
+    assert_eq!(
+        decision,
+        EnvelopeDecision::Undecided,
+        "Envelope with min=0 (edge case) should be Undecided"
+    );
 }
 
 #[test]
@@ -81,8 +108,11 @@ fn test_envelope_edge_case_zero_max() {
     let decision = EnvelopeDecision::from_envelope(min, max);
 
     // With max=0, envelope includes zero → Undecided
-    assert_eq!(decision, EnvelopeDecision::Undecided,
-        "Envelope with max=0 (edge case) should be Undecided");
+    assert_eq!(
+        decision,
+        EnvelopeDecision::Undecided,
+        "Envelope with max=0 (edge case) should be Undecided"
+    );
 }
 
 #[test]
@@ -94,8 +124,13 @@ fn test_envelope_barely_positive() {
 
     let decision = EnvelopeDecision::from_envelope(min, max);
 
-    assert_eq!(decision, EnvelopeDecision::Rising,
-        "Barely positive envelope (min={}, max={}) should still be Rising", min, max);
+    assert_eq!(
+        decision,
+        EnvelopeDecision::Rising,
+        "Barely positive envelope (min={}, max={}) should still be Rising",
+        min,
+        max
+    );
 }
 
 #[test]
@@ -107,8 +142,13 @@ fn test_envelope_barely_negative() {
 
     let decision = EnvelopeDecision::from_envelope(min, max);
 
-    assert_eq!(decision, EnvelopeDecision::Falling,
-        "Barely negative envelope (min={}, max={}) should still be Falling", min, max);
+    assert_eq!(
+        decision,
+        EnvelopeDecision::Falling,
+        "Barely negative envelope (min={}, max={}) should still be Falling",
+        min,
+        max
+    );
 }
 
 #[test]
@@ -122,8 +162,11 @@ fn test_envelope_to_day_direction_conversion() {
     assert_eq!(falling.to_day_direction(), Some(DayDirection::Falling));
 
     let undecided = EnvelopeDecision::Undecided;
-    assert_eq!(undecided.to_day_direction(), None,
-        "Undecided envelope should not convert to DayDirection");
+    assert_eq!(
+        undecided.to_day_direction(),
+        None,
+        "Undecided envelope should not convert to DayDirection"
+    );
 }
 
 #[test]
@@ -133,18 +176,27 @@ fn test_realistic_vasil_envelopes() {
 
     // Case 1: Strong rising signal (mean=0.3, envelope [0.1, 0.5])
     let decision1 = EnvelopeDecision::from_envelope(0.1, 0.5);
-    assert_eq!(decision1, EnvelopeDecision::Rising,
-        "Strong rising envelope should be Rising");
+    assert_eq!(
+        decision1,
+        EnvelopeDecision::Rising,
+        "Strong rising envelope should be Rising"
+    );
 
     // Case 2: Strong falling signal (mean=-0.25, envelope [-0.45, -0.05])
     let decision2 = EnvelopeDecision::from_envelope(-0.45, -0.05);
-    assert_eq!(decision2, EnvelopeDecision::Falling,
-        "Strong falling envelope should be Falling");
+    assert_eq!(
+        decision2,
+        EnvelopeDecision::Falling,
+        "Strong falling envelope should be Falling"
+    );
 
     // Case 3: Uncertain signal (mean=0.05, envelope [-0.15, 0.25])
     let decision3 = EnvelopeDecision::from_envelope(-0.15, 0.25);
-    assert_eq!(decision3, EnvelopeDecision::Undecided,
-        "Uncertain envelope crossing zero should be Undecided");
+    assert_eq!(
+        decision3,
+        EnvelopeDecision::Undecided,
+        "Uncertain envelope crossing zero should be Undecided"
+    );
 }
 
 #[test]

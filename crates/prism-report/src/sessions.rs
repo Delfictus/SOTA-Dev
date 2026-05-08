@@ -34,12 +34,18 @@ pub fn generate_pymol_session(
         .with_context(|| format!("Failed to run PyMOL: {}", pymol_path.display()))?;
 
     if !status.success() {
-        bail!("PyMOL exited with error. Check {} for issues.", pml_script.display());
+        bail!(
+            "PyMOL exited with error. Check {} for issues.",
+            pml_script.display()
+        );
     }
 
     // Verify output
     if !output_pse.exists() {
-        bail!("PyMOL did not generate expected output: {}", output_pse.display());
+        bail!(
+            "PyMOL did not generate expected output: {}",
+            output_pse.display()
+        );
     }
 
     // Clean up script (optional - keep for debugging)
@@ -63,13 +69,21 @@ fn generate_pymol_script(
     // ==========================================================================
 
     // Header
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
     script.push_str("# PRISM-4D Cryptic Binding Site Visualization\n");
     script.push_str("# Publication-Quality PyMOL Session\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
     script.push_str(&format!("# Site: {}\n", site.site_id));
-    script.push_str(&format!("# Rank: {} | Confidence: {:.2}\n", site.rank, site.confidence));
-    script.push_str(&format!("# Volume: {:.0} A^3 | Druggable: {}\n",
+    script.push_str(&format!(
+        "# Rank: {} | Confidence: {:.2}\n",
+        site.rank, site.confidence
+    ));
+    script.push_str(&format!(
+        "# Volume: {:.0} A^3 | Druggable: {}\n",
         site.metrics.geometry.volume_mean,
         if site.is_druggable { "YES" } else { "NO" }
     ));
@@ -82,24 +96,21 @@ fn generate_pymol_script(
     // PRISM-4D Brand Color Definitions
     // ---------------------------------------------------------------------
     script.push_str("# PRISM-4D Color Palette\n");
-    script.push_str("set_color prism_blue, [0.290, 0.435, 0.647]\n");      // #4A6FA5
-    script.push_str("set_color prism_gold, [0.769, 0.639, 0.353]\n");      // #C4A35A
-    script.push_str("set_color prism_teal, [0.357, 0.604, 0.545]\n");      // #5B9A8B
-    script.push_str("set_color prism_coral, [0.831, 0.451, 0.369]\n");     // #D4735E
-    script.push_str("set_color prism_gray, [0.420, 0.447, 0.502]\n");      // #6B7280
-    script.push_str("set_color prism_helix, [0.290, 0.435, 0.647]\n");     // Blue for helices
-    script.push_str("set_color prism_sheet, [0.769, 0.639, 0.353]\n");     // Gold for sheets
-    script.push_str("set_color prism_loop, [0.800, 0.800, 0.800]\n");      // Light gray for loops
+    script.push_str("set_color prism_blue, [0.290, 0.435, 0.647]\n"); // #4A6FA5
+    script.push_str("set_color prism_gold, [0.769, 0.639, 0.353]\n"); // #C4A35A
+    script.push_str("set_color prism_teal, [0.357, 0.604, 0.545]\n"); // #5B9A8B
+    script.push_str("set_color prism_coral, [0.831, 0.451, 0.369]\n"); // #D4735E
+    script.push_str("set_color prism_gray, [0.420, 0.447, 0.502]\n"); // #6B7280
+    script.push_str("set_color prism_helix, [0.290, 0.435, 0.647]\n"); // Blue for helices
+    script.push_str("set_color prism_sheet, [0.769, 0.639, 0.353]\n"); // Gold for sheets
+    script.push_str("set_color prism_loop, [0.800, 0.800, 0.800]\n"); // Light gray for loops
     script.push_str("\n");
 
     // ---------------------------------------------------------------------
     // Load Structures
     // ---------------------------------------------------------------------
     script.push_str("# Load structures\n");
-    script.push_str(&format!(
-        "load {}, protein\n",
-        pdb_path.to_str().unwrap()
-    ));
+    script.push_str(&format!("load {}, protein\n", pdb_path.to_str().unwrap()));
     script.push_str(&format!(
         "load {}, site_atoms\n",
         site_pdb_path.to_str().unwrap()
@@ -129,9 +140,13 @@ fn generate_pymol_script(
     // ---------------------------------------------------------------------
     // Professional Styling
     // ---------------------------------------------------------------------
-    script.push_str("\n# ============================================================================\n");
+    script.push_str(
+        "\n# ============================================================================\n",
+    );
     script.push_str("# PROFESSIONAL STYLING\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
 
     // Background
     script.push_str("\n# Clean white background\n");
@@ -159,8 +174,8 @@ fn generate_pymol_script(
     script.push_str("show sticks, site_residues\n");
     script.push_str("set stick_radius, 0.15\n");
     script.push_str("set stick_ball, 0\n");
-    script.push_str("util.cbaw site_residues\n");  // Color by atom type (C white)
-    script.push_str("color prism_teal, site_residues and elem C\n");  // Teal carbons
+    script.push_str("util.cbaw site_residues\n"); // Color by atom type (C white)
+    script.push_str("color prism_teal, site_residues and elem C\n"); // Teal carbons
 
     // Surface for site
     script.push_str("\n# Semi-transparent surface for binding site\n");
@@ -176,7 +191,7 @@ fn generate_pymol_script(
         script.push_str("\n# Reference ligand (holo structure)\n");
         script.push_str("show sticks, holo and organic\n");
         script.push_str("set stick_radius, 0.2, holo and organic\n");
-        script.push_str("util.cbag holo and organic\n");  // Color by atom (C green)
+        script.push_str("util.cbag holo and organic\n"); // Color by atom (C green)
         script.push_str("show spheres, holo and organic\n");
         script.push_str("set sphere_scale, 0.2, holo and organic\n");
     }
@@ -194,7 +209,7 @@ fn generate_pymol_script(
 
     // Residue labels
     script.push_str("\n# Residue labels (one-letter codes)\n");
-    script.push_str("set label_font_id, 7\n");  // Helvetica Bold
+    script.push_str("set label_font_id, 7\n"); // Helvetica Bold
     script.push_str("set label_size, 14\n");
     script.push_str("set label_color, black\n");
     script.push_str("set label_outline_color, white\n");
@@ -204,9 +219,13 @@ fn generate_pymol_script(
     // ---------------------------------------------------------------------
     // Professional Lighting & Rendering
     // ---------------------------------------------------------------------
-    script.push_str("\n# ============================================================================\n");
+    script.push_str(
+        "\n# ============================================================================\n",
+    );
     script.push_str("# PROFESSIONAL LIGHTING & RENDERING\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
 
     script.push_str("\n# Multi-light setup for depth perception\n");
     script.push_str("set light_count, 4\n");
@@ -234,13 +253,17 @@ fn generate_pymol_script(
     // ---------------------------------------------------------------------
     // Camera Setup
     // ---------------------------------------------------------------------
-    script.push_str("\n# ============================================================================\n");
+    script.push_str(
+        "\n# ============================================================================\n",
+    );
     script.push_str("# CAMERA SETUP\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
     script.push_str("center site_residues\n");
     script.push_str("orient site_residues\n");
     script.push_str("zoom site_residues, 8\n");
-    script.push_str("turn y, 20\n");  // Slight rotation for better view
+    script.push_str("turn y, 20\n"); // Slight rotation for better view
     script.push_str("turn x, 10\n");
 
     // ---------------------------------------------------------------------
@@ -248,10 +271,7 @@ fn generate_pymol_script(
     // ---------------------------------------------------------------------
     script.push_str("\n# Clean up selections and save\n");
     script.push_str("deselect\n");
-    script.push_str(&format!(
-        "save {}\n",
-        output_pse.to_str().unwrap()
-    ));
+    script.push_str(&format!("save {}\n", output_pse.to_str().unwrap()));
 
     // Generate PNG render
     let png_path = output_pse.with_extension("png");
@@ -284,12 +304,17 @@ pub fn generate_chimerax_session(
 
     // Create .cxc script
     let cxc_script = output_cxs.with_extension("cxc");
-    let cxc_content = generate_chimerax_script(site, pdb_path, site_pdb_path, holo_pdb, output_cxs)?;
+    let cxc_content =
+        generate_chimerax_script(site, pdb_path, site_pdb_path, holo_pdb, output_cxs)?;
     fs::write(&cxc_script, &cxc_content)?;
 
     // Run ChimeraX headless
     let status = Command::new(&chimerax_path)
-        .args(["--nogui", "--cmd", &format!("open {}", cxc_script.to_str().unwrap())])
+        .args([
+            "--nogui",
+            "--cmd",
+            &format!("open {}", cxc_script.to_str().unwrap()),
+        ])
         .status()
         .with_context(|| format!("Failed to run ChimeraX: {}", chimerax_path.display()))?;
 
@@ -300,7 +325,10 @@ pub fn generate_chimerax_session(
 
     // Verify output
     if !output_cxs.exists() {
-        bail!("ChimeraX did not generate expected output: {}", output_cxs.display());
+        bail!(
+            "ChimeraX did not generate expected output: {}",
+            output_cxs.display()
+        );
     }
 
     Ok(())
@@ -321,13 +349,21 @@ fn generate_chimerax_script(
     // ==========================================================================
 
     // Header
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
     script.push_str("# PRISM-4D Cryptic Binding Site Visualization\n");
     script.push_str("# Publication-Quality ChimeraX Session\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
     script.push_str(&format!("# Site: {}\n", site.site_id));
-    script.push_str(&format!("# Rank: {} | Confidence: {:.2}\n", site.rank, site.confidence));
-    script.push_str(&format!("# Volume: {:.0} A^3 | Druggable: {}\n",
+    script.push_str(&format!(
+        "# Rank: {} | Confidence: {:.2}\n",
+        site.rank, site.confidence
+    ));
+    script.push_str(&format!(
+        "# Volume: {:.0} A^3 | Druggable: {}\n",
         site.metrics.geometry.volume_mean,
         if site.is_druggable { "YES" } else { "NO" }
     ));
@@ -359,9 +395,13 @@ fn generate_chimerax_script(
     // ---------------------------------------------------------------------
     // Professional Styling
     // ---------------------------------------------------------------------
-    script.push_str("\n# ============================================================================\n");
+    script.push_str(
+        "\n# ============================================================================\n",
+    );
     script.push_str("# PROFESSIONAL STYLING\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
 
     // Background
     script.push_str("\n# Clean white background\n");
@@ -386,12 +426,21 @@ fn generate_chimerax_script(
     script.push_str(&format!("show #1:{} atoms\n", residue_sel));
     script.push_str(&format!("style #1:{} stick\n", residue_sel));
     script.push_str(&format!("color byhetero #1:{}\n", residue_sel));
-    script.push_str(&format!("color #1:{} & C #5B9A8B  ; # Teal carbons for site\n", residue_sel));
+    script.push_str(&format!(
+        "color #1:{} & C #5B9A8B  ; # Teal carbons for site\n",
+        residue_sel
+    ));
 
     // Semi-transparent surface for binding site
     script.push_str("\n# Semi-transparent surface for binding site\n");
-    script.push_str(&format!("surface #1:{} enclose #1:{}\n", residue_sel, residue_sel));
-    script.push_str(&format!("color #1:{} surfaces #5B9A8B  ; # Teal surface\n", residue_sel));
+    script.push_str(&format!(
+        "surface #1:{} enclose #1:{}\n",
+        residue_sel, residue_sel
+    ));
+    script.push_str(&format!(
+        "color #1:{} surfaces #5B9A8B  ; # Teal surface\n",
+        residue_sel
+    ));
     script.push_str(&format!("transparency #1:{} 65 surfaces\n", residue_sel));
 
     // Holo ligand if present
@@ -413,15 +462,22 @@ fn generate_chimerax_script(
 
     // Residue labels
     script.push_str("\n# Residue labels\n");
-    script.push_str(&format!("label #1:{} residues text \"{{0.name}}{{0.number}}\"\n", residue_sel));
+    script.push_str(&format!(
+        "label #1:{} residues text \"{{0.name}}{{0.number}}\"\n",
+        residue_sel
+    ));
     script.push_str("label style #1 height 0.8 color black bgColor white outline true\n");
 
     // ---------------------------------------------------------------------
     // Professional Lighting & Rendering
     // ---------------------------------------------------------------------
-    script.push_str("\n# ============================================================================\n");
+    script.push_str(
+        "\n# ============================================================================\n",
+    );
     script.push_str("# PROFESSIONAL LIGHTING & RENDERING\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
 
     script.push_str("\n# High-quality lighting\n");
     script.push_str("lighting soft\n");
@@ -438,9 +494,13 @@ fn generate_chimerax_script(
     // ---------------------------------------------------------------------
     // Camera Setup
     // ---------------------------------------------------------------------
-    script.push_str("\n# ============================================================================\n");
+    script.push_str(
+        "\n# ============================================================================\n",
+    );
     script.push_str("# CAMERA SETUP\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
     script.push_str(&format!("view #1:{}\n", residue_sel));
     script.push_str("turn y 20  ; # Slight rotation for better perspective\n");
     script.push_str("turn x 10\n");
@@ -449,11 +509,18 @@ fn generate_chimerax_script(
     // ---------------------------------------------------------------------
     // Save Session and Render
     // ---------------------------------------------------------------------
-    script.push_str("\n# ============================================================================\n");
+    script.push_str(
+        "\n# ============================================================================\n",
+    );
     script.push_str("# SAVE SESSION AND RENDER\n");
-    script.push_str("# ============================================================================\n");
+    script.push_str(
+        "# ============================================================================\n",
+    );
 
-    script.push_str(&format!("save {} format session\n", output_cxs.to_str().unwrap()));
+    script.push_str(&format!(
+        "save {} format session\n",
+        output_cxs.to_str().unwrap()
+    ));
 
     // Generate PNG render
     let png_path = output_cxs.with_extension("png");

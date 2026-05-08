@@ -26,15 +26,15 @@
 //! - **Lock-Free**: Ring buffers for time-series data
 //! - **Zero-Copy**: GPU memory mapping where possible
 
-pub mod events;
-pub mod state;
 pub mod actors;
 pub mod channels;
+pub mod events;
+pub mod state;
 
-pub use events::{PrismEvent, EventBus};
-pub use state::StateStore;
 pub use actors::{ActorHandle, ActorSystem};
 pub use channels::RingBuffer;
+pub use events::{EventBus, PrismEvent};
+pub use state::StateStore;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -93,24 +93,27 @@ impl PrismRuntime {
 
     /// Start the runtime with all actors
     pub async fn start(&mut self) -> Result<()> {
-        log::info!("Starting PRISM Runtime with {} max actors", self.config.max_actors);
+        log::info!(
+            "Starting PRISM Runtime with {} max actors",
+            self.config.max_actors
+        );
 
         // Spawn core actors
-        self.actor_system.spawn_pipeline_actor(
-            self.state.clone(),
-            self.event_bus.clone(),
-        ).await?;
+        self.actor_system
+            .spawn_pipeline_actor(self.state.clone(), self.event_bus.clone())
+            .await?;
 
-        self.actor_system.spawn_gpu_actor(
-            self.state.clone(),
-            self.event_bus.clone(),
-            self.config.gpu_poll_interval_ms,
-        ).await?;
+        self.actor_system
+            .spawn_gpu_actor(
+                self.state.clone(),
+                self.event_bus.clone(),
+                self.config.gpu_poll_interval_ms,
+            )
+            .await?;
 
-        self.actor_system.spawn_telemetry_actor(
-            self.state.clone(),
-            self.event_bus.clone(),
-        ).await?;
+        self.actor_system
+            .spawn_telemetry_actor(self.state.clone(), self.event_bus.clone())
+            .await?;
 
         log::info!("PRISM Runtime started successfully");
         Ok(())

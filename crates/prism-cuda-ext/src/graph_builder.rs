@@ -19,8 +19,8 @@
 
 use anyhow::{Context, Result};
 use cudarc::driver::sys;
-use std::ptr;
 use std::ffi::CString;
+use std::ptr;
 
 /// Check CUDA result and return anyhow error.
 pub fn check(result: sys::CUresult, ctx: &str) -> Result<()> {
@@ -39,8 +39,8 @@ pub unsafe fn load_function_raw(
     function_name: &str,
 ) -> Result<(sys::CUmodule, sys::CUfunction)> {
     // Load the PTX module
-    let ptx_data = std::fs::read(ptx_path)
-        .with_context(|| format!("Failed to read PTX: {}", ptx_path))?;
+    let ptx_data =
+        std::fs::read(ptx_path).with_context(|| format!("Failed to read PTX: {}", ptx_path))?;
 
     // Ensure null-terminated
     let mut ptx_cstr = ptx_data.clone();
@@ -99,17 +99,15 @@ pub unsafe fn add_kernel_node(
     };
 
     let mut node: sys::CUgraphNode = ptr::null_mut();
-    let dep_ptr = if dependencies.is_empty() { ptr::null() } else { dependencies.as_ptr() };
+    let dep_ptr = if dependencies.is_empty() {
+        ptr::null()
+    } else {
+        dependencies.as_ptr()
+    };
     let n_deps = dependencies.len();
 
     check(
-        sys::cuGraphAddKernelNode_v2(
-            &mut node,
-            graph,
-            dep_ptr,
-            n_deps,
-            &params,
-        ),
+        sys::cuGraphAddKernelNode_v2(&mut node, graph, dep_ptr, n_deps, &params),
         "cuGraphAddKernelNode_v2",
     )?;
 

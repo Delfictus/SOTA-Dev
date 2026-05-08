@@ -50,7 +50,8 @@ impl NmrEnsemble {
 /// Load NMR ensemble from PDB file
 pub fn load_nmr_ensemble(path: impl AsRef<Path>) -> Result<NmrEnsemble> {
     let path = path.as_ref();
-    let pdb_id = path.file_stem()
+    let pdb_id = path
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown")
         .to_string();

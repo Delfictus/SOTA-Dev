@@ -48,13 +48,13 @@
 //! - [`agent`]: DQN agent for physics parameter selection (PyTorch, optional)
 //! - [`dendritic_agent`]: Neuromorphic agent with SNN reservoir (default)
 
-pub mod manifest;
-pub mod features;
+pub mod atomic_chemistry;
 pub mod buffers;
+pub mod features;
+pub mod manifest;
+pub mod persistence;
 pub mod rewards;
 pub mod trainer;
-pub mod persistence;
-pub mod atomic_chemistry;
 
 // Dendritic Agent (default - no PyTorch dependency)
 pub mod dendritic_agent;
@@ -64,22 +64,23 @@ pub mod dendritic_agent;
 pub mod agent;
 
 // Re-exports for convenience
-pub use manifest::{
-    CalibrationManifest,
-    ProteinTarget,
-    TrainingParameters,
-    RewardWeighting,
-    PhysicsParameterRanges,
-    MacroStepConfig,
-    FeatureConfig,
-};
-pub use features::{FeatureExtractor, FeatureVector};
 pub use buffers::SimulationBuffers;
-pub use rewards::{EvaluationResult, RewardBreakdown, evaluate_simulation, evaluate_simulation_weighted, calculate_macro_step_reward};
-pub use trainer::{PrismTrainer, TrainingSession, TrainingConfig, Transition};
+pub use features::{FeatureExtractor, FeatureVector};
+pub use manifest::{
+    CalibrationManifest, FeatureConfig, MacroStepConfig, PhysicsParameterRanges, ProteinTarget,
+    RewardWeighting, TrainingParameters,
+};
+pub use rewards::{
+    calculate_macro_step_reward, evaluate_simulation, evaluate_simulation_weighted,
+    EvaluationResult, RewardBreakdown,
+};
+pub use trainer::{PrismTrainer, TrainingConfig, TrainingSession, Transition};
 
 // Dendritic Agent exports (default)
-pub use dendritic_agent::{DendriticAgent, DendriticAgentConfig, FactorizedAction, NeuralStateExport, ReservoirStats, WeightStats};
+pub use dendritic_agent::{
+    DendriticAgent, DendriticAgentConfig, FactorizedAction, NeuralStateExport, ReservoirStats,
+    WeightStats,
+};
 
 // DQN Agent exports (optional)
 #[cfg(feature = "rl")]

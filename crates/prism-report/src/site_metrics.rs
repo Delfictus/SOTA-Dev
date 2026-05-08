@@ -129,12 +129,24 @@ impl AtomGridIndex {
             let x = positions[b];
             let y = positions[b + 1];
             let z = positions[b + 2];
-            if x < min[0] { min[0] = x; }
-            if y < min[1] { min[1] = y; }
-            if z < min[2] { min[2] = z; }
-            if x > max[0] { max[0] = x; }
-            if y > max[1] { max[1] = y; }
-            if z > max[2] { max[2] = z; }
+            if x < min[0] {
+                min[0] = x;
+            }
+            if y < min[1] {
+                min[1] = y;
+            }
+            if z < min[2] {
+                min[2] = z;
+            }
+            if x > max[0] {
+                max[0] = x;
+            }
+            if y > max[1] {
+                max[1] = y;
+            }
+            if z > max[2] {
+                max[2] = z;
+            }
         }
 
         let mut cells: BTreeMap<(i32, i32, i32), Vec<usize>> = BTreeMap::new();
@@ -163,7 +175,12 @@ impl AtomGridIndex {
     }
 
     /// Deterministic radius query
-    pub fn query_radius(&self, positions: &[f32], center: [f32; 3], radius: f32) -> Result<Vec<usize>> {
+    pub fn query_radius(
+        &self,
+        positions: &[f32],
+        center: [f32; 3],
+        radius: f32,
+    ) -> Result<Vec<usize>> {
         if radius <= 0.0 {
             bail!("query_radius: radius must be > 0");
         }
@@ -337,8 +354,12 @@ impl TopologyData {
         for i in 0..self.n_atoms {
             let p = get_pos(&self.positions, i);
             for j in 0..3 {
-                if p[j] < min[j] { min[j] = p[j]; }
-                if p[j] > max[j] { max[j] = p[j]; }
+                if p[j] < min[j] {
+                    min[j] = p[j];
+                }
+                if p[j] > max[j] {
+                    max[j] = p[j];
+                }
             }
         }
         Aabb { min, max }
@@ -370,21 +391,44 @@ impl std::fmt::Display for CoordinateFrameDiagnostics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "=== COORDINATE FRAME MISMATCH DIAGNOSTICS ===")?;
         writeln!(f, "Topology AABB:")?;
-        writeln!(f, "  min: [{:.2}, {:.2}, {:.2}]",
-            self.topology_aabb.min[0], self.topology_aabb.min[1], self.topology_aabb.min[2])?;
-        writeln!(f, "  max: [{:.2}, {:.2}, {:.2}]",
-            self.topology_aabb.max[0], self.topology_aabb.max[1], self.topology_aabb.max[2])?;
+        writeln!(
+            f,
+            "  min: [{:.2}, {:.2}, {:.2}]",
+            self.topology_aabb.min[0], self.topology_aabb.min[1], self.topology_aabb.min[2]
+        )?;
+        writeln!(
+            f,
+            "  max: [{:.2}, {:.2}, {:.2}]",
+            self.topology_aabb.max[0], self.topology_aabb.max[1], self.topology_aabb.max[2]
+        )?;
         writeln!(f, "Events AABB:")?;
-        writeln!(f, "  min: [{:.2}, {:.2}, {:.2}]",
-            self.events_aabb.min[0], self.events_aabb.min[1], self.events_aabb.min[2])?;
-        writeln!(f, "  max: [{:.2}, {:.2}, {:.2}]",
-            self.events_aabb.max[0], self.events_aabb.max[1], self.events_aabb.max[2])?;
-        writeln!(f, "Topology centroid: [{:.2}, {:.2}, {:.2}]",
-            self.topology_centroid[0], self.topology_centroid[1], self.topology_centroid[2])?;
-        writeln!(f, "Events centroid: [{:.2}, {:.2}, {:.2}]",
-            self.events_centroid[0], self.events_centroid[1], self.events_centroid[2])?;
-        writeln!(f, "Suggested translation (topo - events): [{:.2}, {:.2}, {:.2}]",
-            self.suggested_translation[0], self.suggested_translation[1], self.suggested_translation[2])?;
+        writeln!(
+            f,
+            "  min: [{:.2}, {:.2}, {:.2}]",
+            self.events_aabb.min[0], self.events_aabb.min[1], self.events_aabb.min[2]
+        )?;
+        writeln!(
+            f,
+            "  max: [{:.2}, {:.2}, {:.2}]",
+            self.events_aabb.max[0], self.events_aabb.max[1], self.events_aabb.max[2]
+        )?;
+        writeln!(
+            f,
+            "Topology centroid: [{:.2}, {:.2}, {:.2}]",
+            self.topology_centroid[0], self.topology_centroid[1], self.topology_centroid[2]
+        )?;
+        writeln!(
+            f,
+            "Events centroid: [{:.2}, {:.2}, {:.2}]",
+            self.events_centroid[0], self.events_centroid[1], self.events_centroid[2]
+        )?;
+        writeln!(
+            f,
+            "Suggested translation (topo - events): [{:.2}, {:.2}, {:.2}]",
+            self.suggested_translation[0],
+            self.suggested_translation[1],
+            self.suggested_translation[2]
+        )?;
         writeln!(f, "Max absolute axis delta: {:.2} Å", self.max_axis_delta)?;
         writeln!(f, "AABBs overlap (with 10Å margin): {}", self.overlaps)?;
         Ok(())
@@ -408,11 +452,18 @@ pub fn validate_coordinate_frames(
     let mut events_max = [f32::NEG_INFINITY; 3];
     for center in event_centers {
         for j in 0..3 {
-            if center[j] < events_min[j] { events_min[j] = center[j]; }
-            if center[j] > events_max[j] { events_max[j] = center[j]; }
+            if center[j] < events_min[j] {
+                events_min[j] = center[j];
+            }
+            if center[j] > events_max[j] {
+                events_max[j] = center[j];
+            }
         }
     }
-    let events_aabb = Aabb { min: events_min, max: events_max };
+    let events_aabb = Aabb {
+        min: events_min,
+        max: events_max,
+    };
 
     let topology_centroid = topology_aabb.centroid();
     let events_centroid = events_aabb.centroid();
@@ -466,7 +517,11 @@ impl SiteMetricsComputer {
         topo.validate()?;
         let atom_index = AtomGridIndex::build(&topo.positions, topo.n_atoms, 6.0)
             .context("building atom spatial index")?;
-        Ok(Self { topo, atom_index, query_radius_a })
+        Ok(Self {
+            topo,
+            atom_index,
+            query_radius_a,
+        })
     }
 
     /// Get topology AABB
@@ -482,7 +537,8 @@ impl SiteMetricsComputer {
     /// Deterministic downsample: lexicographic sort by (x,y,z), take first N
     pub fn canonical_sample_points(mut points: Vec<[f32; 3]>, max_points: usize) -> Vec<[f32; 3]> {
         points.sort_by(|a, b| {
-            a[0].partial_cmp(&b[0]).unwrap()
+            a[0].partial_cmp(&b[0])
+                .unwrap()
                 .then(a[1].partial_cmp(&b[1]).unwrap())
                 .then(a[2].partial_cmp(&b[2]).unwrap())
         });
@@ -510,7 +566,11 @@ impl SiteMetricsComputer {
                 let resid = self.topo.residue_ids[ai];
                 let chain = self.topo.chain_ids[ai].clone();
                 let resname = self.topo.residue_names[ai].clone();
-                set.insert(ResidueKey { chain, resid, resname });
+                set.insert(ResidueKey {
+                    chain,
+                    resid,
+                    resname,
+                });
             }
         }
 
@@ -559,7 +619,9 @@ impl SiteMetricsComputer {
             let dy = p[1] - c[1];
             let dz = p[2] - c[2];
             let r = (dx * dx + dy * dy + dz * dz).sqrt();
-            if r > r_max { r_max = r; }
+            if r > r_max {
+                r_max = r;
+            }
             radii.push(r);
         }
 
@@ -575,7 +637,11 @@ impl SiteMetricsComputer {
         surface_indices.sort_unstable();
 
         if surface_indices.is_empty() {
-            bail!("Depth proxy: computed 0 surface atoms (r_max={:.2}, threshold={:.2})", r_max, threshold);
+            bail!(
+                "Depth proxy: computed 0 surface atoms (r_max={:.2}, threshold={:.2})",
+                r_max,
+                threshold
+            );
         }
 
         let d = self
@@ -583,7 +649,9 @@ impl SiteMetricsComputer {
             .nearest_distance_to_indices(positions, site_centroid, &surface_indices)
             .context("depth proxy nearest distance failed")?;
 
-        Ok(DepthResult { depth_proxy_a: d.max(0.0) })
+        Ok(DepthResult {
+            depth_proxy_a: d.max(0.0),
+        })
     }
 
     /// Compute mouth area proxy from voxel sets
@@ -606,12 +674,12 @@ impl SiteMetricsComputer {
         let site_set: BTreeSet<(i32, i32, i32)> = site_voxels.iter().copied().collect();
 
         let dirs = [
-            ( 1,  0,  0),
-            (-1,  0,  0),
-            ( 0,  1,  0),
-            ( 0, -1,  0),
-            ( 0,  0,  1),
-            ( 0,  0, -1),
+            (1, 0, 0),
+            (-1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0, 0, 1),
+            (0, 0, -1),
         ];
 
         let mut exposed_faces: u32 = 0;
@@ -664,7 +732,9 @@ impl SiteMetricsComputer {
 
     /// Count atoms within radius of a point
     pub fn count_atoms_within_radius(&self, point: [f32; 3], radius: f32) -> Result<usize> {
-        let atoms = self.atom_index.query_radius(&self.topo.positions, point, radius)?;
+        let atoms = self
+            .atom_index
+            .query_radius(&self.topo.positions, point, radius)?;
         Ok(atoms.len())
     }
 }
@@ -686,10 +756,12 @@ fn cell_key(p: [f32; 3], cell: f32) -> (i32, i32, i32) {
 }
 
 fn hydrophobic_fraction(residues: &[ResidueKey]) -> f32 {
-    let hydro = |r: &str| matches!(
-        r,
-        "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TYR" | "TRP" | "PRO"
-    );
+    let hydro = |r: &str| {
+        matches!(
+            r,
+            "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TYR" | "TRP" | "PRO"
+        )
+    };
     let total = residues.len() as f32;
     if total == 0.0 {
         return 0.0;
@@ -709,7 +781,10 @@ fn hydrophobic_fraction(residues: &[ResidueKey]) -> f32 {
 pub fn sort_sites_deterministic(sites: &mut [crate::sites::CrypticSite]) {
     sites.sort_by(|a, b| {
         // Primary: persistence (open_frequency) descending
-        let cmp1 = b.metrics.persistence.present_fraction
+        let cmp1 = b
+            .metrics
+            .persistence
+            .present_fraction
             .partial_cmp(&a.metrics.persistence.present_fraction)
             .unwrap_or(std::cmp::Ordering::Equal);
         if cmp1 != std::cmp::Ordering::Equal {
@@ -717,7 +792,10 @@ pub fn sort_sites_deterministic(sites: &mut [crate::sites::CrypticSite]) {
         }
 
         // Secondary: UV delta SASA descending (as CV proxy)
-        let cmp2 = b.metrics.uv_response.delta_sasa
+        let cmp2 = b
+            .metrics
+            .uv_response
+            .delta_sasa
             .partial_cmp(&a.metrics.uv_response.delta_sasa)
             .unwrap_or(std::cmp::Ordering::Equal);
         if cmp2 != std::cmp::Ordering::Equal {
@@ -725,7 +803,9 @@ pub fn sort_sites_deterministic(sites: &mut [crate::sites::CrypticSite]) {
         }
 
         // Tertiary: volume descending
-        b.metrics.geometry.volume_mean
+        b.metrics
+            .geometry
+            .volume_mean
             .partial_cmp(&a.metrics.geometry.volume_mean)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
@@ -749,10 +829,10 @@ mod tests {
         TopologyData {
             n_atoms: 4,
             positions: vec![
-                0.0, 0.0, 0.0,   // atom 0
-                5.0, 0.0, 0.0,   // atom 1
-                10.0, 0.0, 0.0,  // atom 2
-                15.0, 0.0, 0.0,  // atom 3
+                0.0, 0.0, 0.0, // atom 0
+                5.0, 0.0, 0.0, // atom 1
+                10.0, 0.0, 0.0, // atom 2
+                15.0, 0.0, 0.0, // atom 3
             ],
             residue_ids: vec![0, 0, 1, 1],
             residue_names: vec!["ALA".into(), "ALA".into(), "LEU".into(), "LEU".into()],
@@ -784,11 +864,15 @@ mod tests {
         let index = AtomGridIndex::build(&topo.positions, topo.n_atoms, 6.0).unwrap();
 
         // Query around atom 0
-        let hits = index.query_radius(&topo.positions, [0.0, 0.0, 0.0], 3.0).unwrap();
+        let hits = index
+            .query_radius(&topo.positions, [0.0, 0.0, 0.0], 3.0)
+            .unwrap();
         assert_eq!(hits, vec![0]);
 
         // Query with larger radius
-        let hits = index.query_radius(&topo.positions, [2.5, 0.0, 0.0], 5.0).unwrap();
+        let hits = index
+            .query_radius(&topo.positions, [2.5, 0.0, 0.0], 5.0)
+            .unwrap();
         assert!(hits.contains(&0));
         assert!(hits.contains(&1));
     }
@@ -808,9 +892,21 @@ mod tests {
     #[test]
     fn test_hydrophobic_fraction() {
         let residues = vec![
-            ResidueKey { chain: "A".into(), resid: 0, resname: "ALA".into() },
-            ResidueKey { chain: "A".into(), resid: 1, resname: "LEU".into() },
-            ResidueKey { chain: "A".into(), resid: 2, resname: "ASP".into() },
+            ResidueKey {
+                chain: "A".into(),
+                resid: 0,
+                resname: "ALA".into(),
+            },
+            ResidueKey {
+                chain: "A".into(),
+                resid: 1,
+                resname: "LEU".into(),
+            },
+            ResidueKey {
+                chain: "A".into(),
+                resid: 2,
+                resname: "ASP".into(),
+            },
         ];
         let frac = hydrophobic_fraction(&residues);
         // ALA and LEU are hydrophobic (2/3)
@@ -819,11 +915,20 @@ mod tests {
 
     #[test]
     fn test_aabb_overlap() {
-        let a = Aabb { min: [0.0, 0.0, 0.0], max: [10.0, 10.0, 10.0] };
-        let b = Aabb { min: [5.0, 5.0, 5.0], max: [15.0, 15.0, 15.0] };
+        let a = Aabb {
+            min: [0.0, 0.0, 0.0],
+            max: [10.0, 10.0, 10.0],
+        };
+        let b = Aabb {
+            min: [5.0, 5.0, 5.0],
+            max: [15.0, 15.0, 15.0],
+        };
         assert!(a.overlaps_with_margin(&b, 0.0));
 
-        let c = Aabb { min: [100.0, 100.0, 100.0], max: [110.0, 110.0, 110.0] };
+        let c = Aabb {
+            min: [100.0, 100.0, 100.0],
+            max: [110.0, 110.0, 110.0],
+        };
         assert!(!a.overlaps_with_margin(&c, 10.0));
     }
 
@@ -846,11 +951,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_sample_points() {
-        let points = vec![
-            [3.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [2.0, 0.0, 0.0],
-        ];
+        let points = vec![[3.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
         let sorted = SiteMetricsComputer::canonical_sample_points(points, 10);
         assert_eq!(sorted[0], [1.0, 0.0, 0.0]);
         assert_eq!(sorted[1], [2.0, 0.0, 0.0]);

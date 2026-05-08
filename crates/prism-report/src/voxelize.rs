@@ -61,11 +61,7 @@ impl VoxelGrid {
 
     /// Create grid from bounding box with padding
     pub fn from_bounds(min: [f32; 3], max: [f32; 3], spacing: f32, padding: f32) -> Self {
-        let origin = [
-            min[0] - padding,
-            min[1] - padding,
-            min[2] - padding,
-        ];
+        let origin = [min[0] - padding, min[1] - padding, min[2] - padding];
 
         let dims = [
             ((max[0] - min[0] + 2.0 * padding) / spacing).ceil() as usize + 1,
@@ -273,7 +269,12 @@ impl Voxelizer {
         let mut grid = VoxelGrid::from_bounds(min, max, self.spacing, self.padding);
 
         let all_events: Vec<&PocketEvent> = cloud.events.iter().collect();
-        deposit_events(&mut grid, &all_events, self.sigma, self.weight_by_confidence);
+        deposit_events(
+            &mut grid,
+            &all_events,
+            self.sigma,
+            self.weight_by_confidence,
+        );
 
         Some(grid)
     }
@@ -442,9 +443,8 @@ impl MrcHeader {
 
         // Calculate RMS
         let mean = header.dmean;
-        let rms: f32 = (grid.data.iter()
-            .map(|&v| (v - mean).powi(2))
-            .sum::<f32>() / grid.data.len() as f32)
+        let rms: f32 = (grid.data.iter().map(|&v| (v - mean).powi(2)).sum::<f32>()
+            / grid.data.len() as f32)
             .sqrt();
         header.rms = rms;
 

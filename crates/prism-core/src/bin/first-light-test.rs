@@ -4,8 +4,8 @@
 //! Run this while the prism-monitor is running to see the "needle move."
 
 use prism_core::telemetry;
-use std::time::Instant;
 use std::thread;
+use std::time::Instant;
 
 fn main() {
     println!("🌅 First Light Test - PRISM-Zero Flight Recorder");
@@ -23,9 +23,9 @@ fn main() {
     // This represents one step of a real physics simulation
     // In actual use, these would come from the physics engine
     let step = 1u64;
-    let energy = -1845.67f32;      // Realistic Hamiltonian energy for 2VWD
-    let temperature = 300.15f32;   // Standard physiological temperature (K)
-    let acceptance = 0.847f32;     // Realistic PIMC acceptance rate
+    let energy = -1845.67f32; // Realistic Hamiltonian energy for 2VWD
+    let temperature = 300.15f32; // Standard physiological temperature (K)
+    let acceptance = 0.847f32; // Realistic PIMC acceptance rate
     let gradient_norm = 0.0234f32; // Convergence gradient magnitude
 
     println!("📊 Physics State:");
@@ -67,16 +67,17 @@ fn main() {
         let gradient = gradient_norm * (1.0 / i as f32); // Converging gradient
 
         telemetry::record_simulation_state(
-            i as u64,
-            start_time,
-            energy,
-            temp,
-            acceptance,
-            gradient,
+            i as u64, start_time, energy, temp, acceptance, gradient,
         );
 
-        println!("   Frame {}: E={:.2}, T={:.2}, A={:.1}%, G={:.4}",
-                 i, energy, temp, acceptance * 100.0, gradient);
+        println!(
+            "   Frame {}: E={:.2}, T={:.2}, A={:.1}%, G={:.4}",
+            i,
+            energy,
+            temp,
+            acceptance * 100.0,
+            gradient
+        );
     }
 
     println!("");

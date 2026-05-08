@@ -8,25 +8,25 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use log::{info, warn, debug};
-use serde::{Serialize, Deserialize};
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 
 use prism_learning::manifest::{CalibrationManifest, ProteinTarget};
 use prism_learning::persistence::{
-    PersistenceConfig, PersistenceTracker, PocketPersistenceMetrics, PersistenceAssessment
+    PersistenceAssessment, PersistenceConfig, PersistenceTracker, PocketPersistenceMetrics,
 };
-use prism_physics::molecular_dynamics::{MolecularDynamicsEngine, MolecularDynamicsConfig};
+use prism_physics::molecular_dynamics::{MolecularDynamicsConfig, MolecularDynamicsEngine};
 
 /// Validation results for a single holdout target
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HoldoutResult {
     pub target_name: String,
     pub apo_pdb: String,
-    pub total_sasa_gain_proxy: f32,  // Displacement-based proxy
+    pub total_sasa_gain_proxy: f32, // Displacement-based proxy
     pub core_rmsd: f32,
     pub max_displacement: f32,
     pub mean_displacement: f32,
@@ -88,10 +88,10 @@ pub struct ValidationSummary {
     // Persistence summary
     pub druggable_targets: usize,
     pub mean_persistence_ratio: f32,
-    pub stable_count: usize,      // >70% persistence
-    pub moderate_count: usize,    // 50-70%
-    pub transient_count: usize,   // 30-50%
-    pub unstable_count: usize,    // <30%
+    pub stable_count: usize,    // >70% persistence
+    pub moderate_count: usize,  // 50-70%
+    pub transient_count: usize, // 30-50%
+    pub unstable_count: usize,  // <30%
 }
 
 /// Command line arguments for validation
@@ -172,18 +172,20 @@ fn main() -> Result<()> {
         .init();
 
     // Print validation header
-    println!("🔬 PRISM-Zero v{} Discovery Validation", prism_learning::PRISM_ZERO_VERSION);
+    println!(
+        "🔬 PRISM-Zero v{} Discovery Validation",
+        prism_learning::PRISM_ZERO_VERSION
+    );
     println!("🚫 Strict quarantine enforcement - No training data contamination");
     println!("{}", "=".repeat(70));
 
     // Create output directory
-    fs::create_dir_all(&args.output)
-        .context("Failed to create output directory")?;
+    fs::create_dir_all(&args.output).context("Failed to create output directory")?;
 
     // Load holdout manifest
     info!("📋 Loading holdout manifest from: {}", args.manifest);
-    let manifest = CalibrationManifest::load(&args.manifest)
-        .context("Failed to load holdout manifest")?;
+    let manifest =
+        CalibrationManifest::load(&args.manifest).context("Failed to load holdout manifest")?;
 
     info!("✅ Loaded {} holdout targets", manifest.targets.len());
 
@@ -209,15 +211,34 @@ fn main() -> Result<()> {
 
     for (idx, target) in manifest.targets.iter().enumerate() {
         println!("\n{}", "─".repeat(70));
-        info!("🧪 [{}/{}] Validating: {} ", idx + 1, manifest.targets.len(), target.name);
+        info!(
+            "🧪 [{}/{}] Validating: {} ",
+            idx + 1,
+            manifest.targets.len(),
+            target.name
+        );
 
         match validate_target(target, &physics, &args) {
             Ok(result) => {
-                let status = if result.validation_passed { "✅ PASS" } else { "❌ FAIL" };
-                let drug_icon = if result.is_druggable { "💊" } else { "⚠️" };
-                info!("{} | EF: {:.1}x | RMSD: {:.2}Å | Persistence: {:.0}% {} ({})",
-                      status, result.enrichment_factor, result.core_rmsd,
-                      result.persistence_ratio * 100.0, drug_icon, result.persistence_assessment);
+                let status = if result.validation_passed {
+                    "✅ PASS"
+                } else {
+                    "❌ FAIL"
+                };
+                let drug_icon = if result.is_druggable {
+                    "💊"
+                } else {
+                    "⚠️"
+                };
+                info!(
+                    "{} | EF: {:.1}x | RMSD: {:.2}Å | Persistence: {:.0}% {} ({})",
+                    status,
+                    result.enrichment_factor,
+                    result.core_rmsd,
+                    result.persistence_ratio * 100.0,
+                    drug_icon,
+                    result.persistence_assessment
+                );
                 holdout_results.push(result);
             }
             Err(e) => {
@@ -247,46 +268,91 @@ fn main() -> Result<()> {
     }
 
     // Calculate overall metrics
-    let passed = holdout_results.iter().filter(|r| r.validation_passed).count();
+    let passed = holdout_results
+        .iter()
+        .filter(|r| r.validation_passed)
+        .count();
     let total = holdout_results.len();
-    let success_rate = if total > 0 { passed as f32 / total as f32 } else { 0.0 };
+    let success_rate = if total > 0 {
+        passed as f32 / total as f32
+    } else {
+        0.0
+    };
 
     let mean_enrichment: f32 = if !holdout_results.is_empty() {
-        holdout_results.iter().map(|r| r.enrichment_factor).sum::<f32>() / total as f32
-    } else { 0.0 };
+        holdout_results
+            .iter()
+            .map(|r| r.enrichment_factor)
+            .sum::<f32>()
+            / total as f32
+    } else {
+        0.0
+    };
 
     let mean_sasa: f32 = if !holdout_results.is_empty() {
-        holdout_results.iter().map(|r| r.total_sasa_gain_proxy).sum::<f32>() / total as f32
-    } else { 0.0 };
+        holdout_results
+            .iter()
+            .map(|r| r.total_sasa_gain_proxy)
+            .sum::<f32>()
+            / total as f32
+    } else {
+        0.0
+    };
 
     let mean_rmsd: f32 = if !holdout_results.is_empty() {
         holdout_results.iter().map(|r| r.core_rmsd).sum::<f32>() / total as f32
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
-    let best_target = holdout_results.iter()
-        .max_by(|a, b| a.enrichment_factor.partial_cmp(&b.enrichment_factor).unwrap())
+    let best_target = holdout_results
+        .iter()
+        .max_by(|a, b| {
+            a.enrichment_factor
+                .partial_cmp(&b.enrichment_factor)
+                .unwrap()
+        })
         .map(|r| r.target_name.clone())
         .unwrap_or_default();
 
-    let worst_target = holdout_results.iter()
-        .min_by(|a, b| a.enrichment_factor.partial_cmp(&b.enrichment_factor).unwrap())
+    let worst_target = holdout_results
+        .iter()
+        .min_by(|a, b| {
+            a.enrichment_factor
+                .partial_cmp(&b.enrichment_factor)
+                .unwrap()
+        })
         .map(|r| r.target_name.clone())
         .unwrap_or_default();
 
     // Calculate persistence summary
     let druggable_targets = holdout_results.iter().filter(|r| r.is_druggable).count();
     let mean_persistence: f32 = if !holdout_results.is_empty() {
-        holdout_results.iter().map(|r| r.persistence_ratio).sum::<f32>() / total as f32
-    } else { 0.0 };
+        holdout_results
+            .iter()
+            .map(|r| r.persistence_ratio)
+            .sum::<f32>()
+            / total as f32
+    } else {
+        0.0
+    };
 
-    let stable_count = holdout_results.iter()
-        .filter(|r| r.persistence_assessment == "Stable").count();
-    let moderate_count = holdout_results.iter()
-        .filter(|r| r.persistence_assessment == "Moderate").count();
-    let transient_count = holdout_results.iter()
-        .filter(|r| r.persistence_assessment == "Transient").count();
-    let unstable_count = holdout_results.iter()
-        .filter(|r| r.persistence_assessment == "Unstable").count();
+    let stable_count = holdout_results
+        .iter()
+        .filter(|r| r.persistence_assessment == "Stable")
+        .count();
+    let moderate_count = holdout_results
+        .iter()
+        .filter(|r| r.persistence_assessment == "Moderate")
+        .count();
+    let transient_count = holdout_results
+        .iter()
+        .filter(|r| r.persistence_assessment == "Transient")
+        .count();
+    let unstable_count = holdout_results
+        .iter()
+        .filter(|r| r.persistence_assessment == "Unstable")
+        .count();
 
     // Create validation report
     let report = ValidationReport {
@@ -328,15 +394,29 @@ fn main() -> Result<()> {
     println!("Mean core RMSD: {:.2}Å", mean_rmsd);
     println!("\n💊 DRUGGABILITY ASSESSMENT");
     println!("{}", "─".repeat(70));
-    println!("Druggable targets: {}/{} ({:.1}%)", druggable_targets, total,
-             if total > 0 { druggable_targets as f32 / total as f32 * 100.0 } else { 0.0 });
+    println!(
+        "Druggable targets: {}/{} ({:.1}%)",
+        druggable_targets,
+        total,
+        if total > 0 {
+            druggable_targets as f32 / total as f32 * 100.0
+        } else {
+            0.0
+        }
+    );
     println!("Mean persistence: {:.1}%", mean_persistence * 100.0);
-    println!("Distribution: 🟢 Stable:{} | 🟡 Moderate:{} | 🟠 Transient:{} | 🔴 Unstable:{}",
-             stable_count, moderate_count, transient_count, unstable_count);
+    println!(
+        "Distribution: 🟢 Stable:{} | 🟡 Moderate:{} | 🟠 Transient:{} | 🔴 Unstable:{}",
+        stable_count, moderate_count, transient_count, unstable_count
+    );
     println!("\n📁 Report saved to: {}", report_path);
 
     // Success criteria: both enrichment AND persistence
-    let druggability_rate = if total > 0 { druggable_targets as f32 / total as f32 } else { 0.0 };
+    let druggability_rate = if total > 0 {
+        druggable_targets as f32 / total as f32
+    } else {
+        0.0
+    };
     if success_rate >= 0.67 && druggability_rate >= 0.5 {
         println!("\n🎉 VALIDATION PASSED - Ready for drug discovery!");
         Ok(())
@@ -408,25 +488,34 @@ fn validate_target(
     let steps_per_chunk = physics.steps / args.persistence_samples as u64;
     let total_chunks = args.persistence_samples;
 
-    info!("   ▶️  Running {} steps in {} chunks for persistence tracking...",
-          physics.steps, total_chunks);
+    info!(
+        "   ▶️  Running {} steps in {} chunks for persistence tracking...",
+        physics.steps, total_chunks
+    );
 
     // Run simulation in chunks, recording snapshots for persistence
     let mut final_atoms = initial_atoms.clone();
     for chunk_idx in 0..total_chunks {
         // Run one chunk of simulation
-        engine.run_nlnm_breathing(steps_per_chunk)
+        engine
+            .run_nlnm_breathing(steps_per_chunk)
             .with_context(|| format!("Simulation chunk {} failed", chunk_idx))?;
 
         // Get current state and record snapshot
-        final_atoms = engine.get_current_atoms()
+        final_atoms = engine
+            .get_current_atoms()
             .context("Failed to get atoms for persistence snapshot")?;
 
         tracker.record_snapshot(chunk_idx, final_atoms.clone());
 
         // Log progress every 5 chunks
         if (chunk_idx + 1) % 5 == 0 || chunk_idx == total_chunks - 1 {
-            debug!("   📊 Chunk {}/{}: {}", chunk_idx + 1, total_chunks, tracker.get_summary());
+            debug!(
+                "   📊 Chunk {}/{}: {}",
+                chunk_idx + 1,
+                total_chunks,
+                tracker.get_summary()
+            );
         }
     }
 
@@ -435,15 +524,18 @@ fn validate_target(
     let persistence_assessment_str = format!("{:?}", persistence_metrics.assessment);
     let is_druggable = persistence_metrics.assessment.is_druggable();
 
-    info!("   ⏱️  Persistence: {:.1}% ({}) | Events: {} | MaxOpen: {} frames",
-          persistence_metrics.persistence_ratio * 100.0,
-          persistence_assessment_str,
-          persistence_metrics.opening_events,
-          persistence_metrics.max_continuous_open);
+    info!(
+        "   ⏱️  Persistence: {:.1}% ({}) | Events: {} | MaxOpen: {} frames",
+        persistence_metrics.persistence_ratio * 100.0,
+        persistence_assessment_str,
+        persistence_metrics.opening_events,
+        persistence_metrics.max_continuous_open
+    );
 
     // A. Save Digital Twin (relaxed PDB)
     let pdb_path = format!("{}/{}_relaxed.pdb", target_dir, target.name);
-    engine.save_pdb(&pdb_path, &target.apo_pdb)
+    engine
+        .save_pdb(&pdb_path, &target.apo_pdb)
         .context("Failed to save relaxed PDB")?;
     info!("   💾 Saved: {}", pdb_path);
 
@@ -544,8 +636,16 @@ fn calculate_residue_scores(
         }
     }
 
-    let mean_disp = if !initial.is_empty() { total_disp / initial.len() as f32 } else { 0.0 };
-    let core_rmsd = if core_count > 0 { (core_sum_sq / core_count as f32).sqrt() } else { 0.0 };
+    let mean_disp = if !initial.is_empty() {
+        total_disp / initial.len() as f32
+    } else {
+        0.0
+    };
+    let core_rmsd = if core_count > 0 {
+        (core_sum_sq / core_count as f32).sqrt()
+    } else {
+        0.0
+    };
 
     // Sort residues by displacement (highest first)
     let mut sorted_residues: Vec<_> = residue_max_disp.into_iter().collect();
@@ -555,13 +655,11 @@ fn calculate_residue_scores(
     let scores: Vec<ResidueScore> = sorted_residues
         .iter()
         .enumerate()
-        .map(|(rank, (res_id, disp))| {
-            ResidueScore {
-                residue_id: *res_id,
-                displacement: *disp,
-                rank: rank + 1,
-                is_target: target_residues.contains(&(*res_id as usize)),
-            }
+        .map(|(rank, (res_id, disp))| ResidueScore {
+            residue_id: *res_id,
+            displacement: *disp,
+            rank: rank + 1,
+            is_target: target_residues.contains(&(*res_id as usize)),
         })
         .collect();
 
@@ -582,7 +680,11 @@ fn save_residue_csv(scores: &[ResidueScore], path: &str) -> Result<()> {
 
     for score in scores {
         let label = if score.is_target { "TARGET" } else { "-" };
-        writeln!(file, "{},{},{:.3},{}", score.rank, score.residue_id, score.displacement, label)?;
+        writeln!(
+            file,
+            "{},{},{:.3},{}",
+            score.rank, score.residue_id, score.displacement, label
+        )?;
     }
 
     Ok(())
@@ -595,11 +697,16 @@ fn save_residue_csv_with_persistence(
     path: &str,
 ) -> Result<()> {
     let mut file = fs::File::create(path)?;
-    writeln!(file, "Rank,Residue,Displacement_A,IsTarget,ExposureFraction,MaxDisplacement,MeanDisplacement")?;
+    writeln!(
+        file,
+        "Rank,Residue,Displacement_A,IsTarget,ExposureFraction,MaxDisplacement,MeanDisplacement"
+    )?;
 
     // Build a map of residue histories for quick lookup
     let residue_map: HashMap<u32, &prism_learning::persistence::ResidueExposureHistory> =
-        persistence.residue_histories.iter()
+        persistence
+            .residue_histories
+            .iter()
             .map(|h| (h.residue_id, h))
             .collect();
 
@@ -608,7 +715,9 @@ fn save_residue_csv_with_persistence(
 
         // Look up persistence data for this residue (if it's a target)
         if let Some(history) = residue_map.get(&score.residue_id) {
-            writeln!(file, "{},{},{:.3},{},{:.3},{:.3},{:.3}",
+            writeln!(
+                file,
+                "{},{},{:.3},{},{:.3},{:.3},{:.3}",
                 score.rank,
                 score.residue_id,
                 score.displacement,
@@ -619,11 +728,10 @@ fn save_residue_csv_with_persistence(
             )?;
         } else {
             // Non-target residues don't have persistence tracking
-            writeln!(file, "{},{},{:.3},{},-,-,-",
-                score.rank,
-                score.residue_id,
-                score.displacement,
-                label
+            writeln!(
+                file,
+                "{},{},{:.3},{},-,-,-",
+                score.rank, score.residue_id, score.displacement, label
             )?;
         }
     }
@@ -646,10 +754,7 @@ fn calculate_enrichment_factor(
     let total_targets = target_residues.len();
 
     // Count targets in top N
-    let targets_in_top_n = scores.iter()
-        .take(top_n)
-        .filter(|s| s.is_target)
-        .count();
+    let targets_in_top_n = scores.iter().take(top_n).filter(|s| s.is_target).count();
 
     // Random expectation
     let random_expectation = (total_targets as f32 / total_residues as f32) * top_n as f32;

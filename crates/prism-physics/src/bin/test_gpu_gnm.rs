@@ -9,9 +9,7 @@
 use prism_physics::gnm_gpu::GpuGnm;
 
 fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     println!("═══════════════════════════════════════════════════════════════");
     println!("              GPU GNM Integration Test                          ");
@@ -19,9 +17,7 @@ fn main() {
 
     // Test 1: Small protein (CPU path)
     println!("\n[Test 1] Small protein (20 residues) - CPU path");
-    let small_positions: Vec<[f32; 3]> = (0..20)
-        .map(|i| [i as f32 * 3.8, 0.0, 0.0])
-        .collect();
+    let small_positions: Vec<[f32; 3]> = (0..20).map(|i| [i as f32 * 3.8, 0.0, 0.0]).collect();
 
     let mut gnm = GpuGnm::default();
     let result = gnm.compute_rmsf(&small_positions);
@@ -29,9 +25,15 @@ fn main() {
     println!("  Residues: {}", result.n_residues);
     println!("  GPU used: {}", result.gpu_used);
     println!("  Time: {} ms", result.computation_time_ms);
-    println!("  RMSF range: [{:.4}, {:.4}]",
+    println!(
+        "  RMSF range: [{:.4}, {:.4}]",
         result.rmsf.iter().cloned().fold(f64::INFINITY, f64::min),
-        result.rmsf.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+        result
+            .rmsf
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+    );
 
     assert!(!result.gpu_used, "Small protein should use CPU");
     println!("  ✓ Small protein test PASSED");
@@ -53,16 +55,25 @@ fn main() {
     println!("  GPU used: {} (no GPU init yet)", result.gpu_used);
     println!("  Eigenvalues: {}", result.eigenvalues.len());
     println!("  Time: {} ms", result.computation_time_ms);
-    println!("  RMSF range: [{:.4}, {:.4}]",
+    println!(
+        "  RMSF range: [{:.4}, {:.4}]",
         result.rmsf.iter().cloned().fold(f64::INFINITY, f64::min),
-        result.rmsf.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+        result
+            .rmsf
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+    );
 
     // Verify RMSF makes physical sense (termini more flexible)
     let terminal_avg = (result.rmsf[0] + result.rmsf[result.n_residues - 1]) / 2.0;
     let middle_avg = result.rmsf[result.n_residues / 2];
     println!("  Terminal avg RMSF: {:.4}", terminal_avg);
     println!("  Middle avg RMSF: {:.4}", middle_avg);
-    assert!(terminal_avg > middle_avg * 0.5, "Termini should be more flexible");
+    assert!(
+        terminal_avg > middle_avg * 0.5,
+        "Termini should be more flexible"
+    );
     println!("  ✓ Medium protein test PASSED");
 
     // Test 3: Large protein with GPU (if available)
@@ -104,9 +115,15 @@ fn main() {
     println!("  Eigenvalues computed: {}", result.eigenvalues.len());
     println!("  Internal time: {} ms", result.computation_time_ms);
     println!("  Wall clock time: {:?}", elapsed);
-    println!("  RMSF range: [{:.4}, {:.4}]",
+    println!(
+        "  RMSF range: [{:.4}, {:.4}]",
         result.rmsf.iter().cloned().fold(f64::INFINITY, f64::min),
-        result.rmsf.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+        result
+            .rmsf
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+    );
 
     // Verify results
     assert_eq!(result.n_residues, 800);

@@ -14,13 +14,13 @@
 //! - Clinical-grade provenance metadata
 //! - Zero-copy memory mapping for <100μs loading
 
-use std::{env, fs, path::Path};
 use blake3;
 use prism_io::{
-    sovereign_types::{Atom, Bond, SecondaryStructure},
     holographic::HolographicBinaryFormat,
+    sovereign_types::{Atom, Bond, SecondaryStructure},
     validation::DataIntegrityValidator,
 };
+use std::{env, fs, path::Path};
 
 /// PDB parser focused on essential records for vaccine research
 struct PdbParser {
@@ -63,8 +63,12 @@ impl PdbParser {
             }
         }
 
-        println!("✅ Parsed {} atoms, {} bonds, {} secondary structures",
-                 self.atoms.len(), self.bonds.len(), self.secondary_structure.len());
+        println!(
+            "✅ Parsed {} atoms, {} bonds, {} secondary structures",
+            self.atoms.len(),
+            self.bonds.len(),
+            self.secondary_structure.len()
+        );
 
         Ok(())
     }
@@ -74,7 +78,7 @@ impl PdbParser {
         &mut self,
         line: &str,
         current_chain: &mut char,
-        residue_counter: &mut u16
+        residue_counter: &mut u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if line.len() < 66 {
             return Ok(()); // Skip malformed lines
@@ -86,7 +90,8 @@ impl PdbParser {
         let z: f32 = line[46..54].trim().parse().unwrap_or(0.0);
 
         // Extract element (columns 77-78)
-        let element = line.get(76..78)
+        let element = line
+            .get(76..78)
             .unwrap_or("  ")
             .trim()
             .chars()
@@ -101,7 +106,10 @@ impl PdbParser {
         }
 
         // Extract residue ID (columns 23-26)
-        let residue_id = line[22..26].trim().parse::<u16>().unwrap_or(*residue_counter);
+        let residue_id = line[22..26]
+            .trim()
+            .parse::<u16>()
+            .unwrap_or(*residue_counter);
         *residue_counter = residue_id;
 
         // Extract B-factor (columns 61-66) - Critical for flexibility analysis
@@ -123,7 +131,7 @@ impl PdbParser {
             element: atomic_number,
             residue_id,
             atom_type: 1, // Standard atom type
-            charge: 0.0, // Will be calculated later if needed
+            charge: 0.0,  // Will be calculated later if needed
             radius: self.get_vdw_radius(atomic_number),
             _reserved: [0; 4],
         };
@@ -152,8 +160,8 @@ impl PdbParser {
                         let bond = Bond {
                             atom1: atom1.saturating_sub(1), // PDB is 1-indexed
                             atom2: atom2.saturating_sub(1), // Convert to 0-indexed
-                            order: 1, // Single bond default
-                            bond_type: 1, // Covalent bond
+                            order: 1,                       // Single bond default
+                            bond_type: 1,                   // Covalent bond
                             _reserved: [0; 1],
                         };
                         self.bonds.push(bond);
@@ -175,7 +183,8 @@ impl PdbParser {
 
         // Extract residue range
         let start_res: u32 = line[21..25].trim().parse().unwrap_or(0);
-        let end_res: u32 = line.get(33..37)
+        let end_res: u32 = line
+            .get(33..37)
             .unwrap_or("0")
             .trim()
             .parse()
@@ -218,8 +227,12 @@ impl PdbParser {
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as u32;
 
-        println!("📊 Creating .ptb format with {} atoms, {} bonds, {} secondary structures",
-                 self.atoms.len(), self.bonds.len(), self.secondary_structure.len());
+        println!(
+            "📊 Creating .ptb format with {} atoms, {} bonds, {} secondary structures",
+            self.atoms.len(),
+            self.bonds.len(),
+            self.secondary_structure.len()
+        );
 
         // Create holographic binary format
         let ptb_format = HolographicBinaryFormat::new()
@@ -247,7 +260,10 @@ impl PdbParser {
 
         if validation_result.is_valid {
             println!("✅ Zero-Mock Protocol: Data integrity verified");
-            println!("📏 Validated {} bytes of biological data", validation_result.data_size);
+            println!(
+                "📏 Validated {} bytes of biological data",
+                validation_result.data_size
+            );
         } else {
             return Err("❌ Zero-Mock violation: Data failed integrity validation".into());
         }

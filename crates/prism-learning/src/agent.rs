@@ -14,9 +14,9 @@
 //! - **VRAM efficient**: 20 output neurons vs 625
 
 use anyhow::{Context, Result};
-use tch::{nn, nn::OptimizerConfig, nn::Module, Device, Tensor, Kind};
+use log::{debug, info};
 use std::path::Path;
-use log::{info, debug};
+use tch::{nn, nn::Module, nn::OptimizerConfig, Device, Kind, Tensor};
 
 /// Number of bins per physics parameter
 pub const BINS_PER_PARAM: i64 = 5;
@@ -62,7 +62,12 @@ impl FactorizedAction {
 
     /// Convert to array for tensor operations
     pub fn to_array(&self) -> [usize; 4] {
-        [self.temp_idx, self.friction_idx, self.spring_idx, self.bias_idx]
+        [
+            self.temp_idx,
+            self.friction_idx,
+            self.spring_idx,
+            self.bias_idx,
+        ]
     }
 }
 
@@ -140,7 +145,12 @@ impl DQNAgent {
     fn build_network(root: &nn::Path, input_dim: i64) -> (nn::Sequential, Vec<nn::Linear>) {
         // Shared encoder
         let encoder = nn::seq()
-            .add(nn::linear(root / "enc_l1", input_dim, 128, Default::default()))
+            .add(nn::linear(
+                root / "enc_l1",
+                input_dim,
+                128,
+                Default::default(),
+            ))
             .add_fn(|xs| xs.relu())
             .add(nn::linear(root / "enc_l2", 128, 64, Default::default()))
             .add_fn(|xs| xs.relu());
@@ -163,7 +173,8 @@ impl DQNAgent {
     /// Save model weights and metadata
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
-        self.vs.save(path)
+        self.vs
+            .save(path)
             .with_context(|| format!("Failed to save model to {:?}", path))?;
 
         let meta_path = path.with_extension("meta.json");
@@ -180,14 +191,18 @@ impl DQNAgent {
         std::fs::write(&meta_path, serde_json::to_string_pretty(&metadata)?)
             .with_context(|| format!("Failed to save metadata to {:?}", meta_path))?;
 
-        info!("💾 Model saved to {:?} (ε={:.4}, steps={})", path, self.epsilon, self.step_count);
+        info!(
+            "💾 Model saved to {:?} (ε={:.4}, steps={})",
+            path, self.epsilon, self.step_count
+        );
         Ok(())
     }
 
     /// Load model weights and metadata
     pub fn load<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let path = path.as_ref();
-        self.vs.load(path)
+        self.vs
+            .load(path)
             .with_context(|| format!("Failed to load model from {:?}", path))?;
 
         let meta_path = path.with_extension("meta.json");
@@ -204,7 +219,10 @@ impl DQNAgent {
         }
 
         self.update_target_network()?;
-        info!("📂 Model loaded from {:?} (ε={:.4}, steps={})", path, self.epsilon, self.step_count);
+        info!(
+            "📂 Model loaded from {:?} (ε={:.4}, steps={})",
+            path, self.epsilon, self.step_count
+        );
         Ok(())
     }
 
@@ -244,10 +262,22 @@ impl DQNAgent {
         tch::no_grad(|| {
             let features = self.encoder.forward(&state_tensor);
 
-            let temp_idx = self.heads[0].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
-            let fric_idx = self.heads[1].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
-            let spring_idx = self.heads[2].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
-            let bias_idx = self.heads[3].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
+            let temp_idx = self.heads[0]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
+            let fric_idx = self.heads[1]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
+            let spring_idx = self.heads[2]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
+            let bias_idx = self.heads[3]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
 
             FactorizedAction::new(temp_idx, fric_idx, spring_idx, bias_idx)
         })
@@ -265,10 +295,22 @@ impl DQNAgent {
 
             let features = self.encoder.forward(&state_tensor);
 
-            let temp_idx = self.heads[0].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
-            let fric_idx = self.heads[1].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
-            let spring_idx = self.heads[2].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
-            let bias_idx = self.heads[3].forward(&features).argmax(1, false).int64_value(&[0]) as usize;
+            let temp_idx = self.heads[0]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
+            let fric_idx = self.heads[1]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
+            let spring_idx = self.heads[2]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
+            let bias_idx = self.heads[3]
+                .forward(&features)
+                .argmax(1, false)
+                .int64_value(&[0]) as usize;
 
             FactorizedAction::new(temp_idx, fric_idx, spring_idx, bias_idx)
         });
@@ -290,7 +332,8 @@ impl DQNAgent {
 
         // Prepare batch data
         let states: Vec<f32> = batch.iter().flat_map(|x| x.0.clone()).collect();
-        let actions: Vec<FactorizedAction> = batch.iter()
+        let actions: Vec<FactorizedAction> = batch
+            .iter()
             .map(|x| FactorizedAction::from_flat(x.1))
             .collect();
         let rewards: Vec<f32> = batch.iter().map(|x| x.2).collect();
@@ -319,28 +362,60 @@ impl DQNAgent {
         let spring_actions: Vec<i64> = actions.iter().map(|a| a.spring_idx as i64).collect();
         let bias_actions: Vec<i64> = actions.iter().map(|a| a.bias_idx as i64).collect();
 
-        let b_temp_actions = Tensor::from_slice(&temp_actions).to(self.device).unsqueeze(1);
-        let b_fric_actions = Tensor::from_slice(&fric_actions).to(self.device).unsqueeze(1);
-        let b_spring_actions = Tensor::from_slice(&spring_actions).to(self.device).unsqueeze(1);
-        let b_bias_actions = Tensor::from_slice(&bias_actions).to(self.device).unsqueeze(1);
+        let b_temp_actions = Tensor::from_slice(&temp_actions)
+            .to(self.device)
+            .unsqueeze(1);
+        let b_fric_actions = Tensor::from_slice(&fric_actions)
+            .to(self.device)
+            .unsqueeze(1);
+        let b_spring_actions = Tensor::from_slice(&spring_actions)
+            .to(self.device)
+            .unsqueeze(1);
+        let b_bias_actions = Tensor::from_slice(&bias_actions)
+            .to(self.device)
+            .unsqueeze(1);
 
         // Forward pass through encoder
         let features = self.encoder.forward(&b_states);
 
         // Q-values for each head (selected actions)
-        let q_temp = self.heads[0].forward(&features).gather(1, &b_temp_actions, false).squeeze_dim(1);
-        let q_fric = self.heads[1].forward(&features).gather(1, &b_fric_actions, false).squeeze_dim(1);
-        let q_spring = self.heads[2].forward(&features).gather(1, &b_spring_actions, false).squeeze_dim(1);
-        let q_bias = self.heads[3].forward(&features).gather(1, &b_bias_actions, false).squeeze_dim(1);
+        let q_temp = self.heads[0]
+            .forward(&features)
+            .gather(1, &b_temp_actions, false)
+            .squeeze_dim(1);
+        let q_fric = self.heads[1]
+            .forward(&features)
+            .gather(1, &b_fric_actions, false)
+            .squeeze_dim(1);
+        let q_spring = self.heads[2]
+            .forward(&features)
+            .gather(1, &b_spring_actions, false)
+            .squeeze_dim(1);
+        let q_bias = self.heads[3]
+            .forward(&features)
+            .gather(1, &b_bias_actions, false)
+            .squeeze_dim(1);
 
         // Target Q-values (max over each head independently)
         let (target_q_temp, target_q_fric, target_q_spring, target_q_bias) = tch::no_grad(|| {
             let next_features = self.target_encoder.forward(&b_next_states);
 
-            let t_temp = self.target_heads[0].forward(&next_features).max_dim(1, false).0;
-            let t_fric = self.target_heads[1].forward(&next_features).max_dim(1, false).0;
-            let t_spring = self.target_heads[2].forward(&next_features).max_dim(1, false).0;
-            let t_bias = self.target_heads[3].forward(&next_features).max_dim(1, false).0;
+            let t_temp = self.target_heads[0]
+                .forward(&next_features)
+                .max_dim(1, false)
+                .0;
+            let t_fric = self.target_heads[1]
+                .forward(&next_features)
+                .max_dim(1, false)
+                .0;
+            let t_spring = self.target_heads[2]
+                .forward(&next_features)
+                .max_dim(1, false)
+                .0;
+            let t_bias = self.target_heads[3]
+                .forward(&next_features)
+                .max_dim(1, false)
+                .0;
 
             (t_temp, t_fric, t_spring, t_bias)
         });

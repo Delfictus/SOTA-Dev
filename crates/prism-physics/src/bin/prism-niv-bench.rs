@@ -14,14 +14,12 @@
 //! - Feature-gated telemetry recording (HOT LOOP PROTOCOL)
 //! - Graceful error handling with scientific context
 
-use prism_physics::molecular_dynamics::{
-    MolecularDynamicsConfig, MolecularDynamicsEngine,
-};
 use prism_core::PrismError;
-use prism_io::{AsyncPinnedStreamer, HolographicBinaryFormat};
 use prism_gpu::memory::init_global_vram_guard;
-use std::time::Instant;
+use prism_io::{AsyncPinnedStreamer, HolographicBinaryFormat};
+use prism_physics::molecular_dynamics::{MolecularDynamicsConfig, MolecularDynamicsEngine};
 use std::sync::Arc;
+use std::time::Instant;
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::CudaContext;
@@ -59,10 +57,12 @@ async fn main() -> Result<(), PrismError> {
         let vram_guard = prism_gpu::memory::global_vram_guard();
 
         // This will now succeed because the context is real
-        let vram_info = vram_guard.query_vram()
+        let vram_info = vram_guard
+            .query_vram()
             .map_err(|e| PrismError::Internal(format!("VRAM Query Failed: {:?}", e)))?;
 
-        log::info!("🛡️ VRAM Check: {} MB Free / {} MB Total",
+        log::info!(
+            "🛡️ VRAM Check: {} MB Free / {} MB Total",
             vram_info.free_bytes / 1024 / 1024,
             vram_info.total_bytes / 1024 / 1024
         );
@@ -71,7 +71,8 @@ async fn main() -> Result<(), PrismError> {
         let physics_memory_required = 1024 * 1024 * 1024; // 1GB
         let workspace_memory_required = 512 * 1024 * 1024; // 512MB
 
-        vram_guard.verify_physics_engine_startup(physics_memory_required, workspace_memory_required)
+        vram_guard
+            .verify_physics_engine_startup(physics_memory_required, workspace_memory_required)
             .map_err(|e| PrismError::Internal(format!("VRAM Safety Check Failed: {:?}", e)))?;
 
         log::info!("✅ VRAM Guard: Memory allocation approved");
@@ -88,25 +89,34 @@ async fn main() -> Result<(), PrismError> {
     log::info!("📂 Streaming Sovereign Data via io_uring...");
 
     // Initialize async pinned streamer with GPU integration
-    let streamer = AsyncPinnedStreamer::new().await
+    let streamer = AsyncPinnedStreamer::new()
+        .await
         .map_err(|e| PrismError::Internal(format!("Failed to initialize streamer: {:?}", e)))?;
 
     // Load verified structure using sovereign data pipeline
-    let sovereign_buffer = streamer.load_verified_structure(NIV_PTB_PATH).await
+    let sovereign_buffer = streamer
+        .load_verified_structure(NIV_PTB_PATH)
+        .await
         .map_err(|e| PrismError::Internal(format!("Failed to load structure: {:?}", e)))?;
 
-    log::info!("✅ Data Streamed: {} bytes (Pinned Memory)", sovereign_buffer.len());
+    log::info!(
+        "✅ Data Streamed: {} bytes (Pinned Memory)",
+        sovereign_buffer.len()
+    );
 
     // 4. Configure & Run - Molecular Dynamics Engine
     let md_config = configure_niv_simulation();
-    log::info!("⚙️ MD Configuration: Temperature={}K, dt={}fs, GPU={}",
-               md_config.temperature, md_config.dt, md_config.use_gpu);
+    log::info!(
+        "⚙️ MD Configuration: Temperature={}K, dt={}fs, GPU={}",
+        md_config.temperature,
+        md_config.dt,
+        md_config.use_gpu
+    );
 
     // Initialize molecular dynamics engine with sovereign buffer
     // Convert SovereignBuffer to raw bytes for current MD engine API
-    let sovereign_data = unsafe {
-        std::slice::from_raw_parts(sovereign_buffer.as_ptr(), sovereign_buffer.len())
-    };
+    let sovereign_data =
+        unsafe { std::slice::from_raw_parts(sovereign_buffer.as_ptr(), sovereign_buffer.len()) };
     let mut md_engine = MolecularDynamicsEngine::from_sovereign_buffer(md_config, sovereign_data)?;
 
     // Set CUDA context for GPU operations
@@ -119,13 +129,19 @@ async fn main() -> Result<(), PrismError> {
     log::info!("🚀 Molecular dynamics engine initialized");
 
     // Execute 1,000,000 step NLNM deep breathing simulation (The Deep Cryptic Run)
-    log::info!("🌬️ Beginning {} step NLNM deep cryptic analysis...", BREATHING_STEPS);
+    log::info!(
+        "🌬️ Beginning {} step NLNM deep cryptic analysis...",
+        BREATHING_STEPS
+    );
     let start_time = Instant::now();
 
     let phase_outcome = md_engine.run_nlnm_breathing(BREATHING_STEPS)?;
 
     let total_runtime = start_time.elapsed();
-    log::info!("🏁 Breathing simulation complete in {:.2}s", total_runtime.as_secs_f32());
+    log::info!(
+        "🏁 Breathing simulation complete in {:.2}s",
+        total_runtime.as_secs_f32()
+    );
 
     // Extract and display scientific results
     display_scientific_results(&md_engine, &phase_outcome, total_runtime)?;
@@ -141,15 +157,22 @@ async fn main() -> Result<(), PrismError> {
 
     // Get final atom positions from molecular dynamics engine
     let final_statistics = md_engine.get_statistics();
-    log::info!("📊 Final simulation state: {} steps completed, energy: {:.3} kcal/mol",
-               final_statistics.current_step, final_statistics.current_energy);
+    log::info!(
+        "📊 Final simulation state: {} steps completed, energy: {:.3} kcal/mol",
+        final_statistics.current_step,
+        final_statistics.current_energy
+    );
 
     // Extract final conformational data from GPU memory (REAL DTOH COPY)
     log::info!("📦 Extracting final atom coordinates from simulation...");
-    let atoms = md_engine.get_current_atoms()
-        .map_err(|e| PrismError::Internal(format!("Failed to extract atoms from simulation: {:?}", e)))?;
+    let atoms = md_engine.get_current_atoms().map_err(|e| {
+        PrismError::Internal(format!("Failed to extract atoms from simulation: {:?}", e))
+    })?;
 
-    log::info!("✅ Extracted {} atoms with real coordinates from simulation", atoms.len());
+    log::info!(
+        "✅ Extracted {} atoms with real coordinates from simulation",
+        atoms.len()
+    );
 
     // Create holographic binary format with final conformation
     let export_hash = [42u8; 32]; // Placeholder hash for export
@@ -159,7 +182,8 @@ async fn main() -> Result<(), PrismError> {
 
     // Save final conformation to nipah_relaxed.ptb
     let output_path = "data/processed/nipah_relaxed.ptb";
-    trajectory_export.write_to_file(output_path)
+    trajectory_export
+        .write_to_file(output_path)
         .map_err(|e| PrismError::Internal(format!("Failed to export trajectory: {:?}", e)))?;
 
     log::info!("💾 Trajectory Saved: {}", output_path);
@@ -182,15 +206,14 @@ async fn main() -> Result<(), PrismError> {
     Ok(())
 }
 
-
 /// Configure molecular dynamics for Nipah Virus analysis
 fn configure_niv_simulation() -> MolecularDynamicsConfig {
     MolecularDynamicsConfig {
         // Scientific parameters for NiV G glycoprotein
         max_steps: BREATHING_STEPS,
-        temperature: 1.5,  // Physiological temperature (37°C)
-        dt: 1.0,              // 1 femtosecond timestep for accuracy
-        friction: 0.1,        // Standard solvent friction
+        temperature: 1.5, // Physiological temperature (37°C)
+        dt: 1.0,          // 1 femtosecond timestep for accuracy
+        friction: 0.1,    // Standard solvent friction
 
         // GPU memory allocation (conservative for stability)
         use_gpu: true,
@@ -212,22 +235,39 @@ fn display_scientific_results(
 
     // Simulation Statistics
     log::info!("📊 Simulation Statistics:");
-    log::info!("   Steps Completed: {}/{}", stats.current_step, stats.total_steps);
-    log::info!("   Runtime: {:.2}s ({:.1} steps/sec)",
-               runtime.as_secs_f32(),
-               stats.current_step as f32 / runtime.as_secs_f32());
-    log::info!("   Convergence: {}", if stats.converged { "✅ CONVERGED" } else { "❌ NOT CONVERGED" });
+    log::info!(
+        "   Steps Completed: {}/{}",
+        stats.current_step,
+        stats.total_steps
+    );
+    log::info!(
+        "   Runtime: {:.2}s ({:.1} steps/sec)",
+        runtime.as_secs_f32(),
+        stats.current_step as f32 / runtime.as_secs_f32()
+    );
+    log::info!(
+        "   Convergence: {}",
+        if stats.converged {
+            "✅ CONVERGED"
+        } else {
+            "❌ NOT CONVERGED"
+        }
+    );
     log::info!("");
 
     // Physical Properties
     log::info!("🌡️  Physical Properties:");
     log::info!("   Final Energy: {:.3} kcal/mol", stats.current_energy);
-    log::info!("   Temperature: {:.2}K ({:.1}°C)",
-               stats.current_temperature,
-               stats.current_temperature - 273.15);
-    log::info!("   Gradient Norm: {:.6} (threshold: {:.6})",
-               stats.gradient_norm,
-               0.0005); // From config
+    log::info!(
+        "   Temperature: {:.2}K ({:.1}°C)",
+        stats.current_temperature,
+        stats.current_temperature - 273.15
+    );
+    log::info!(
+        "   Gradient Norm: {:.6} (threshold: {:.6})",
+        stats.gradient_norm,
+        0.0005
+    ); // From config
     log::info!("");
 
     // Breathing Motion Analysis
@@ -238,8 +278,10 @@ fn display_scientific_results(
         log::info!("   ✅ Structural flexibility quantified");
     } else {
         log::info!("   ⚠️  Partial convergence - breathing modes identified");
-        log::info!("   📈 Gradient reduction: {:.1}% complete",
-                   (1.0 - stats.gradient_norm / 1.0) * 100.0);
+        log::info!(
+            "   📈 Gradient reduction: {:.1}% complete",
+            (1.0 - stats.gradient_norm / 1.0) * 100.0
+        );
     }
     log::info!("");
 

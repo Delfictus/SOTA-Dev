@@ -75,10 +75,7 @@ impl crate::context::OptixContext {
             )?;
         }
 
-        log::info!(
-            "Created OptiX context (validation: {})",
-            validation_enabled
-        );
+        log::info!("Created OptiX context (validation: {})", validation_enabled);
 
         Ok(Self {
             handle,

@@ -46,7 +46,7 @@ pub struct BvhBuildFlags {
 impl Default for BvhBuildFlags {
     fn default() -> Self {
         Self {
-            allow_update: true, // Enable refit for dynamic atoms
+            allow_update: true,      // Enable refit for dynamic atoms
             allow_compaction: false, // Disable for speed
             prefer_fast_trace: true, // Optimize for query performance
             allow_random_vertex_access: false,
@@ -364,11 +364,7 @@ impl AccelStructure {
     ///
     /// The caller must ensure the buffers point to the same number of atoms
     /// as the original build.
-    pub fn refit(
-        &mut self,
-        positions_gpu: CUdeviceptr,
-        radii_gpu: CUdeviceptr,
-    ) -> Result<()> {
+    pub fn refit(&mut self, positions_gpu: CUdeviceptr, radii_gpu: CUdeviceptr) -> Result<()> {
         if !self.can_update {
             return Err(OptixError::InvalidOperation(
                 "BVH was not built with allow_update flag".to_string(),

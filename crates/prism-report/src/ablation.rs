@@ -198,11 +198,7 @@ impl AblationResults {
         }
     }
 
-    fn generate_interpretation(
-        deltas: &AblationDeltas,
-        cryo_sig: bool,
-        uv_sig: bool,
-    ) -> String {
+    fn generate_interpretation(deltas: &AblationDeltas, cryo_sig: bool, uv_sig: bool) -> String {
         let mut parts = Vec::new();
 
         if cryo_sig {
@@ -294,7 +290,8 @@ impl From<&CryoProbeResults> for AblationRunResult {
 
         // Frames analyzed from temperature protocol
         let frames_analyzed = results.total_steps.max(1) as usize;
-        let spikes_per_1k_frames = (results.total_spikes as f64) / (frames_analyzed as f64 / 1000.0);
+        let spikes_per_1k_frames =
+            (results.total_spikes as f64) / (frames_analyzed as f64 / 1000.0);
 
         AblationRunResult {
             mode,
@@ -319,7 +316,12 @@ impl From<&CryoProbeResults> for AblationRunResult {
 mod tests {
     use super::*;
 
-    fn make_run(mode: AblationMode, spikes: usize, n_sites: usize, frames: usize) -> AblationRunResult {
+    fn make_run(
+        mode: AblationMode,
+        spikes: usize,
+        n_sites: usize,
+        frames: usize,
+    ) -> AblationRunResult {
         let spikes_per_1k_frames = (spikes as f64) / (frames as f64 / 1000.0);
         AblationRunResult {
             mode,

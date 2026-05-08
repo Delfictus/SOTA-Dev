@@ -92,11 +92,11 @@ impl Theme {
     // Temperature Gradient (for parallel tempering)
     // ══════════════════════════════════════════════════════════════════════
 
-    pub const TEMP_COLD: Color = Color::Rgb(59, 130, 246);   // Blue
-    pub const TEMP_COOL: Color = Color::Rgb(34, 197, 94);    // Green
-    pub const TEMP_WARM: Color = Color::Rgb(250, 204, 21);   // Yellow
-    pub const TEMP_HOT: Color = Color::Rgb(249, 115, 22);    // Orange
-    pub const TEMP_FIRE: Color = Color::Rgb(239, 68, 68);    // Red
+    pub const TEMP_COLD: Color = Color::Rgb(59, 130, 246); // Blue
+    pub const TEMP_COOL: Color = Color::Rgb(34, 197, 94); // Green
+    pub const TEMP_WARM: Color = Color::Rgb(250, 204, 21); // Yellow
+    pub const TEMP_HOT: Color = Color::Rgb(249, 115, 22); // Orange
+    pub const TEMP_FIRE: Color = Color::Rgb(239, 68, 68); // Red
     pub const TEMP_PLASMA: Color = Color::Rgb(168, 85, 247); // Purple
 
     // ══════════════════════════════════════════════════════════════════════
@@ -122,11 +122,11 @@ impl Theme {
     // Pharmacophore Features
     // ══════════════════════════════════════════════════════════════════════
 
-    pub const PHARM_DONOR: Color = Color::Rgb(255, 99, 71);    // Red - H-bond donor
+    pub const PHARM_DONOR: Color = Color::Rgb(255, 99, 71); // Red - H-bond donor
     pub const PHARM_ACCEPTOR: Color = Color::Rgb(30, 144, 255); // Blue - H-bond acceptor
     pub const PHARM_HYDROPHOBIC: Color = Color::Rgb(255, 215, 0); // Yellow
-    pub const PHARM_AROMATIC: Color = Color::Rgb(186, 85, 211);  // Purple
-    pub const PHARM_METAL: Color = Color::Rgb(192, 192, 192);    // Silver
+    pub const PHARM_AROMATIC: Color = Color::Rgb(186, 85, 211); // Purple
+    pub const PHARM_METAL: Color = Color::Rgb(192, 192, 192); // Silver
 
     // ══════════════════════════════════════════════════════════════════════
     // GPU Status

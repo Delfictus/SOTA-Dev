@@ -134,11 +134,14 @@ pub fn evaluate_simulation_weighted(
     breakdown.clash_penalty = clash_count as f32 * weights.clash_penalty;
 
     // Target bonus (big reward for achieving the goal)
-    breakdown.target_bonus = if target_achieved { weights.target_bonus } else { 0.0 };
+    breakdown.target_bonus = if target_achieved {
+        weights.target_bonus
+    } else {
+        0.0
+    };
 
     // Final reward calculation
-    let intrinsic_reward = breakdown.exposure_component
-        + breakdown.target_bonus
+    let intrinsic_reward = breakdown.exposure_component + breakdown.target_bonus
         - breakdown.stability_penalty
         - breakdown.clash_penalty;
 
@@ -156,15 +159,15 @@ pub fn evaluate_simulation_weighted(
 pub fn evaluate_simulation(
     initial: &SimulationBuffers,
     final_state: &SimulationBuffers,
-    target_residues: &[usize]
+    target_residues: &[usize],
 ) -> Result<EvaluationResult> {
     evaluate_simulation_weighted(
         initial,
         final_state,
         target_residues,
-        &[],  // No explicit core residues, will use non-target atoms
+        &[], // No explicit core residues, will use non-target atoms
         &RewardWeighting::default(),
-        100.0,  // Default expected SASA gain
+        100.0, // Default expected SASA gain
     )
 }
 
@@ -182,14 +185,14 @@ impl SpatialGrid {
     fn new(buffers: &SimulationBuffers, cell_size: f32) -> Self {
         let mut cells = HashMap::new();
         for i in 0..buffers.num_atoms {
-            let x = buffers.positions[i*4];
-            let y = buffers.positions[i*4+1];
-            let z = buffers.positions[i*4+2];
+            let x = buffers.positions[i * 4];
+            let y = buffers.positions[i * 4 + 1];
+            let z = buffers.positions[i * 4 + 2];
 
             let key = (
                 (x / cell_size).floor() as i32,
                 (y / cell_size).floor() as i32,
-                (z / cell_size).floor() as i32
+                (z / cell_size).floor() as i32,
             );
 
             cells.entry(key).or_insert_with(Vec::new).push(i);
@@ -197,14 +200,14 @@ impl SpatialGrid {
         Self {
             cell_size,
             cutoff_sq: cell_size * cell_size,
-            cells
+            cells,
         }
     }
 
     fn count_neighbors(&self, buffers: &SimulationBuffers, atom_idx: usize) -> f32 {
-        let x = buffers.positions[atom_idx*4];
-        let y = buffers.positions[atom_idx*4+1];
-        let z = buffers.positions[atom_idx*4+2];
+        let x = buffers.positions[atom_idx * 4];
+        let y = buffers.positions[atom_idx * 4 + 1];
+        let z = buffers.positions[atom_idx * 4 + 2];
 
         let cx = (x / self.cell_size).floor() as i32;
         let cy = (y / self.cell_size).floor() as i32;
@@ -216,15 +219,18 @@ impl SpatialGrid {
         for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
-                    if let Some(indices) = self.cells.get(&(cx+dx, cy+dy, cz+dz)) {
+                    if let Some(indices) = self.cells.get(&(cx + dx, cy + dy, cz + dz)) {
                         for &j in indices {
-                            if atom_idx == j { continue; }
+                            if atom_idx == j {
+                                continue;
+                            }
 
-                            let x2 = buffers.positions[j*4];
-                            let y2 = buffers.positions[j*4+1];
-                            let z2 = buffers.positions[j*4+2];
+                            let x2 = buffers.positions[j * 4];
+                            let y2 = buffers.positions[j * 4 + 1];
+                            let z2 = buffers.positions[j * 4 + 2];
 
-                            let dist_sq = (x-x2)*(x-x2) + (y-y2)*(y-y2) + (z-z2)*(z-z2);
+                            let dist_sq =
+                                (x - x2) * (x - x2) + (y - y2) * (y - y2) + (z - z2) * (z - z2);
                             if dist_sq < self.cutoff_sq {
                                 count += 1.0;
                             }
@@ -242,9 +248,9 @@ impl SpatialGrid {
         let mut clash_count = 0u32;
 
         for i in 0..buffers.num_atoms {
-            let x = buffers.positions[i*4];
-            let y = buffers.positions[i*4+1];
-            let z = buffers.positions[i*4+2];
+            let x = buffers.positions[i * 4];
+            let y = buffers.positions[i * 4 + 1];
+            let z = buffers.positions[i * 4 + 2];
 
             let cx = (x / self.cell_size).floor() as i32;
             let cy = (y / self.cell_size).floor() as i32;
@@ -254,15 +260,18 @@ impl SpatialGrid {
             for dx in 0..=1 {
                 for dy in -1..=1 {
                     for dz in -1..=1 {
-                        if let Some(indices) = self.cells.get(&(cx+dx, cy+dy, cz+dz)) {
+                        if let Some(indices) = self.cells.get(&(cx + dx, cy + dy, cz + dz)) {
                             for &j in indices {
-                                if j <= i { continue; }
+                                if j <= i {
+                                    continue;
+                                }
 
-                                let x2 = buffers.positions[j*4];
-                                let y2 = buffers.positions[j*4+1];
-                                let z2 = buffers.positions[j*4+2];
+                                let x2 = buffers.positions[j * 4];
+                                let y2 = buffers.positions[j * 4 + 1];
+                                let z2 = buffers.positions[j * 4 + 2];
 
-                                let dist_sq = (x-x2)*(x-x2) + (y-y2)*(y-y2) + (z-z2)*(z-z2);
+                                let dist_sq =
+                                    (x - x2) * (x - x2) + (y - y2) * (y - y2) + (z - z2) * (z - z2);
                                 if dist_sq < threshold_sq {
                                     clash_count += 1;
                                 }
@@ -276,8 +285,14 @@ impl SpatialGrid {
     }
 }
 
-fn calculate_exposure_score(buffers: &SimulationBuffers, target_indices: &[usize], cutoff: f32) -> f32 {
-    if target_indices.is_empty() { return 0.0; }
+fn calculate_exposure_score(
+    buffers: &SimulationBuffers,
+    target_indices: &[usize],
+    cutoff: f32,
+) -> f32 {
+    if target_indices.is_empty() {
+        return 0.0;
+    }
 
     let grid = SpatialGrid::new(buffers, cutoff);
     let mut total_exposure = 0.0;
@@ -306,9 +321,11 @@ fn count_clashes(buffers: &SimulationBuffers, clash_distance: f32) -> u32 {
 fn calculate_core_rmsd(
     initial: &SimulationBuffers,
     final_state: &SimulationBuffers,
-    core_indices: &[usize]
+    core_indices: &[usize],
 ) -> f32 {
-    if core_indices.is_empty() { return 0.0; }
+    if core_indices.is_empty() {
+        return 0.0;
+    }
 
     // 1. Calculate Center of Mass (COM) for Core
     let com_initial = calculate_com(initial, core_indices);
@@ -322,14 +339,14 @@ fn calculate_core_rmsd(
 
         // Shifted positions (translation-invariant)
         let ix = initial.positions[base] - com_initial.0;
-        let iy = initial.positions[base+1] - com_initial.1;
-        let iz = initial.positions[base+2] - com_initial.2;
+        let iy = initial.positions[base + 1] - com_initial.1;
+        let iz = initial.positions[base + 2] - com_initial.2;
 
         let fx = final_state.positions[base] - com_final.0;
-        let fy = final_state.positions[base+1] - com_final.1;
-        let fz = final_state.positions[base+2] - com_final.2;
+        let fy = final_state.positions[base + 1] - com_final.1;
+        let fz = final_state.positions[base + 2] - com_final.2;
 
-        let dist_sq = (fx-ix)*(fx-ix) + (fy-iy)*(fy-iy) + (fz-iz)*(fz-iz);
+        let dist_sq = (fx - ix) * (fx - ix) + (fy - iy) * (fy - iy) + (fz - iz) * (fz - iz);
         sum_sq_diff += dist_sq;
     }
 
@@ -342,9 +359,9 @@ fn calculate_com(buffers: &SimulationBuffers, indices: &[usize]) -> (f32, f32, f
     let mut sum_z = 0.0;
 
     for &idx in indices {
-        sum_x += buffers.positions[idx*4];
-        sum_y += buffers.positions[idx*4+1];
-        sum_z += buffers.positions[idx*4+2];
+        sum_x += buffers.positions[idx * 4];
+        sum_y += buffers.positions[idx * 4 + 1];
+        sum_z += buffers.positions[idx * 4 + 2];
     }
 
     let n = indices.len() as f32;
@@ -399,8 +416,10 @@ pub fn calculate_macro_step_reward(
     }
 
     // 1. Calculate exposure progress (The "Carrot")
-    let initial_exposure = calculate_exposure_score(initial, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
-    let current_exposure = calculate_exposure_score(current, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
+    let initial_exposure =
+        calculate_exposure_score(initial, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
+    let current_exposure =
+        calculate_exposure_score(current, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
     let exposure_gain = current_exposure - initial_exposure;
 
     // 2. Calculate stability penalty (The "Stick")
@@ -419,7 +438,7 @@ pub fn calculate_macro_step_reward(
 
     // Final reward: exposure gain minus penalties, scaled by progress
     let reward = (exposure_gain * weights.exposure_weight - stability_penalty - clash_penalty)
-                 * progress_factor;
+        * progress_factor;
 
     reward
 }
@@ -500,8 +519,10 @@ pub fn calculate_enhanced_macro_step_reward(
     breakdown.site_value_multiplier = site_value * weights.site_value_weight;
 
     // 1. Calculate exposure progress (Primary target)
-    let initial_exposure = calculate_exposure_score(initial, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
-    let current_exposure = calculate_exposure_score(current, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
+    let initial_exposure =
+        calculate_exposure_score(initial, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
+    let current_exposure =
+        calculate_exposure_score(current, &target_atom_indices, DEFAULT_CUTOFF_RADIUS);
     let exposure_gain = current_exposure - initial_exposure;
     breakdown.exposure_component = exposure_gain * weights.exposure_weight;
 
@@ -516,9 +537,8 @@ pub fn calculate_enhanced_macro_step_reward(
 
     // 4. Calculate glycan discovery bonus (NEW in v3.1.1)
     if !glycan_atom_indices.is_empty() && exposure_gain > 0.0 {
-        let glycan_displacement = calculate_glycan_displacement(
-            initial, current, &glycan_atom_indices
-        );
+        let glycan_displacement =
+            calculate_glycan_displacement(initial, current, &glycan_atom_indices);
 
         // If glycan displacement exceeds threshold AND we have exposure gain,
         // this indicates biologically meaningful opening (the 6VXX insight!)
@@ -531,8 +551,10 @@ pub fn calculate_enhanced_macro_step_reward(
 
     // 5. Calculate adjacent residue bonus (partial discovery indicator)
     if !adjacent_atom_indices.is_empty() {
-        let initial_adj_exposure = calculate_exposure_score(initial, &adjacent_atom_indices, DEFAULT_CUTOFF_RADIUS);
-        let current_adj_exposure = calculate_exposure_score(current, &adjacent_atom_indices, DEFAULT_CUTOFF_RADIUS);
+        let initial_adj_exposure =
+            calculate_exposure_score(initial, &adjacent_atom_indices, DEFAULT_CUTOFF_RADIUS);
+        let current_adj_exposure =
+            calculate_exposure_score(current, &adjacent_atom_indices, DEFAULT_CUTOFF_RADIUS);
         let adj_exposure_gain = current_adj_exposure - initial_adj_exposure;
 
         if adj_exposure_gain > 0.0 {
@@ -544,11 +566,10 @@ pub fn calculate_enhanced_macro_step_reward(
     let progress_factor = (macro_step as f32 + 1.0) / (total_macro_steps as f32);
 
     // Final reward calculation with all components
-    let base_reward = breakdown.exposure_component
-                    + breakdown.glycan_discovery_bonus
-                    + breakdown.adjacent_bonus
-                    - breakdown.stability_penalty
-                    - breakdown.clash_penalty;
+    let base_reward =
+        breakdown.exposure_component + breakdown.glycan_discovery_bonus + breakdown.adjacent_bonus
+            - breakdown.stability_penalty
+            - breakdown.clash_penalty;
 
     // Apply site value multiplier and progress scaling
     let reward = base_reward * breakdown.site_value_multiplier * progress_factor;

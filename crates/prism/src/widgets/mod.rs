@@ -6,5 +6,5 @@
 // For now, rendering is handled directly in ui/render.rs
 
 pub mod graph;
-pub mod protein;
 pub mod metrics;
+pub mod protein;

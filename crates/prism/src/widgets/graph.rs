@@ -6,7 +6,7 @@ use ratatui::prelude::*;
 
 /// Graph visualization state
 pub struct GraphWidget {
-    pub vertices: Vec<(f64, f64)>,  // positions
+    pub vertices: Vec<(f64, f64)>, // positions
     pub colors: Vec<usize>,
     pub edges: Vec<(usize, usize)>,
     pub conflicts: Vec<(usize, usize)>,

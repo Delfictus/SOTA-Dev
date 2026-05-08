@@ -22,20 +22,20 @@
 //! ```
 
 use anyhow::{Context, Result};
-use log::{info, warn, debug};
+use log::{debug, info, warn};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use serde::{Serialize, Deserialize};
-use rayon::prelude::*;
 
 #[cfg(feature = "rl")]
 use crate::agent::DQNAgent;
-use crate::manifest::{CalibrationManifest, ProteinTarget};
-use crate::features::FeatureExtractor;
-use crate::rewards::{evaluate_simulation_weighted, calculate_macro_step_reward};
 use crate::buffers::SimulationBuffers;
-use prism_physics::molecular_dynamics::{MolecularDynamicsEngine, MolecularDynamicsConfig};
+use crate::features::FeatureExtractor;
+use crate::manifest::{CalibrationManifest, ProteinTarget};
+use crate::rewards::{calculate_macro_step_reward, evaluate_simulation_weighted};
 use prism_io::sovereign_types::Atom;
+use prism_physics::molecular_dynamics::{MolecularDynamicsConfig, MolecularDynamicsEngine};
 
 // ============================================================================
 // CONFIGURATION
@@ -133,15 +133,15 @@ impl PrismTrainer {
         let action_dim = manifest.physics_parameter_ranges.action_space_size();
 
         info!("   Computed feature dim: {}", feature_dim);
-        info!("   Macro-steps: {} × {} steps",
-              manifest.macro_step_config.num_macro_steps,
-              manifest.macro_step_config.steps_per_macro);
+        info!(
+            "   Macro-steps: {} × {} steps",
+            manifest.macro_step_config.num_macro_steps, manifest.macro_step_config.steps_per_macro
+        );
 
         let agent = DQNAgent::new(feature_dim as i64, action_dim as i64, device_id)
             .context("Failed to create DQN agent")?;
 
-        std::fs::create_dir_all(&config.output_dir)
-            .context("Failed to create output directory")?;
+        std::fs::create_dir_all(&config.output_dir).context("Failed to create output directory")?;
 
         info!("📋 Loaded {} targets from manifest", manifest.targets.len());
 
@@ -158,9 +158,18 @@ impl PrismTrainer {
     pub fn train_all_targets(&mut self) -> Result<()> {
         let start_time = Instant::now();
 
-        info!("🚀 Starting MACRO-STEP Training ({} jobs)...", self.config.parallel_jobs);
-        info!("   Mode: {} training",
-              if self.config.use_macro_steps { "Macro-step" } else { "Single-step" });
+        info!(
+            "🚀 Starting MACRO-STEP Training ({} jobs)...",
+            self.config.parallel_jobs
+        );
+        info!(
+            "   Mode: {} training",
+            if self.config.use_macro_steps {
+                "Macro-step"
+            } else {
+                "Single-step"
+            }
+        );
 
         if self.config.parallel_targets {
             self.train_hyperq_parallel()?;
@@ -171,7 +180,10 @@ impl PrismTrainer {
         self.save_final_results()?;
 
         let elapsed = start_time.elapsed();
-        info!("🏁 Training completed in {:.1} minutes", elapsed.as_secs_f32() / 60.0);
+        info!(
+            "🏁 Training completed in {:.1} minutes",
+            elapsed.as_secs_f32() / 60.0
+        );
 
         Ok(())
     }
@@ -196,7 +208,8 @@ impl PrismTrainer {
 
             // Periodic checkpoint saving
             if (episode + 1) % self.config.checkpoint_interval == 0 {
-                let checkpoint_path = format!("{}/checkpoint_ep{}.pt", self.config.output_dir, episode + 1);
+                let checkpoint_path =
+                    format!("{}/checkpoint_ep{}.pt", self.config.output_dir, episode + 1);
                 if let Err(e) = self.save_checkpoint(&checkpoint_path) {
                     warn!("Failed to save checkpoint: {}", e);
                 }
@@ -210,10 +223,14 @@ impl PrismTrainer {
 
     /// Hyper-Q Parallel Training - Multiple CUDA Streams
     fn train_hyperq_parallel(&mut self) -> Result<()> {
-        info!("⚡ HYPER-Q MODE: {} parallel CUDA streams", self.config.parallel_jobs);
+        info!(
+            "⚡ HYPER-Q MODE: {} parallel CUDA streams",
+            self.config.parallel_jobs
+        );
 
         let targets = self.manifest.targets.clone();
-        let num_batches = (self.config.max_episodes as f32 / self.config.parallel_jobs as f32).ceil() as usize;
+        let num_batches =
+            (self.config.max_episodes as f32 / self.config.parallel_jobs as f32).ceil() as usize;
 
         for batch_idx in 0..num_batches {
             info!("⚡ Processing Batch {}/{}", batch_idx + 1, num_batches);
@@ -222,7 +239,9 @@ impl PrismTrainer {
             let mut work_items = Vec::new();
             for i in 0..self.config.parallel_jobs {
                 let global_episode = batch_idx * self.config.parallel_jobs + i;
-                if global_episode >= self.config.max_episodes { break; }
+                if global_episode >= self.config.max_episodes {
+                    break;
+                }
 
                 let target = targets[global_episode % targets.len()].clone();
                 work_items.push((global_episode, target));
@@ -246,7 +265,10 @@ impl PrismTrainer {
             // Checkpoint after each batch
             let current_episode = (batch_idx + 1) * self.config.parallel_jobs;
             if current_episode % self.config.checkpoint_interval == 0 {
-                let checkpoint_path = format!("{}/checkpoint_ep{}.pt", self.config.output_dir, current_episode);
+                let checkpoint_path = format!(
+                    "{}/checkpoint_ep{}.pt",
+                    self.config.output_dir, current_episode
+                );
                 if let Err(e) = self.save_checkpoint(&checkpoint_path) {
                     warn!("Failed to save checkpoint: {}", e);
                 }
@@ -293,7 +315,10 @@ impl PrismTrainer {
         };
 
         // 6. Configure Physics Engine (4D action space)
-        let (temp, fric, spring, bias) = self.manifest.physics_parameter_ranges.action_to_params(current_action);
+        let (temp, fric, spring, bias) = self
+            .manifest
+            .physics_parameter_ranges
+            .action_to_params(current_action);
         let md_config = MolecularDynamicsConfig {
             max_steps: macro_config.steps_per_macro,
             dt: 0.001,
@@ -310,8 +335,9 @@ impl PrismTrainer {
             max_workspace_memory: 128 * 1024 * 1024,
         };
 
-        let mut engine = MolecularDynamicsEngine::from_sovereign_buffer(md_config.clone(), &pdb_data)
-            .context("Failed to initialize physics engine")?;
+        let mut engine =
+            MolecularDynamicsEngine::from_sovereign_buffer(md_config.clone(), &pdb_data)
+                .context("Failed to initialize physics engine")?;
 
         // 7. MACRO-STEP LOOP - Collect transitions at each boundary
         let mut transitions: Vec<Transition> = Vec::new();
@@ -319,11 +345,13 @@ impl PrismTrainer {
 
         for macro_step in 0..macro_config.num_macro_steps {
             // Run one macro-step of simulation
-            engine.run_nlnm_breathing(macro_config.steps_per_macro)
+            engine
+                .run_nlnm_breathing(macro_config.steps_per_macro)
                 .context("Physics simulation failed")?;
 
             // Get current state from GPU
-            let current_atoms = engine.get_current_atoms()
+            let current_atoms = engine
+                .get_current_atoms()
                 .context("Failed to download atoms from GPU")?;
 
             // Update buffers
@@ -377,8 +405,10 @@ impl PrismTrainer {
                 };
 
                 if new_action != current_action {
-                    let (new_temp, new_fric, new_spring, new_bias) =
-                        self.manifest.physics_parameter_ranges.action_to_params(new_action);
+                    let (new_temp, new_fric, new_spring, new_bias) = self
+                        .manifest
+                        .physics_parameter_ranges
+                        .action_to_params(new_action);
 
                     // Log the intended action change (engine continues with original params)
                     debug!("Macro-step {}: Would change action to {} (T={:.1}, F={:.2}, K={:.1}, B={:.2})",
@@ -412,7 +442,15 @@ impl PrismTrainer {
             let mut agent = self.agent.lock().unwrap();
             let batch: Vec<(Vec<f32>, usize, f32, Vec<f32>, bool)> = transitions
                 .iter()
-                .map(|t| (t.state.clone(), t.action, t.reward, t.next_state.clone(), t.done))
+                .map(|t| {
+                    (
+                        t.state.clone(),
+                        t.action,
+                        t.reward,
+                        t.next_state.clone(),
+                        t.done,
+                    )
+                })
                 .collect();
             let _ = agent.train(batch);
         }
@@ -472,10 +510,15 @@ impl PrismTrainer {
             agent.select_action(&features_vec)
         };
 
-        let (temp, fric, spring, bias) = self.manifest.physics_parameter_ranges.action_to_params(action);
+        let (temp, fric, spring, bias) = self
+            .manifest
+            .physics_parameter_ranges
+            .action_to_params(action);
 
-        debug!("Ep {} ({}): Action {} (T={:.1}, F={:.2}, K={:.1}, B={:.2})",
-               episode, target.name, action, temp, fric, spring, bias);
+        debug!(
+            "Ep {} ({}): Action {} (T={:.1}, F={:.2}, K={:.1}, B={:.2})",
+            episode, target.name, action, temp, fric, spring, bias
+        );
 
         // 5. Configure and run physics (4D action space)
         let md_config = MolecularDynamicsConfig {
@@ -497,12 +540,14 @@ impl PrismTrainer {
         let mut engine = MolecularDynamicsEngine::from_sovereign_buffer(md_config, &pdb_data)
             .context("Failed to initialize physics engine")?;
 
-        engine.run_nlnm_breathing(total_steps)
+        engine
+            .run_nlnm_breathing(total_steps)
             .context("Physics simulation failed")?;
 
         // 6. Get results
         let initial_buffers = SimulationBuffers::from_atoms(&initial_atoms);
-        let final_atoms = engine.get_current_atoms()
+        let final_atoms = engine
+            .get_current_atoms()
             .context("Failed to download atoms from GPU")?;
 
         let mut final_buffers = initial_buffers.clone();
@@ -526,9 +571,10 @@ impl PrismTrainer {
             target.expected_sasa_gain,
         )?;
 
-        info!("✅ Ep {} | {} | Reward: {:.4} (Exposure: {:.2}, RMSD: {:.2}Å)",
-              episode, target.name, result.intrinsic_reward,
-              result.total_sasa_gain, result.core_rmsd);
+        info!(
+            "✅ Ep {} | {} | Reward: {:.4} (Exposure: {:.2}, RMSD: {:.2}Å)",
+            episode, target.name, result.intrinsic_reward, result.total_sasa_gain, result.core_rmsd
+        );
 
         // 8. Train agent
         {
@@ -539,7 +585,7 @@ impl PrismTrainer {
                 action,
                 result.intrinsic_reward,
                 next_features.as_slice().to_vec(),
-                true  // Single-step episodes are always "done"
+                true, // Single-step episodes are always "done"
             )]);
         }
 
@@ -580,7 +626,9 @@ impl PrismTrainer {
 
         for line in content.lines() {
             if line.starts_with("ATOM") || line.starts_with("HETATM") {
-                if line.len() < 54 { continue; }
+                if line.len() < 54 {
+                    continue;
+                }
 
                 let residue_seq: u16 = line[22..26].trim().parse().unwrap_or(0);
                 let x: f32 = line[30..38].trim().parse().unwrap_or(0.0);
@@ -591,11 +639,21 @@ impl PrismTrainer {
                 let element: u8 = if line.len() >= 78 {
                     let elem_str = line[76..78].trim();
                     match elem_str {
-                        "C" => 6, "N" => 7, "O" => 8, "S" => 16, "H" => 1, "P" => 15,
-                        "CA" | "Ca" => 20, "FE" | "Fe" => 26, "ZN" | "Zn" => 30, "MG" | "Mg" => 12,
+                        "C" => 6,
+                        "N" => 7,
+                        "O" => 8,
+                        "S" => 16,
+                        "H" => 1,
+                        "P" => 15,
+                        "CA" | "Ca" => 20,
+                        "FE" | "Fe" => 26,
+                        "ZN" | "Zn" => 30,
+                        "MG" | "Mg" => 12,
                         _ => 6,
                     }
-                } else { 6 };
+                } else {
+                    6
+                };
 
                 atoms.push(Atom {
                     coords: [x, y, z],
@@ -693,7 +751,9 @@ impl PrismTrainer {
 
         let avg_reward = if !best_rewards.is_empty() {
             best_rewards.iter().sum::<f32>() / best_rewards.len() as f32
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         serde_json::json!({
             "targets_completed": sessions.len(),

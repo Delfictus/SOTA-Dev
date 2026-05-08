@@ -19,8 +19,8 @@
 //! - Pocket flexibility predictions against actual ligand-bound dynamics
 //! - Binding site adaptability metrics
 
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use serde::{Serialize, Deserialize};
 
 /// Pocket flexibility analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,10 +44,10 @@ pub struct PocketFlexibilityAnalysis {
 /// Flexibility classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FlexibilityClass {
-    Rigid,           // < 0.5× global mean
-    Moderate,        // 0.5-1.0× global mean
-    Flexible,        // 1.0-2.0× global mean
-    HighlyFlexible,  // > 2.0× global mean
+    Rigid,          // < 0.5× global mean
+    Moderate,       // 0.5-1.0× global mean
+    Flexible,       // 1.0-2.0× global mean
+    HighlyFlexible, // > 2.0× global mean
 }
 
 impl FlexibilityClass {
@@ -187,7 +187,8 @@ impl PocketMetricsCalculator {
         let global_max_rmsf = rmsf.iter().cloned().fold(0.0, f64::max);
 
         // Identify high-flexibility residues
-        let high_flex_residues: Vec<usize> = rmsf.iter()
+        let high_flex_residues: Vec<usize> = rmsf
+            .iter()
             .enumerate()
             .filter(|(_, &r)| r > global_mean_rmsf * self.high_flex_threshold)
             .map(|(i, _)| i)
@@ -196,12 +197,8 @@ impl PocketMetricsCalculator {
         // Analyze known binding sites
         let mut pocket_analyses = Vec::new();
         if let Some(binding_residues) = self.known_binding_sites.get(protein_id) {
-            let analysis = self.analyze_pocket(
-                "binding_site",
-                binding_residues,
-                rmsf,
-                global_mean_rmsf,
-            );
+            let analysis =
+                self.analyze_pocket("binding_site", binding_residues, rmsf, global_mean_rmsf);
             pocket_analyses.push(analysis);
         }
 
@@ -218,26 +215,16 @@ impl PocketMetricsCalculator {
         }
 
         // Detect cryptic pocket candidates
-        let cryptic_candidates = self.detect_cryptic_candidates(
-            ca_positions,
-            rmsf,
-            residue_names,
-            global_mean_rmsf,
-        );
+        let cryptic_candidates =
+            self.detect_cryptic_candidates(ca_positions, rmsf, residue_names, global_mean_rmsf);
 
         // Detect allosteric site candidates
-        let allosteric_candidates = self.detect_allosteric_candidates(
-            ca_positions,
-            rmsf,
-            &high_flex_residues,
-        );
+        let allosteric_candidates =
+            self.detect_allosteric_candidates(ca_positions, rmsf, &high_flex_residues);
 
         // Calculate functional enrichment (if we have annotations)
-        let functional_enrichment = self.calculate_functional_enrichment(
-            protein_id,
-            &high_flex_residues,
-            n_residues,
-        );
+        let functional_enrichment =
+            self.calculate_functional_enrichment(protein_id, &high_flex_residues, n_residues);
 
         // Calculate overall drug target score
         let drug_target_score = self.calculate_drug_target_score(
@@ -276,18 +263,25 @@ impl PocketMetricsCalculator {
             };
         }
 
-        let pocket_rmsf: Vec<f64> = residues.iter()
+        let pocket_rmsf: Vec<f64> = residues
+            .iter()
             .filter_map(|&i| rmsf.get(i).copied())
             .collect();
 
         let mean_rmsf = pocket_rmsf.iter().sum::<f64>() / pocket_rmsf.len() as f64;
         let max_rmsf = pocket_rmsf.iter().cloned().fold(0.0, f64::max);
-        let relative_flexibility = if global_mean > 0.0 { mean_rmsf / global_mean } else { 1.0 };
+        let relative_flexibility = if global_mean > 0.0 {
+            mean_rmsf / global_mean
+        } else {
+            1.0
+        };
 
         // Breathing score: variance in pocket RMSF values
-        let variance = pocket_rmsf.iter()
+        let variance = pocket_rmsf
+            .iter()
             .map(|&r| (r - mean_rmsf).powi(2))
-            .sum::<f64>() / pocket_rmsf.len() as f64;
+            .sum::<f64>()
+            / pocket_rmsf.len() as f64;
         let breathing_score = variance.sqrt() / mean_rmsf.max(0.01);
 
         let flexibility_class = FlexibilityClass::from_relative_flex(relative_flexibility);
@@ -322,14 +316,13 @@ impl PocketMetricsCalculator {
             }
 
             // Look for concave regions (simplified: check local geometry)
-            let neighbors = self.find_spatial_neighbors(ca_positions, i, self.pocket_distance_cutoff);
+            let neighbors =
+                self.find_spatial_neighbors(ca_positions, i, self.pocket_distance_cutoff);
 
             if neighbors.len() >= 4 {
                 // Potential pocket if we have enough neighbors
-                let pocket_residues: Vec<usize> = neighbors.iter()
-                    .copied()
-                    .filter(|&j| !used[j])
-                    .collect();
+                let pocket_residues: Vec<usize> =
+                    neighbors.iter().copied().filter(|&j| !used[j]).collect();
 
                 if pocket_residues.len() >= 4 {
                     for &r in &pocket_residues {
@@ -356,7 +349,8 @@ impl PocketMetricsCalculator {
         let center_pos = ca_positions[center];
         let cutoff_sq = (cutoff * cutoff) as f32;
 
-        ca_positions.iter()
+        ca_positions
+            .iter()
             .enumerate()
             .filter(|(j, pos)| {
                 if *j == center {
@@ -388,7 +382,8 @@ impl PocketMetricsCalculator {
                 continue;
             }
 
-            let local_rmsf: Vec<f64> = neighbors.iter()
+            let local_rmsf: Vec<f64> = neighbors
+                .iter()
                 .filter_map(|&j| rmsf.get(j).copied())
                 .collect();
 
@@ -404,7 +399,8 @@ impl PocketMetricsCalculator {
                 evidence.push(CrypticEvidence::HighLocalFlexibility { rmsf: local_mean });
 
                 // Check for adjacent rigid regions
-                let rigid_neighbors = neighbors.iter()
+                let rigid_neighbors = neighbors
+                    .iter()
                     .filter(|&&j| rmsf.get(j).map(|&r| r < global_mean * 0.5).unwrap_or(false))
                     .count();
 
@@ -415,8 +411,11 @@ impl PocketMetricsCalculator {
                 }
 
                 // Check hydrophobicity
-                let hydrophobic_count = neighbors.iter()
-                    .filter(|&&j| is_hydrophobic(residue_names.get(j).map(|s| s.as_str()).unwrap_or("")))
+                let hydrophobic_count = neighbors
+                    .iter()
+                    .filter(|&&j| {
+                        is_hydrophobic(residue_names.get(j).map(|s| s.as_str()).unwrap_or(""))
+                    })
                     .count();
                 let hydrophobic_fraction = hydrophobic_count as f64 / neighbors.len() as f64;
 
@@ -445,7 +444,11 @@ impl PocketMetricsCalculator {
         }
 
         // Sort by score and take top candidates
-        candidates.sort_by(|a, b| b.cryptic_score.partial_cmp(&a.cryptic_score).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            b.cryptic_score
+                .partial_cmp(&a.cryptic_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         candidates.truncate(5);
         candidates
     }
@@ -489,18 +492,22 @@ impl PocketMetricsCalculator {
         }
 
         // Convert clusters to allosteric candidates
-        clusters.into_iter()
+        clusters
+            .into_iter()
             .take(3)
             .enumerate()
             .map(|(i, residues)| {
                 // Estimate distance from "active site" (approximate as center of protein)
                 let center_idx = n / 2;
-                let mean_dist = residues.iter()
+                let mean_dist = residues
+                    .iter()
                     .map(|&r| distance(ca_positions[r], ca_positions[center_idx]))
-                    .sum::<f64>() / residues.len() as f64;
+                    .sum::<f64>()
+                    / residues.len() as f64;
 
                 // Allosteric score based on being far from center but well-defined cluster
-                let allosteric_score = (mean_dist / 20.0).min(1.0) * (residues.len() as f64 / 10.0).min(1.0);
+                let allosteric_score =
+                    (mean_dist / 20.0).min(1.0) * (residues.len() as f64 / 10.0).min(1.0);
 
                 AllostericSiteCandidate {
                     residues,
@@ -539,14 +546,16 @@ impl PocketMetricsCalculator {
         let mut score = 0.0;
 
         // Pocket diversity contribution (0-40 points)
-        let flex_classes: HashSet<_> = pocket_analyses.iter()
+        let flex_classes: HashSet<_> = pocket_analyses
+            .iter()
             .map(|p| p.flexibility_class)
             .collect();
         score += (flex_classes.len() as f64 / 4.0) * 40.0;
 
         // Cryptic pocket potential (0-30 points)
         if !cryptic_candidates.is_empty() {
-            let max_cryptic = cryptic_candidates.iter()
+            let max_cryptic = cryptic_candidates
+                .iter()
                 .map(|c| c.cryptic_score)
                 .fold(0.0, f64::max);
             score += max_cryptic * 30.0;
@@ -554,7 +563,8 @@ impl PocketMetricsCalculator {
 
         // Allosteric site potential (0-30 points)
         if !allosteric_candidates.is_empty() {
-            let max_allosteric = allosteric_candidates.iter()
+            let max_allosteric = allosteric_candidates
+                .iter()
                 .map(|a| a.allosteric_score)
                 .fold(0.0, f64::max);
             score += max_allosteric * 30.0;
@@ -567,8 +577,10 @@ impl PocketMetricsCalculator {
 // Helper functions
 
 fn is_hydrophobic(residue: &str) -> bool {
-    matches!(residue.to_uppercase().as_str(),
-        "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TRP" | "PRO")
+    matches!(
+        residue.to_uppercase().as_str(),
+        "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TRP" | "PRO"
+    )
 }
 
 fn calculate_cryptic_score(evidence: &[CrypticEvidence]) -> f64 {
@@ -582,7 +594,9 @@ fn calculate_cryptic_score(evidence: &[CrypticEvidence]) -> f64 {
             CrypticEvidence::AdjacentRigidRegions { n_rigid_neighbors } => {
                 score += (*n_rigid_neighbors as f64 / 5.0).min(0.3); // Max 0.3
             }
-            CrypticEvidence::HydrophobicPatch { fraction_hydrophobic } => {
+            CrypticEvidence::HydrophobicPatch {
+                fraction_hydrophobic,
+            } => {
                 score += fraction_hydrophobic * 0.3; // Max 0.3
             }
             CrypticEvidence::SequenceMotif { .. } => {
@@ -607,10 +621,22 @@ mod tests {
 
     #[test]
     fn test_flexibility_classification() {
-        assert_eq!(FlexibilityClass::from_relative_flex(0.3), FlexibilityClass::Rigid);
-        assert_eq!(FlexibilityClass::from_relative_flex(0.7), FlexibilityClass::Moderate);
-        assert_eq!(FlexibilityClass::from_relative_flex(1.5), FlexibilityClass::Flexible);
-        assert_eq!(FlexibilityClass::from_relative_flex(2.5), FlexibilityClass::HighlyFlexible);
+        assert_eq!(
+            FlexibilityClass::from_relative_flex(0.3),
+            FlexibilityClass::Rigid
+        );
+        assert_eq!(
+            FlexibilityClass::from_relative_flex(0.7),
+            FlexibilityClass::Moderate
+        );
+        assert_eq!(
+            FlexibilityClass::from_relative_flex(1.5),
+            FlexibilityClass::Flexible
+        );
+        assert_eq!(
+            FlexibilityClass::from_relative_flex(2.5),
+            FlexibilityClass::HighlyFlexible
+        );
     }
 
     #[test]

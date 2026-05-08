@@ -135,10 +135,7 @@ pub fn generate_persistence_vs_replica(
 }
 
 /// Generate UV vs control delta SASA bar chart
-pub fn generate_uv_vs_control_deltasasa(
-    path: &Path,
-    sites: &[CrypticSite],
-) -> Result<()> {
+pub fn generate_uv_vs_control_deltasasa(path: &Path, sites: &[CrypticSite]) -> Result<()> {
     let svg_path = if path.extension().map(|e| e == "png").unwrap_or(false) {
         path.with_extension("svg")
     } else {
@@ -170,7 +167,10 @@ pub fn generate_uv_vs_control_deltasasa(
         .max(1.0);
 
     let mut chart = ChartBuilder::on(&root)
-        .caption("UV Response: Delta SASA (cryo+UV - cryo-only)", ("sans-serif", 18))
+        .caption(
+            "UV Response: Delta SASA (cryo+UV - cryo-only)",
+            ("sans-serif", 18),
+        )
         .margin(20)
         .x_label_area_size(80)
         .y_label_area_size(60)
@@ -208,7 +208,10 @@ pub fn generate_uv_vs_control_deltasasa(
 
     // Zero line
     chart.draw_series(LineSeries::new(
-        [(SegmentValue::Exact(0), 0.0), (SegmentValue::Exact(data.len()), 0.0)],
+        [
+            (SegmentValue::Exact(0), 0.0),
+            (SegmentValue::Exact(data.len()), 0.0),
+        ],
         &BLACK,
     ))?;
 
@@ -217,11 +220,7 @@ pub fn generate_uv_vs_control_deltasasa(
 }
 
 /// Generate holo distance histogram (if holo provided)
-pub fn generate_holo_distance_hist(
-    path: &Path,
-    distances: &[f32],
-    site_id: &str,
-) -> Result<()> {
+pub fn generate_holo_distance_hist(path: &Path, distances: &[f32], site_id: &str) -> Result<()> {
     let svg_path = if path.extension().map(|e| e == "png").unwrap_or(false) {
         path.with_extension("svg")
     } else {
@@ -366,18 +365,10 @@ fn heatmap_color(value: f64) -> RGBColor {
     // Blue (low) -> White (mid) -> Red (high)
     if v < 0.5 {
         let t = v * 2.0;
-        RGBColor(
-            (255.0 * t) as u8,
-            (255.0 * t) as u8,
-            255,
-        )
+        RGBColor((255.0 * t) as u8, (255.0 * t) as u8, 255)
     } else {
         let t = (v - 0.5) * 2.0;
-        RGBColor(
-            255,
-            (255.0 * (1.0 - t)) as u8,
-            (255.0 * (1.0 - t)) as u8,
-        )
+        RGBColor(255, (255.0 * (1.0 - t)) as u8, (255.0 * (1.0 - t)) as u8)
     }
 }
 
@@ -425,10 +416,7 @@ impl SiteFigureData {
 }
 
 /// Generate all six required cryptic site figures
-pub fn generate_cryptic_site_figures(
-    figures_dir: &Path,
-    sites: &[CrypticSite],
-) -> Result<()> {
+pub fn generate_cryptic_site_figures(figures_dir: &Path, sites: &[CrypticSite]) -> Result<()> {
     let site_data: Vec<SiteFigureData> = sites.iter().map(SiteFigureData::from_site).collect();
 
     // TOP ROW
@@ -446,16 +434,10 @@ pub fn generate_cryptic_site_figures(
 
     // MIDDLE ROW
     // 3. CV SASA Distribution (histogram)
-    generate_cv_sasa_distribution(
-        &figures_dir.join("03_cv_sasa_histogram.svg"),
-        &site_data,
-    )?;
+    generate_cv_sasa_distribution(&figures_dir.join("03_cv_sasa_histogram.svg"), &site_data)?;
 
     // 4. Volume vs Dynamics (scatter: OpenFreq vs Volume)
-    generate_volume_vs_dynamics(
-        &figures_dir.join("04_volume_vs_dynamics.svg"),
-        &site_data,
-    )?;
+    generate_volume_vs_dynamics(&figures_dir.join("04_volume_vs_dynamics.svg"), &site_data)?;
 
     // BOTTOM ROW
     // 5. Opening Frequency Distribution (histogram)
@@ -475,10 +457,7 @@ pub fn generate_cryptic_site_figures(
 
 /// Figure 1: Distribution by Dynamics Level (bar chart)
 /// X: Low / Moderate / High, Y: Number of pockets
-pub fn generate_dynamics_distribution(
-    path: &Path,
-    sites: &[SiteFigureData],
-) -> Result<()> {
+pub fn generate_dynamics_distribution(path: &Path, sites: &[SiteFigureData]) -> Result<()> {
     let root = SVGBackend::new(path, (600, 400)).into_drawing_area();
     root.fill(&WHITE)?;
 
@@ -497,28 +476,27 @@ pub fn generate_dynamics_distribution(
     }
 
     let max_count = low.max(moderate).max(high).max(1) as u32;
-    let data = vec![("Low", low as u32), ("Moderate", moderate as u32), ("High", high as u32)];
+    let data = vec![
+        ("Low", low as u32),
+        ("Moderate", moderate as u32),
+        ("High", high as u32),
+    ];
 
     let mut chart = ChartBuilder::on(&root)
         .caption("Distribution by Dynamics Level", ("sans-serif", 18))
         .margin(20)
         .x_label_area_size(40)
         .y_label_area_size(50)
-        .build_cartesian_2d(
-            (0..3).into_segmented(),
-            0u32..max_count + 2,
-        )?;
+        .build_cartesian_2d((0..3).into_segmented(), 0u32..max_count + 2)?;
 
     chart
         .configure_mesh()
         .x_labels(3)
-        .x_label_formatter(&|x| {
-            match x {
-                SegmentValue::CenterOf(0) => "Low".to_string(),
-                SegmentValue::CenterOf(1) => "Moderate".to_string(),
-                SegmentValue::CenterOf(2) => "High".to_string(),
-                _ => String::new(),
-            }
+        .x_label_formatter(&|x| match x {
+            SegmentValue::CenterOf(0) => "Low".to_string(),
+            SegmentValue::CenterOf(1) => "Moderate".to_string(),
+            SegmentValue::CenterOf(2) => "High".to_string(),
+            _ => String::new(),
         })
         .y_desc("Number of Pockets")
         .draw()?;
@@ -527,7 +505,10 @@ pub fn generate_dynamics_distribution(
     let colors = [&BLUE, &YELLOW, &RED];
     for (i, (_, count)) in data.iter().enumerate() {
         chart.draw_series(std::iter::once(Rectangle::new(
-            [(SegmentValue::CenterOf(i as i32), 0), (SegmentValue::CenterOf((i + 1) as i32), *count)],
+            [
+                (SegmentValue::CenterOf(i as i32), 0),
+                (SegmentValue::CenterOf((i + 1) as i32), *count),
+            ],
             colors[i].filled(),
         )))?;
     }
@@ -538,10 +519,7 @@ pub fn generate_dynamics_distribution(
 
 /// Figure 2: Cryptic Site Classification (scatter plot)
 /// X: Open Frequency, Y: CV SASA, color by dynamics, threshold line at CV=0.2
-pub fn generate_cryptic_classification(
-    path: &Path,
-    sites: &[SiteFigureData],
-) -> Result<()> {
+pub fn generate_cryptic_classification(path: &Path, sites: &[SiteFigureData]) -> Result<()> {
     let root = SVGBackend::new(path, (700, 500)).into_drawing_area();
     root.fill(&WHITE)?;
 
@@ -555,8 +533,16 @@ pub fn generate_cryptic_classification(
         return Ok(());
     }
 
-    let max_open = sites.iter().map(|s| s.open_frequency).fold(0.0f64, f64::max).max(1.0);
-    let max_cv = sites.iter().map(|s| s.cv_sasa).fold(0.0f64, f64::max).max(1.0);
+    let max_open = sites
+        .iter()
+        .map(|s| s.open_frequency)
+        .fold(0.0f64, f64::max)
+        .max(1.0);
+    let max_cv = sites
+        .iter()
+        .map(|s| s.cv_sasa)
+        .fold(0.0f64, f64::max)
+        .max(1.0);
 
     let mut chart = ChartBuilder::on(&root)
         .caption("Cryptic Site Classification", ("sans-serif", 18))
@@ -600,11 +586,16 @@ pub fn generate_cryptic_classification(
     }
 
     // Label highest-CV pocket
-    if let Some(highest) = sites.iter().max_by(|a, b| a.cv_sasa.partial_cmp(&b.cv_sasa).unwrap()) {
+    if let Some(highest) = sites
+        .iter()
+        .max_by(|a, b| a.cv_sasa.partial_cmp(&b.cv_sasa).unwrap())
+    {
         root.draw(&Text::new(
             highest.site_id.clone(),
-            ((highest.open_frequency * 500.0 / max_open + 100.0) as i32,
-             (400.0 - highest.cv_sasa * 350.0 / max_cv) as i32),
+            (
+                (highest.open_frequency * 500.0 / max_open + 100.0) as i32,
+                (400.0 - highest.cv_sasa * 350.0 / max_cv) as i32,
+            ),
             ("sans-serif", 10).into_font().color(&BLACK),
         ))?;
     }
@@ -614,15 +605,16 @@ pub fn generate_cryptic_classification(
 }
 
 /// Figure 3: CV SASA Distribution (histogram)
-pub fn generate_cv_sasa_distribution(
-    path: &Path,
-    sites: &[SiteFigureData],
-) -> Result<()> {
+pub fn generate_cv_sasa_distribution(path: &Path, sites: &[SiteFigureData]) -> Result<()> {
     let root = SVGBackend::new(path, (600, 400)).into_drawing_area();
     root.fill(&WHITE)?;
 
     if sites.is_empty() {
-        root.draw(&Text::new("No data", (300, 200), ("sans-serif", 20).into_font().color(&BLACK)))?;
+        root.draw(&Text::new(
+            "No data",
+            (300, 200),
+            ("sans-serif", 20).into_font().color(&BLACK),
+        ))?;
         root.present()?;
         return Ok(());
     }
@@ -684,22 +676,35 @@ pub fn generate_cv_sasa_distribution(
 
 /// Figure 4: Volume vs Dynamics (scatter plot)
 /// X: Open Frequency, Y: Mean Volume, color gradient by CV SASA
-pub fn generate_volume_vs_dynamics(
-    path: &Path,
-    sites: &[SiteFigureData],
-) -> Result<()> {
+pub fn generate_volume_vs_dynamics(path: &Path, sites: &[SiteFigureData]) -> Result<()> {
     let root = SVGBackend::new(path, (700, 500)).into_drawing_area();
     root.fill(&WHITE)?;
 
     if sites.is_empty() {
-        root.draw(&Text::new("No data", (350, 250), ("sans-serif", 20).into_font().color(&BLACK)))?;
+        root.draw(&Text::new(
+            "No data",
+            (350, 250),
+            ("sans-serif", 20).into_font().color(&BLACK),
+        ))?;
         root.present()?;
         return Ok(());
     }
 
-    let max_open = sites.iter().map(|s| s.open_frequency).fold(0.0f64, f64::max).max(1.0);
-    let max_vol = sites.iter().map(|s| s.volume_mean).fold(0.0f64, f64::max).max(100.0);
-    let max_cv = sites.iter().map(|s| s.cv_sasa).fold(0.0f64, f64::max).max(1.0);
+    let max_open = sites
+        .iter()
+        .map(|s| s.open_frequency)
+        .fold(0.0f64, f64::max)
+        .max(1.0);
+    let max_vol = sites
+        .iter()
+        .map(|s| s.volume_mean)
+        .fold(0.0f64, f64::max)
+        .max(100.0);
+    let max_cv = sites
+        .iter()
+        .map(|s| s.cv_sasa)
+        .fold(0.0f64, f64::max)
+        .max(1.0);
 
     let mut chart = ChartBuilder::on(&root)
         .caption("Volume vs Dynamics", ("sans-serif", 18))
@@ -716,12 +721,12 @@ pub fn generate_volume_vs_dynamics(
 
     // Plot points with color gradient by CV SASA
     for site in sites {
-        let t = if max_cv > 0.0 { site.cv_sasa / max_cv } else { 0.0 };
-        let color = RGBColor(
-            (255.0 * t) as u8,
-            0,
-            (255.0 * (1.0 - t)) as u8,
-        );
+        let t = if max_cv > 0.0 {
+            site.cv_sasa / max_cv
+        } else {
+            0.0
+        };
+        let color = RGBColor((255.0 * t) as u8, 0, (255.0 * (1.0 - t)) as u8);
         chart.draw_series(std::iter::once(Circle::new(
             (site.open_frequency, site.volume_mean),
             6,
@@ -734,15 +739,16 @@ pub fn generate_volume_vs_dynamics(
 }
 
 /// Figure 5: Opening Frequency Distribution (histogram)
-pub fn generate_open_frequency_distribution(
-    path: &Path,
-    sites: &[SiteFigureData],
-) -> Result<()> {
+pub fn generate_open_frequency_distribution(path: &Path, sites: &[SiteFigureData]) -> Result<()> {
     let root = SVGBackend::new(path, (600, 400)).into_drawing_area();
     root.fill(&WHITE)?;
 
     if sites.is_empty() {
-        root.draw(&Text::new("No data", (300, 200), ("sans-serif", 20).into_font().color(&BLACK)))?;
+        root.draw(&Text::new(
+            "No data",
+            (300, 200),
+            ("sans-serif", 20).into_font().color(&BLACK),
+        ))?;
         root.present()?;
         return Ok(());
     }
@@ -796,21 +802,26 @@ pub fn generate_open_frequency_distribution(
 
 /// Figure 6: Pocket Size vs Dynamics (scatter plot)
 /// X: Residue Count, Y: CV SASA, color by dynamics category
-pub fn generate_pocket_size_vs_dynamics(
-    path: &Path,
-    sites: &[SiteFigureData],
-) -> Result<()> {
+pub fn generate_pocket_size_vs_dynamics(path: &Path, sites: &[SiteFigureData]) -> Result<()> {
     let root = SVGBackend::new(path, (700, 500)).into_drawing_area();
     root.fill(&WHITE)?;
 
     if sites.is_empty() {
-        root.draw(&Text::new("No data", (350, 250), ("sans-serif", 20).into_font().color(&BLACK)))?;
+        root.draw(&Text::new(
+            "No data",
+            (350, 250),
+            ("sans-serif", 20).into_font().color(&BLACK),
+        ))?;
         root.present()?;
         return Ok(());
     }
 
     let max_res = sites.iter().map(|s| s.residue_count).max().unwrap_or(10) as f64;
-    let max_cv = sites.iter().map(|s| s.cv_sasa).fold(0.0f64, f64::max).max(1.0);
+    let max_cv = sites
+        .iter()
+        .map(|s| s.cv_sasa)
+        .fold(0.0f64, f64::max)
+        .max(1.0);
 
     let mut chart = ChartBuilder::on(&root)
         .caption("Pocket Size vs Dynamics", ("sans-serif", 18))

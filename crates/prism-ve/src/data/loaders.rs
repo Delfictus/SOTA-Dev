@@ -5,8 +5,8 @@
 //! Python implementations available in scripts/data_loaders.py
 //! This module provides Rust interface for integration.
 
-use std::path::Path;
 use prism_core::PrismError;
+use std::path::Path;
 
 /// Load DMS escape data
 ///
@@ -50,7 +50,11 @@ pub fn load_gisaid_frequencies(
     start_date: Option<&str>,
     end_date: Option<&str>,
 ) -> Result<(Vec<String>, Vec<String>, Vec<Vec<f32>>), PrismError> {
-    log::info!("Loading GISAID frequencies for {} from {:?}", country, vasil_data_dir);
+    log::info!(
+        "Loading GISAID frequencies for {} from {:?}",
+        country,
+        vasil_data_dir
+    );
 
     // TODO: Implement CSV loading
     // For now, placeholder data
@@ -58,8 +62,11 @@ pub fn load_gisaid_frequencies(
     let dates = vec!["2023-01-01".to_string()];
     let frequencies = vec![vec![0.3, 0.5]];
 
-    log::info!("Loaded GISAID frequencies: {} dates, {} lineages",
-               dates.len(), lineages.len());
+    log::info!(
+        "Loaded GISAID frequencies: {} dates, {} lineages",
+        dates.len(),
+        lineages.len()
+    );
 
     Ok((lineages, dates, frequencies))
 }
@@ -70,7 +77,11 @@ pub fn load_variant_mutations(
     country: &str,
     _lineages: Option<Vec<String>>,
 ) -> Result<Vec<(String, Vec<String>)>, PrismError> {
-    log::info!("Loading variant mutations for {} from {:?}", country, vasil_data_dir);
+    log::info!(
+        "Loading variant mutations for {} from {:?}",
+        country,
+        vasil_data_dir
+    );
 
     // TODO: Implement CSV loading
     // Placeholder

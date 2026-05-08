@@ -12,8 +12,8 @@
 // CUDA imports temporarily disabled until API is clarified
 // #[cfg(feature = "gpu")]
 // use cudarc::driver::{CudaDevice, LaunchConfig};
-use std::sync::Arc;
 use crate::{sovereign_types::*, PrismIoError, Result};
+use std::sync::Arc;
 
 /// Parsed protein structure data from warp parser
 #[derive(Debug)]
@@ -102,10 +102,13 @@ impl WarpDriveParser {
         tracing::debug!("Starting warp-drive parsing of {} bytes", pdb_data.len());
 
         // Validate input size
-        if pdb_data.len() > 100_000_000 {  // 100MB limit
+        if pdb_data.len() > 100_000_000 {
+            // 100MB limit
             return Err(WarpParseError::DataSizeTooLarge(format!(
-                "PDB data size {} exceeds 100MB limit", pdb_data.len()
-            )).into());
+                "PDB data size {} exceeds 100MB limit",
+                pdb_data.len()
+            ))
+            .into());
         }
 
         // Pre-process data to count atoms and allocate GPU memory
@@ -115,7 +118,7 @@ impl WarpDriveParser {
         tracing::debug!("GPU memory allocation temporarily disabled");
 
         // Launch CUDA kernel with optimized configuration
-        let threads_per_block = 256;  // 8 warps per block
+        let threads_per_block = 256; // 8 warps per block
         let blocks = (estimated_atoms + threads_per_block - 1) / threads_per_block;
 
         // TODO: Fix LaunchConfig once cudarc API is clarified
@@ -135,8 +138,12 @@ impl WarpDriveParser {
         let parse_time = start_time.elapsed();
 
         // Update performance metrics
-        self.parse_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.total_parse_time.fetch_add(parse_time.as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.parse_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.total_parse_time.fetch_add(
+            parse_time.as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
 
         if parse_time.as_micros() > crate::performance::WARP_PARSING_TARGET_MICROS as u128 {
             tracing::warn!(
@@ -157,7 +164,7 @@ impl WarpDriveParser {
         // would require additional CUDA kernels
         Ok(ParsedProteinData {
             atoms,
-            bonds: Vec::new(),           // TODO: Implement bond parsing kernel
+            bonds: Vec::new(),               // TODO: Implement bond parsing kernel
             secondary_structure: Vec::new(), // TODO: Implement secondary structure kernel
         })
     }
@@ -168,7 +175,8 @@ impl WarpDriveParser {
         let mut atom_count = 0;
 
         // Quick scan for ATOM/HETATM lines
-        for line in data_str.lines().take(1000) {  // Sample first 1000 lines
+        for line in data_str.lines().take(1000) {
+            // Sample first 1000 lines
             if line.starts_with("ATOM") || line.starts_with("HETATM") {
                 atom_count += 1;
             }
@@ -189,12 +197,18 @@ impl WarpDriveParser {
     /// Get parsing performance statistics
     pub fn get_performance_stats(&self) -> WarpParseStats {
         let total_parses = self.parse_count.load(std::sync::atomic::Ordering::Relaxed);
-        let total_time = self.total_parse_time.load(std::sync::atomic::Ordering::Relaxed);
+        let total_time = self
+            .total_parse_time
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         WarpParseStats {
             total_parses,
             total_time_micros: total_time,
-            average_time_micros: if total_parses > 0 { total_time / total_parses } else { 0 },
+            average_time_micros: if total_parses > 0 {
+                total_time / total_parses
+            } else {
+                0
+            },
         }
     }
 }
@@ -217,11 +231,15 @@ pub struct WarpDriveParser;
 #[cfg(not(feature = "gpu"))]
 impl WarpDriveParser {
     pub fn new(_cuda_device: &Arc<()>) -> Result<Self> {
-        Err(PrismIoError::CudaError("GPU features not available".to_string()))
+        Err(PrismIoError::CudaError(
+            "GPU features not available".to_string(),
+        ))
     }
 
     pub async fn parse_pdb_parallel(&self, _pdb_data: &[u8]) -> Result<ParsedProteinData> {
-        Err(PrismIoError::CudaError("GPU features required for warp parsing".to_string()))
+        Err(PrismIoError::CudaError(
+            "GPU features required for warp parsing".to_string(),
+        ))
     }
 
     pub fn get_performance_stats(&self) -> WarpParseStats {
@@ -244,7 +262,8 @@ mod tests {
             use std::sync::Arc;
             // This test would require actual CUDA device
             // For now, just verify the structure compiles
-            let pdb_data = b"ATOM      1  CA  ALA A   1      20.154  16.967  10.000  1.00 20.00           C\n";
+            let pdb_data =
+                b"ATOM      1  CA  ALA A   1      20.154  16.967  10.000  1.00 20.00           C\n";
 
             // Would need actual CUDA device for full test
             // let device = Arc::new(CudaDevice::new(0).unwrap());

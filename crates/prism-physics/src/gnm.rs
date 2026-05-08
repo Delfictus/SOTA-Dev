@@ -104,7 +104,8 @@ impl GaussianNetworkModel {
             .enumerate()
             .map(|(i, &v)| (i, v))
             .collect();
-        indexed_eigenvalues.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        indexed_eigenvalues
+            .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Compute RMSF from inverse eigenvalue weighting
         // Skip first mode (zero eigenvalue = rigid body motion)
@@ -134,16 +135,17 @@ impl GaussianNetworkModel {
         }
 
         // Scale and sqrt
-        let rmsf: Vec<f64> = rmsf_sq
-            .iter()
-            .map(|&sq| (scale * sq).sqrt())
-            .collect();
+        let rmsf: Vec<f64> = rmsf_sq.iter().map(|&sq| (scale * sq).sqrt()).collect();
 
         // Normalize to typical B-factor range (~0.5-2.0 Å)
         // GNM gives relative fluctuations; we scale to match experimental range
         let rmsf_mean: f64 = rmsf.iter().sum::<f64>() / n as f64;
         let target_mean = 0.8; // Target mean RMSF in Ångstroms
-        let scale_factor = if rmsf_mean > 1e-6 { target_mean / rmsf_mean } else { 1.0 };
+        let scale_factor = if rmsf_mean > 1e-6 {
+            target_mean / rmsf_mean
+        } else {
+            1.0
+        };
 
         let rmsf_scaled: Vec<f64> = rmsf.iter().map(|&r| r * scale_factor).collect();
 
@@ -240,7 +242,7 @@ pub struct AnisotropicNetworkModel {
 impl Default for AnisotropicNetworkModel {
     fn default() -> Self {
         Self {
-            cutoff: 15.0,       // ANM typically uses larger cutoff
+            cutoff: 15.0, // ANM typically uses larger cutoff
             gamma: 1.0,
             temperature: 310.0,
         }
@@ -287,7 +289,8 @@ impl AnisotropicNetworkModel {
             .enumerate()
             .map(|(i, &v)| (i, v))
             .collect();
-        indexed_eigenvalues.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        indexed_eigenvalues
+            .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Compute RMSF from modes
         // Skip first 6 modes (rigid body: 3 translations + 3 rotations)
@@ -317,15 +320,16 @@ impl AnisotropicNetworkModel {
         }
 
         // Scale and sqrt
-        let rmsf: Vec<f64> = rmsf_sq
-            .iter()
-            .map(|&sq| (scale * sq).sqrt())
-            .collect();
+        let rmsf: Vec<f64> = rmsf_sq.iter().map(|&sq| (scale * sq).sqrt()).collect();
 
         // Normalize
         let rmsf_mean: f64 = rmsf.iter().sum::<f64>() / n as f64;
         let target_mean = 0.8;
-        let scale_factor = if rmsf_mean > 1e-6 { target_mean / rmsf_mean } else { 1.0 };
+        let scale_factor = if rmsf_mean > 1e-6 {
+            target_mean / rmsf_mean
+        } else {
+            1.0
+        };
 
         let rmsf_scaled: Vec<f64> = rmsf.iter().map(|&r| r * scale_factor).collect();
 
@@ -453,9 +457,12 @@ mod tests {
         // Terminal (index 0, 3) should have higher RMSF than internal (1, 2)
         let terminal_avg = (result.rmsf[0] + result.rmsf[3]) / 2.0;
         let internal_avg = (result.rmsf[1] + result.rmsf[2]) / 2.0;
-        assert!(terminal_avg > internal_avg,
+        assert!(
+            terminal_avg > internal_avg,
             "Terminal residues should be more flexible: {} vs {}",
-            terminal_avg, internal_avg);
+            terminal_avg,
+            internal_avg
+        );
     }
 
     #[test]

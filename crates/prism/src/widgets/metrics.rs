@@ -34,15 +34,18 @@ impl Sparkline {
         let min = self.data.iter().cloned().fold(f64::INFINITY, f64::min);
         let range = max - min;
 
-        self.data.iter().map(|&v| {
-            if range == 0.0 {
-                bar_chars[bar_chars.len() / 2]
-            } else {
-                let normalized = (v - min) / range;
-                let index = (normalized * (bar_chars.len() - 1) as f64) as usize;
-                bar_chars[index.min(bar_chars.len() - 1)]
-            }
-        }).collect()
+        self.data
+            .iter()
+            .map(|&v| {
+                if range == 0.0 {
+                    bar_chars[bar_chars.len() / 2]
+                } else {
+                    let normalized = (v - min) / range;
+                    let index = (normalized * (bar_chars.len() - 1) as f64) as usize;
+                    bar_chars[index.min(bar_chars.len() - 1)]
+                }
+            })
+            .collect()
     }
 }
 

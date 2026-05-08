@@ -1,10 +1,10 @@
 //! Ground truth data extraction and validation
 
-use crate::structure_types::*;
 use crate::glycan_dynamics::calculate_effective_accessibility;
-use anyhow::{Result, Context};
-use std::collections::HashMap;
+use crate::structure_types::*;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
@@ -43,11 +43,15 @@ pub struct CuratedSourceAntigen {
 
 /// Load and parse IEDB epitope data from JSON file
 pub fn load_iedb_epitopes(path: &str) -> Result<Vec<IedbEpitope>> {
-    let file = File::open(path)
-        .with_context(|| format!("Failed to open IEDB data file: {}", path))?;
+    let file =
+        File::open(path).with_context(|| format!("Failed to open IEDB data file: {}", path))?;
     let reader = BufReader::new(file);
-    let epitopes: Vec<IedbEpitope> = serde_json::from_reader(reader)
-        .map_err(|e| anyhow::anyhow!("Failed to parse IEDB JSON: {} - check field types match structure", e))?;
+    let epitopes: Vec<IedbEpitope> = serde_json::from_reader(reader).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse IEDB JSON: {} - check field types match structure",
+            e
+        )
+    })?;
 
     println!("Loaded {} IEDB epitope records", epitopes.len());
     Ok(epitopes)
@@ -65,14 +69,20 @@ pub fn extract_ground_truth(structures: &[ParamyxoStructure]) -> Result<NivBench
     println!("\nMapping IEDB epitopes to PDB structures...");
     let epitopes = map_iedb_to_structures(structures, &iedb_epitopes)?;
 
-    println!("Mapped {} epitope definitions to structures", epitopes.len());
+    println!(
+        "Mapped {} epitope definitions to structures",
+        epitopes.len()
+    );
 
     // Cryptic site extraction from apo/holo pairs
     let apo_opt = structures.iter().find(|s| s.pdb_id == "8XPS");
     let holo_opt = structures.iter().find(|s| s.pdb_id == "8XQ3");
 
     if let (Some(apo), Some(holo)) = (apo_opt, holo_opt) {
-        println!("\nAnalyzing cryptic sites between {} (Apo) and {} (Holo)...", apo.pdb_id, holo.pdb_id);
+        println!(
+            "\nAnalyzing cryptic sites between {} (Apo) and {} (Holo)...",
+            apo.pdb_id, holo.pdb_id
+        );
         let accessibility = calculate_effective_accessibility(apo)?;
         let sites = define_cryptic_residues(apo, holo, &accessibility)?;
         cryptic_sites.insert("NiV_G_Dimeric_Interface".to_string(), sites);
@@ -113,16 +123,15 @@ fn map_iedb_to_structures(
 
                 let matches = match (&structure.virus, &structure.protein) {
                     (VirusType::Nipah, ProteinType::GProtein) => {
-                        protein_name.contains("Glycoprotein G") ||
-                        protein_name.contains("attachment glycoprotein")
-                    },
+                        protein_name.contains("Glycoprotein G")
+                            || protein_name.contains("attachment glycoprotein")
+                    }
                     (VirusType::Nipah, ProteinType::FProtein) => {
-                        protein_name.contains("Fusion") ||
-                        protein_name.contains("glycoprotein F")
-                    },
+                        protein_name.contains("Fusion") || protein_name.contains("glycoprotein F")
+                    }
                     (VirusType::Hendra, ProteinType::GProtein) => {
                         protein_name.contains("Glycoprotein G")
-                    },
+                    }
                     _ => false,
                 };
 
@@ -139,17 +148,30 @@ fn map_iedb_to_structures(
 
                     if start > 0 && end <= structure.residues.len() {
                         // Extract PDB sequence for this range (convert to 0-indexed)
-                        let pdb_seq: String = structure.residues[(start-1)..end]
+                        let pdb_seq: String = structure.residues[(start - 1)..end]
                             .iter()
-                            .map(|r| {
-                                match r.name.as_str() {
-                                    "ALA" => 'A', "CYS" => 'C', "ASP" => 'D', "GLU" => 'E',
-                                    "PHE" => 'F', "GLY" => 'G', "HIS" => 'H', "ILE" => 'I',
-                                    "LYS" => 'K', "LEU" => 'L', "MET" => 'M', "ASN" => 'N',
-                                    "PRO" => 'P', "GLN" => 'Q', "ARG" => 'R', "SER" => 'S',
-                                    "THR" => 'T', "VAL" => 'V', "TRP" => 'W', "TYR" => 'Y',
-                                    _ => 'X',
-                                }
+                            .map(|r| match r.name.as_str() {
+                                "ALA" => 'A',
+                                "CYS" => 'C',
+                                "ASP" => 'D',
+                                "GLU" => 'E',
+                                "PHE" => 'F',
+                                "GLY" => 'G',
+                                "HIS" => 'H',
+                                "ILE" => 'I',
+                                "LYS" => 'K',
+                                "LEU" => 'L',
+                                "MET" => 'M',
+                                "ASN" => 'N',
+                                "PRO" => 'P',
+                                "GLN" => 'Q',
+                                "ARG" => 'R',
+                                "SER" => 'S',
+                                "THR" => 'T',
+                                "VAL" => 'V',
+                                "TRP" => 'W',
+                                "TYR" => 'Y',
+                                _ => 'X',
                             })
                             .collect();
 
@@ -160,7 +182,9 @@ fn map_iedb_to_structures(
                         };
 
                         if pdb_seq == iedb_sequence {
-                            let is_positive = iedb_ep.qualitative_measures.iter()
+                            let is_positive = iedb_ep
+                                .qualitative_measures
+                                .iter()
                                 .any(|m| m.contains("Positive"));
 
                             structure_epitopes.push(EpitopeDefinition {
@@ -180,7 +204,11 @@ fn map_iedb_to_structures(
         }
 
         if !structure_epitopes.is_empty() {
-            println!("  {} epitopes mapped to {}", structure_epitopes.len(), structure.pdb_id);
+            println!(
+                "  {} epitopes mapped to {}",
+                structure_epitopes.len(),
+                structure.pdb_id
+            );
             epitope_map.insert(structure.pdb_id.clone(), structure_epitopes);
         }
     }
@@ -203,52 +231,56 @@ fn determine_epitope_class(assay_names: &[String]) -> String {
 
 /// Define cryptic residues based on accessibility changes and pRMSD
 pub fn define_cryptic_residues(
-    apo: &ParamyxoStructure, 
-    holo: &ParamyxoStructure, 
-    effective_accessibility: &[f32]
+    apo: &ParamyxoStructure,
+    holo: &ParamyxoStructure,
+    effective_accessibility: &[f32],
 ) -> Result<Vec<CrypticSite>> {
     let mut sites = Vec::new();
     let mut current_site_residues = Vec::new();
     let mut current_sasa_apo = Vec::new();
     let mut current_sasa_holo = Vec::new();
     let mut total_prmsd = 0.0;
-    
+
     // Compute Holo SASA (approximate)
     let holo_sasa = crate::glycan_dynamics::calculate_effective_accessibility(holo)?;
 
     // Align sequences/residues (Assume 1-to-1 mapping by sequence number for now)
     // This is brittle if numbering differs, but standard for same protein different PDBs
-    
+
     for (i, res_apo) in apo.residues.iter().enumerate() {
         // Find corresponding residue in holo
         if let Some(res_holo) = holo.get_residue(res_apo.sequence_number) {
-            let idx_holo = holo.residues.iter().position(|r| r.sequence_number == res_apo.sequence_number).unwrap_or(0);
-            
+            let idx_holo = holo
+                .residues
+                .iter()
+                .position(|r| r.sequence_number == res_apo.sequence_number)
+                .unwrap_or(0);
+
             let acc_apo = effective_accessibility[i];
             let acc_holo = holo_sasa[idx_holo]; // Use effective here too, or raw? Prompt says SASA_holo > 30.
-            
+
             // Cryptic definition: Hidden in Apo (< 10 A^2), Exposed in Holo (> 30 A^2)
             // Note: Usually cryptic means exposed in Apo but hidden in Holo (interface), OR hidden in Apo (closed) and exposed in Holo (open).
             // Prompt says: "Cryptic = effective_accessibility < 10 Å² AND SASA_holo > 30 Å²" -> Hidden in Apo, Exposed in Holo.
-            
+
             let is_cryptic = acc_apo < 10.0 && acc_holo > 30.0;
-            
+
             if is_cryptic {
                 // Calculate pRMSD for this residue
                 let dx = res_apo.ca_coords.0 - res_holo.ca_coords.0;
                 let dy = res_apo.ca_coords.1 - res_holo.ca_coords.1;
                 let dz = res_apo.ca_coords.2 - res_holo.ca_coords.2;
-                let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
 
                 current_site_residues.push(res_apo.sequence_number);
                 current_sasa_apo.push(acc_apo);
                 current_sasa_holo.push(acc_holo);
                 total_prmsd += dist;
             } else if !current_site_residues.is_empty() {
-                // End of a contiguous segment? 
+                // End of a contiguous segment?
                 // Grouping by spatial proximity is better, but sequence grouping is a start.
                 // For now, we just collect all individual residues or small patches.
-                // Let's just collect them all into one "Site" for the interface? 
+                // Let's just collect them all into one "Site" for the interface?
                 // Or make single-residue sites?
                 // Structure definition has `residues: Vec<u32>`.
             }
@@ -256,7 +288,7 @@ pub fn define_cryptic_residues(
     }
 
     if !current_site_residues.is_empty() {
-         sites.push(CrypticSite {
+        sites.push(CrypticSite {
             residues: current_site_residues.clone(),
             sasa_apo: current_sasa_apo,
             sasa_holo: current_sasa_holo,
@@ -270,16 +302,21 @@ pub fn define_cryptic_residues(
 
 fn create_splits() -> (Vec<String>, Vec<String>, Vec<String>) {
     let train = vec![
-        "8XPS".to_string(), "8XQ3".to_string(), "7TY0".to_string(), // NiV G
-        "2X9M".to_string(), "6CMG".to_string()  // HeV G
+        "8XPS".to_string(),
+        "8XQ3".to_string(),
+        "7TY0".to_string(), // NiV G
+        "2X9M".to_string(),
+        "6CMG".to_string(), // HeV G
     ];
-    
+
     let test = vec![
-        "7UPK".to_string(), "7UPD".to_string(), "7UPB".to_string(), // NiV F
-        "7UPH".to_string() // Cross-reactive
+        "7UPK".to_string(),
+        "7UPD".to_string(),
+        "7UPB".to_string(), // NiV F
+        "7UPH".to_string(), // Cross-reactive
     ];
-    
+
     let val = vec![]; // Use subset of train or specific validation set
-    
+
     (train, test, val)
 }

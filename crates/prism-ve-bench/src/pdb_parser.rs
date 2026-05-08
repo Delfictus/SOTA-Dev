@@ -10,10 +10,10 @@
 //! - Burial (solvent accessibility proxy)
 //! - Conservation (from known data)
 
-use anyhow::{Result, Context, bail};
+use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 /// Amino acid 3-letter to 1-letter mapping
 pub fn aa3_to_index(aa3: &str) -> i32 {
@@ -38,7 +38,7 @@ pub fn aa3_to_index(aa3: &str) -> i32 {
         "VAL" => 17,
         "TRP" => 18,
         "TYR" => 19,
-        _ => 0,  // Unknown defaults to ALA
+        _ => 0, // Unknown defaults to ALA
     }
 }
 
@@ -141,8 +141,8 @@ struct PdbAtom {
 impl PdbStructure {
     /// Parse a PDB file
     pub fn from_file(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)
-            .context(format!("Failed to read PDB file: {:?}", path))?;
+        let content =
+            fs::read_to_string(path).context(format!("Failed to read PDB file: {:?}", path))?;
 
         Self::from_string(&content)
     }
@@ -175,9 +175,7 @@ impl PdbStructure {
 
         // Sort residues by chain and residue number
         let mut residue_keys: Vec<_> = residue_atoms.keys().cloned().collect();
-        residue_keys.sort_by(|a, b| {
-            a.0.cmp(&b.0).then(a.1.cmp(&b.1))
-        });
+        residue_keys.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
         // Build output arrays
         let mut atoms: Vec<f32> = Vec::new();
@@ -273,7 +271,8 @@ impl PdbStructure {
         let z: f32 = line.get(46..54)?.trim().parse().ok()?;
 
         // B-factor (optional, default to 50.0)
-        let bfactor: f32 = line.get(60..66)
+        let bfactor: f32 = line
+            .get(60..66)
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(50.0);
 
@@ -338,8 +337,8 @@ impl PdbStructure {
     /// Uses neighbor counting within 10Å as a proxy for burial
     pub fn compute_burial(&self) -> Vec<f32> {
         let mut burial = vec![0.0f32; self.n_residues];
-        let contact_dist = 10.0f32;  // Angstroms
-        let max_contacts = 15.0f32;  // Normalization
+        let contact_dist = 10.0f32; // Angstroms
+        let max_contacts = 15.0f32; // Normalization
 
         for i in 0..self.n_residues {
             let ca_i = self.ca_indices[i] as usize;
@@ -383,13 +382,14 @@ impl PdbStructure {
         }
 
         let min_b = self.bfactors.iter().cloned().fold(f32::INFINITY, f32::min);
-        let max_b = self.bfactors.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let max_b = self
+            .bfactors
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
         let range = (max_b - min_b).max(1.0);
 
-        self.bfactors
-            .iter()
-            .map(|&b| (b - min_b) / range)
-            .collect()
+        self.bfactors.iter().map(|&b| (b - min_b) / range).collect()
     }
 
     /// Get residue index for a given residue number
@@ -403,16 +403,19 @@ impl PdbStructure {
         let mut new_structure = self.clone();
 
         // Find residue index
-        let res_idx = self.residue_index(res_num)
+        let res_idx = self
+            .residue_index(res_num)
             .context(format!("Residue {} not found", res_num))?;
 
         // Update residue type
         new_structure.residue_types[res_idx] = aa1_to_index(new_aa);
 
-        log::debug!("Applied mutation at position {}: {} -> {}",
-                    res_num,
-                    index_to_aa1(self.residue_types[res_idx]),
-                    new_aa);
+        log::debug!(
+            "Applied mutation at position {}: {} -> {}",
+            res_num,
+            index_to_aa1(self.residue_types[res_idx]),
+            new_aa
+        );
 
         Ok(new_structure)
     }
@@ -439,7 +442,7 @@ impl PdbStructure {
             let new_aa = chars[chars.len() - 1];
 
             // Extract position number
-            let pos_str: String = chars[1..chars.len()-1].iter().collect();
+            let pos_str: String = chars[1..chars.len() - 1].iter().collect();
             let res_num: i32 = match pos_str.parse() {
                 Ok(n) => n,
                 Err(_) => {
@@ -477,7 +480,8 @@ mod tests {
 
     #[test]
     fn test_parse_atom_line() {
-        let line = "ATOM   4879  N   THR E 333     -34.808  16.588  48.236  1.00107.78           N  ";
+        let line =
+            "ATOM   4879  N   THR E 333     -34.808  16.588  48.236  1.00107.78           N  ";
         let atom = PdbStructure::parse_atom_line(line);
         assert!(atom.is_some());
         let atom = atom.unwrap();

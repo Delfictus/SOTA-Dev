@@ -513,7 +513,10 @@ pub fn kabsch_align(reference: &[[f64; 3]], mobile: &[[f64; 3]]) -> Result<Align
 }
 
 /// Align holo to apo using CA atoms
-pub fn align_structures(apo_pdb: impl AsRef<Path>, holo_pdb: impl AsRef<Path>) -> Result<Alignment> {
+pub fn align_structures(
+    apo_pdb: impl AsRef<Path>,
+    holo_pdb: impl AsRef<Path>,
+) -> Result<Alignment> {
     let apo_atoms = parse_pdb(apo_pdb)?;
     let holo_atoms = parse_pdb(holo_pdb)?;
 
@@ -620,8 +623,7 @@ pub fn compute_voxel_ligand_overlap(
     // Count occupied voxels
     let occupied_voxels: Vec<(usize, usize, usize)> = (0..grid.dims[2])
         .flat_map(|z| {
-            (0..grid.dims[1])
-                .flat_map(move |y| (0..grid.dims[0]).map(move |x| (x, y, z)))
+            (0..grid.dims[1]).flat_map(move |y| (0..grid.dims[0]).map(move |x| (x, y, z)))
         })
         .filter(|&(x, y, z)| grid.get(x, y, z) > threshold)
         .collect();
@@ -670,9 +672,15 @@ mod tests {
     }
 
     fn mat_approx_identity(m: &Mat3, tol: f64) -> bool {
-        approx_eq(m[0][0], 1.0, tol) && approx_eq(m[0][1], 0.0, tol) && approx_eq(m[0][2], 0.0, tol) &&
-        approx_eq(m[1][0], 0.0, tol) && approx_eq(m[1][1], 1.0, tol) && approx_eq(m[1][2], 0.0, tol) &&
-        approx_eq(m[2][0], 0.0, tol) && approx_eq(m[2][1], 0.0, tol) && approx_eq(m[2][2], 1.0, tol)
+        approx_eq(m[0][0], 1.0, tol)
+            && approx_eq(m[0][1], 0.0, tol)
+            && approx_eq(m[0][2], 0.0, tol)
+            && approx_eq(m[1][0], 0.0, tol)
+            && approx_eq(m[1][1], 1.0, tol)
+            && approx_eq(m[1][2], 0.0, tol)
+            && approx_eq(m[2][0], 0.0, tol)
+            && approx_eq(m[2][1], 0.0, tol)
+            && approx_eq(m[2][2], 1.0, tol)
     }
 
     fn vec_approx_eq(a: [f64; 3], b: [f64; 3], tol: f64) -> bool {
@@ -701,21 +709,34 @@ mod tests {
         let alignment = kabsch_align(&points, &points).unwrap();
 
         // RMSD should be essentially zero
-        assert!(alignment.rmsd < 1e-10, "RMSD should be ~0, got {}", alignment.rmsd);
+        assert!(
+            alignment.rmsd < 1e-10,
+            "RMSD should be ~0, got {}",
+            alignment.rmsd
+        );
 
         // Rotation should be identity
-        assert!(mat_approx_identity(&alignment.rotation, 1e-10),
-            "Rotation should be identity, got {:?}", alignment.rotation);
+        assert!(
+            mat_approx_identity(&alignment.rotation, 1e-10),
+            "Rotation should be identity, got {:?}",
+            alignment.rotation
+        );
 
         // Centroids should be equal
-        assert!(vec_approx_eq(alignment.centroid_ref, alignment.centroid_mob, 1e-10),
-            "Centroids should match");
+        assert!(
+            vec_approx_eq(alignment.centroid_ref, alignment.centroid_mob, 1e-10),
+            "Centroids should match"
+        );
 
         // Transform should return same points
         for &p in &points {
             let transformed = alignment.transform(p);
-            assert!(vec_approx_eq(transformed, p, 1e-10),
-                "Transform should preserve points, got {:?} vs {:?}", transformed, p);
+            assert!(
+                vec_approx_eq(transformed, p, 1e-10),
+                "Transform should preserve points, got {:?} vs {:?}",
+                transformed,
+                p
+            );
         }
     }
 
@@ -731,17 +752,30 @@ mod tests {
         let translation = [5.0, 5.0, 5.0];
         let mobile: Vec<[f64; 3]> = reference
             .iter()
-            .map(|p| [p[0] + translation[0], p[1] + translation[1], p[2] + translation[2]])
+            .map(|p| {
+                [
+                    p[0] + translation[0],
+                    p[1] + translation[1],
+                    p[2] + translation[2],
+                ]
+            })
             .collect();
 
         let alignment = kabsch_align(&reference, &mobile).unwrap();
 
         // RMSD should be essentially zero (pure translation)
-        assert!(alignment.rmsd < 1e-10, "RMSD should be ~0 for pure translation, got {}", alignment.rmsd);
+        assert!(
+            alignment.rmsd < 1e-10,
+            "RMSD should be ~0 for pure translation, got {}",
+            alignment.rmsd
+        );
 
         // Rotation should be identity
-        assert!(mat_approx_identity(&alignment.rotation, 1e-10),
-            "Rotation should be identity for pure translation, got {:?}", alignment.rotation);
+        assert!(
+            mat_approx_identity(&alignment.rotation, 1e-10),
+            "Rotation should be identity for pure translation, got {:?}",
+            alignment.rotation
+        );
 
         // Translation = centroid_ref - centroid_mob should equal -translation
         let computed_translation = [
@@ -750,14 +784,23 @@ mod tests {
             alignment.centroid_ref[2] - alignment.centroid_mob[2],
         ];
         let expected_translation = [-translation[0], -translation[1], -translation[2]];
-        assert!(vec_approx_eq(computed_translation, expected_translation, 1e-10),
-            "Translation should be {:?}, got {:?}", expected_translation, computed_translation);
+        assert!(
+            vec_approx_eq(computed_translation, expected_translation, 1e-10),
+            "Translation should be {:?}, got {:?}",
+            expected_translation,
+            computed_translation
+        );
 
         // Transform mobile points back to reference
         for (i, &m) in mobile.iter().enumerate() {
             let transformed = alignment.transform(m);
-            assert!(vec_approx_eq(transformed, reference[i], 1e-10),
-                "Point {} mismatch: {:?} vs {:?}", i, transformed, reference[i]);
+            assert!(
+                vec_approx_eq(transformed, reference[i], 1e-10),
+                "Point {} mismatch: {:?} vs {:?}",
+                i,
+                transformed,
+                reference[i]
+            );
         }
     }
 
@@ -781,13 +824,22 @@ mod tests {
         let alignment = kabsch_align(&reference, &mobile).unwrap();
 
         // RMSD should be ~0
-        assert!(alignment.rmsd < 1e-8, "RMSD should be ~0, got {}", alignment.rmsd);
+        assert!(
+            alignment.rmsd < 1e-8,
+            "RMSD should be ~0, got {}",
+            alignment.rmsd
+        );
 
         // Transform mobile back to reference
         for (i, &m) in mobile.iter().enumerate() {
             let transformed = alignment.transform(m);
-            assert!(vec_approx_eq(transformed, reference[i], 1e-8),
-                "Point {} mismatch after rotation: {:?} vs {:?}", i, transformed, reference[i]);
+            assert!(
+                vec_approx_eq(transformed, reference[i], 1e-8),
+                "Point {} mismatch after rotation: {:?} vs {:?}",
+                i,
+                transformed,
+                reference[i]
+            );
         }
     }
 
@@ -813,7 +865,10 @@ mod tests {
         // Various rotated versions
         let test_cases = vec![
             // Pure translation
-            reference.iter().map(|p| [p[0] + 10.0, p[1] - 5.0, p[2] + 3.0]).collect::<Vec<_>>(),
+            reference
+                .iter()
+                .map(|p| [p[0] + 10.0, p[1] - 5.0, p[2] + 3.0])
+                .collect::<Vec<_>>(),
             // Identity
             reference.to_vec(),
         ];
@@ -821,7 +876,11 @@ mod tests {
         for mobile in test_cases {
             let alignment = kabsch_align(&reference, &mobile).unwrap();
             let d = det3(&alignment.rotation);
-            assert!((d - 1.0).abs() < 1e-10, "Determinant should be +1, got {}", d);
+            assert!(
+                (d - 1.0).abs() < 1e-10,
+                "Determinant should be +1, got {}",
+                d
+            );
         }
     }
 }

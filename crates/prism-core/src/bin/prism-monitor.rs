@@ -44,9 +44,7 @@ use ratatui::{
     style::{Color, Modifier, Style, Stylize},
     symbols,
     text::{Line, Span},
-    widgets::{
-        Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph,
-    },
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph},
 };
 use std::{
     collections::VecDeque,
@@ -87,7 +85,8 @@ impl TelemetryHistory {
         // Add new data points
         self.energy.push_back((time, frame.energy as f64));
         self.temperature.push_back((time, frame.temperature as f64));
-        self.acceptance.push_back((time, frame.acceptance_rate as f64 * 100.0));
+        self.acceptance
+            .push_back((time, frame.acceptance_rate as f64 * 100.0));
         self.gradient.push_back((time, frame.gradient_norm as f64));
 
         // Maintain maximum history size
@@ -358,7 +357,10 @@ fn render_energy_chart(f: &mut ratatui::Frame, area: Rect, state: &DashboardStat
     }
 
     let min_energy = data.iter().map(|(_, e)| *e).fold(f64::INFINITY, f64::min);
-    let max_energy = data.iter().map(|(_, e)| *e).fold(f64::NEG_INFINITY, f64::max);
+    let max_energy = data
+        .iter()
+        .map(|(_, e)| *e)
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let dataset = Dataset::default()
         .name("Hamiltonian")
@@ -373,7 +375,11 @@ fn render_energy_chart(f: &mut ratatui::Frame, area: Rect, state: &DashboardStat
                 .title("Energy Convergence")
                 .borders(Borders::ALL),
         )
-        .x_axis(Axis::default().title("Time (s)").style(Style::default().fg(Color::Gray)))
+        .x_axis(
+            Axis::default()
+                .title("Time (s)")
+                .style(Style::default().fg(Color::Gray)),
+        )
         .y_axis(
             Axis::default()
                 .title("Energy")
@@ -405,7 +411,11 @@ fn render_temperature_chart(f: &mut ratatui::Frame, area: Rect, state: &Dashboar
                 .title("Temperature Control")
                 .borders(Borders::ALL),
         )
-        .x_axis(Axis::default().title("Time (s)").style(Style::default().fg(Color::Gray)))
+        .x_axis(
+            Axis::default()
+                .title("Time (s)")
+                .style(Style::default().fg(Color::Gray)),
+        )
         .y_axis(
             Axis::default()
                 .title("Temperature")
@@ -437,7 +447,11 @@ fn render_acceptance_chart(f: &mut ratatui::Frame, area: Rect, state: &Dashboard
                 .title("Monte Carlo Acceptance")
                 .borders(Borders::ALL),
         )
-        .x_axis(Axis::default().title("Time (s)").style(Style::default().fg(Color::Gray)))
+        .x_axis(
+            Axis::default()
+                .title("Time (s)")
+                .style(Style::default().fg(Color::Gray)),
+        )
         .y_axis(
             Axis::default()
                 .title("Acceptance %")
@@ -471,7 +485,11 @@ fn render_gradient_chart(f: &mut ratatui::Frame, area: Rect, state: &DashboardSt
                 .title("Gradient Convergence")
                 .borders(Borders::ALL),
         )
-        .x_axis(Axis::default().title("Time (s)").style(Style::default().fg(Color::Gray)))
+        .x_axis(
+            Axis::default()
+                .title("Time (s)")
+                .style(Style::default().fg(Color::Gray)),
+        )
         .y_axis(
             Axis::default()
                 .title("‖∇H‖")
@@ -527,4 +545,3 @@ fn render_help_screen(f: &mut ratatui::Frame, area: Rect) {
 
     f.render_widget(paragraph, area);
 }
-

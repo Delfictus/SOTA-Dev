@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use log::{info, error};
+use log::{error, info};
 use std::path::Path;
 
 #[cfg(feature = "rl")]
@@ -74,7 +74,10 @@ fn main() -> Result<()> {
         .init();
 
     // Print header
-    println!("🧬 PRISM-Zero v{} Training Engine", prism_learning::PRISM_ZERO_VERSION);
+    println!(
+        "🧬 PRISM-Zero v{} Training Engine",
+        prism_learning::PRISM_ZERO_VERSION
+    );
     println!("🚀 Self-calibrating molecular dynamics with reinforcement learning");
     println!("{}", "=".repeat(70));
 
@@ -103,7 +106,10 @@ fn main() -> Result<()> {
         info!("  Target reward: {:.3}", reward);
     }
     if config.parallel_targets {
-        info!("  ⚡ HYPER-Q PARALLEL: {} CUDA streams", config.parallel_jobs);
+        info!(
+            "  ⚡ HYPER-Q PARALLEL: {} CUDA streams",
+            config.parallel_jobs
+        );
     }
     println!();
 
@@ -125,12 +131,27 @@ fn main() -> Result<()> {
             println!("📊 Final Statistics:");
             println!("   Targets completed: {}", stats["targets_completed"]);
             println!("   Total episodes: {}", stats["total_episodes"]);
-            println!("   Total simulation steps: {}", stats["total_simulation_steps"]);
+            println!(
+                "   Total simulation steps: {}",
+                stats["total_simulation_steps"]
+            );
             println!("   Total transitions: {}", stats["total_transitions"]);
-            println!("   Average best reward: {:.3}", stats["average_best_reward"]);
-            println!("   Best overall reward: {:.3}", stats["best_overall_reward"]);
-            println!("   Training time: {:.1} minutes", training_time.as_secs_f32() / 60.0);
-            println!("\n📁 Results saved to: {}/training_results.json", args.output);
+            println!(
+                "   Average best reward: {:.3}",
+                stats["average_best_reward"]
+            );
+            println!(
+                "   Best overall reward: {:.3}",
+                stats["best_overall_reward"]
+            );
+            println!(
+                "   Training time: {:.1} minutes",
+                training_time.as_secs_f32() / 60.0
+            );
+            println!(
+                "\n📁 Results saved to: {}/training_results.json",
+                args.output
+            );
 
             Ok(())
         }
@@ -156,8 +177,8 @@ fn validate_inputs(args: &Args) -> Result<()> {
     }
 
     // Validate manifest is valid JSON
-    let manifest_content = std::fs::read_to_string(&args.manifest)
-        .context("Failed to read manifest file")?;
+    let manifest_content =
+        std::fs::read_to_string(&args.manifest).context("Failed to read manifest file")?;
 
     serde_json::from_str::<serde_json::Value>(&manifest_content)
         .context("Manifest file contains invalid JSON")?;

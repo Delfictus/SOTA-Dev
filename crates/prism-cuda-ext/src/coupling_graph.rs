@@ -19,8 +19,8 @@
 //! engines in each group, plus the cross-group threshold adaptation.
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaStream, CudaSlice, CudaFunction, LaunchConfig, PushKernelArg};
 use cudarc::driver::sys;
+use cudarc::driver::{CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
 use std::sync::Arc;
 
 use crate::graph_builder::check;
@@ -50,10 +50,7 @@ impl CouplingReplayGraph {
     /// The `run_coupling_step` closure should launch all coupling kernels
     /// on the exchange stream using the normal launch_builder API.
     /// During capture, these launches are recorded, not executed.
-    pub fn capture<F>(
-        stream: &Arc<CudaStream>,
-        run_coupling_step: F,
-    ) -> Result<Self>
+    pub fn capture<F>(stream: &Arc<CudaStream>, run_coupling_step: F) -> Result<Self>
     where
         F: FnOnce() -> Result<()>,
     {
@@ -118,7 +115,10 @@ impl CouplingReplayGraph {
             )?;
         }
 
-        log::info!("  Coupling graph: captured {} kernel nodes, instantiated for replay", n_nodes);
+        log::info!(
+            "  Coupling graph: captured {} kernel nodes, instantiated for replay",
+            n_nodes
+        );
 
         Ok(Self {
             cu_graph,

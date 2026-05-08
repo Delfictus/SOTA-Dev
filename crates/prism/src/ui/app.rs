@@ -308,7 +308,10 @@ impl App {
              {}",
             env!("CARGO_PKG_VERSION"),
             if let Some(ref path) = self.input_path {
-                format!("I see you've loaded: {}\n\nReady to analyze when you are.", path)
+                format!(
+                    "I see you've loaded: {}\n\nReady to analyze when you are.",
+                    path
+                )
             } else {
                 "Load a file to get started, or ask me anything.".into()
             }
@@ -495,7 +498,10 @@ impl App {
                 path
             ))
         } else {
-            Ok(format!("Loaded: {}\n\nFile type not recognized. Please specify mode.", path))
+            Ok(format!(
+                "Loaded: {}\n\nFile type not recognized. Please specify mode.",
+                path
+            ))
         }
     }
 
@@ -614,7 +620,8 @@ impl App {
                     • set <param> <value> - Adjust parameters\n\
                     • status - Show current status\n\
                     • explain <topic> - Explain what's happening\n\n\
-                    Or just ask me anything about the optimization!".into();
+                    Or just ask me anything about the optimization!"
+                .into();
         }
 
         if input_lower.contains("explain") {
@@ -647,7 +654,8 @@ impl App {
 
         // Default response
         "I understand. Let me know if you'd like me to explain what's happening, \
-         adjust parameters, or help with anything else.".into()
+         adjust parameters, or help with anything else."
+            .into()
     }
 
     /// Update state (called each frame)
@@ -658,11 +666,7 @@ impl App {
         if self.event_receiver.is_some() {
             // Process all available events without blocking
             loop {
-                let event_result = self
-                    .event_receiver
-                    .as_mut()
-                    .unwrap()
-                    .try_recv();
+                let event_result = self.event_receiver.as_mut().unwrap().try_recv();
 
                 match event_result {
                     Ok(event) => {
@@ -725,11 +729,19 @@ impl App {
         use crate::runtime::events::PhaseId;
 
         match event {
-            PrismEvent::GraphLoaded { vertices, edges, density, estimated_chromatic } => {
+            PrismEvent::GraphLoaded {
+                vertices,
+                edges,
+                density,
+                estimated_chromatic,
+            } => {
                 self.dialogue.add_system_message(&format!(
                     "Graph loaded: {} vertices, {} edges (density: {:.2}%)\n\
                      Estimated chromatic number: {}",
-                    vertices, edges, density * 100.0, estimated_chromatic
+                    vertices,
+                    edges,
+                    density * 100.0,
+                    estimated_chromatic
                 ));
             }
 
@@ -741,10 +753,18 @@ impl App {
                 }
             }
 
-            PrismEvent::PhaseProgress { phase, iteration, max_iterations, colors, conflicts, temperature } => {
+            PrismEvent::PhaseProgress {
+                phase,
+                iteration,
+                max_iterations,
+                colors,
+                conflicts,
+                temperature,
+            } => {
                 let phase_idx = phase.index();
                 if phase_idx < self.phases.len() {
-                    self.phases[phase_idx].progress = (iteration as f64 / max_iterations as f64) * 100.0;
+                    self.phases[phase_idx].progress =
+                        (iteration as f64 / max_iterations as f64) * 100.0;
                 }
 
                 // Update optimization state
@@ -755,7 +775,12 @@ impl App {
                 self.optimization.temperature = temperature;
             }
 
-            PrismEvent::PhaseCompleted { phase, duration_ms, final_colors, final_conflicts } => {
+            PrismEvent::PhaseCompleted {
+                phase,
+                duration_ms,
+                final_colors,
+                final_conflicts,
+            } => {
                 let phase_idx = phase.index();
                 if phase_idx < self.phases.len() {
                     self.phases[phase_idx].status = PhaseState::Completed;
@@ -769,20 +794,40 @@ impl App {
                 if phase_idx < self.phases.len() {
                     self.phases[phase_idx].status = PhaseState::Failed;
                 }
-                self.dialogue.add_system_message(&format!("Phase {} failed: {}", phase.name(), error));
+                self.dialogue.add_system_message(&format!(
+                    "Phase {} failed: {}",
+                    phase.name(),
+                    error
+                ));
             }
 
-            PrismEvent::NewBestSolution { colors, conflicts, iteration, phase } => {
+            PrismEvent::NewBestSolution {
+                colors,
+                conflicts,
+                iteration,
+                phase,
+            } => {
                 self.optimization.best_colors = colors;
                 self.optimization.best_conflicts = conflicts;
 
                 self.dialogue.add_system_message(&format!(
                     "New best solution! {} colors, {} conflicts (iteration {}, {})",
-                    colors, conflicts, iteration, phase.name()
+                    colors,
+                    conflicts,
+                    iteration,
+                    phase.name()
                 ));
             }
 
-            PrismEvent::GpuStatus { device_id, name, utilization, memory_used, memory_total, temperature, power_watts } => {
+            PrismEvent::GpuStatus {
+                device_id,
+                name,
+                utilization,
+                memory_used,
+                memory_total,
+                temperature,
+                power_watts,
+            } => {
                 if device_id == self.gpu_device {
                     self.gpu.name = name;
                     self.gpu.utilization = utilization;
@@ -792,7 +837,13 @@ impl App {
                 }
             }
 
-            PrismEvent::ReplicaUpdate { replica_id, temperature, colors, conflicts, energy } => {
+            PrismEvent::ReplicaUpdate {
+                replica_id,
+                temperature,
+                colors,
+                conflicts,
+                energy,
+            } => {
                 // Update replica states for visualization
                 while self.optimization.replicas.len() <= replica_id {
                     self.optimization.replicas.push(ReplicaState {
@@ -811,22 +862,36 @@ impl App {
                 }
             }
 
-            PrismEvent::QuantumState { coherence, top_amplitudes, tunneling_rate } => {
+            PrismEvent::QuantumState {
+                coherence,
+                top_amplitudes,
+                tunneling_rate,
+            } => {
                 self.optimization.quantum_coherence = coherence;
                 self.optimization.quantum_amplitudes = top_amplitudes;
             }
 
-            PrismEvent::DendriticUpdate { active_neurons, total_neurons, firing_rate, pattern_detected } => {
+            PrismEvent::DendriticUpdate {
+                active_neurons,
+                total_neurons,
+                firing_rate,
+                pattern_detected,
+            } => {
                 self.optimization.dendritic_active_neurons = active_neurons;
                 self.optimization.dendritic_total_neurons = total_neurons;
                 self.optimization.dendritic_firing_rate = firing_rate;
 
                 if let Some(pattern) = pattern_detected {
-                    self.dialogue.add_system_message(&format!("Pattern detected: {}", pattern));
+                    self.dialogue
+                        .add_system_message(&format!("Pattern detected: {}", pattern));
                 }
             }
 
-            PrismEvent::OptimizationCompleted { total_duration_ms, final_colors, attempts } => {
+            PrismEvent::OptimizationCompleted {
+                total_duration_ms,
+                final_colors,
+                attempts,
+            } => {
                 self.dialogue.add_system_message(&format!(
                     "Optimization complete! Final result: {} colors in {:.2}s ({} attempts)",
                     final_colors,
@@ -835,7 +900,11 @@ impl App {
                 ));
             }
 
-            PrismEvent::Error { source, message, recoverable } => {
+            PrismEvent::Error {
+                source,
+                message,
+                recoverable,
+            } => {
                 self.dialogue.add_system_message(&format!(
                     "Error in {}: {} ({})",
                     source,

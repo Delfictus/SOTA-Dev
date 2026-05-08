@@ -582,7 +582,10 @@ mod tests {
         let globular = generate_globular_positions(30);
         let co_globular = compute_contact_order(&globular, 8.0);
 
-        println!("Contact order - Extended: {}, Globular: {}", co_extended, co_globular);
+        println!(
+            "Contact order - Extended: {}, Globular: {}",
+            co_extended, co_globular
+        );
 
         // Globular should have higher contact order
         assert!(

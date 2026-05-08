@@ -9,30 +9,47 @@
 //! - Real-time integrity monitoring during data processing
 //! - Comprehensive error reporting for security violations
 
+use crate::{PrismIoError, Result};
 use blake3;
 use std::collections::HashMap;
-use crate::{PrismIoError, Result};
 
 /// Known BLAKE3 hashes for authentic biological datasets
 /// These hashes are cryptographically verified and represent real data sources
 /// BLAKE3 provides 10x-20x faster hashing with parallel processing and SIMD acceleration
 const AUTHENTIC_DATASETS: &[(&str, &str)] = &[
-    ("6VXX", "1644d0263c9b799a715d323c4a25a4466bf69ba20b058787d27900461a9964e3"),
+    (
+        "6VXX",
+        "1644d0263c9b799a715d323c4a25a4466bf69ba20b058787d27900461a9964e3",
+    ),
     // First Light Test Dataset - 2VWD Nipah G Glycoprotein (REAL RCSB DATA)
-    ("pdb_2vwd_first_light", "d0420029630bbaaa22e529e837a22757feabf30f3b6103dc87da15d5951aa0e0"),
-
+    (
+        "pdb_2vwd_first_light",
+        "d0420029630bbaaa22e529e837a22757feabf30f3b6103dc87da15d5951aa0e0",
+    ),
     // NCBI GenBank Nipah virus glycoprotein sequences (BLAKE3)
-    ("nipah_g_genbank", "b3a1c9d7f2e8456789abcdef0123456789abcdef0123456789abcdef0123456789"),
-
+    (
+        "nipah_g_genbank",
+        "b3a1c9d7f2e8456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    ),
     // RCSB PDB structures (BLAKE3)
-    ("pdb_2vwd_nipah_ephrin", "c7f4a2d6e1b8459def0123456789abcdef0123456789abcdef0123456789abcdef"),
-    ("pdb_3d11_m102_antibody", "d4e8b3c7f2a5690abc123456789abcdef0123456789abcdef0123456789abcdef01"),
-
+    (
+        "pdb_2vwd_nipah_ephrin",
+        "c7f4a2d6e1b8459def0123456789abcdef0123456789abcdef0123456789abcdef",
+    ),
+    (
+        "pdb_3d11_m102_antibody",
+        "d4e8b3c7f2a5690abc123456789abcdef0123456789abcdef0123456789abcdef01",
+    ),
     // UniProt protein sequences (BLAKE3)
-    ("hendra_g_uniprot", "a5f9c3e7b2d6481s1r0q9p8o7n6m5l4k3j2i1h0g9f8e7d6c5b4a3928171605"),
-
+    (
+        "hendra_g_uniprot",
+        "a5f9c3e7b2d6481s1r0q9p8o7n6m5l4k3j2i1h0g9f8e7d6c5b4a3928171605",
+    ),
     // GISAID viral sequence data (BLAKE3)
-    ("gisaid_nipah_variants", "f8e2d4c6a1b5998877665544332211009988776655443322110099887766554"),
+    (
+        "gisaid_nipah_variants",
+        "f8e2d4c6a1b5998877665544332211009988776655443322110099887766554",
+    ),
 ];
 
 /// Data integrity validator with Zero-Mock protocol enforcement
@@ -96,7 +113,10 @@ impl DataIntegrityValidator {
             authentic_hashes.insert(dataset_id.to_string(), hash.to_string());
         }
 
-        tracing::info!("Initialized DataIntegrityValidator with {} known datasets", authentic_hashes.len());
+        tracing::info!(
+            "Initialized DataIntegrityValidator with {} known datasets",
+            authentic_hashes.len()
+        );
 
         Self {
             authentic_hashes,
@@ -125,14 +145,16 @@ impl DataIntegrityValidator {
         let compute_time = start_time.elapsed();
 
         // Update metrics
-        self.validation_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.bytes_validated.fetch_add(data.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.validation_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.bytes_validated
+            .fetch_add(data.len() as u64, std::sync::atomic::Ordering::Relaxed);
 
         tracing::debug!(
             "Computed BLAKE3 hash for {} bytes in {}μs ({}x faster than SHA-256)",
             data.len(),
             compute_time.as_micros(),
-            15  // Conservative estimate of BLAKE3 speedup
+            15 // Conservative estimate of BLAKE3 speedup
         );
 
         Ok(*hash.as_bytes())
@@ -157,13 +179,17 @@ impl DataIntegrityValidator {
         }
 
         // Hash not found in authentic datasets - this is a Zero-Mock violation
-        tracing::error!("SECURITY VIOLATION: Unrecognized dataset hash: {}", hash_hex);
+        tracing::error!(
+            "SECURITY VIOLATION: Unrecognized dataset hash: {}",
+            hash_hex
+        );
 
         Err(ValidationError::UnauthorizedDataset(format!(
             "Dataset hash {} is not in the authorized authentic dataset list. \
              This may indicate use of mock/synthetic data which violates Zero-Mock protocol.",
             hash_hex
-        )).into())
+        ))
+        .into())
     }
 
     /// Perform comprehensive validation of input data
@@ -197,13 +223,15 @@ impl DataIntegrityValidator {
                     return Err(ValidationError::UnauthorizedDataset(format!(
                         "Dataset mismatch: expected {}, found {}",
                         expected_id, actual_id
-                    )).into());
+                    ))
+                    .into());
                 }
                 None => {
                     return Err(ValidationError::UnauthorizedDataset(format!(
                         "Expected dataset {} but hash not recognized",
                         expected_id
-                    )).into());
+                    ))
+                    .into());
                 }
             }
         }
@@ -219,7 +247,10 @@ impl DataIntegrityValidator {
         let validation_time = start_time.elapsed();
 
         let mut metadata = HashMap::new();
-        metadata.insert("validation_time_ms".to_string(), validation_time.as_millis().to_string());
+        metadata.insert(
+            "validation_time_ms".to_string(),
+            validation_time.as_millis().to_string(),
+        );
         metadata.insert("hash_algorithm".to_string(), "BLAKE3".to_string());
 
         Ok(ValidationResult {
@@ -253,8 +284,9 @@ impl DataIntegrityValidator {
         // Pattern 1: Repeated simple values
         if self.has_excessive_repetition(&data_str) {
             return Err(ValidationError::MockDataDetected(
-                "Excessive repetition detected - likely synthetic data".to_string()
-            ).into());
+                "Excessive repetition detected - likely synthetic data".to_string(),
+            )
+            .into());
         }
 
         // Pattern 2: Software engineering mock indicators (NOT scientific terminology)
@@ -265,14 +297,16 @@ impl DataIntegrityValidator {
             "placeholder_data",
             "mock_protein",
             "dummy_residue",
-            "todo_remove_this"
+            "todo_remove_this",
         ];
 
         for keyword in MOCK_KEYWORDS {
             if data_str.to_lowercase().contains(keyword) {
                 return Err(ValidationError::MockDataDetected(format!(
-                    "Mock data keyword '{}' detected in dataset", keyword
-                )).into());
+                    "Mock data keyword '{}' detected in dataset",
+                    keyword
+                ))
+                .into());
             }
         }
 
@@ -280,8 +314,9 @@ impl DataIntegrityValidator {
         if data_str.contains("ATOM") || data_str.contains("HETATM") {
             if self.has_unrealistic_coordinates(&data_str) {
                 return Err(ValidationError::MockDataDetected(
-                    "Unrealistic coordinate patterns detected - likely mock PDB data".to_string()
-                ).into());
+                    "Unrealistic coordinate patterns detected - likely mock PDB data".to_string(),
+                )
+                .into());
             }
         }
 
@@ -325,9 +360,15 @@ impl DataIntegrityValidator {
                         coord_count += 3;
 
                         // Check for round numbers (common in mock data)
-                        if x.fract() == 0.0 { round_coord_count += 1; }
-                        if y.fract() == 0.0 { round_coord_count += 1; }
-                        if z.fract() == 0.0 { round_coord_count += 1; }
+                        if x.fract() == 0.0 {
+                            round_coord_count += 1;
+                        }
+                        if y.fract() == 0.0 {
+                            round_coord_count += 1;
+                        }
+                        if z.fract() == 0.0 {
+                            round_coord_count += 1;
+                        }
                     }
                 }
             }
@@ -340,8 +381,12 @@ impl DataIntegrityValidator {
     /// Get validation statistics
     pub fn get_statistics(&self) -> ValidationStatistics {
         ValidationStatistics {
-            total_validations: self.validation_count.load(std::sync::atomic::Ordering::Relaxed),
-            total_bytes_validated: self.bytes_validated.load(std::sync::atomic::Ordering::Relaxed),
+            total_validations: self
+                .validation_count
+                .load(std::sync::atomic::Ordering::Relaxed),
+            total_bytes_validated: self
+                .bytes_validated
+                .load(std::sync::atomic::Ordering::Relaxed),
             known_datasets_count: self.authentic_hashes.len(),
         }
     }
@@ -352,15 +397,17 @@ impl DataIntegrityValidator {
     pub fn add_authentic_dataset(&mut self, dataset_id: String, hash: String) -> Result<()> {
         if hash.len() != 64 {
             return Err(ValidationError::InvalidHashFormat(
-                "BLAKE3 hash must be 64 hexadecimal characters".to_string()
-            ).into());
+                "BLAKE3 hash must be 64 hexadecimal characters".to_string(),
+            )
+            .into());
         }
 
         // Verify it's valid hex
         if hex::decode(&hash).is_err() {
             return Err(ValidationError::InvalidHashFormat(
-                "Hash contains invalid hexadecimal characters".to_string()
-            ).into());
+                "Hash contains invalid hexadecimal characters".to_string(),
+            )
+            .into());
         }
 
         self.authentic_hashes.insert(dataset_id.clone(), hash);
@@ -457,9 +504,13 @@ mod tests {
         let mut validator = DataIntegrityValidator::new();
 
         let valid_hash = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        assert!(validator.add_authentic_dataset("test_dataset".to_string(), valid_hash.to_string()).is_ok());
+        assert!(validator
+            .add_authentic_dataset("test_dataset".to_string(), valid_hash.to_string())
+            .is_ok());
 
         let invalid_hash = "invalid_hash";
-        assert!(validator.add_authentic_dataset("test_dataset2".to_string(), invalid_hash.to_string()).is_err());
+        assert!(validator
+            .add_authentic_dataset("test_dataset2".to_string(), invalid_hash.to_string())
+            .is_err());
     }
 }

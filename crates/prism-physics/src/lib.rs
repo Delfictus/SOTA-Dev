@@ -24,7 +24,7 @@ pub mod amber_ff14sb;
 
 // TIP3P water model for explicit solvent
 pub mod water_model;
-pub use water_model::{TIP3PWater, WaterMolecule, Ion, IonType};
+pub use water_model::{Ion, IonType, TIP3PWater, WaterMolecule};
 
 // Solvation box builder for explicit solvent simulations
 pub mod solvation;
@@ -32,25 +32,27 @@ pub use solvation::{SolvationBox, SolvationConfig};
 
 // AMBER all-atom dynamics (HMC/Langevin integration)
 pub mod amber_dynamics;
-pub use amber_dynamics::{AmberSimulator, AmberSimConfig, AmberSimResult, TrajectoryFrame as AmberTrajectoryFrame};
+pub use amber_dynamics::{
+    AmberSimConfig, AmberSimResult, AmberSimulator, TrajectoryFrame as AmberTrajectoryFrame,
+};
 
 // Gaussian Network Model for protein flexibility prediction
 pub mod gnm;
-pub use gnm::{GaussianNetworkModel, AnisotropicNetworkModel, GnmResult};
+pub use gnm::{AnisotropicNetworkModel, GaussianNetworkModel, GnmResult};
 
 // GPU-accelerated GNM (uses Lanczos for large matrices)
 pub mod gnm_gpu;
 pub use gnm_gpu::{GpuGnm, GpuGnmResult};
 
 // Structural analysis modules for enhanced RMSF prediction
+pub mod gnm_enhanced;
 pub mod secondary_structure;
 pub mod sidechain_analysis;
 pub mod tertiary_analysis;
-pub mod gnm_enhanced;
 
 // Chemistry-Aware GNM for improved RMSF prediction
-pub mod residue_chemistry;
 pub mod gnm_chemistry;
+pub mod residue_chemistry;
 
 // Unified dynamics engine - togglable interface for all dynamics modes
 pub mod dynamics_engine;
@@ -64,38 +66,37 @@ pub mod evaluation_framework;
 // Pocket-centric functional metrics for drug discovery (Layer 3)
 pub mod pocket_metrics;
 pub use pocket_metrics::{
-    PocketMetricsCalculator, Layer3Result, PocketFlexibilityAnalysis,
-    CrypticPocketCandidate, AllostericSiteCandidate, FlexibilityClass,
+    AllostericSiteCandidate, CrypticPocketCandidate, FlexibilityClass, Layer3Result,
+    PocketFlexibilityAnalysis, PocketMetricsCalculator,
 };
 
 // Re-export NMR ensemble types
 pub use nmr_ensemble::{
-    NmrEnsemble, NmrModel, TrueRmsf,
-    load_nmr_ensemble, parse_nmr_ensemble,
-    CURATED_NMR_PDBS,
+    load_nmr_ensemble, parse_nmr_ensemble, NmrEnsemble, NmrModel, TrueRmsf, CURATED_NMR_PDBS,
 };
 
 // Re-export evaluation framework types
 pub use evaluation_framework::{
-    HeterogeneousEvaluationResult, MdComparabilityResult, ExperimentalGroundingResult,
-    FunctionalRelevanceResult, SotaComparison, BaselineComparison,
-    get_published_baselines, create_defensibility_summary, calculate_defensibility_score,
+    calculate_defensibility_score, create_defensibility_summary, get_published_baselines,
+    BaselineComparison, ExperimentalGroundingResult, FunctionalRelevanceResult,
+    HeterogeneousEvaluationResult, MdComparabilityResult, SotaComparison,
 };
 
 // Re-export enhanced GNM types
 pub use gnm_enhanced::{EnhancedGnm, EnhancedGnmConfig, EnhancedGnmResult};
 pub use secondary_structure::{SecondaryStructure, SecondaryStructureAnalyzer};
-pub use sidechain_analysis::{SidechainAnalyzer, flexibility_factor};
+pub use sidechain_analysis::{flexibility_factor, SidechainAnalyzer};
 pub use tertiary_analysis::{TertiaryAnalyzer, TertiarySummary};
 
 // Re-export Chemistry-Aware GNM types
-pub use residue_chemistry::{get_flexibility_factor, enhanced_pair_stiffness, ResidueClass, AA_ORDER};
 pub use gnm_chemistry::{ChemistryGnm, ChemistryGnmConfig, ChemistryGnmResult, ContactType};
+pub use residue_chemistry::{
+    enhanced_pair_stiffness, get_flexibility_factor, ResidueClass, AA_ORDER,
+};
 
 // Re-export dynamics engine types
 pub use dynamics_engine::{
-    DynamicsEngine, DynamicsConfig, DynamicsMode, DynamicsResult,
-    StructureInput, TrajectoryFrame,
+    DynamicsConfig, DynamicsEngine, DynamicsMode, DynamicsResult, StructureInput, TrajectoryFrame,
 };
 
 /// CMA-ES (Covariance Matrix Adaptation Evolution Strategy) configuration
@@ -378,13 +379,19 @@ impl PhaseController for CmaEsPhaseController {
             // Perform one CMA-ES step
             self.optimizer
                 .as_mut()
-                .ok_or_else(|| PrismError::Internal("CMA-ES optimizer not initialized".to_string()))?
+                .ok_or_else(|| {
+                    PrismError::Internal("CMA-ES optimizer not initialized".to_string())
+                })?
                 .step(fitness_fn)
                 .map_err(|e| PrismError::Internal(e.to_string()))?;
 
             // Get current state
-            let state = self.optimizer.as_ref()
-                .ok_or_else(|| PrismError::Internal("CMA-ES optimizer not initialized".to_string()))?
+            let state = self
+                .optimizer
+                .as_ref()
+                .ok_or_else(|| {
+                    PrismError::Internal("CMA-ES optimizer not initialized".to_string())
+                })?
                 .get_state();
 
             // Update our tracking
@@ -424,7 +431,9 @@ impl PhaseController for CmaEsPhaseController {
         }
 
         // Get final state from optimizer
-        let cpu_state = self.optimizer.as_ref()
+        let cpu_state = self
+            .optimizer
+            .as_ref()
             .ok_or_else(|| PrismError::Internal("CMA-ES optimizer not initialized".to_string()))?
             .get_state();
 
@@ -570,7 +579,9 @@ mod tests {
         let mut context = PhaseContext::new();
 
         // Execute optimization
-        let outcome = controller.execute(&graph, &mut context).expect("Test execution should succeed");
+        let outcome = controller
+            .execute(&graph, &mut context)
+            .expect("Test execution should succeed");
         assert!(outcome.is_success());
 
         // Verify CMA state was created

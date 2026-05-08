@@ -376,14 +376,7 @@ pub fn write_site_pdb(
             writeln!(
                 file,
                 "ATOM  {:5} {:4} {:3} {:1}{:4}    {:8.3}{:8.3}{:8.3}  1.00  0.00",
-                atom_serial,
-                atom_names[i],
-                residue_names[i],
-                chain_ids[i],
-                residue_ids[i],
-                x,
-                y,
-                z
+                atom_serial, atom_names[i], residue_names[i], chain_ids[i], residue_ids[i], x, y, z
             )?;
             atom_serial += 1;
         }

@@ -20,17 +20,17 @@
 //! NiV/HeV       Stage 0        140-dim features   Q-learning   Cryptic sites
 //! ```
 
-pub mod error;
-pub mod pdb_fetcher;
+pub mod conservation_analysis;
 pub mod data_loader;
-pub mod structure_types;
-pub mod ground_truth;
-pub mod glycan_mask;
+pub mod error;
 pub mod glycan_dynamics;
+pub mod glycan_mask;
+pub mod ground_truth;
 pub mod nipah_platform_validation;
+pub mod pdb_fetcher;
 pub mod pimc_epitope_optimization;
 pub mod qubo_tda_integration;
-pub mod conservation_analysis;
+pub mod structure_types;
 // pub mod gpu_parallel;  // DISABLED: needs vendored types
 // pub mod vendored;  // DISABLED: Use prism-gpu directly
 // pub mod gpu_graph_pipeline;
@@ -42,18 +42,18 @@ pub mod fluxnet_dqn;
 // pub mod provenance_recorder;   // DISABLED: needs vendored types
 // pub mod memory_proof_validator; // DISABLED: needs vendored types
 // pub mod benchmark;  // DISABLED: needs fluxnet_niv
-pub mod metrics;
 pub mod baseline;
+pub mod metrics;
 // pub mod visualize;  // DISABLED: needs fluxnet_niv
 // pub mod report;  // DISABLED: needs benchmark
 // pub mod fluxnet_niv;  // DISABLED: needs vendored types
 
 // Use prism-gpu exports directly instead of vendored duplicates
-pub use prism_gpu::{MegaFusedBatchGpu, BatchStructureDesc, StructureInput, PackedBatch};
+pub use prism_gpu::{BatchStructureDesc, MegaFusedBatchGpu, PackedBatch, StructureInput};
 
 pub use error::NivBenchError;
-pub use structure_types::*;
 pub use glycan_mask::GlycanMask;
+pub use structure_types::*;
 // pub use gpu_parallel::ParallelGpuPipeline;  // DISABLED
 
 /// Result type alias for NiV-Bench operations

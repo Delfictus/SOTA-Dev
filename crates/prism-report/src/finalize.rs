@@ -36,33 +36,31 @@
 //! ```
 
 use crate::ablation::{AblationMode, AblationResults, AblationRunResult};
-use crate::config::{ReportConfig, RankingWeights};
+use crate::config::{RankingWeights, ReportConfig};
 use crate::event_cloud::{
-    read_events, read_spike_events, read_processed_spike_events, read_best_available_events,
-    AblationPhase, EventCloud, PocketEvent, RawSpikeEvent, ProcessedSpikeEvent,
+    read_best_available_events, read_events, read_processed_spike_events, read_spike_events,
+    AblationPhase, EventCloud, PocketEvent, ProcessedSpikeEvent, RawSpikeEvent,
 };
 use crate::figures;
 // Use site_metrics::TopologyData (with residue_ids: Vec<u32>) for all spatial operations
 // inputs::TopologyData is DEPRECATED for finalize - only use for legacy compatibility
-use crate::site_metrics::{
-    TopologyData as MetricsTopologyData, SiteMetricsComputer, validate_coordinate_frames,
-    sort_sites_deterministic,
-};
 use crate::outputs::{
-    OutputContract, ProvenanceManifest, ProvenanceParams, ProvenanceSeeds, ProvenanceVersions,
-    SummaryJson, write_residues_txt, write_site_mol2, write_site_pdb,
+    write_residues_txt, write_site_mol2, write_site_pdb, OutputContract, ProvenanceManifest,
+    ProvenanceParams, ProvenanceSeeds, ProvenanceVersions, SummaryJson,
 };
 use crate::pipeline::VoxelizationSummary;
 use crate::reports::{HtmlReport, PdfReport};
 use crate::sessions::{generate_chimerax_session, generate_pymol_session, SessionAvailability};
-use crate::sites::{
-    compute_chemistry_metrics, CrypticSite, GeometryMetrics,
-    PersistenceMetrics, SiteMetrics, SiteRanking, UvResponseMetrics,
-};
 use crate::site_geometry::{compute_shape_from_points, compute_volume_statistics};
-use crate::temporal_analytics::{
-    compute_temporal_metrics, TrajectorySnapshot, TemporalTopology,
+use crate::site_metrics::{
+    sort_sites_deterministic, validate_coordinate_frames, SiteMetricsComputer,
+    TopologyData as MetricsTopologyData,
 };
+use crate::sites::{
+    compute_chemistry_metrics, CrypticSite, GeometryMetrics, PersistenceMetrics, SiteMetrics,
+    SiteRanking, UvResponseMetrics,
+};
+use crate::temporal_analytics::{compute_temporal_metrics, TemporalTopology, TrajectorySnapshot};
 use crate::voxelize::voxelize_event_cloud;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -241,7 +239,8 @@ impl Default for PharmaUnavailableMetrics {
             binding_affinity_kcal: MetricStatus {
                 available: false,
                 reason: "Requires molecular docking or FEP calculations".to_string(),
-                recommendation: "Run AutoDock Vina or Schrödinger FEP+ on detected pocket".to_string(),
+                recommendation: "Run AutoDock Vina or Schrödinger FEP+ on detected pocket"
+                    .to_string(),
             },
             ligand_efficiency: MetricStatus {
                 available: false,
@@ -400,7 +399,14 @@ impl FinalizeStage {
         max_event_atom_dist: f32,
     ) -> Result<Self> {
         // Default cluster distance: 10Å (production default for broader site detection)
-        Self::new_with_topology_full(config, events_path, topology_path, master_seed, max_event_atom_dist, 10.0)
+        Self::new_with_topology_full(
+            config,
+            events_path,
+            topology_path,
+            master_seed,
+            max_event_atom_dist,
+            10.0,
+        )
     }
 
     /// Create new finalize stage with full control over both distance thresholds
@@ -446,11 +452,20 @@ impl FinalizeStage {
         master_seed: u64,
         max_event_atom_dist: f32,
     ) -> Result<Self> {
-        let mut stage = Self::new_with_topology(config, events_path, topology_path, master_seed, max_event_atom_dist)?;
+        let mut stage = Self::new_with_topology(
+            config,
+            events_path,
+            topology_path,
+            master_seed,
+            max_event_atom_dist,
+        )?;
         if trajectory_path.exists() {
             stage.trajectory_path = Some(trajectory_path);
         } else {
-            log::warn!("Trajectory path does not exist: {}", trajectory_path.display());
+            log::warn!(
+                "Trajectory path does not exist: {}",
+                trajectory_path.display()
+            );
         }
         Ok(stage)
     }
@@ -464,17 +479,25 @@ impl FinalizeStage {
         // Try to find topology.json in common locations
         let topology_paths = vec![
             config.output_dir.join("topology.json"),
-            config.input_pdb.with_file_name(
-                format!("{}_topology.json",
-                    config.input_pdb.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("input"))
-            ),
+            config.input_pdb.with_file_name(format!(
+                "{}_topology.json",
+                config
+                    .input_pdb
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("input")
+            )),
         ];
 
         for path in &topology_paths {
             if path.exists() {
-                return Self::new_with_topology(config, events_path, path.clone(), master_seed, 15.0);
+                return Self::new_with_topology(
+                    config,
+                    events_path,
+                    path.clone(),
+                    master_seed,
+                    15.0,
+                );
             }
         }
 
@@ -519,7 +542,10 @@ impl FinalizeStage {
         // Check for Stage 2b processed events
         let processed_path = base_dir.join("stage2b").join("processed_events.jsonl");
         if processed_path.exists() {
-            log::info!("Found Stage 2b processed events: {}", processed_path.display());
+            log::info!(
+                "Found Stage 2b processed events: {}",
+                processed_path.display()
+            );
             self.processed_events_path = Some(processed_path);
         }
 
@@ -538,20 +564,34 @@ impl FinalizeStage {
 
     /// Run the complete finalize stage
     pub fn run(&self) -> Result<FinalizeResult> {
-        log::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        log::info!(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        );
         log::info!("  PRISM4D Finalize Stage v{}", crate::VERSION);
-        log::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        log::info!(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        );
         log::info!("Output directory: {}", self.config.output_dir.display());
         log::info!("Events path: {}", self.events_path.display());
         log::info!("Master seed: {}", self.master_seed);
 
         // Log spike event availability for true UV enrichment
         if self.spike_events_path.is_some() || self.processed_events_path.is_some() {
-            log::info!("  Spike events: {} (raw), {} (processed)",
-                self.spike_events_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into()),
-                self.processed_events_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into()));
+            log::info!(
+                "  Spike events: {} (raw), {} (processed)",
+                self.spike_events_path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "none".into()),
+                self.processed_events_path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "none".into())
+            );
         } else {
-            log::warn!("  No spike event paths configured - true UV enrichment will use proxy values");
+            log::warn!(
+                "  No spike event paths configured - true UV enrichment will use proxy values"
+            );
         }
 
         // Ablation validation is now optional (production mode)
@@ -572,28 +612,39 @@ impl FinalizeStage {
         log::info!("  Loaded {} pocket events", event_cloud.len());
 
         // Step 2: Load topology for real residue mapping (MANDATORY)
-        log::info!("\n[2/10] Loading topology from: {}", self.topology_path.display());
+        log::info!(
+            "\n[2/10] Loading topology from: {}",
+            self.topology_path.display()
+        );
         let metrics_topology = self.load_topology()?;
         log::info!("  Loaded: {} atoms", metrics_topology.n_atoms);
 
         // Step 2b: Coordinate frame validation (MANDATORY)
         log::info!("  Validating coordinate frames...");
-        let event_centers: Vec<[f32; 3]> = event_cloud.events.iter()
-            .map(|e| e.center_xyz)
-            .collect();
+        let event_centers: Vec<[f32; 3]> =
+            event_cloud.events.iter().map(|e| e.center_xyz).collect();
         let coord_diag = validate_coordinate_frames(&metrics_topology, &event_centers, 10.0)
             .context("Coordinate frame validation failed - events and topology do not overlap")?;
         log::info!("  Coordinate frames: VALID (overlap confirmed)");
-        log::debug!("  Topology AABB: [{:.1}, {:.1}, {:.1}] - [{:.1}, {:.1}, {:.1}]",
-            coord_diag.topology_aabb.min[0], coord_diag.topology_aabb.min[1], coord_diag.topology_aabb.min[2],
-            coord_diag.topology_aabb.max[0], coord_diag.topology_aabb.max[1], coord_diag.topology_aabb.max[2]);
+        log::debug!(
+            "  Topology AABB: [{:.1}, {:.1}, {:.1}] - [{:.1}, {:.1}, {:.1}]",
+            coord_diag.topology_aabb.min[0],
+            coord_diag.topology_aabb.min[1],
+            coord_diag.topology_aabb.min[2],
+            coord_diag.topology_aabb.max[0],
+            coord_diag.topology_aabb.max[1],
+            coord_diag.topology_aabb.max[2]
+        );
 
         // Step 2c: Filter events by atom proximity
         // Keep only events within max_atom_dist of any topology atom
         // This removes off-protein events that cannot form valid cryptic sites
         let max_atom_dist = self.max_event_atom_dist;
         let max_atom_dist_sq = max_atom_dist * max_atom_dist;
-        log::info!("  Filtering events by atom proximity (max dist: {} Å)...", max_atom_dist);
+        log::info!(
+            "  Filtering events by atom proximity (max dist: {} Å)...",
+            max_atom_dist
+        );
 
         // Build spatial hash from topology atoms for O(1) proximity lookup
         let cell_size = max_atom_dist;
@@ -631,9 +682,13 @@ impl FinalizeStage {
             let c = e.center_xyz;
 
             // Quick AABB check first
-            if c[0] < aabb.min[0] - max_atom_dist || c[0] > aabb.max[0] + max_atom_dist ||
-               c[1] < aabb.min[1] - max_atom_dist || c[1] > aabb.max[1] + max_atom_dist ||
-               c[2] < aabb.min[2] - max_atom_dist || c[2] > aabb.max[2] + max_atom_dist {
+            if c[0] < aabb.min[0] - max_atom_dist
+                || c[0] > aabb.max[0] + max_atom_dist
+                || c[1] < aabb.min[1] - max_atom_dist
+                || c[1] > aabb.max[1] + max_atom_dist
+                || c[2] < aabb.min[2] - max_atom_dist
+                || c[2] > aabb.max[2] + max_atom_dist
+            {
                 return false;
             }
 
@@ -649,17 +704,22 @@ impl FinalizeStage {
                         let ni = ci + di;
                         let nj = cj + dj;
                         let nk = ck + dk;
-                        if ni >= 0 && ni < grid_dims[0] as i32 &&
-                           nj >= 0 && nj < grid_dims[1] as i32 &&
-                           nk >= 0 && nk < grid_dims[2] as i32 {
-                            let cell_idx = ni as usize +
-                                           nj as usize * grid_dims[0] +
-                                           nk as usize * grid_dims[0] * grid_dims[1];
+                        if ni >= 0
+                            && ni < grid_dims[0] as i32
+                            && nj >= 0
+                            && nj < grid_dims[1] as i32
+                            && nk >= 0
+                            && nk < grid_dims[2] as i32
+                        {
+                            let cell_idx = ni as usize
+                                + nj as usize * grid_dims[0]
+                                + nk as usize * grid_dims[0] * grid_dims[1];
                             for &ai in &atom_grid[cell_idx] {
                                 let ax = metrics_topology.positions[ai * 3];
                                 let ay = metrics_topology.positions[ai * 3 + 1];
                                 let az = metrics_topology.positions[ai * 3 + 2];
-                                let dsq = (c[0] - ax).powi(2) + (c[1] - ay).powi(2) + (c[2] - az).powi(2);
+                                let dsq =
+                                    (c[0] - ax).powi(2) + (c[1] - ay).powi(2) + (c[2] - az).powi(2);
                                 if dsq <= max_atom_dist_sq {
                                     return true;
                                 }
@@ -674,8 +734,12 @@ impl FinalizeStage {
         let n_filtered = n_before_filter - n_after_filter;
         if n_filtered > 0 {
             let pct_filtered = 100.0 * n_filtered as f64 / n_before_filter as f64;
-            log::info!("  Filtered {} events >{}Å from any atom ({:.1}% of total)",
-                n_filtered, max_atom_dist, pct_filtered);
+            log::info!(
+                "  Filtered {} events >{}Å from any atom ({:.1}% of total)",
+                n_filtered,
+                max_atom_dist,
+                pct_filtered
+            );
             log::info!("  Remaining events for clustering: {}", n_after_filter);
         }
 
@@ -685,7 +749,10 @@ impl FinalizeStage {
             let step = event_cloud.events.len() / sample_size;
             let mut sample_dists: Vec<f32> = Vec::with_capacity(sample_size);
 
-            for i in (0..event_cloud.events.len()).step_by(step.max(1)).take(sample_size) {
+            for i in (0..event_cloud.events.len())
+                .step_by(step.max(1))
+                .take(sample_size)
+            {
                 let c = event_cloud.events[i].center_xyz;
                 let mut min_d_sq = f32::MAX;
                 // Use spatial grid for efficient lookup
@@ -698,18 +765,26 @@ impl FinalizeStage {
                             let ni = ci + di;
                             let nj = cj + dj;
                             let nk = ck + dk;
-                            if ni >= 0 && ni < grid_dims[0] as i32 &&
-                               nj >= 0 && nj < grid_dims[1] as i32 &&
-                               nk >= 0 && nk < grid_dims[2] as i32 {
-                                let cell_idx = ni as usize +
-                                               nj as usize * grid_dims[0] +
-                                               nk as usize * grid_dims[0] * grid_dims[1];
+                            if ni >= 0
+                                && ni < grid_dims[0] as i32
+                                && nj >= 0
+                                && nj < grid_dims[1] as i32
+                                && nk >= 0
+                                && nk < grid_dims[2] as i32
+                            {
+                                let cell_idx = ni as usize
+                                    + nj as usize * grid_dims[0]
+                                    + nk as usize * grid_dims[0] * grid_dims[1];
                                 for &ai in &atom_grid[cell_idx] {
                                     let ax = metrics_topology.positions[ai * 3];
                                     let ay = metrics_topology.positions[ai * 3 + 1];
                                     let az = metrics_topology.positions[ai * 3 + 2];
-                                    let dsq = (c[0] - ax).powi(2) + (c[1] - ay).powi(2) + (c[2] - az).powi(2);
-                                    if dsq < min_d_sq { min_d_sq = dsq; }
+                                    let dsq = (c[0] - ax).powi(2)
+                                        + (c[1] - ay).powi(2)
+                                        + (c[2] - az).powi(2);
+                                    if dsq < min_d_sq {
+                                        min_d_sq = dsq;
+                                    }
                                 }
                             }
                         }
@@ -720,11 +795,22 @@ impl FinalizeStage {
 
             sample_dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let min_d = sample_dists.first().copied().unwrap_or(0.0);
-            let median_d = sample_dists.get(sample_dists.len() / 2).copied().unwrap_or(0.0);
+            let median_d = sample_dists
+                .get(sample_dists.len() / 2)
+                .copied()
+                .unwrap_or(0.0);
             let p90_idx = (sample_dists.len() as f32 * 0.9) as usize;
-            let p90_d = sample_dists.get(p90_idx.min(sample_dists.len().saturating_sub(1))).copied().unwrap_or(0.0);
-            log::info!("  Retained events quality ({}): min={:.1}Å, median={:.1}Å, p90={:.1}Å",
-                sample_size, min_d, median_d, p90_d);
+            let p90_d = sample_dists
+                .get(p90_idx.min(sample_dists.len().saturating_sub(1)))
+                .copied()
+                .unwrap_or(0.0);
+            log::info!(
+                "  Retained events quality ({}): min={:.1}Å, median={:.1}Å, p90={:.1}Å",
+                sample_size,
+                min_d,
+                median_d,
+                p90_d
+            );
         }
 
         // Step 3: Two-tier event filtering for clustering
@@ -737,17 +823,26 @@ impl FinalizeStage {
         // site centroids are close enough for 5Å residue queries to succeed.
         let cluster_dist = self.cluster_max_event_atom_dist;
         let cluster_dist_sq = cluster_dist * cluster_dist;
-        log::info!("\n[3/10] Creating stricter event subset for clustering (max atom dist: {:.1}Å)...", cluster_dist);
+        log::info!(
+            "\n[3/10] Creating stricter event subset for clustering (max atom dist: {:.1}Å)...",
+            cluster_dist
+        );
 
         // Filter events for clustering: keep only those within cluster_dist of any atom
-        let cluster_events: Vec<PocketEvent> = event_cloud.events.iter()
+        let cluster_events: Vec<PocketEvent> = event_cloud
+            .events
+            .iter()
             .filter(|e| {
                 let c = e.center_xyz;
 
                 // Quick AABB check
-                if c[0] < aabb.min[0] - cluster_dist || c[0] > aabb.max[0] + cluster_dist ||
-                   c[1] < aabb.min[1] - cluster_dist || c[1] > aabb.max[1] + cluster_dist ||
-                   c[2] < aabb.min[2] - cluster_dist || c[2] > aabb.max[2] + cluster_dist {
+                if c[0] < aabb.min[0] - cluster_dist
+                    || c[0] > aabb.max[0] + cluster_dist
+                    || c[1] < aabb.min[1] - cluster_dist
+                    || c[1] > aabb.max[1] + cluster_dist
+                    || c[2] < aabb.min[2] - cluster_dist
+                    || c[2] > aabb.max[2] + cluster_dist
+                {
                     return false;
                 }
 
@@ -763,17 +858,23 @@ impl FinalizeStage {
                             let ni = ci + di;
                             let nj = cj + dj;
                             let nk = ck + dk;
-                            if ni >= 0 && ni < grid_dims[0] as i32 &&
-                               nj >= 0 && nj < grid_dims[1] as i32 &&
-                               nk >= 0 && nk < grid_dims[2] as i32 {
-                                let cell_idx = ni as usize +
-                                               nj as usize * grid_dims[0] +
-                                               nk as usize * grid_dims[0] * grid_dims[1];
+                            if ni >= 0
+                                && ni < grid_dims[0] as i32
+                                && nj >= 0
+                                && nj < grid_dims[1] as i32
+                                && nk >= 0
+                                && nk < grid_dims[2] as i32
+                            {
+                                let cell_idx = ni as usize
+                                    + nj as usize * grid_dims[0]
+                                    + nk as usize * grid_dims[0] * grid_dims[1];
                                 for &ai in &atom_grid[cell_idx] {
                                     let ax = metrics_topology.positions[ai * 3];
                                     let ay = metrics_topology.positions[ai * 3 + 1];
                                     let az = metrics_topology.positions[ai * 3 + 2];
-                                    let dsq = (c[0] - ax).powi(2) + (c[1] - ay).powi(2) + (c[2] - az).powi(2);
+                                    let dsq = (c[0] - ax).powi(2)
+                                        + (c[1] - ay).powi(2)
+                                        + (c[2] - az).powi(2);
                                     if dsq <= cluster_dist_sq {
                                         return true;
                                     }
@@ -789,8 +890,12 @@ impl FinalizeStage {
 
         let n_cluster_events = cluster_events.len();
         let n_excluded = event_cloud.events.len() - n_cluster_events;
-        log::info!("  Cluster event subset: {} events ({} excluded as >{:.1}Å from atoms)",
-            n_cluster_events, n_excluded, cluster_dist);
+        log::info!(
+            "  Cluster event subset: {} events ({} excluded as >{:.1}Å from atoms)",
+            n_cluster_events,
+            n_excluded,
+            cluster_dist
+        );
 
         // Cluster using stricter event subset
         log::info!("  Clustering events into cryptic sites...");
@@ -857,7 +962,11 @@ impl FinalizeStage {
         // Filter to druggable sites
         let n_before = sites.len();
         sites.retain(|s| s.is_druggable);
-        log::info!("  {} sites pass druggability filter (from {})", sites.len(), n_before);
+        log::info!(
+            "  {} sites pass druggability filter (from {})",
+            sites.len(),
+            n_before
+        );
 
         // Step 6b: PHARMA SOTA-GRADE FILTERING
         // Collapse overlapping pockets and apply strict acceptance criteria
@@ -867,7 +976,11 @@ impl FinalizeStage {
 
         // Collapse overlapping pockets (merge nearby sites with shared residues)
         let collapsed_sites = collapse_overlapping_pockets(&sites, &pharma_criteria);
-        log::info!("  Pocket collapse: {} → {} unique pockets", sites_before_collapse, collapsed_sites.len());
+        log::info!(
+            "  Pocket collapse: {} → {} unique pockets",
+            sites_before_collapse,
+            collapsed_sites.len()
+        );
 
         // Generate pharma report with acceptance filtering
         let pharma_report = self.generate_pharma_report(
@@ -877,15 +990,25 @@ impl FinalizeStage {
             self.config.replicates,
         );
 
-        log::info!("  Pharma acceptance: {} accepted, {} rejected",
+        log::info!(
+            "  Pharma acceptance: {} accepted, {} rejected",
             pharma_report.accepted_pockets.len(),
-            pharma_report.rejected_pockets.len());
-        log::info!("  Quality tier: {}", pharma_report.quality_assessment.quality_tier);
+            pharma_report.rejected_pockets.len()
+        );
+        log::info!(
+            "  Quality tier: {}",
+            pharma_report.quality_assessment.quality_tier
+        );
 
         // Step 7: Temporal analytics (if trajectory available)
         log::info!("\n[7/10] Computing temporal analytics...");
         if let Some(ref traj_path) = self.trajectory_path {
-            match self.compute_temporal_analytics(&mut sites, &event_cloud.events, &metrics_topology, traj_path) {
+            match self.compute_temporal_analytics(
+                &mut sites,
+                &event_cloud.events,
+                &metrics_topology,
+                traj_path,
+            ) {
                 Ok(n_computed) => {
                     log::info!("  ✓ Temporal metrics computed for {} sites", n_computed);
                 }
@@ -901,8 +1024,14 @@ impl FinalizeStage {
         log::info!("\n[8/10] Running post-run voxelization...");
         let voxelization = self.run_voxelization(&event_cloud)?;
         if let Some(ref vox) = voxelization {
-            log::info!("  Grid: {}x{}x{}, {} events → {} voxels above threshold",
-                vox.dims[0], vox.dims[1], vox.dims[2], vox.n_events, vox.voxels_above_threshold);
+            log::info!(
+                "  Grid: {}x{}x{}, {} events → {} voxels above threshold",
+                vox.dims[0],
+                vox.dims[1],
+                vox.dims[2],
+                vox.n_events,
+                vox.voxels_above_threshold
+            );
         }
 
         // Step 9: Generate all outputs
@@ -925,7 +1054,10 @@ impl FinalizeStage {
         let pharma_json = serde_json::to_string_pretty(&pharma_report)?;
         fs::write(&pharma_path, &pharma_json)?;
         files_generated.push(pharma_path.display().to_string());
-        log::info!("  ✓ pharma_report.json ({} accepted pockets)", pharma_report.accepted_pockets.len());
+        log::info!(
+            "  ✓ pharma_report.json ({} accepted pockets)",
+            pharma_report.accepted_pockets.len()
+        );
 
         // Site metrics CSV (new primary name + backward-compatible alias)
         let csv_content = self.build_site_metrics_csv(&sites);
@@ -994,20 +1126,34 @@ impl FinalizeStage {
         // Final summary
         let n_druggable = sites.iter().filter(|s| s.is_druggable).count();
 
-        log::info!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        log::info!(
+            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        );
         log::info!("  Finalize Stage Complete");
-        log::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        log::info!(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        );
         log::info!("  Sites: {} ({} druggable)", sites.len(), n_druggable);
         log::info!(
             "  Cryo contrast: {}",
-            if ablation.comparison.cryo_contrast_significant { "SIGNIFICANT" } else { "not significant" }
+            if ablation.comparison.cryo_contrast_significant {
+                "SIGNIFICANT"
+            } else {
+                "not significant"
+            }
         );
         log::info!(
             "  UV response: {}",
-            if ablation.comparison.uv_response_significant { "SIGNIFICANT" } else { "not significant" }
+            if ablation.comparison.uv_response_significant {
+                "SIGNIFICANT"
+            } else {
+                "not significant"
+            }
         );
         log::info!("  Summary SHA256: {}", &summary_sha256[..16]);
-        log::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        log::info!(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        );
 
         Ok(FinalizeResult {
             output_dir: self.config.output_dir.clone(),
@@ -1055,8 +1201,12 @@ impl FinalizeStage {
         for (cluster_id, cluster_events) in clusters.into_iter().enumerate() {
             if cluster_events.len() < cfg.min_cluster_size {
                 if cluster_id < 5 {
-                    log::debug!("  Cluster {} rejected: size={} < min_cluster_size={}",
-                               cluster_id + 1, cluster_events.len(), cfg.min_cluster_size);
+                    log::debug!(
+                        "  Cluster {} rejected: size={} < min_cluster_size={}",
+                        cluster_id + 1,
+                        cluster_events.len(),
+                        cfg.min_cluster_size
+                    );
                 }
                 continue;
             }
@@ -1097,8 +1247,10 @@ impl FinalizeStage {
 
             // Compute frame span within each (phase, replicate_id) group
             // Group events by (phase, replicate_id) to get proper frame ranges
-            let mut frame_spans_by_run: std::collections::HashMap<(AblationPhase, usize), (usize, usize)> =
-                std::collections::HashMap::new();
+            let mut frame_spans_by_run: std::collections::HashMap<
+                (AblationPhase, usize),
+                (usize, usize),
+            > = std::collections::HashMap::new();
             for event in &cluster_events {
                 let key = (event.phase, event.replicate_id);
                 let entry = frame_spans_by_run.entry(key).or_insert((usize::MAX, 0));
@@ -1109,9 +1261,10 @@ impl FinalizeStage {
             // Replicates are independent samples of the SAME time period
             // A site appearing in all 3 replicates is present multiple times within 7000 frames
             // NOT spread across 21000 frames (3 × 7000)
-            let total_frame_span: usize = frame_spans_by_run.values()
+            let total_frame_span: usize = frame_spans_by_run
+                .values()
                 .map(|(min_f, max_f)| if max_f > min_f { max_f - min_f + 1 } else { 1 })
-                .max()  // Take MAX across replicates, not SUM
+                .max() // Take MAX across replicates, not SUM
                 .unwrap_or(1);
 
             let persistence = event_identity_set.len() as f64 / total_frame_span as f64;
@@ -1119,8 +1272,12 @@ impl FinalizeStage {
 
             if persistence < cfg.min_persistence as f64 {
                 if cluster_id < 5 {
-                    log::debug!("  Cluster {} rejected: persistence={:.3} < min_persistence={:.3}",
-                               cluster_id + 1, persistence, cfg.min_persistence);
+                    log::debug!(
+                        "  Cluster {} rejected: persistence={:.3} < min_persistence={:.3}",
+                        cluster_id + 1,
+                        persistence,
+                        cfg.min_persistence
+                    );
                 }
                 continue;
             }
@@ -1145,9 +1302,11 @@ impl FinalizeStage {
             }
 
             // Mean confidence from events
-            let mean_confidence: f64 = cluster_events.iter()
+            let mean_confidence: f64 = cluster_events
+                .iter()
                 .map(|e| e.confidence as f64)
-                .sum::<f64>() / cluster_events.len() as f64;
+                .sum::<f64>()
+                / cluster_events.len() as f64;
 
             if mean_confidence < cfg.min_confidence as f64 {
                 continue;
@@ -1155,15 +1314,19 @@ impl FinalizeStage {
 
             // Residue names: Use "UNK" (unknown) since topology mapping is not available
             // In full pipeline with topology, these would be looked up from residue IDs
-            let residue_names: Vec<String> = residues.iter()
-                .map(|id| format!("UNK_{}", id))
-                .collect();
+            let residue_names: Vec<String> =
+                residues.iter().map(|id| format!("UNK_{}", id)).collect();
 
             let chemistry = compute_chemistry_metrics(&residue_names);
 
             // Find representative frame (frame with largest volume event)
-            let representative_frame = cluster_events.iter()
-                .max_by(|a, b| a.volume_a3.partial_cmp(&b.volume_a3).unwrap_or(std::cmp::Ordering::Equal))
+            let representative_frame = cluster_events
+                .iter()
+                .max_by(|a, b| {
+                    a.volume_a3
+                        .partial_cmp(&b.volume_a3)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .map(|e| e.frame_idx)
                 .unwrap_or(0);
 
@@ -1171,20 +1334,31 @@ impl FinalizeStage {
             let volumes: Vec<f64> = cluster_events.iter().map(|e| e.volume_a3 as f64).collect();
             let mut sorted_volumes = volumes.clone();
             sorted_volumes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let volume_p50 = if sorted_volumes.is_empty() { 0.0 } else { sorted_volumes[sorted_volumes.len() / 2] };
-            let volume_p95 = if sorted_volumes.is_empty() { 0.0 } else { sorted_volumes[(sorted_volumes.len() * 95) / 100.max(sorted_volumes.len() - 1)] };
+            let volume_p50 = if sorted_volumes.is_empty() {
+                0.0
+            } else {
+                sorted_volumes[sorted_volumes.len() / 2]
+            };
+            let volume_p95 = if sorted_volumes.is_empty() {
+                0.0
+            } else {
+                sorted_volumes[(sorted_volumes.len() * 95) / 100.max(sorted_volumes.len() - 1)]
+            };
 
             // REAL volume statistics from actual trajectory data
             let vol_stats = compute_volume_statistics(&volumes);
             let (volume_min, volume_max, volume_std, breathing_amplitude) = match vol_stats {
-                Some(stats) => (stats.volume_min, stats.volume_max, stats.volume_std, stats.breathing_amplitude),
+                Some(stats) => (
+                    stats.volume_min,
+                    stats.volume_max,
+                    stats.volume_std,
+                    stats.breathing_amplitude,
+                ),
                 None => (mean_volume as f64 * 0.6, mean_volume as f64 * 1.4, 0.0, 0.0),
             };
 
             // REAL shape metrics from PCA on event point cloud
-            let event_points: Vec<[f32; 3]> = cluster_events.iter()
-                .map(|e| e.center_xyz)
-                .collect();
+            let event_points: Vec<[f32; 3]> = cluster_events.iter().map(|e| e.center_xyz).collect();
             let shape_result = compute_shape_from_points(&event_points);
             let (aspect_ratio, sphericity) = match shape_result {
                 Some(shape) => (Some(shape.aspect_ratio), Some(shape.sphericity)),
@@ -1263,12 +1437,16 @@ impl FinalizeStage {
             let site_events: Vec<&PocketEvent> = events
                 .iter()
                 .filter(|e| {
-                    distance_f32(&site.centroid, &e.center_xyz) < self.config.site_detection.cluster_threshold
+                    distance_f32(&site.centroid, &e.center_xyz)
+                        < self.config.site_detection.cluster_threshold
                 })
                 .collect();
 
             if site_events.is_empty() {
-                log::warn!("  Site {} has no events within cluster threshold", site.site_id);
+                log::warn!(
+                    "  Site {} has no events within cluster threshold",
+                    site.site_id
+                );
                 continue;
             }
 
@@ -1280,7 +1458,9 @@ impl FinalizeStage {
 
             // Estimate pocket radius from volume: r = cbrt(3*V / 4π), clamped 2-6Å
             let volume = site.metrics.geometry.volume_mean as f32;
-            let pocket_radius = ((3.0_f32 * volume) / (4.0_f32 * std::f32::consts::PI)).cbrt().clamp(2.0_f32, 6.0_f32);
+            let pocket_radius = ((3.0_f32 * volume) / (4.0_f32 * std::f32::consts::PI))
+                .cbrt()
+                .clamp(2.0_f32, 6.0_f32);
 
             // Build expanded sample points: event centers + centroid + 6 axis points
             let mut expanded_centers = event_centers.clone();
@@ -1304,7 +1484,8 @@ impl FinalizeStage {
             }
 
             // Use canonical sample points for determinism (still deterministic with expanded input)
-            let sample_points = SiteMetricsComputer::canonical_sample_points(expanded_centers, 1000);
+            let sample_points =
+                SiteMetricsComputer::canonical_sample_points(expanded_centers, 1000);
 
             let mapping_result = match metrics_computer.map_residues(&sample_points) {
                 Ok(result) => result,
@@ -1333,13 +1514,22 @@ impl FinalizeStage {
                         let ax = positions[ai * 3];
                         let ay = positions[ai * 3 + 1];
                         let az = positions[ai * 3 + 2];
-                        let d = ((centroid[0] - ax).powi(2) +
-                                 (centroid[1] - ay).powi(2) +
-                                 (centroid[2] - az).powi(2)).sqrt();
-                        if d < min_dist { min_dist = d; }
-                        if d <= 5.0 { atoms_5a += 1; }
-                        if d <= 10.0 { atoms_10a += 1; }
-                        if d <= 20.0 { atoms_20a += 1; }
+                        let d = ((centroid[0] - ax).powi(2)
+                            + (centroid[1] - ay).powi(2)
+                            + (centroid[2] - az).powi(2))
+                        .sqrt();
+                        if d < min_dist {
+                            min_dist = d;
+                        }
+                        if d <= 5.0 {
+                            atoms_5a += 1;
+                        }
+                        if d <= 10.0 {
+                            atoms_10a += 1;
+                        }
+                        if d <= 20.0 {
+                            atoms_20a += 1;
+                        }
                     }
 
                     log::error!(
@@ -1352,9 +1542,13 @@ impl FinalizeStage {
                          - atoms within 20Å: {}",
                         site.site_id,
                         sample_points.len(),
-                        centroid[0], centroid[1], centroid[2],
+                        centroid[0],
+                        centroid[1],
+                        centroid[2],
                         min_dist,
-                        atoms_5a, atoms_10a, atoms_20a
+                        atoms_5a,
+                        atoms_10a,
+                        atoms_20a
                     );
 
                     // Also print first few sample points
@@ -1376,21 +1570,27 @@ impl FinalizeStage {
                     bail!(
                         "Residue mapping failed for site {}: {}\n\
                          This is a hard failure - check coordinate frame alignment.",
-                        site.site_id, e
+                        site.site_id,
+                        e
                     );
                 }
             };
 
             // Update site with real residue data
-            site.residues = mapping_result.residues.iter()
+            site.residues = mapping_result
+                .residues
+                .iter()
                 .map(|r| r.resid as usize)
                 .collect();
-            site.residue_names = mapping_result.residues.iter()
+            site.residue_names = mapping_result
+                .residues
+                .iter()
                 .map(|r| r.resname.clone())
                 .collect();
 
             // Determine primary chain ID (most common)
-            let mut chain_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            let mut chain_counts: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
             for res in &mapping_result.residues {
                 *chain_counts.entry(&res.chain).or_insert(0) += 1;
             }
@@ -1402,26 +1602,35 @@ impl FinalizeStage {
             site.metrics.chemistry = compute_chemistry_metrics(&site.residue_names);
 
             // Use the hydrophobic fraction computed by SiteMetricsComputer
-            site.metrics.chemistry.hydrophobic_fraction = mapping_result.hydrophobic_fraction as f64;
+            site.metrics.chemistry.hydrophobic_fraction =
+                mapping_result.hydrophobic_fraction as f64;
 
             // Compute depth proxy
             match metrics_computer.depth_proxy(site.centroid) {
                 Ok(depth_result) => {
-                    site.metrics.geometry.depth_proxy_surface_a = Some(depth_result.depth_proxy_a as f64);
+                    site.metrics.geometry.depth_proxy_surface_a =
+                        Some(depth_result.depth_proxy_a as f64);
                 }
                 Err(e) => {
                     log::warn!("  {} depth proxy failed: {}", site.site_id, e);
                 }
             }
 
-            log::debug!("  {} mapped {} residues (hydro={:.1}%, depth={:?})",
-                site.site_id, mapping_result.residue_count,
+            log::debug!(
+                "  {} mapped {} residues (hydro={:.1}%, depth={:?})",
+                site.site_id,
+                mapping_result.residue_count,
                 site.metrics.chemistry.hydrophobic_fraction * 100.0,
-                site.metrics.geometry.depth_proxy_surface_a);
+                site.metrics.geometry.depth_proxy_surface_a
+            );
         }
 
         let total_mapped: usize = sites.iter().map(|s| s.residues.len()).sum();
-        log::info!("  Total: {} residues mapped across {} sites", total_mapped, sites.len());
+        log::info!(
+            "  Total: {} residues mapped across {} sites",
+            total_mapped,
+            sites.len()
+        );
 
         Ok(())
     }
@@ -1450,7 +1659,11 @@ impl FinalizeStage {
 
         // Helper to compute spike rate per 1000 frames
         let compute_rate = |spikes: usize, frames: usize| -> f64 {
-            if frames == 0 { 0.0 } else { (spikes as f64) / (frames as f64 / 1000.0) }
+            if frames == 0 {
+                0.0
+            } else {
+                (spikes as f64) / (frames as f64 / 1000.0)
+            }
         };
 
         let baseline_spikes: usize = baseline_events.iter().map(|e| e.spike_count).sum();
@@ -1506,11 +1719,17 @@ impl FinalizeStage {
         events: &[PocketEvent],
     ) -> Result<()> {
         for site in sites.iter_mut() {
-            let aromatic_count = site.residue_names.iter()
+            let aromatic_count = site
+                .residue_names
+                .iter()
                 .filter(|name| {
                     let n = name.to_uppercase();
-                    n.contains("TRP") || n.contains("TYR") || n.contains("PHE") ||
-                    n == "W" || n == "Y" || n == "F"
+                    n.contains("TRP")
+                        || n.contains("TYR")
+                        || n.contains("PHE")
+                        || n == "W"
+                        || n == "Y"
+                        || n == "F"
                 })
                 .count();
 
@@ -1520,7 +1739,8 @@ impl FinalizeStage {
                 0.0
             };
 
-            let site_events: Vec<_> = events.iter()
+            let site_events: Vec<_> = events
+                .iter()
                 .filter(|e| {
                     if e.phase != AblationPhase::CryoUv {
                         return false;
@@ -1528,7 +1748,7 @@ impl FinalizeStage {
                     let dx = e.center_xyz[0] - site.centroid[0];
                     let dy = e.center_xyz[1] - site.centroid[1];
                     let dz = e.center_xyz[2] - site.centroid[2];
-                    let dist_sq = dx*dx + dy*dy + dz*dz;
+                    let dist_sq = dx * dx + dy * dy + dz * dz;
                     dist_sq < 64.0
                 })
                 .collect();
@@ -1547,14 +1767,18 @@ impl FinalizeStage {
             site.metrics.uv_response.event_density = event_density;
 
             if aromatic_fraction > 0.15 {
-                log::info!("    Site {}: {:.1}% aromatic, density={:.2}, enrichment={:.2}x",
-                    site.site_id, 100.0 * aromatic_fraction, event_density, aromatic_enrichment);
+                log::info!(
+                    "    Site {}: {:.1}% aromatic, density={:.2}, enrichment={:.2}x",
+                    site.site_id,
+                    100.0 * aromatic_fraction,
+                    event_density,
+                    aromatic_enrichment
+                );
             }
         }
 
         Ok(())
     }
-
 
     /// Compute UV response metrics for each site
 
@@ -1598,11 +1822,11 @@ impl FinalizeStage {
         }
 
         // Extract aromatic residue IDs from topology
-        let aromatic_ids: HashSet<i32> = topology.residue_names.iter()
+        let aromatic_ids: HashSet<i32> = topology
+            .residue_names
+            .iter()
             .enumerate()
-            .filter(|(_idx, name)| {
-                matches!(name.as_str(), "TRP" | "TYR" | "PHE" | "W" | "Y" | "F")
-            })
+            .filter(|(_idx, name)| matches!(name.as_str(), "TRP" | "TYR" | "PHE" | "W" | "Y" | "F"))
             .map(|(idx, _)| idx as i32)
             .collect();
 
@@ -1619,34 +1843,37 @@ impl FinalizeStage {
         for site in sites.iter_mut() {
             // Filter spikes spatially (within 8Å of site centroid)
             // For processed events, also filter by quality score
-            let site_spikes: Vec<_> = spike_events.iter()
+            let site_spikes: Vec<_> = spike_events
+                .iter()
                 .filter(|s| {
                     let dx = s.position[0] - site.centroid[0];
                     let dy = s.position[1] - site.centroid[1];
                     let dz = s.position[2] - site.centroid[2];
-                    let in_range = (dx*dx + dy*dy + dz*dz) < 64.0;  // 8Å radius squared
-                    // For processed events, prefer high-quality
+                    let in_range = (dx * dx + dy * dy + dz * dz) < 64.0; // 8Å radius squared
+                                                                         // For processed events, prefer high-quality
                     in_range && (is_processed && s.quality_score >= 0.3 || !is_processed)
                 })
                 .collect();
 
             if site_spikes.len() < 20 {
-                continue;  // Need minimum data for reliable enrichment
+                continue; // Need minimum data for reliable enrichment
             }
 
             // Separate UV-on vs UV-off phases using timestep
             // UV-on: timestep % 500 < 50 (burst active for 50 steps)
             // UV-off: timestep % 500 >= 50 (thermal baseline for 450 steps)
-            let uv_on_spikes: Vec<_> = site_spikes.iter()
+            let uv_on_spikes: Vec<_> = site_spikes
+                .iter()
                 .filter(|s| (s.timestep % 500) < 50)
                 .collect();
 
-            let uv_off_spikes: Vec<_> = site_spikes.iter()
+            let uv_off_spikes: Vec<_> = site_spikes
+                .iter()
                 .filter(|s| (s.timestep % 500) >= 50)
                 .collect();
 
             if uv_on_spikes.is_empty() || uv_off_spikes.is_empty() {
-                continue;  // Need both phases for comparison
+                continue; // Need both phases for comparison
             }
 
             // For processed events, boost confidence if RT leading signals present
@@ -1658,15 +1885,18 @@ impl FinalizeStage {
 
             // Compute aromatic rates based on site residues (spatial proximity)
             // For processed events, we don't have nearby_residues, use site's residues instead
-            let site_has_aromatic = site.residues.iter().any(|r| aromatic_ids.contains(&(*r as i32)));
+            let site_has_aromatic = site
+                .residues
+                .iter()
+                .any(|r| aromatic_ids.contains(&(*r as i32)));
 
             // RATE-BASED ENRICHMENT: compare spike rate (spikes/timestep) during UV-on vs UV-off
             // UV-on is 50 out of every 500 steps = 10% of simulation time
             // UV-off is 450 out of every 500 steps = 90% of simulation time
             // At aromatic sites, UV excitation of Trp/Tyr/Phe drives extra spike activity
             // so UV-on rate should be HIGHER than UV-off rate → enrichment > 1.0
-            let uv_on_fraction: f32 = 50.0 / 500.0;   // 10% of time
-            let uv_off_fraction: f32 = 450.0 / 500.0;  // 90% of time
+            let uv_on_fraction: f32 = 50.0 / 500.0; // 10% of time
+            let uv_off_fraction: f32 = 450.0 / 500.0; // 90% of time
 
             let uv_on_rate = uv_on_spikes.len() as f32 / uv_on_fraction;
             let uv_off_rate = uv_off_spikes.len() as f32 / uv_off_fraction;
@@ -1675,16 +1905,16 @@ impl FinalizeStage {
             let mut enrichment = if uv_off_rate > 0.0 {
                 uv_on_rate / uv_off_rate
             } else {
-                1.0  // No UV-off spikes = no basis for comparison
+                1.0 // No UV-off spikes = no basis for comparison
             };
 
             // Aromatic context modulation:
             // Amplify UV-validated signal at aromatic sites (physics-justified)
             // Dampen noise at non-aromatic sites (spurious enrichment from thermal fluctuations)
             if !site_has_aromatic && enrichment > 1.0 {
-                enrichment = 1.0 + (enrichment - 1.0) * 0.3;  // Dampen noise
+                enrichment = 1.0 + (enrichment - 1.0) * 0.3; // Dampen noise
             } else if site_has_aromatic && enrichment > 1.0 {
-                enrichment = 1.0 + (enrichment - 1.0) * 1.5;  // Amplify UV-validated signal
+                enrichment = 1.0 + (enrichment - 1.0) * 1.5; // Amplify UV-validated signal
             }
 
             // Boost enrichment if RT leading signals support it (Stage 2b correlation)
@@ -1692,7 +1922,9 @@ impl FinalizeStage {
                 enrichment *= 1.0 + (rt_leading_count as f32 * 0.02).min(0.3);
                 log::debug!(
                     "    Site {}: RT leading boost ({} signals) → {:.2}x",
-                    site.site_id, rt_leading_count, enrichment
+                    site.site_id,
+                    rt_leading_count,
+                    enrichment
                 );
             }
 
@@ -1713,7 +1945,11 @@ impl FinalizeStage {
             }
         }
 
-        log::info!("  ✓ True UV enrichment computed for {}/{} sites", sites_with_enrichment, sites.len());
+        log::info!(
+            "  ✓ True UV enrichment computed for {}/{} sites",
+            sites_with_enrichment,
+            sites.len()
+        );
 
         Ok(())
     }
@@ -1740,8 +1976,8 @@ impl FinalizeStage {
         // Fall back to raw spike events
         if let Some(ref raw_path) = self.spike_events_path {
             if raw_path.exists() {
-                let raw_events = read_spike_events(raw_path)
-                    .context("Failed to load spike_events.jsonl")?;
+                let raw_events =
+                    read_spike_events(raw_path).context("Failed to load spike_events.jsonl")?;
 
                 // Convert to ProcessedSpikeEvent with default scores
                 let processed: Vec<ProcessedSpikeEvent> = raw_events
@@ -1823,9 +2059,9 @@ impl FinalizeStage {
             site.metrics.uv_response = UvResponseMetrics {
                 delta_sasa,
                 delta_volume,
-                aromatic_enrichment: 0.0,  // TODO: Compute from spike events
-                aromatic_fraction: 0.0,    // TODO: Compute from residue composition
-                event_density: 0.0,        // TODO: Compute from events/volume
+                aromatic_enrichment: 0.0, // TODO: Compute from spike events
+                aromatic_fraction: 0.0,   // TODO: Compute from residue composition
+                event_density: 0.0,       // TODO: Compute from events/volume
                 significance,
             };
         }
@@ -1838,12 +2074,13 @@ impl FinalizeStage {
     /// IMPORTANT: This uses site_metrics::TopologyData, not inputs::TopologyData.
     /// There is NO fallback to PDB parsing.
     fn load_topology(&self) -> Result<MetricsTopologyData> {
-        MetricsTopologyData::load_from_json(&self.topology_path)
-            .with_context(|| format!(
+        MetricsTopologyData::load_from_json(&self.topology_path).with_context(|| {
+            format!(
                 "Failed to load topology from: {}\n\
                  Ensure topology.json was generated by prism-prep.",
                 self.topology_path.display()
-            ))
+            )
+        })
     }
 
     /// Load holo structure for Tier1 correlation (optional)
@@ -1895,11 +2132,16 @@ impl FinalizeStage {
         // Priority 2: Auto-extract from holo structure (structure-agnostic)
         if let Some(ref holo_path) = self.config.holo_pdb {
             if holo_path.exists() {
-                log::info!("  Auto-extracting truth residues from holo: {}", holo_path.display());
+                log::info!(
+                    "  Auto-extracting truth residues from holo: {}",
+                    holo_path.display()
+                );
                 match crate::inputs::HoloStructure::load(holo_path) {
                     Ok(mut holo) => {
                         if holo.ligand_atoms.is_empty() {
-                            log::warn!("    No ligand atoms found in holo - skipping auto-extraction");
+                            log::warn!(
+                                "    No ligand atoms found in holo - skipping auto-extraction"
+                            );
                             return None;
                         }
 
@@ -1908,7 +2150,10 @@ impl FinalizeStage {
                         let n_contacts = holo.contact_residues.len();
 
                         if n_contacts == 0 {
-                            log::warn!("    No contact residues found within {}Å - skipping", contact_cutoff);
+                            log::warn!(
+                                "    No contact residues found within {}Å - skipping",
+                                contact_cutoff
+                            );
                             return None;
                         }
 
@@ -1926,7 +2171,10 @@ impl FinalizeStage {
                         return Some(crate::inputs::TruthResidues {
                             residues: holo.contact_residues.iter().map(|r| *r as usize).collect(),
                             site_name: None,
-                            notes: Some(format!("Auto-extracted from holo: {}", holo_path.display())),
+                            notes: Some(format!(
+                                "Auto-extracted from holo: {}",
+                                holo_path.display()
+                            )),
                         });
                     }
                     Err(e) => {
@@ -1945,7 +2193,13 @@ impl FinalizeStage {
         let metrics_topo = self.load_topology()?;
 
         // Count unique residues and chains
-        let n_residues = metrics_topo.residue_ids.iter().map(|&x| x as usize).max().unwrap_or(0) + 1;
+        let n_residues = metrics_topo
+            .residue_ids
+            .iter()
+            .map(|&x| x as usize)
+            .max()
+            .unwrap_or(0)
+            + 1;
         let n_chains = metrics_topo.chain_ids.iter().collect::<HashSet<_>>().len();
 
         // Build CA indices (first atom of each residue)
@@ -1966,7 +2220,11 @@ impl FinalizeStage {
             positions: metrics_topo.positions.clone(),
             atom_names: vec!["CA".to_string(); metrics_topo.n_atoms], // Placeholder
             residue_names: metrics_topo.residue_names.clone(),
-            residue_ids: metrics_topo.residue_ids.iter().map(|&x| x as usize).collect(),
+            residue_ids: metrics_topo
+                .residue_ids
+                .iter()
+                .map(|&x| x as usize)
+                .collect(),
             chain_ids: metrics_topo.chain_ids.clone(),
             aromatic_targets: vec![], // Not needed for correlation
             n_aromatics: 0,
@@ -1994,7 +2252,13 @@ impl FinalizeStage {
         log::info!("  Loaded {} trajectory frames", frames.len());
 
         // Compute n_residues from max residue_id
-        let n_residues = topology.residue_ids.iter().map(|&x| x as usize).max().unwrap_or(0) + 1;
+        let n_residues = topology
+            .residue_ids
+            .iter()
+            .map(|&x| x as usize)
+            .max()
+            .unwrap_or(0)
+            + 1;
 
         // Find CA atom indices (first atom of each residue as proxy)
         let mut ca_indices = Vec::new();
@@ -2030,7 +2294,8 @@ impl FinalizeStage {
             let site_events: Vec<&PocketEvent> = events
                 .iter()
                 .filter(|e| {
-                    distance_f32(&site.centroid, &e.center_xyz) < self.config.site_detection.cluster_threshold
+                    distance_f32(&site.centroid, &e.center_xyz)
+                        < self.config.site_detection.cluster_threshold
                 })
                 .collect();
 
@@ -2061,11 +2326,10 @@ impl FinalizeStage {
 
     /// Load trajectory frames from ensemble PDB
     fn load_trajectory_frames(&self, path: &PathBuf) -> Result<Vec<TrajectorySnapshot>> {
-        use std::io::{BufRead, BufReader};
         use std::fs::File;
+        use std::io::{BufRead, BufReader};
 
-        let file = File::open(path)
-            .context("Failed to open trajectory file")?;
+        let file = File::open(path).context("Failed to open trajectory file")?;
         let reader = BufReader::new(file);
 
         let mut frames = Vec::new();
@@ -2120,10 +2384,7 @@ impl FinalizeStage {
     }
 
     /// Run post-run voxelization from event cloud
-    fn run_voxelization(
-        &self,
-        event_cloud: &EventCloud,
-    ) -> Result<Option<VoxelizationSummary>> {
+    fn run_voxelization(&self, event_cloud: &EventCloud) -> Result<Option<VoxelizationSummary>> {
         if event_cloud.is_empty() {
             return Ok(None);
         }
@@ -2156,9 +2417,7 @@ impl FinalizeStage {
         sites: &[CrypticSite],
         ablation: &AblationResults,
     ) -> Result<SummaryJson> {
-        use crate::outputs::{
-            AblationSummary, RunStatistics, SiteSummary, SummaryInput,
-        };
+        use crate::outputs::{AblationSummary, RunStatistics, SiteSummary, SummaryInput};
 
         // Compute total frames from temperature protocol and ablation config
         let frames_per_run = self.config.temperature_protocol.total_steps() as usize;
@@ -2209,8 +2468,16 @@ impl FinalizeStage {
                 pdb_file: self.config.input_pdb.display().to_string(),
                 replicates: self.config.replicates,
                 wavelengths: self.config.wavelengths.clone(),
-                holo_file: self.config.holo_pdb.as_ref().map(|p| p.display().to_string()),
-                truth_file: self.config.truth_residues.as_ref().map(|p| p.display().to_string()),
+                holo_file: self
+                    .config
+                    .holo_pdb
+                    .as_ref()
+                    .map(|p| p.display().to_string()),
+                truth_file: self
+                    .config
+                    .truth_residues
+                    .as_ref()
+                    .map(|p| p.display().to_string()),
             },
             sites: sites.iter().map(SiteSummary::from).collect(),
             ablation: AblationSummary::from(ablation),
@@ -2250,7 +2517,11 @@ impl FinalizeStage {
         csv
     }
 
-    fn generate_global_figures(&self, sites: &[CrypticSite], _ablation: &AblationResults) -> Result<()> {
+    fn generate_global_figures(
+        &self,
+        sites: &[CrypticSite],
+        _ablation: &AblationResults,
+    ) -> Result<()> {
         let figures_dir = self.config.output_dir.join("figures");
         fs::create_dir_all(&figures_dir)?;
 
@@ -2283,9 +2554,8 @@ impl FinalizeStage {
         let site_output = self.output.create_site_output(&site.site_id)?;
 
         // Convert residue_ids from Vec<u32> to Vec<usize> for output compatibility
-        let residue_ids_usize: Vec<usize> = topology.residue_ids.iter()
-            .map(|&id| id as usize)
-            .collect();
+        let residue_ids_usize: Vec<usize> =
+            topology.residue_ids.iter().map(|&id| id as usize).collect();
 
         // PDB file (for visualization only)
         write_site_pdb(
@@ -2329,11 +2599,7 @@ impl FinalizeStage {
         // Figures
         if self.config.output_formats.figures {
             // Pocket overlay
-            figures::generate_pocket_overlay(
-                &site_output.pocket_overlay_png(),
-                site,
-                None,
-            )?;
+            figures::generate_pocket_overlay(&site_output.pocket_overlay_png(), site, None)?;
 
             // Volume vs time (use representative frame data)
             let volume_data: Vec<(f32, f64)> = (0..100)
@@ -2476,38 +2742,47 @@ impl FinalizeStage {
             let pocket_id = format!("pocket_{:03}", idx + 1);
 
             // Compute acceptance status
-            let persistence_pass = site.metrics.persistence.present_fraction >= criteria.min_persistence;
+            let persistence_pass =
+                site.metrics.persistence.present_fraction >= criteria.min_persistence;
             let volume_pass = site.metrics.geometry.volume_mean >= criteria.min_volume_a3;
             let residue_count_pass = site.residues.len() >= criteria.min_residue_count;
-            let replica_agreement_pass = replicates <= 1 ||
-                site.metrics.persistence.replica_agreement >= criteria.min_replica_agreement;
+            let replica_agreement_pass = replicates <= 1
+                || site.metrics.persistence.replica_agreement >= criteria.min_replica_agreement;
 
-            let accepted = persistence_pass && volume_pass && residue_count_pass && replica_agreement_pass;
+            let accepted =
+                persistence_pass && volume_pass && residue_count_pass && replica_agreement_pass;
 
             let rejection_reason = if !accepted {
                 let mut reasons = Vec::new();
                 if !persistence_pass {
-                    reasons.push(format!("persistence {:.2}% < {:.2}%",
+                    reasons.push(format!(
+                        "persistence {:.2}% < {:.2}%",
                         site.metrics.persistence.present_fraction * 100.0,
-                        criteria.min_persistence * 100.0));
+                        criteria.min_persistence * 100.0
+                    ));
                     rejection_breakdown.failed_persistence += 1;
                 }
                 if !volume_pass {
-                    reasons.push(format!("volume {:.1}Å³ < {:.1}Å³",
-                        site.metrics.geometry.volume_mean,
-                        criteria.min_volume_a3));
+                    reasons.push(format!(
+                        "volume {:.1}Å³ < {:.1}Å³",
+                        site.metrics.geometry.volume_mean, criteria.min_volume_a3
+                    ));
                     rejection_breakdown.failed_volume += 1;
                 }
                 if !residue_count_pass {
-                    reasons.push(format!("residues {} < {}",
+                    reasons.push(format!(
+                        "residues {} < {}",
                         site.residues.len(),
-                        criteria.min_residue_count));
+                        criteria.min_residue_count
+                    ));
                     rejection_breakdown.failed_residue_count += 1;
                 }
                 if !replica_agreement_pass {
-                    reasons.push(format!("replica agreement {:.2}% < {:.2}%",
+                    reasons.push(format!(
+                        "replica agreement {:.2}% < {:.2}%",
                         site.metrics.persistence.replica_agreement * 100.0,
-                        criteria.min_replica_agreement * 100.0));
+                        criteria.min_replica_agreement * 100.0
+                    ));
                     rejection_breakdown.failed_replica_agreement += 1;
                 }
                 Some(reasons.join("; "))
@@ -2522,8 +2797,10 @@ impl FinalizeStage {
             let breathing_amplitude = site.metrics.geometry.breathing_amplitude;
 
             // Enclosure score from depth and mouth area
-            let enclosure_score = if let (Some(depth), Some(mouth)) =
-                (site.metrics.geometry.depth_proxy_pocket_a, site.metrics.geometry.mouth_area_proxy_a2) {
+            let enclosure_score = if let (Some(depth), Some(mouth)) = (
+                site.metrics.geometry.depth_proxy_pocket_a,
+                site.metrics.geometry.mouth_area_proxy_a2,
+            ) {
                 // Higher depth + smaller mouth = more enclosed
                 let depth_factor = (depth / 10.0).min(1.0); // Normalize to ~10Å max
                 let mouth_factor = 1.0 - (mouth / 200.0).min(1.0); // Smaller mouth = higher factor
@@ -2535,10 +2812,14 @@ impl FinalizeStage {
             };
 
             // Buriedness: estimate from pocket depth or use heuristic
-            let buriedness = site.metrics.geometry.depth_proxy_pocket_a.unwrap_or_else(|| {
-                // Heuristic: hydrophobic pockets are typically more buried
-                4.0 + site.metrics.chemistry.hydrophobic_fraction * 6.0
-            });
+            let buriedness = site
+                .metrics
+                .geometry
+                .depth_proxy_pocket_a
+                .unwrap_or_else(|| {
+                    // Heuristic: hydrophobic pockets are typically more buried
+                    4.0 + site.metrics.chemistry.hydrophobic_fraction * 6.0
+                });
 
             // REAL shape metrics from PCA on event point cloud
             // Fallback to heuristic only if PCA couldn't be computed (< 4 events)
@@ -2557,8 +2838,8 @@ impl FinalizeStage {
             });
 
             // Polarity: ratio of charged+polar to total
-            let polarity = site.metrics.chemistry.charged_fraction +
-                (1.0 - site.metrics.chemistry.hydrophobic_fraction) * 0.5;
+            let polarity = site.metrics.chemistry.charged_fraction
+                + (1.0 - site.metrics.chemistry.hydrophobic_fraction) * 0.5;
 
             // SiteMap-style druggability score
             // Optimal: enclosed, 300-1000Å³, hydrophobic 0.3-0.6
@@ -2567,13 +2848,15 @@ impl FinalizeStage {
             } else {
                 0.3
             };
-            let hydrophobic_score = if site.metrics.chemistry.hydrophobic_fraction >= 0.3 &&
-                                       site.metrics.chemistry.hydrophobic_fraction <= 0.7 {
+            let hydrophobic_score = if site.metrics.chemistry.hydrophobic_fraction >= 0.3
+                && site.metrics.chemistry.hydrophobic_fraction <= 0.7
+            {
                 1.0 - ((site.metrics.chemistry.hydrophobic_fraction - 0.5).abs() / 0.5) * 0.3
             } else {
                 0.4
             };
-            let druggability_score = (enclosure_score * 0.3 + volume_score * 0.35 + hydrophobic_score * 0.35).min(1.0);
+            let druggability_score =
+                (enclosure_score * 0.3 + volume_score * 0.35 + hydrophobic_score * 0.35).min(1.0);
 
             let pharma_pocket = PharmaPocket {
                 pocket_id: pocket_id.clone(),
@@ -2635,7 +2918,12 @@ impl FinalizeStage {
         }
 
         // Assign ranks to accepted pockets (sorted by rank_score desc)
-        accepted_pockets.sort_by(|a, b| b.computed.rank_score.partial_cmp(&a.computed.rank_score).unwrap_or(std::cmp::Ordering::Equal));
+        accepted_pockets.sort_by(|a, b| {
+            b.computed
+                .rank_score
+                .partial_cmp(&a.computed.rank_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for (i, pocket) in accepted_pockets.iter_mut().enumerate() {
             pocket.rank = i + 1;
         }
@@ -2649,21 +2937,29 @@ impl FinalizeStage {
             "MEDIUM"
         } else {
             "LOW"
-        }.to_string();
+        }
+        .to_string();
 
         let overall_confidence = if accepted_pockets.is_empty() {
             0.0
         } else {
-            accepted_pockets.iter().map(|p| p.computed.confidence).sum::<f64>() / accepted_pockets.len() as f64
+            accepted_pockets
+                .iter()
+                .map(|p| p.computed.confidence)
+                .sum::<f64>()
+                / accepted_pockets.len() as f64
         };
 
         let mut recommendations = Vec::new();
         if replicates < 3 {
-            recommendations.push("Increase to 3+ replicates for reproducibility confidence".to_string());
+            recommendations
+                .push("Increase to 3+ replicates for reproducibility confidence".to_string());
         }
         if accepted_pockets.is_empty() {
-            recommendations.push("Lower UV energy or increase simulation length for more events".to_string());
-            recommendations.push("Check if protein has known cryptic sites in literature".to_string());
+            recommendations
+                .push("Lower UV energy or increase simulation length for more events".to_string());
+            recommendations
+                .push("Check if protein has known cryptic sites in literature".to_string());
         }
         if quality_tier != "HIGH" {
             recommendations.push("Run docking validation on top candidates".to_string());
@@ -2678,9 +2974,15 @@ impl FinalizeStage {
         // Compute total frames from config
         let frames_per_run = self.config.temperature_protocol.total_steps() as usize;
         let mut total_frames = 0usize;
-        if self.config.ablation.run_baseline { total_frames += frames_per_run; }
-        if self.config.ablation.run_cryo_only { total_frames += frames_per_run; }
-        if self.config.ablation.run_cryo_uv { total_frames += frames_per_run; }
+        if self.config.ablation.run_baseline {
+            total_frames += frames_per_run;
+        }
+        if self.config.ablation.run_cryo_only {
+            total_frames += frames_per_run;
+        }
+        if self.config.ablation.run_cryo_uv {
+            total_frames += frames_per_run;
+        }
         total_frames *= replicates;
 
         PharmaReport {
@@ -2698,7 +3000,12 @@ impl FinalizeStage {
             rejected_pockets,
             statistics: PharmaStatistics {
                 total_candidate_pockets: sites.len(),
-                accepted_count: sites.len() - rejection_breakdown.failed_persistence.max(rejection_breakdown.failed_volume).max(rejection_breakdown.failed_residue_count).max(rejection_breakdown.failed_replica_agreement),
+                accepted_count: sites.len()
+                    - rejection_breakdown
+                        .failed_persistence
+                        .max(rejection_breakdown.failed_volume)
+                        .max(rejection_breakdown.failed_residue_count)
+                        .max(rejection_breakdown.failed_replica_agreement),
                 rejected_count: sites.len(),
                 acceptance_rate,
                 rejection_breakdown,
@@ -2793,7 +3100,8 @@ pub fn collapse_overlapping_pockets(
             collapsed.push(sites[indices[0]].clone());
         } else {
             // Merge multiple sites - keep highest ranked as base
-            let best_idx = indices.iter()
+            let best_idx = indices
+                .iter()
                 .min_by_key(|&&i| sites[i].rank)
                 .copied()
                 .unwrap();
@@ -2829,10 +3137,12 @@ pub fn collapse_overlapping_pockets(
             }
 
             // Max persistence and volume
-            merged.metrics.persistence.present_fraction = indices.iter()
+            merged.metrics.persistence.present_fraction = indices
+                .iter()
                 .map(|&i| sites[i].metrics.persistence.present_fraction)
                 .fold(0.0, f64::max);
-            merged.metrics.geometry.volume_mean = indices.iter()
+            merged.metrics.geometry.volume_mean = indices
+                .iter()
                 .map(|&i| sites[i].metrics.geometry.volume_mean)
                 .fold(0.0, f64::max);
 
@@ -2844,7 +3154,11 @@ pub fn collapse_overlapping_pockets(
     }
 
     // Sort by rank score descending
-    collapsed.sort_by(|a, b| b.rank_score.partial_cmp(&a.rank_score).unwrap_or(std::cmp::Ordering::Equal));
+    collapsed.sort_by(|a, b| {
+        b.rank_score
+            .partial_cmp(&a.rank_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     collapsed
 }
@@ -2864,7 +3178,10 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
         return dbscan_cluster_simple(events, eps, min_pts);
     }
 
-    log::info!("  Using voxel density peak detection for {} events", events.len());
+    log::info!(
+        "  Using voxel density peak detection for {} events",
+        events.len()
+    );
 
     // Step 1: Find bounding box
     let mut min_xyz = [f32::MAX; 3];
@@ -2891,8 +3208,14 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
     ];
 
     let total_voxels = dims[0] * dims[1] * dims[2];
-    log::info!("  Density grid: {}x{}x{} = {} voxels (voxel_size={:.1}Å)",
-               dims[0], dims[1], dims[2], total_voxels, voxel_size);
+    log::info!(
+        "  Density grid: {}x{}x{} = {} voxels (voxel_size={:.1}Å)",
+        dims[0],
+        dims[1],
+        dims[2],
+        total_voxels,
+        voxel_size
+    );
 
     // Step 2: Voxelize events - count events per voxel
     let mut density: Vec<u32> = vec![0; total_voxels];
@@ -2916,7 +3239,11 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
 
     // Count non-empty voxels
     let occupied = density.iter().filter(|&&d| d > 0).count();
-    log::info!("  Occupied voxels: {} ({:.1}%)", occupied, 100.0 * occupied as f64 / total_voxels as f64);
+    log::info!(
+        "  Occupied voxels: {} ({:.1}%)",
+        occupied,
+        100.0 * occupied as f64 / total_voxels as f64
+    );
 
     // Step 3: Find local density maxima (peaks) - these become cluster seeds
     // A peak is a voxel with density >= all 26 neighbors
@@ -2932,13 +3259,40 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
         50
     };
     let min_peak_density = p99_density.max(50); // At least 50 events per peak
-    log::info!("  Adaptive density threshold: {} events/voxel (p99={})", min_peak_density, p99_density);
+    log::info!(
+        "  Adaptive density threshold: {} events/voxel (p99={})",
+        min_peak_density,
+        p99_density
+    );
     let mut peaks: Vec<usize> = Vec::new();
 
     let neighbor_offsets: [(i32, i32, i32); 26] = [
-        (-1,-1,-1), (-1,-1,0), (-1,-1,1), (-1,0,-1), (-1,0,0), (-1,0,1), (-1,1,-1), (-1,1,0), (-1,1,1),
-        (0,-1,-1), (0,-1,0), (0,-1,1), (0,0,-1), (0,0,1), (0,1,-1), (0,1,0), (0,1,1),
-        (1,-1,-1), (1,-1,0), (1,-1,1), (1,0,-1), (1,0,0), (1,0,1), (1,1,-1), (1,1,0), (1,1,1),
+        (-1, -1, -1),
+        (-1, -1, 0),
+        (-1, -1, 1),
+        (-1, 0, -1),
+        (-1, 0, 0),
+        (-1, 0, 1),
+        (-1, 1, -1),
+        (-1, 1, 0),
+        (-1, 1, 1),
+        (0, -1, -1),
+        (0, -1, 0),
+        (0, -1, 1),
+        (0, 0, -1),
+        (0, 0, 1),
+        (0, 1, -1),
+        (0, 1, 0),
+        (0, 1, 1),
+        (1, -1, -1),
+        (1, -1, 0),
+        (1, -1, 1),
+        (1, 0, -1),
+        (1, 0, 0),
+        (1, 0, 1),
+        (1, 1, -1),
+        (1, 1, 0),
+        (1, 1, 1),
     ];
 
     for iz in 0..dims[2] {
@@ -2958,9 +3312,15 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
                     let ny = iy as i32 + dy;
                     let nz = iz as i32 + dz;
 
-                    if nx >= 0 && ny >= 0 && nz >= 0 &&
-                       nx < dims[0] as i32 && ny < dims[1] as i32 && nz < dims[2] as i32 {
-                        let ni = nx as usize + ny as usize * dims[0] + nz as usize * dims[0] * dims[1];
+                    if nx >= 0
+                        && ny >= 0
+                        && nz >= 0
+                        && nx < dims[0] as i32
+                        && ny < dims[1] as i32
+                        && nz < dims[2] as i32
+                    {
+                        let ni =
+                            nx as usize + ny as usize * dims[0] + nz as usize * dims[0] * dims[1];
                         if density[ni] > d {
                             is_peak = false;
                             break;
@@ -2975,7 +3335,11 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
         }
     }
 
-    log::info!("  Found {} density peaks (min density={})", peaks.len(), min_peak_density);
+    log::info!(
+        "  Found {} density peaks (min density={})",
+        peaks.len(),
+        min_peak_density
+    );
 
     if peaks.is_empty() {
         log::warn!("  No density peaks found - try lowering min_cluster_size");
@@ -3025,8 +3389,13 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
                 let ny = iy as i32 + dy;
                 let nz = iz as i32 + dz;
 
-                if nx >= 0 && ny >= 0 && nz >= 0 &&
-                   nx < dims[0] as i32 && ny < dims[1] as i32 && nz < dims[2] as i32 {
+                if nx >= 0
+                    && ny >= 0
+                    && nz >= 0
+                    && nx < dims[0] as i32
+                    && ny < dims[1] as i32
+                    && nz < dims[2] as i32
+                {
                     let ni = nx as usize + ny as usize * dims[0] + nz as usize * dims[0] * dims[1];
                     if density[ni] > best_d {
                         best_d = density[ni];
@@ -3057,7 +3426,10 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
         let label = voxel_labels[vi];
         if label >= 0 {
             for &event_idx in &voxel_events[vi] {
-                cluster_map.entry(label).or_insert_with(Vec::new).push(event_idx);
+                cluster_map
+                    .entry(label)
+                    .or_insert_with(Vec::new)
+                    .push(event_idx);
             }
         }
     }
@@ -3076,16 +3448,28 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
     // Limit to top 20 clusters to reduce noise
     let max_clusters = 20;
     if clusters.len() > max_clusters {
-        log::info!("  Limiting to top {} clusters (had {})", max_clusters, clusters.len());
+        log::info!(
+            "  Limiting to top {} clusters (had {})",
+            max_clusters,
+            clusters.len()
+        );
         clusters.truncate(max_clusters);
     }
 
     // Additional filter: require minimum cluster size of 100 events
     let min_significant_size = 100;
     clusters.retain(|c| c.len() >= min_significant_size);
-    log::info!("  After size filter (min {}): {} clusters", min_significant_size, clusters.len());
+    log::info!(
+        "  After size filter (min {}): {} clusters",
+        min_significant_size,
+        clusters.len()
+    );
 
-    log::info!("  Clustering complete: {} clusters found (min_pts={})", clusters.len(), min_pts);
+    log::info!(
+        "  Clustering complete: {} clusters found (min_pts={})",
+        clusters.len(),
+        min_pts
+    );
 
     // Log top cluster sizes
     for (i, cluster) in clusters.iter().take(5).enumerate() {
@@ -3096,7 +3480,11 @@ pub fn dbscan_cluster(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<V
 }
 
 /// Simple O(n²) DBSCAN for small event counts
-fn dbscan_cluster_simple(events: &[PocketEvent], eps: f32, min_pts: usize) -> Vec<Vec<PocketEvent>> {
+fn dbscan_cluster_simple(
+    events: &[PocketEvent],
+    eps: f32,
+    min_pts: usize,
+) -> Vec<Vec<PocketEvent>> {
     if events.is_empty() {
         return Vec::new();
     }
@@ -3134,7 +3522,9 @@ fn dbscan_cluster_simple(events: &[PocketEvent], eps: f32, min_pts: usize) -> Ve
                     let j_neighbors: Vec<usize> = events
                         .iter()
                         .enumerate()
-                        .filter(|(k, e)| *k != j && distance_f32(&events[j].center_xyz, &e.center_xyz) <= eps)
+                        .filter(|(k, e)| {
+                            *k != j && distance_f32(&events[j].center_xyz, &e.center_xyz) <= eps
+                        })
                         .map(|(k, _)| k)
                         .collect();
 
@@ -3228,10 +3618,7 @@ fn is_chromophore_residue(residue_name: &str) -> (bool, Option<f32>) {
 
 /// Compute chromophore correlation score for a site
 /// Returns fraction of UV events that correlate with appropriate chromophores
-fn compute_chromophore_correlation(
-    events: &[PocketEvent],
-    residue_names: &[String],
-) -> f64 {
+fn compute_chromophore_correlation(events: &[PocketEvent], residue_names: &[String]) -> f64 {
     if events.is_empty() || residue_names.is_empty() {
         return 0.0;
     }
@@ -3320,7 +3707,13 @@ fn sha256_hex(data: &str) -> String {
     let mut hasher = DefaultHasher::new();
     data.hash(&mut hasher);
     let hash = hasher.finish();
-    format!("{:016x}{:016x}{:016x}{:016x}", hash, hash ^ 0x5555, hash ^ 0xAAAA, hash ^ 0xFFFF)
+    format!(
+        "{:016x}{:016x}{:016x}{:016x}",
+        hash,
+        hash ^ 0x5555,
+        hash ^ 0xAAAA,
+        hash ^ 0xFFFF
+    )
 }
 
 /// Compute SHA256 of a file
@@ -3427,7 +3820,7 @@ mod tests {
             PocketEvent {
                 center_xyz: [0.0, 0.0, 0.0],
                 volume_a3: 100.0,
-                spike_count: 10,  // Cold phase: 10 spikes
+                spike_count: 10, // Cold phase: 10 spikes
                 phase: AblationPhase::CryoUv,
                 temp_phase: TempPhase::Cold,
                 replicate_id: 0,
@@ -3439,7 +3832,7 @@ mod tests {
             PocketEvent {
                 center_xyz: [1.0, 0.0, 0.0],
                 volume_a3: 100.0,
-                spike_count: 7,  // Cold phase: 7 more spikes
+                spike_count: 7, // Cold phase: 7 more spikes
                 phase: AblationPhase::CryoUv,
                 temp_phase: TempPhase::Cold,
                 replicate_id: 0,
@@ -3451,7 +3844,7 @@ mod tests {
             PocketEvent {
                 center_xyz: [2.0, 0.0, 0.0],
                 volume_a3: 100.0,
-                spike_count: 5,  // Ramp phase: 5 spikes
+                spike_count: 5, // Ramp phase: 5 spikes
                 phase: AblationPhase::CryoUv,
                 temp_phase: TempPhase::Ramp,
                 replicate_id: 0,
@@ -3463,7 +3856,7 @@ mod tests {
             PocketEvent {
                 center_xyz: [3.0, 0.0, 0.0],
                 volume_a3: 100.0,
-                spike_count: 3,  // Warm phase: 3 spikes
+                spike_count: 3, // Warm phase: 3 spikes
                 phase: AblationPhase::CryoUv,
                 temp_phase: TempPhase::Warm,
                 replicate_id: 0,
@@ -3475,7 +3868,7 @@ mod tests {
             PocketEvent {
                 center_xyz: [4.0, 0.0, 0.0],
                 volume_a3: 100.0,
-                spike_count: 8,  // Warm phase: 8 more spikes
+                spike_count: 8, // Warm phase: 8 more spikes
                 phase: AblationPhase::CryoUv,
                 temp_phase: TempPhase::Warm,
                 replicate_id: 0,
@@ -3498,14 +3891,22 @@ mod tests {
 
         // Total should match sum of individual events
         let total: usize = events.iter().map(|e| e.spike_count).sum();
-        assert_eq!(cold + ramp + warm, total, "Sum of phases should equal total spikes");
+        assert_eq!(
+            cold + ramp + warm,
+            total,
+            "Sum of phases should equal total spikes"
+        );
     }
 
     #[test]
     fn test_count_phase_spikes_empty() {
         let events: Vec<&PocketEvent> = Vec::new();
         let (cold, ramp, warm) = count_phase_spikes(&events);
-        assert_eq!((cold, ramp, warm), (0, 0, 0), "Empty events should yield all zeros");
+        assert_eq!(
+            (cold, ramp, warm),
+            (0, 0, 0),
+            "Empty events should yield all zeros"
+        );
     }
 
     /// Regression test: (phase, replicate_id, frame_idx) is the unique event identity.
@@ -3598,8 +3999,10 @@ mod tests {
         );
 
         // Test 3: Grouping by (phase, replicate_id) correctly separates runs
-        let mut events_by_run: std::collections::HashMap<(AblationPhase, usize), Vec<&PocketEvent>> =
-            std::collections::HashMap::new();
+        let mut events_by_run: std::collections::HashMap<
+            (AblationPhase, usize),
+            Vec<&PocketEvent>,
+        > = std::collections::HashMap::new();
         for event in &events {
             events_by_run
                 .entry((event.phase, event.replicate_id))
@@ -3703,8 +4106,10 @@ mod tests {
         );
 
         // Compute frame spans by run
-        let mut frame_spans_by_run: std::collections::HashMap<(AblationPhase, usize), (usize, usize)> =
-            std::collections::HashMap::new();
+        let mut frame_spans_by_run: std::collections::HashMap<
+            (AblationPhase, usize),
+            (usize, usize),
+        > = std::collections::HashMap::new();
         for event in &events {
             let key = (event.phase, event.replicate_id);
             let entry = frame_spans_by_run.entry(key).or_insert((usize::MAX, 0));

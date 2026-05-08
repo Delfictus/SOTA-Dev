@@ -1,12 +1,12 @@
 //! VASIL Exact Metric GPU Test - PATH B COMPLETE VALIDATION
 //! NO HALF MEASURES - Full end-to-end GPU pipeline test
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use chrono::NaiveDate;
-use std::collections::HashMap;
 use cudarc::driver::CudaContext;
-use prism_ve_bench::vasil_exact_metric::{VasilMetricComputer, build_immunity_landscapes};
 use prism_ve_bench::data_loader::AllCountriesData;
+use prism_ve_bench::vasil_exact_metric::{build_immunity_landscapes, VasilMetricComputer};
+use std::collections::HashMap;
 
 fn main() -> Result<()> {
     println!("================================================================================");
@@ -77,13 +77,13 @@ fn main() -> Result<()> {
     println!("    - compute_gamma_envelopes_batch");
     println!("    - classify_gamma_envelopes_batch");
     println!();
-    
+
     let eval_start = NaiveDate::from_ymd_opt(2022, 10, 1).unwrap();
     let eval_end = NaiveDate::from_ymd_opt(2023, 10, 31).unwrap();
-    
+
     let ctx = CudaContext::new(0)?;
     let stream = ctx.default_stream();
-    
+
     let t0 = std::time::Instant::now();
     vasil_metric.build_immunity_cache(
         &all_data.countries[0].dms_data,
@@ -98,11 +98,8 @@ fn main() -> Result<()> {
 
     println!("[5/5] Running VASIL exact metric...");
     let t1 = std::time::Instant::now();
-    let result = vasil_metric.compute_vasil_metric_exact(
-        &all_data.countries,
-        eval_start,
-        eval_end,
-    )?;
+    let result =
+        vasil_metric.compute_vasil_metric_exact(&all_data.countries, eval_start, eval_end)?;
     println!("  ✅ Complete in {:.2}s", t1.elapsed().as_secs_f32());
     println!();
 
@@ -110,21 +107,34 @@ fn main() -> Result<()> {
     println!("================================================================================");
     println!("📊 RESULTS");
     println!("================================================================================");
-    println!("{:<15} {:>12} {:>12} {:>15}", "Country", "Accuracy", "VASIL_ref", "Delta");
+    println!(
+        "{:<15} {:>12} {:>12} {:>15}",
+        "Country", "Accuracy", "VASIL_ref", "Delta"
+    );
     println!("{:-<60}", "");
-    
+
     for (country, acc) in &result.per_country_accuracy {
         let vref = *vasil_ref.get(country.as_str()).unwrap_or(&0.0_f32);
         let delta = acc - vref;
-        println!("{:<15} {:>11.1}% {:>11.1}% {:>14.1}%",
-                 country, acc * 100.0, vref * 100.0, delta * 100.0);
+        println!(
+            "{:<15} {:>11.1}% {:>11.1}% {:>14.1}%",
+            country,
+            acc * 100.0,
+            vref * 100.0,
+            delta * 100.0
+        );
     }
-    
+
     println!("{:-<60}", "");
     let mean = result.mean_accuracy;
     let vref_mean = vasil_ref.values().sum::<f32>() / vasil_ref.len() as f32;
-    println!("{:<15} {:>11.1}% {:>11.1}% {:>14.1}%",
-             "MEAN", mean * 100.0, vref_mean * 100.0, (mean - vref_mean) * 100.0);
+    println!(
+        "{:<15} {:>11.1}% {:>11.1}% {:>14.1}%",
+        "MEAN",
+        mean * 100.0,
+        vref_mean * 100.0,
+        (mean - vref_mean) * 100.0
+    );
     println!("{:-<60}", "");
     println!();
 
@@ -144,6 +154,6 @@ fn main() -> Result<()> {
         println!("   Accuracy: {:.1}% (target: 77-82%)", mean * 100.0);
     }
     println!("================================================================================");
-    
+
     Ok(())
 }

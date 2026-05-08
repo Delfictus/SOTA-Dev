@@ -52,16 +52,16 @@ use std::marker::PhantomData;
 
 // Core modules
 pub mod holographic;
+pub mod sovereign_types;
 pub mod streaming;
 pub mod validation;
 pub mod warp_parser;
-pub mod sovereign_types;
 
 // Re-exports for convenience
 pub use holographic::{HolographicBinaryFormat, PtbHeader, PtbStructure};
+pub use sovereign_types::{SovereignBuffer, SovereignError};
 pub use streaming::{AsyncPinnedStreamer, StreamingError};
 pub use validation::{DataIntegrityValidator, ValidationError};
-pub use sovereign_types::{SovereignBuffer, SovereignError};
 
 /// Performance targets for Prism-Stream architecture components
 pub mod performance {

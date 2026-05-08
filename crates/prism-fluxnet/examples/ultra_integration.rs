@@ -18,7 +18,10 @@ fn main() -> anyhow::Result<()> {
 
     // Create integrated controller in Ultra mode
     let mut controller = IntegratedFluxNet::new_ultra();
-    println!("✓ Created IntegratedFluxNet in {:?} mode", controller.mode());
+    println!(
+        "✓ Created IntegratedFluxNet in {:?} mode",
+        controller.mode()
+    );
 
     // Simulate training loop
     println!("\nSimulating 10 iterations of RL training...\n");
@@ -72,11 +75,11 @@ fn main() -> anyhow::Result<()> {
     if let Some(best_config) = controller.best_config() {
         println!("\n✓ Best configuration found:");
         println!("  - Temperature: {:.3}", best_config.global_temperature);
-        println!("  - Chemical potential: {:.3}", best_config.chemical_potential);
         println!(
-            "  - Tunneling prob: {:.3}",
-            best_config.tunneling_prob_base
+            "  - Chemical potential: {:.3}",
+            best_config.chemical_potential
         );
+        println!("  - Tunneling prob: {:.3}", best_config.tunneling_prob_base);
     }
 
     if let Some(best_conflicts) = controller.best_conflicts() {

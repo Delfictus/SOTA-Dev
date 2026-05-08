@@ -2,9 +2,11 @@
 //!
 //! Tests the event-cloud to MRC pipeline.
 
-use prism_report::event_cloud::{AblationPhase, EventCloud, EventWriter, PocketEvent, TempPhase, read_events};
-use prism_report::voxelize::{voxelize_event_cloud, write_mrc, Voxelizer, GAUSSIAN_SIGMA};
 use prism_report::alignment::{kabsch_align, Alignment};
+use prism_report::event_cloud::{
+    read_events, AblationPhase, EventCloud, EventWriter, PocketEvent, TempPhase,
+};
+use prism_report::voxelize::{voxelize_event_cloud, write_mrc, Voxelizer, GAUSSIAN_SIGMA};
 use tempfile::TempDir;
 
 /// Test event cloud persistence (JSONL format)
@@ -19,52 +21,70 @@ fn test_event_cloud_jsonl_roundtrip() {
 
         // Baseline events
         for i in 0..5 {
-            writer.write_event(&PocketEvent {
-                center_xyz: [10.0 + i as f32, 20.0, 30.0],
-                volume_a3: 100.0 + i as f32 * 10.0,
-                spike_count: 3 + i,
-                phase: AblationPhase::Baseline,
-                temp_phase: TempPhase::Warm, // Baseline is at constant 300K
-                replicate_id: 0,
-                frame_idx: i * 100,
-                residues: vec![10, 11, 12],
-                confidence: 0.5,
-                wavelength_nm: None,
-            }).unwrap();
+            writer
+                .write_event(&PocketEvent {
+                    center_xyz: [10.0 + i as f32, 20.0, 30.0],
+                    volume_a3: 100.0 + i as f32 * 10.0,
+                    spike_count: 3 + i,
+                    phase: AblationPhase::Baseline,
+                    temp_phase: TempPhase::Warm, // Baseline is at constant 300K
+                    replicate_id: 0,
+                    frame_idx: i * 100,
+                    residues: vec![10, 11, 12],
+                    confidence: 0.5,
+                    wavelength_nm: None,
+                })
+                .unwrap();
         }
 
         // Cryo-only events
         for i in 0..10 {
-            let temp_phase = if i < 3 { TempPhase::Cold } else if i < 6 { TempPhase::Ramp } else { TempPhase::Warm };
-            writer.write_event(&PocketEvent {
-                center_xyz: [15.0 + i as f32, 25.0, 35.0],
-                volume_a3: 150.0 + i as f32 * 10.0,
-                spike_count: 5 + i,
-                phase: AblationPhase::CryoOnly,
-                temp_phase,
-                replicate_id: 0,
-                frame_idx: i * 100,
-                residues: vec![10, 11, 12, 13],
-                confidence: 0.7,
-                wavelength_nm: None,
-            }).unwrap();
+            let temp_phase = if i < 3 {
+                TempPhase::Cold
+            } else if i < 6 {
+                TempPhase::Ramp
+            } else {
+                TempPhase::Warm
+            };
+            writer
+                .write_event(&PocketEvent {
+                    center_xyz: [15.0 + i as f32, 25.0, 35.0],
+                    volume_a3: 150.0 + i as f32 * 10.0,
+                    spike_count: 5 + i,
+                    phase: AblationPhase::CryoOnly,
+                    temp_phase,
+                    replicate_id: 0,
+                    frame_idx: i * 100,
+                    residues: vec![10, 11, 12, 13],
+                    confidence: 0.7,
+                    wavelength_nm: None,
+                })
+                .unwrap();
         }
 
         // Cryo+UV events
         for i in 0..15 {
-            let temp_phase = if i < 5 { TempPhase::Cold } else if i < 10 { TempPhase::Ramp } else { TempPhase::Warm };
-            writer.write_event(&PocketEvent {
-                center_xyz: [20.0 + i as f32, 30.0, 40.0],
-                volume_a3: 200.0 + i as f32 * 10.0,
-                spike_count: 8 + i,
-                phase: AblationPhase::CryoUv,
-                temp_phase,
-                replicate_id: 0,
-                frame_idx: i * 100,
-                residues: vec![10, 11, 12, 13, 14],
-                confidence: 0.9,
-                wavelength_nm: Some(280.0),
-            }).unwrap();
+            let temp_phase = if i < 5 {
+                TempPhase::Cold
+            } else if i < 10 {
+                TempPhase::Ramp
+            } else {
+                TempPhase::Warm
+            };
+            writer
+                .write_event(&PocketEvent {
+                    center_xyz: [20.0 + i as f32, 30.0, 40.0],
+                    volume_a3: 200.0 + i as f32 * 10.0,
+                    spike_count: 8 + i,
+                    phase: AblationPhase::CryoUv,
+                    temp_phase,
+                    replicate_id: 0,
+                    frame_idx: i * 100,
+                    residues: vec![10, 11, 12, 13, 14],
+                    confidence: 0.9,
+                    wavelength_nm: Some(280.0),
+                })
+                .unwrap();
         }
 
         writer.flush().unwrap();
@@ -90,12 +110,21 @@ fn test_event_cloud_jsonl_roundtrip() {
 #[test]
 fn test_gaussian_parameters() {
     // Verify constants
-    assert!((GAUSSIAN_SIGMA - 1.5).abs() < 0.001, "Sigma should be 1.5 Å");
+    assert!(
+        (GAUSSIAN_SIGMA - 1.5).abs() < 0.001,
+        "Sigma should be 1.5 Å"
+    );
 
     let radius = GAUSSIAN_SIGMA * 3.0;
-    assert!((radius - 4.5).abs() < 0.001, "Radius should be 3*sigma = 4.5 Å");
+    assert!(
+        (radius - 4.5).abs() < 0.001,
+        "Radius should be 3*sigma = 4.5 Å"
+    );
 
-    println!("Gaussian parameters: sigma={} Å, radius={} Å", GAUSSIAN_SIGMA, radius);
+    println!(
+        "Gaussian parameters: sigma={} Å, radius={} Å",
+        GAUSSIAN_SIGMA, radius
+    );
 }
 
 /// Test voxelization produces valid MRC files
@@ -107,13 +136,15 @@ fn test_voxelization_mrc_output() {
     let mut cloud = EventCloud::new();
     for i in 0..20 {
         let angle = i as f32 * std::f32::consts::PI / 10.0;
-        let temp_phase = if i < 7 { TempPhase::Cold } else if i < 14 { TempPhase::Ramp } else { TempPhase::Warm };
+        let temp_phase = if i < 7 {
+            TempPhase::Cold
+        } else if i < 14 {
+            TempPhase::Ramp
+        } else {
+            TempPhase::Warm
+        };
         cloud.push(PocketEvent {
-            center_xyz: [
-                50.0 + 5.0 * angle.cos(),
-                50.0 + 5.0 * angle.sin(),
-                50.0,
-            ],
+            center_xyz: [50.0 + 5.0 * angle.cos(), 50.0 + 5.0 * angle.sin(), 50.0],
             volume_a3: 200.0,
             spike_count: 10,
             phase: AblationPhase::CryoUv,
@@ -158,7 +189,10 @@ fn test_voxelization_mrc_output() {
 
     println!("MRC output: PASSED");
     println!("  Grid dims: {:?}", result.dims);
-    println!("  Voxels above threshold: {}", result.voxels_above_threshold);
+    println!(
+        "  Voxels above threshold: {}",
+        result.voxels_above_threshold
+    );
     println!("  Total volume: {:.1} Å³", result.total_volume);
 }
 
@@ -201,11 +235,15 @@ fn test_phase_weighted_voxelization() {
     let voxelizer = Voxelizer::new();
 
     // Baseline-only grid
-    let baseline_grid = voxelizer.voxelize_phase(&cloud, AblationPhase::Baseline).unwrap();
+    let baseline_grid = voxelizer
+        .voxelize_phase(&cloud, AblationPhase::Baseline)
+        .unwrap();
     let baseline_max = baseline_grid.max();
 
     // CryoUV-only grid
-    let cryouv_grid = voxelizer.voxelize_phase(&cloud, AblationPhase::CryoUv).unwrap();
+    let cryouv_grid = voxelizer
+        .voxelize_phase(&cloud, AblationPhase::CryoUv)
+        .unwrap();
     let cryouv_max = cryouv_grid.max();
 
     // Should be similar (same confidence, same number of events)
@@ -243,7 +281,10 @@ fn test_kabsch_alignment() {
     ];
 
     let alignment = kabsch_align(&reference, &mobile_translated).unwrap();
-    assert!(alignment.rmsd < 0.001, "RMSD should be ~0 for pure translation");
+    assert!(
+        alignment.rmsd < 0.001,
+        "RMSD should be ~0 for pure translation"
+    );
 
     // Transform mobile back to reference
     let transformed = alignment.transform_points(&mobile_translated);
@@ -278,7 +319,13 @@ fn test_ablation_spike_gradient() {
     }
 
     for i in 0..15 {
-        let temp_phase = if i < 5 { TempPhase::Cold } else if i < 10 { TempPhase::Ramp } else { TempPhase::Warm };
+        let temp_phase = if i < 5 {
+            TempPhase::Cold
+        } else if i < 10 {
+            TempPhase::Ramp
+        } else {
+            TempPhase::Warm
+        };
         cloud.push(PocketEvent {
             center_xyz: [30.0, 30.0, 30.0],
             volume_a3: 150.0,
@@ -294,7 +341,13 @@ fn test_ablation_spike_gradient() {
     }
 
     for i in 0..25 {
-        let temp_phase = if i < 8 { TempPhase::Cold } else if i < 16 { TempPhase::Ramp } else { TempPhase::Warm };
+        let temp_phase = if i < 8 {
+            TempPhase::Cold
+        } else if i < 16 {
+            TempPhase::Ramp
+        } else {
+            TempPhase::Warm
+        };
         cloud.push(PocketEvent {
             center_xyz: [30.0, 30.0, 30.0],
             volume_a3: 200.0,
@@ -314,8 +367,14 @@ fn test_ablation_spike_gradient() {
     let cryo_uv = cloud.filter_phase(AblationPhase::CryoUv);
 
     // Verify gradient
-    assert!(cryo.len() > baseline.len(), "Cryo should have more events than baseline");
-    assert!(cryo_uv.len() > cryo.len(), "Cryo+UV should have more events than cryo-only");
+    assert!(
+        cryo.len() > baseline.len(),
+        "Cryo should have more events than baseline"
+    );
+    assert!(
+        cryo_uv.len() > cryo.len(),
+        "Cryo+UV should have more events than cryo-only"
+    );
 
     // Verify total spikes
     let baseline_spikes: usize = baseline.iter().map(|e| e.spike_count).sum();
@@ -326,9 +385,17 @@ fn test_ablation_spike_gradient() {
     assert!(cryo_uv_spikes > cryo_spikes);
 
     println!("Ablation gradient: PASSED");
-    println!("  Baseline: {} events, {} spikes", baseline.len(), baseline_spikes);
+    println!(
+        "  Baseline: {} events, {} spikes",
+        baseline.len(),
+        baseline_spikes
+    );
     println!("  Cryo-only: {} events, {} spikes", cryo.len(), cryo_spikes);
-    println!("  Cryo+UV: {} events, {} spikes", cryo_uv.len(), cryo_uv_spikes);
+    println!(
+        "  Cryo+UV: {} events, {} spikes",
+        cryo_uv.len(),
+        cryo_uv_spikes
+    );
 }
 
 /// Test output contract for voxelization
@@ -341,7 +408,13 @@ fn test_voxelization_output_contract() {
     // Create event cloud
     let mut cloud = EventCloud::new();
     for i in 0..10 {
-        let temp_phase = if i < 3 { TempPhase::Cold } else if i < 6 { TempPhase::Ramp } else { TempPhase::Warm };
+        let temp_phase = if i < 3 {
+            TempPhase::Cold
+        } else if i < 6 {
+            TempPhase::Ramp
+        } else {
+            TempPhase::Warm
+        };
         cloud.push(PocketEvent {
             center_xyz: [i as f32 * 2.0, 10.0, 10.0],
             volume_a3: 150.0,
@@ -362,10 +435,7 @@ fn test_voxelization_output_contract() {
     result.write_mrc_files(&output_dir).unwrap();
 
     // Verify output contract
-    let required_files = [
-        "volumes/occupancy.mrc",
-        "volumes/pocket_fields.mrc",
-    ];
+    let required_files = ["volumes/occupancy.mrc", "volumes/pocket_fields.mrc"];
 
     for file in &required_files {
         let path = output_dir.join(file);
@@ -381,7 +451,11 @@ fn test_voxelization_output_contract() {
         "voxels_above_threshold": result.voxels_above_threshold,
     });
     let corr_path = output_dir.join("volumes/correlation.json");
-    std::fs::write(&corr_path, serde_json::to_string_pretty(&correlation).unwrap()).unwrap();
+    std::fs::write(
+        &corr_path,
+        serde_json::to_string_pretty(&correlation).unwrap(),
+    )
+    .unwrap();
     assert!(corr_path.exists(), "correlation.json missing");
 
     println!("Voxelization output contract: PASSED");

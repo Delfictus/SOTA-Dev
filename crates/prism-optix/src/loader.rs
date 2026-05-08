@@ -32,7 +32,7 @@ type OptixQueryFunctionTableFn = unsafe extern "C" fn(
     optionKeys: *mut OptixQueryFunctionTableOptions,
     optionValues: *mut *const ::std::os::raw::c_void,
     functionTable: *mut ::std::os::raw::c_void,
-    sizeOfTable: usize,  // Passed by value!
+    sizeOfTable: usize, // Passed by value!
 ) -> OptixResult;
 
 impl OptixApi {
@@ -62,21 +62,21 @@ impl OptixApi {
         // ABI 117 = OptiX 9.0.0
         // ABI 100-116 = OptiX 8.x and earlier
         let abi_versions: &[i32] = &[
-            OPTIX_ABI_VERSION as i32,  // Try our bindings version first (118)
-            119,  // Try newer (in case Blackwell has a newer version)
+            OPTIX_ABI_VERSION as i32, // Try our bindings version first (118)
+            119,                      // Try newer (in case Blackwell has a newer version)
             120,
-            117,  // Try OptiX 9.0
-            116,  // Try OptiX 8.x
+            117, // Try OptiX 9.0
+            116, // Try OptiX 8.x
             115,
-            100,  // OptiX 8.0 baseline
-            86,   // OptiX 7.7
-            85,   // OptiX 7.6
-            80,   // OptiX 7.5
-            78,   // OptiX 7.4
-            55,   // OptiX 7.3
-            47,   // OptiX 7.2
-            41,   // OptiX 7.1
-            36,   // OptiX 7.0
+            100, // OptiX 8.0 baseline
+            86,  // OptiX 7.7
+            85,  // OptiX 7.6
+            80,  // OptiX 7.5
+            78,  // OptiX 7.4
+            55,  // OptiX 7.3
+            47,  // OptiX 7.2
+            41,  // OptiX 7.1
+            36,  // OptiX 7.0
         ];
 
         let mut working_abi: Option<i32> = None;
@@ -94,11 +94,11 @@ impl OptixApi {
             // Pass our table size and see if this ABI accepts it
             let result = query_fn(
                 abi,
-                0,                      // numOptions
-                std::ptr::null_mut(),   // optionKeys
-                std::ptr::null_mut(),   // optionValues
+                0,                    // numOptions
+                std::ptr::null_mut(), // optionKeys
+                std::ptr::null_mut(), // optionValues
                 table_buffer.as_mut_ptr() as *mut ::std::os::raw::c_void,
-                our_table_size,         // sizeOfTable (by value)
+                our_table_size, // sizeOfTable (by value)
             );
 
             match result {
@@ -107,7 +107,8 @@ impl OptixApi {
                     final_table_buffer = Some(table_buffer);
                     log::info!(
                         "OptiX: ABI version {} accepted our table size ({} bytes)",
-                        abi, our_table_size
+                        abi,
+                        our_table_size
                     );
                     break;
                 }
@@ -117,7 +118,8 @@ impl OptixApi {
                 OptixResult::OPTIX_ERROR_FUNCTION_TABLE_SIZE_MISMATCH => {
                     log::debug!(
                         "OptiX: ABI {} expects different table size (ours: {} bytes)",
-                        abi, our_table_size
+                        abi,
+                        our_table_size
                     );
                 }
                 _ => {
@@ -135,7 +137,8 @@ impl OptixApi {
             ))
         })?;
 
-        let table_buffer = final_table_buffer.expect("Table buffer should be set when ABI is found");
+        let table_buffer =
+            final_table_buffer.expect("Table buffer should be set when ABI is found");
 
         // Copy the bytes to our struct
         let mut table = std::mem::MaybeUninit::<OptixFunctionTable>::uninit();
@@ -170,8 +173,7 @@ impl OptixApi {
 
     /// Get the global OptiX API (initializes on first call)
     pub fn get() -> Result<&'static OptixApi> {
-        OPTIX_API
-            .get_or_init(|| unsafe { Self::load().expect("Failed to load OptiX API") });
+        OPTIX_API.get_or_init(|| unsafe { Self::load().expect("Failed to load OptiX API") });
         OPTIX_API.get().ok_or_else(|| {
             OptixError::InitializationFailed("OptiX API not initialized".to_string())
         })
@@ -243,7 +245,13 @@ impl OptixApi {
         buffer_sizes: *mut OptixAccelBufferSizes,
     ) -> OptixResult {
         if let Some(f) = self.table.optixAccelComputeMemoryUsage {
-            f(context, accel_options, build_inputs, num_build_inputs, buffer_sizes)
+            f(
+                context,
+                accel_options,
+                build_inputs,
+                num_build_inputs,
+                buffer_sizes,
+            )
         } else {
             OptixResult::OPTIX_ERROR_FUNCTION_TABLE_SIZE_MISMATCH
         }

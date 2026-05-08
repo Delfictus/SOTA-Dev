@@ -1,12 +1,12 @@
 //! Real PRISM-GPU feature extraction for viral escape benchmark
 //! Uses MegaFusedBatchGpu to extract actual features
 
-use anyhow::{Result, Context};
-use prism_gpu::{MegaFusedBatchGpu, StructureInput, PackedBatch};
+use anyhow::{Context, Result};
 use cudarc::driver::CudaContext;
-use std::sync::Arc;
+use prism_gpu::{MegaFusedBatchGpu, PackedBatch, StructureInput};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 fn main() -> Result<()> {
     println!("═══════════════════════════════════════════════════");
@@ -17,14 +17,17 @@ fn main() -> Result<()> {
     let pdb_path = "prism-escape-benchmark/data/raw/structures/6m0j.pdb";
     println!("Loading structure: {}", pdb_path);
 
-    let pdb_content = fs::read_to_string(pdb_path)
-        .context("Failed to read PDB file")?;
+    let pdb_content = fs::read_to_string(pdb_path).context("Failed to read PDB file")?;
 
     // Parse PDB to get coordinates and residue info
     let (atoms, ca_indices, conservation, bfactor) = parse_pdb(&pdb_content)?;
     let num_residues = ca_indices.len();
 
-    println!("  ✓ Loaded {} residues, {} atoms", num_residues, atoms.len() / 3);
+    println!(
+        "  ✓ Loaded {} residues, {} atoms",
+        num_residues,
+        atoms.len() / 3
+    );
 
     // Initialize GPU
     println!("\nInitializing PRISM-GPU...");
@@ -120,7 +123,10 @@ fn save_numpy(features: &[f32], num_features: usize, path: &str) -> Result<()> {
 
     // Header
     let shape = format!("({}, {})", num_residues, num_features);
-    let header = format!("{{'descr': '<f4', 'fortran_order': False, 'shape': {}, }}", shape);
+    let header = format!(
+        "{{'descr': '<f4', 'fortran_order': False, 'shape': {}, }}",
+        shape
+    );
     let header_len = header.len() as u16;
     file.write_all(&header_len.to_le_bytes())?;
     file.write_all(header.as_bytes())?;

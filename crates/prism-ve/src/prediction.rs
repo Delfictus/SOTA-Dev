@@ -1,6 +1,6 @@
 //! Variant prediction data structures and logic
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Evolutionary cycle phase (6 phases)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ impl Phase {
             3 => Phase::Costly,
             4 => Phase::Reverting,
             5 => Phase::Fixed,
-            _ => Phase::Exploring,  // Default
+            _ => Phase::Exploring, // Default
         }
     }
 
@@ -121,24 +121,24 @@ pub struct VariantAssessment {
     // Escape module outputs
     pub escape_probability: f32,
     pub escape_rank: f32,
-    pub antibody_specific_escape: Vec<f32>,  // Per epitope class
+    pub antibody_specific_escape: Vec<f32>, // Per epitope class
 
     // Fitness module outputs
     pub ddg_binding: f32,
     pub ddg_stability: f32,
     pub expression_score: f32,
-    pub relative_fitness: f32,  // γ
+    pub relative_fitness: f32, // γ
     pub viable: bool,
 
     // Cycle module outputs
     pub cycle_phase: Phase,
     pub phase_confidence: f32,
     pub current_frequency: f32,
-    pub velocity: f32,  // Δfreq/month
+    pub velocity: f32, // Δfreq/month
 
     // Integrated predictions
     pub emergence_probability: f32,
-    pub predicted_timing: String,  // "1-3 months", "3-6 months", etc.
+    pub predicted_timing: String, // "1-3 months", "3-6 months", etc.
     pub months_to_dominance: f32,
     pub predicted_peak_frequency: f32,
 

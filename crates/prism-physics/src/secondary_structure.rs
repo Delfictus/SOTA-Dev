@@ -174,7 +174,8 @@ impl SecondaryStructureAnalyzer {
                     &ca_positions[(i + 2).min(n - 1)],
                 );
                 // Extended backbone has dihedral close to 180° or -180°
-                if angle.abs() > 2.5 { // ~143 degrees
+                if angle.abs() > 2.5 {
+                    // ~143 degrees
                     score += 0.5;
                 }
             }
@@ -223,7 +224,13 @@ impl SecondaryStructureAnalyzer {
     }
 
     /// Compute pseudo-dihedral angle from 4 consecutive CA positions
-    fn compute_pseudo_dihedral(&self, p1: &[f32; 3], p2: &[f32; 3], p3: &[f32; 3], p4: &[f32; 3]) -> f32 {
+    fn compute_pseudo_dihedral(
+        &self,
+        p1: &[f32; 3],
+        p2: &[f32; 3],
+        p3: &[f32; 3],
+        p4: &[f32; 3],
+    ) -> f32 {
         // Vectors along the backbone
         let b1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
         let b2 = [p3[0] - p2[0], p3[1] - p2[1], p3[2] - p2[2]];
@@ -337,8 +344,14 @@ impl SecondaryStructureSummary {
     /// Compute summary from assignments
     pub fn from_assignments(assignments: &[SecondaryStructure]) -> Self {
         let n = assignments.len();
-        let n_helix = assignments.iter().filter(|&&s| s == SecondaryStructure::Helix).count();
-        let n_sheet = assignments.iter().filter(|&&s| s == SecondaryStructure::Sheet).count();
+        let n_helix = assignments
+            .iter()
+            .filter(|&&s| s == SecondaryStructure::Helix)
+            .count();
+        let n_sheet = assignments
+            .iter()
+            .filter(|&&s| s == SecondaryStructure::Sheet)
+            .count();
         let n_loop = n - n_helix - n_sheet;
 
         Self {
@@ -430,14 +443,12 @@ mod tests {
 
         // Mix of structures
         let mut positions = generate_helix_positions(6);
-        positions.extend(vec![
-            [20.0, 0.0, 0.0],
-            [24.0, 1.0, 1.0],
-            [28.0, -1.0, 2.0],
-        ]); // Loop-like
-        positions.extend(generate_strand_positions(4).iter().map(|p| {
-            [p[0] + 35.0, p[1], p[2]]
-        }));
+        positions.extend(vec![[20.0, 0.0, 0.0], [24.0, 1.0, 1.0], [28.0, -1.0, 2.0]]); // Loop-like
+        positions.extend(
+            generate_strand_positions(4)
+                .iter()
+                .map(|p| [p[0] + 35.0, p[1], p[2]]),
+        );
 
         let factors = analyzer.get_flexibility_factors(&positions);
 

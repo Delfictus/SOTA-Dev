@@ -7,9 +7,9 @@
 use anyhow::Result;
 use prism_core::{KernelTelemetry, RuntimeConfig};
 
-use crate::ultra_controller::{DiscreteAction, UltraFluxNetController};
-use crate::core::state::UniversalRLState;
 use crate::core::controller::UniversalRLController;
+use crate::core::state::UniversalRLState;
+use crate::ultra_controller::{DiscreteAction, UltraFluxNetController};
 
 /// Controller selection mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,7 +354,8 @@ impl IntegratedFluxNet {
             ControllerMode::Universal => {
                 if let Some(ref controller) = self.universal {
                     let qtable_path = format!("{}.universal.json", path);
-                    controller.save_qtables_binary(&qtable_path)
+                    controller
+                        .save_qtables_binary(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to save Universal Q-tables: {}", e))?;
                     log::info!("Saved Universal Q-tables to {}", qtable_path);
                 }
@@ -362,7 +363,8 @@ impl IntegratedFluxNet {
             ControllerMode::Ultra => {
                 if let Some(ref ultra) = self.ultra {
                     let qtable_path = format!("{}.ultra.bin", path);
-                    ultra.save(&qtable_path)
+                    ultra
+                        .save(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to save Ultra Q-table: {}", e))?;
                     log::info!("Saved Ultra Q-table to {}", qtable_path);
                 }
@@ -370,12 +372,14 @@ impl IntegratedFluxNet {
             ControllerMode::Hybrid => {
                 if let Some(ref controller) = self.universal {
                     let qtable_path = format!("{}.universal.json", path);
-                    controller.save_qtables_binary(&qtable_path)
+                    controller
+                        .save_qtables_binary(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to save Universal Q-tables: {}", e))?;
                 }
                 if let Some(ref ultra) = self.ultra {
                     let qtable_path = format!("{}.ultra.bin", path);
-                    ultra.save(&qtable_path)
+                    ultra
+                        .save(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to save Ultra Q-table: {}", e))?;
                 }
                 log::info!("Saved Hybrid Q-tables to {}", path);
@@ -393,7 +397,8 @@ impl IntegratedFluxNet {
             ControllerMode::Universal => {
                 if let Some(ref controller) = self.universal {
                     let qtable_path = format!("{}.universal.json", path);
-                    controller.load_qtables_binary(&qtable_path)
+                    controller
+                        .load_qtables_binary(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to load Universal Q-tables: {}", e))?;
                     log::info!("Loaded Universal Q-tables from {}", qtable_path);
                 }
@@ -401,7 +406,8 @@ impl IntegratedFluxNet {
             ControllerMode::Ultra => {
                 if let Some(ref mut ultra) = self.ultra {
                     let qtable_path = format!("{}.ultra.bin", path);
-                    ultra.load(&qtable_path)
+                    ultra
+                        .load(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to load Ultra Q-table: {}", e))?;
                     log::info!("Loaded Ultra Q-table from {}", qtable_path);
                 }
@@ -409,12 +415,14 @@ impl IntegratedFluxNet {
             ControllerMode::Hybrid => {
                 if let Some(ref controller) = self.universal {
                     let qtable_path = format!("{}.universal.json", path);
-                    controller.load_qtables_binary(&qtable_path)
+                    controller
+                        .load_qtables_binary(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to load Universal Q-tables: {}", e))?;
                 }
                 if let Some(ref mut ultra) = self.ultra {
                     let qtable_path = format!("{}.ultra.bin", path);
-                    ultra.load(&qtable_path)
+                    ultra
+                        .load(&qtable_path)
                         .map_err(|e| anyhow::anyhow!("Failed to load Ultra Q-table: {}", e))?;
                 }
                 log::info!("Loaded Hybrid Q-tables from {}", path);

@@ -118,12 +118,12 @@ pub struct ConservationParams {
 impl Default for ConservationParams {
     fn default() -> Self {
         Self {
-            min_sequence_identity: 0.3,     // 30% minimum identity
-            max_sequence_identity: 0.95,    // 95% maximum (avoid identical sequences)
-            max_sequences: 1000,            // Computational efficiency limit
-            pseudocount: 0.1,               // Small pseudocount for smoothing
+            min_sequence_identity: 0.3,  // 30% minimum identity
+            max_sequence_identity: 0.95, // 95% maximum (avoid identical sequences)
+            max_sequences: 1000,         // Computational efficiency limit
+            pseudocount: 0.1,            // Small pseudocount for smoothing
             use_background_frequencies: true,
-            conservation_threshold: 0.75,   // Top 25% conservation
+            conservation_threshold: 0.75, // Top 25% conservation
             use_gpu: true,
         }
     }
@@ -189,8 +189,11 @@ impl ConservationAnalyzer {
     ) -> Result<ConservationResults> {
         let start_time = std::time::Instant::now();
 
-        log::info!("Analyzing conservation for {} with {} sequences",
-                  structure_id, msa.sequences.len());
+        log::info!(
+            "Analyzing conservation for {} with {} sequences",
+            structure_id,
+            msa.sequences.len()
+        );
 
         // Generate position-specific scoring matrix
         let pssm = self.generate_pssm(msa)?;
@@ -204,8 +207,14 @@ impl ConservationAnalyzer {
 
         let computation_time_ms = start_time.elapsed().as_secs_f64() * 1000.0;
 
-        log::info!("Conservation analysis completed in {:.1}ms", computation_time_ms);
-        log::info!("Highly conserved positions: {}", highly_conserved_positions.len());
+        log::info!(
+            "Conservation analysis completed in {:.1}ms",
+            computation_time_ms
+        );
+        log::info!(
+            "Highly conserved positions: {}",
+            highly_conserved_positions.len()
+        );
         log::info!("Variable positions: {}", variable_positions.len());
 
         Ok(ConservationResults {
@@ -232,7 +241,10 @@ impl ConservationAnalyzer {
         let filtered_sequences = self.filter_sequences_by_identity(msa)?;
         let sequence_count = filtered_sequences.len();
 
-        log::debug!("Using {} sequences after identity filtering", sequence_count);
+        log::debug!(
+            "Using {} sequences after identity filtering",
+            sequence_count
+        );
 
         for position in 0..sequence_length {
             // Count amino acid frequencies at this position
@@ -309,8 +321,9 @@ impl ConservationAnalyzer {
         for sequence in &msa.sequences {
             let identity = self.calculate_sequence_identity(reference, sequence)?;
 
-            if identity >= self.params.min_sequence_identity &&
-               identity <= self.params.max_sequence_identity {
+            if identity >= self.params.min_sequence_identity
+                && identity <= self.params.max_sequence_identity
+            {
                 filtered.push(sequence.clone());
             }
         }
@@ -357,11 +370,26 @@ impl ConservationAnalyzer {
     /// Convert amino acid character to array index
     fn amino_acid_to_index(&self, aa: char) -> Option<usize> {
         match aa.to_ascii_uppercase() {
-            'A' => Some(0),  'C' => Some(1),  'D' => Some(2),  'E' => Some(3),
-            'F' => Some(4),  'G' => Some(5),  'H' => Some(6),  'I' => Some(7),
-            'K' => Some(8),  'L' => Some(9),  'M' => Some(10), 'N' => Some(11),
-            'P' => Some(12), 'Q' => Some(13), 'R' => Some(14), 'S' => Some(15),
-            'T' => Some(16), 'V' => Some(17), 'W' => Some(18), 'Y' => Some(19),
+            'A' => Some(0),
+            'C' => Some(1),
+            'D' => Some(2),
+            'E' => Some(3),
+            'F' => Some(4),
+            'G' => Some(5),
+            'H' => Some(6),
+            'I' => Some(7),
+            'K' => Some(8),
+            'L' => Some(9),
+            'M' => Some(10),
+            'N' => Some(11),
+            'P' => Some(12),
+            'Q' => Some(13),
+            'R' => Some(14),
+            'S' => Some(15),
+            'T' => Some(16),
+            'V' => Some(17),
+            'W' => Some(18),
+            'Y' => Some(19),
             _ => None,
         }
     }
@@ -375,7 +403,7 @@ impl ConservationAnalyzer {
     /// Classify positions by conservation level
     fn classify_conservation_positions(
         &self,
-        conservation: &[f32]
+        conservation: &[f32],
     ) -> Result<(Vec<usize>, Vec<usize>)> {
         let threshold = self.params.conservation_threshold;
 
@@ -402,11 +430,14 @@ impl ConservationAnalyzer {
         let conservation_scores = &conservation_results.residue_conservation;
 
         if conservation_scores.len() != cryptic_predictions.len() {
-            return Err(anyhow::anyhow!("Conservation and cryptic prediction arrays must have same length"));
+            return Err(anyhow::anyhow!(
+                "Conservation and cryptic prediction arrays must have same length"
+            ));
         }
 
         // Calculate Pearson correlation coefficient
-        let correlation = self.calculate_pearson_correlation(conservation_scores, cryptic_predictions)?;
+        let correlation =
+            self.calculate_pearson_correlation(conservation_scores, cryptic_predictions)?;
 
         // Simple p-value approximation (would use proper statistics in production)
         let p_value = self.approximate_p_value(correlation, conservation_scores.len())?;
@@ -478,8 +509,10 @@ impl ConservationAnalyzer {
         let mean1 = group1.iter().sum::<f32>() / group1.len() as f32;
         let mean2 = group2.iter().sum::<f32>() / group2.len() as f32;
 
-        let var1 = group1.iter().map(|x| (x - mean1).powi(2)).sum::<f32>() / (group1.len() - 1).max(1) as f32;
-        let var2 = group2.iter().map(|x| (x - mean2).powi(2)).sum::<f32>() / (group2.len() - 1).max(1) as f32;
+        let var1 = group1.iter().map(|x| (x - mean1).powi(2)).sum::<f32>()
+            / (group1.len() - 1).max(1) as f32;
+        let var2 = group2.iter().map(|x| (x - mean2).powi(2)).sum::<f32>()
+            / (group2.len() - 1).max(1) as f32;
 
         let pooled_sd = ((var1 + var2) / 2.0).sqrt();
 
@@ -532,10 +565,14 @@ mod tests {
             background_frequencies: [0.05; 20],
         };
 
-        let identity = analyzer.calculate_sequence_identity("ACDEFG", "ACDEFG").unwrap();
+        let identity = analyzer
+            .calculate_sequence_identity("ACDEFG", "ACDEFG")
+            .unwrap();
         assert!((identity - 1.0).abs() < 1e-6);
 
-        let identity = analyzer.calculate_sequence_identity("ACDEFG", "ACDXFG").unwrap();
-        assert!((identity - 5.0/6.0).abs() < 1e-6);
+        let identity = analyzer
+            .calculate_sequence_identity("ACDEFG", "ACDXFG")
+            .unwrap();
+        assert!((identity - 5.0 / 6.0).abs() < 1e-6);
     }
 }

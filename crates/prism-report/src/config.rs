@@ -57,7 +57,7 @@ impl Default for ReportConfig {
             wavelengths: vec![258.0, 274.0, 280.0],
             holo_pdb: None,
             truth_residues: None,
-            contact_cutoff: None,  // Uses default 4.5Å in load_truth()
+            contact_cutoff: None, // Uses default 4.5Å in load_truth()
             temperature_protocol: TemperatureProtocol::default(),
             ablation: AblationConfig::default(),
             site_detection: SiteDetectionConfig::default(),
@@ -93,11 +93,11 @@ pub struct TemperatureProtocol {
 impl Default for TemperatureProtocol {
     fn default() -> Self {
         Self {
-            start_temp: 50.0,   // Cryogenic temperature for maximum contrast
-            end_temp: 300.0,    // Physiological temperature
-            cold_hold_steps: 20000,  // Equilibrate at cryo
-            ramp_steps: 30000,       // Temperature transition
-            warm_hold_steps: 50000,  // Equilibrate at physiological
+            start_temp: 50.0,       // Cryogenic temperature for maximum contrast
+            end_temp: 300.0,        // Physiological temperature
+            cold_hold_steps: 20000, // Equilibrate at cryo
+            ramp_steps: 30000,      // Temperature transition
+            warm_hold_steps: 50000, // Equilibrate at physiological
         }
     }
 }
@@ -187,19 +187,19 @@ fn default_residue_query_radius() -> f32 {
 }
 
 fn default_min_replica_agreement() -> f32 {
-    0.5  // Default: site must appear in 50% of replicates
+    0.5 // Default: site must appear in 50% of replicates
 }
 
 impl Default for SiteDetectionConfig {
     fn default() -> Self {
         Self {
-            min_cluster_size: 100,  // Increased from 5 to reduce noise
+            min_cluster_size: 100, // Increased from 5 to reduce noise
             cluster_threshold: 5.0,
             min_volume: 100.0,
             min_persistence: 0.002, // 0.2% - require more persistent sites
             min_confidence: 0.3,
-            residue_query_radius_a: 8.0,  // Expanded from 5.0 for broader binding site context
-            min_replica_agreement: 0.5,   // Default: 50% replica agreement
+            residue_query_radius_a: 8.0, // Expanded from 5.0 for broader binding site context
+            min_replica_agreement: 0.5,  // Default: 50% replica agreement
         }
     }
 }
@@ -258,11 +258,11 @@ pub struct RankingWeights {
 impl Default for RankingWeights {
     fn default() -> Self {
         Self {
-            persistence: 0.20,         // Reduced from 0.25
-            volume: 0.15,              // Reduced from 0.20
-            uv_response: 0.45,         // INCREASED from 0.25 (UV-LIF is primary validation)
-            hydrophobicity: 0.10,      // Reduced from 0.15
-            replica_agreement: 0.10,   // Reduced from 0.15
+            persistence: 0.20,       // Reduced from 0.25
+            volume: 0.15,            // Reduced from 0.20
+            uv_response: 0.45,       // INCREASED from 0.25 (UV-LIF is primary validation)
+            hydrophobicity: 0.10,    // Reduced from 0.15
+            replica_agreement: 0.10, // Reduced from 0.15
         }
     }
 }
@@ -276,10 +276,7 @@ impl RankingWeights {
             + self.hydrophobicity
             + self.replica_agreement;
         if (sum - 1.0).abs() > 0.01 {
-            return Err(format!(
-                "Ranking weights must sum to 1.0, got {:.3}",
-                sum
-            ));
+            return Err(format!("Ranking weights must sum to 1.0, got {:.3}", sum));
         }
         Ok(())
     }

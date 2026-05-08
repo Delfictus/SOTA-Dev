@@ -9,12 +9,12 @@
 //! cargo run --bin pimc_epitope_demo --release
 
 use anyhow::Result;
-use prism_niv_bench::{
-    structure_types::NivBenchDataset,
-    pimc_epitope_optimization::{PimcEpitopeOptimizer, EpitopeOptimizationParams},
-};
 use cudarc::driver::CudaContext;
-use std::{sync::Arc, fs::File, io::BufReader, time::Instant};
+use prism_niv_bench::{
+    pimc_epitope_optimization::{EpitopeOptimizationParams, PimcEpitopeOptimizer},
+    structure_types::NivBenchDataset,
+};
+use std::{fs::File, io::BufReader, sync::Arc, time::Instant};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -38,29 +38,31 @@ fn main() -> Result<()> {
 
     // Initialize CUDA context
     println!("🔧 Initializing CUDA context...");
-    let cuda_context = Arc::new(CudaContext::new(0)
-        .map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?);
+    let cuda_context = Arc::new(
+        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?,
+    );
 
     println!("✅ CUDA initialized: {}", cuda_context.name()?);
 
     // Configure PIMC optimization parameters
     let mut optimization_params = EpitopeOptimizationParams::default();
-    optimization_params.num_replicas = 64;           // Balanced performance
-    optimization_params.mc_steps = 500;              // Fast demo iterations
+    optimization_params.num_replicas = 64; // Balanced performance
+    optimization_params.mc_steps = 500; // Fast demo iterations
     optimization_params.accessibility_threshold = 0.25; // Stricter cryptic threshold
 
     println!("⚙️  PIMC Parameters:");
     println!("   Replicas: {}", optimization_params.num_replicas);
     println!("   MC Steps: {}", optimization_params.mc_steps);
-    println!("   Accessibility Threshold: {:.2}", optimization_params.accessibility_threshold);
+    println!(
+        "   Accessibility Threshold: {:.2}",
+        optimization_params.accessibility_threshold
+    );
     println!();
 
     // Initialize PIMC epitope optimizer
     println!("🔬 Initializing PIMC Epitope Optimizer...");
-    let mut epitope_optimizer = PimcEpitopeOptimizer::new(
-        cuda_context.clone(),
-        optimization_params,
-    )?;
+    let mut epitope_optimizer =
+        PimcEpitopeOptimizer::new(cuda_context.clone(), optimization_params)?;
 
     println!("✅ PIMC Epitope Optimizer ready");
     println!();
@@ -76,13 +78,19 @@ fn main() -> Result<()> {
             continue;
         }
 
-        println!("🧬 Processing: {} ({} residues)", structure.pdb_id, structure.residues.len());
+        println!(
+            "🧬 Processing: {} ({} residues)",
+            structure.pdb_id,
+            structure.residues.len()
+        );
 
         // Get known epitopes for validation
-        let known_epitopes: Vec<Vec<usize>> = dataset.epitopes
+        let known_epitopes: Vec<Vec<usize>> = dataset
+            .epitopes
             .get(&structure.pdb_id)
             .map(|epitopes| {
-                epitopes.iter()
+                epitopes
+                    .iter()
                     .map(|e| e.interface_residues.clone())
                     .collect()
             })
@@ -91,11 +99,7 @@ fn main() -> Result<()> {
         println!("   📋 Known epitopes: {}", known_epitopes.len());
 
         // Get antibody contacts (if available)
-        let antibody_contacts: Vec<usize> = known_epitopes
-            .iter()
-            .flatten()
-            .cloned()
-            .collect();
+        let antibody_contacts: Vec<usize> = known_epitopes.iter().flatten().cloned().collect();
 
         // PIMC epitope optimization
         let optimization_start = Instant::now();
@@ -119,21 +123,59 @@ fn main() -> Result<()> {
 
         // Results analysis
         println!("   📊 Results:");
-        println!("      Cryptic epitopes discovered: {}", epitope_landscape.cryptic_sites.len());
-        println!("      PIMC converged: {}", epitope_landscape.pimc_convergence);
-        println!("      Quantum tunneling events: {}", epitope_landscape.quantum_tunneling_events);
+        println!(
+            "      Cryptic epitopes discovered: {}",
+            epitope_landscape.cryptic_sites.len()
+        );
+        println!(
+            "      PIMC converged: {}",
+            epitope_landscape.pimc_convergence
+        );
+        println!(
+            "      Quantum tunneling events: {}",
+            epitope_landscape.quantum_tunneling_events
+        );
 
         // Detailed epitope analysis
         for (i, cryptic_site) in epitope_landscape.cryptic_sites.iter().enumerate() {
-            println!("      🔍 Cryptic Site {}: {} residues", i + 1, cryptic_site.residue_indices.len());
-            println!("         Accessibility: {:.3}", cryptic_site.accessibility_score);
-            println!("         Energy barrier: {:.2} kT", cryptic_site.energy_barrier);
-            println!("         Escape potential: {:.3}", cryptic_site.antibody_escape_potential);
+            println!(
+                "      🔍 Cryptic Site {}: {} residues",
+                i + 1,
+                cryptic_site.residue_indices.len()
+            );
+            println!(
+                "         Accessibility: {:.3}",
+                cryptic_site.accessibility_score
+            );
+            println!(
+                "         Energy barrier: {:.2} kT",
+                cryptic_site.energy_barrier
+            );
+            println!(
+                "         Escape potential: {:.3}",
+                cryptic_site.antibody_escape_potential
+            );
             println!("         Platform specificity:");
-            println!("           mRNA exposure: {:.2}", cryptic_site.platform_specificity.mrna_exposure_probability);
-            println!("           Viral vector: {:.2}", cryptic_site.platform_specificity.viral_vector_exposure_probability);
-            println!("           Subunit: {:.2}", cryptic_site.platform_specificity.subunit_exposure_probability);
-            println!("           Differential: {:.3}", cryptic_site.platform_specificity.differential_crypticity);
+            println!(
+                "           mRNA exposure: {:.2}",
+                cryptic_site.platform_specificity.mrna_exposure_probability
+            );
+            println!(
+                "           Viral vector: {:.2}",
+                cryptic_site
+                    .platform_specificity
+                    .viral_vector_exposure_probability
+            );
+            println!(
+                "           Subunit: {:.2}",
+                cryptic_site
+                    .platform_specificity
+                    .subunit_exposure_probability
+            );
+            println!(
+                "           Differential: {:.3}",
+                cryptic_site.platform_specificity.differential_crypticity
+            );
 
             if cryptic_site.antibody_escape_potential > 0.7 {
                 println!("         ⚠️  HIGH ESCAPE RISK!");
@@ -151,11 +193,15 @@ fn main() -> Result<()> {
     println!("===========================");
     println!("Structures processed: {}", total_structures_processed);
     println!("Total cryptic sites discovered: {}", total_cryptic_sites);
-    println!("Average cryptic sites per structure: {:.1}",
-        total_cryptic_sites as f32 / total_structures_processed.max(1) as f32);
+    println!(
+        "Average cryptic sites per structure: {:.1}",
+        total_cryptic_sites as f32 / total_structures_processed.max(1) as f32
+    );
     println!("Total processing time: {:.2}s", total_time.as_secs_f32());
-    println!("Average time per structure: {:.1}ms",
-        total_time.as_millis() as f32 / total_structures_processed.max(1) as f32);
+    println!(
+        "Average time per structure: {:.1}ms",
+        total_time.as_millis() as f32 / total_structures_processed.max(1) as f32
+    );
     println!();
 
     // Validation against known epitopes
@@ -173,7 +219,10 @@ fn main() -> Result<()> {
     println!("   PIMC Replicas: 64 (validated ✅)");
     println!("   Quantum Annealing: Temperature schedule optimization ✅");
     println!("   Target Performance: <50ms per structure");
-    println!("   Real Nipah Data: {} structures analyzed", total_structures_processed);
+    println!(
+        "   Real Nipah Data: {} structures analyzed",
+        total_structures_processed
+    );
     println!();
     println!("🚀 Ready for Phase 2.2: QUBO-TDA Topology Integration!");
 

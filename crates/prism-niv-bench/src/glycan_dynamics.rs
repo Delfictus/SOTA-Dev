@@ -11,7 +11,7 @@ pub fn calculate_effective_accessibility(structure: &ParamyxoStructure) -> Resul
 
     // 3. Apply dynamic shielding
     let mut effective_sasa = Vec::new();
-    
+
     for (i, _res) in structure.residues.iter().enumerate() {
         let sasa = base_sasa[i];
         let shielding = calculate_shielding_factor(structure, i, &glycan_sites);
@@ -24,11 +24,11 @@ pub fn calculate_effective_accessibility(structure: &ParamyxoStructure) -> Resul
 fn find_sequons(structure: &ParamyxoStructure) -> Vec<usize> {
     let mut sites = Vec::new();
     let residues = &structure.residues;
-    
+
     for i in 0..residues.len().saturating_sub(2) {
         let r1 = &residues[i];
-        let r2 = &residues[i+1];
-        let r3 = &residues[i+2];
+        let r2 = &residues[i + 1];
+        let r3 = &residues[i + 2];
 
         // Check for sequence continuity (simplification: just check indices or chain)
         if r1.chain_id != r2.chain_id || r2.chain_id != r3.chain_id {
@@ -46,27 +46,33 @@ fn find_sequons(structure: &ParamyxoStructure) -> Vec<usize> {
     sites
 }
 
-fn calculate_shielding_factor(structure: &ParamyxoStructure, target_idx: usize, glycan_sites: &[usize]) -> f32 {
+fn calculate_shielding_factor(
+    structure: &ParamyxoStructure,
+    target_idx: usize,
+    glycan_sites: &[usize],
+) -> f32 {
     let target_res = &structure.residues[target_idx];
     let mut max_shielding = 0.0;
 
     for &site_idx in glycan_sites {
-        if site_idx == target_idx { continue; } // Self doesn't shield self in this context? Or does it?
-        
+        if site_idx == target_idx {
+            continue;
+        } // Self doesn't shield self in this context? Or does it?
+
         let glycan_root = &structure.residues[site_idx];
-        
+
         // Distance between target CA and glycan root CA
         let dx = target_res.ca_coords.0 - glycan_root.ca_coords.0;
         let dy = target_res.ca_coords.1 - glycan_root.ca_coords.1;
         let dz = target_res.ca_coords.2 - glycan_root.ca_coords.2;
-        let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
 
         // Model glycan as a probabilistic cloud
         // Glycans can extend 10-20 Angstroms.
         // Simple model: Probability of occlusion decays with distance from root
-        // But also, the target must be "under" the umbrella. 
+        // But also, the target must be "under" the umbrella.
         // For isotropic cloud:
-        
+
         if dist < 15.0 {
             // Linear decay 1.0 at 0 to 0.0 at 15.0
             let shielding = 1.0 - (dist / 15.0);
@@ -75,7 +81,7 @@ fn calculate_shielding_factor(structure: &ParamyxoStructure, target_idx: usize, 
             }
         }
     }
-    
+
     // Cap shielding at some reasonable max (e.g., 0.9) - a residue is rarely 100% occluded by glycans alone
     max_shielding * 0.9
 }
@@ -89,12 +95,14 @@ fn estimate_sasa(structure: &ParamyxoStructure) -> Vec<f32> {
     for (i, res) in residues.iter().enumerate() {
         let mut neighbors = 0;
         for (j, other) in residues.iter().enumerate() {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let dx = res.ca_coords.0 - other.ca_coords.0;
             let dy = res.ca_coords.1 - other.ca_coords.1;
             let dz = res.ca_coords.2 - other.ca_coords.2;
-            let dist_sq = dx*dx + dy*dy + dz*dz;
-            
+            let dist_sq = dx * dx + dy * dy + dz * dz;
+
             // 10A neighborhood
             if dist_sq < 100.0 {
                 neighbors += 1;

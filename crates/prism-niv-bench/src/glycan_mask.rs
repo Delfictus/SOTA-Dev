@@ -128,7 +128,10 @@ pub mod known_sites {
     pub const NIV_F_GLYCOSYLATION_SITES: &[u32] = &[67, 238, 414];
 
     /// Get known glycosylation sites for a given protein
-    pub fn get_known_sites(pdb_id: &str, protein_type: crate::structure_types::ProteinType) -> &'static [u32] {
+    pub fn get_known_sites(
+        pdb_id: &str,
+        protein_type: crate::structure_types::ProteinType,
+    ) -> &'static [u32] {
         use crate::structure_types::ProteinType;
 
         // For Nipah virus structures
@@ -174,6 +177,6 @@ mod tests {
         assert_eq!(adjusted[1], 80.0); // Unshielded
         assert_eq!(adjusted[2], 18.0); // 60 * 0.3
         assert_eq!(adjusted[3], 40.0); // Unshielded
-        assert_eq!(adjusted[4], 6.0);  // 20 * 0.3
+        assert_eq!(adjusted[4], 6.0); // 20 * 0.3
     }
 }

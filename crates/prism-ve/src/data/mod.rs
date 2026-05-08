@@ -8,8 +8,4 @@
 
 pub mod loaders;
 
-pub use loaders::{
-    load_dms_escape_data,
-    load_gisaid_frequencies,
-    load_variant_mutations,
-};
+pub use loaders::{load_dms_escape_data, load_gisaid_frequencies, load_variant_mutations};

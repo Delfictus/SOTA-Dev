@@ -101,10 +101,7 @@ fn create_rl_controller() -> UniversalRLController {
 /// Verify that a coloring solution is valid (no conflicts)
 fn verify_coloring(graph: &Graph, solution: &ColoringSolution) -> bool {
     if solution.conflicts > 0 {
-        eprintln!(
-            "⚠ Solution has {} conflicts - INVALID",
-            solution.conflicts
-        );
+        eprintln!("⚠ Solution has {} conflicts - INVALID", solution.conflicts);
         return false;
     }
 

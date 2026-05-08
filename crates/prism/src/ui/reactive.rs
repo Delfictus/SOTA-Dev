@@ -18,13 +18,13 @@
 //! └─────────────┘ Commands└──────────────────┘ Actions └─────────────┘
 //! ```
 
-use anyhow::{Result, Context};
-use tokio::sync::{broadcast, mpsc};
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, mpsc};
 
-use super::app::{App, PhaseStatus, PhaseState, OptimizationState, GpuStatus, ReplicaState};
-use crate::runtime::events::{PrismEvent, PhaseId, OptimizationConfig};
+use super::app::{App, GpuStatus, OptimizationState, PhaseState, PhaseStatus, ReplicaState};
+use crate::runtime::events::{OptimizationConfig, PhaseId, PrismEvent};
 use crate::runtime::state::StateStore;
 
 /// Configuration for reactive controller behavior
@@ -167,14 +167,21 @@ impl ReactiveController {
             // ═══════════════════════════════════════════════════════════════
             // Pipeline Events
             // ═══════════════════════════════════════════════════════════════
-
-            PrismEvent::GraphLoaded { vertices, edges, density, estimated_chromatic } => {
+            PrismEvent::GraphLoaded {
+                vertices,
+                edges,
+                density,
+                estimated_chromatic,
+            } => {
                 app.optimization.max_iterations = estimated_chromatic * 1000;
                 app.dialogue.add_system_message(&format!(
                     "Graph loaded: {} vertices, {} edges (density: {:.1}%)\n\
                      Estimated chromatic number: {}\n\
                      Ready to start optimization.",
-                    vertices, edges, density * 100.0, estimated_chromatic
+                    vertices,
+                    edges,
+                    density * 100.0,
+                    estimated_chromatic
                 ));
             }
 
@@ -184,7 +191,8 @@ impl ReactiveController {
                     app.phases[idx].status = PhaseState::Running;
                     app.phases[idx].progress = 0.0;
                 }
-                app.dialogue.add_system_message(&format!("Starting {}...", name));
+                app.dialogue
+                    .add_system_message(&format!("Starting {}...", name));
             }
 
             PrismEvent::PhaseProgress {
@@ -210,7 +218,9 @@ impl ReactiveController {
 
                 // Add to convergence history (throttle to every 10 iterations)
                 if iteration % 10 == 0 {
-                    app.optimization.convergence_history.push((iteration, colors));
+                    app.optimization
+                        .convergence_history
+                        .push((iteration, colors));
 
                     // Keep history bounded
                     if app.optimization.convergence_history.len() > 1000 {
@@ -219,7 +229,12 @@ impl ReactiveController {
                 }
             }
 
-            PrismEvent::PhaseCompleted { phase, duration_ms, final_colors, final_conflicts } => {
+            PrismEvent::PhaseCompleted {
+                phase,
+                duration_ms,
+                final_colors,
+                final_conflicts,
+            } => {
                 let idx = phase.index();
                 if idx < app.phases.len() {
                     app.phases[idx].status = PhaseState::Completed;
@@ -242,24 +257,33 @@ impl ReactiveController {
                     app.phases[idx].status = PhaseState::Failed;
                 }
 
-                app.dialogue.add_system_message(&format!(
-                    "❌ {} failed: {}",
-                    phase.name(),
-                    error
-                ));
+                app.dialogue
+                    .add_system_message(&format!("❌ {} failed: {}", phase.name(), error));
             }
 
-            PrismEvent::NewBestSolution { colors, conflicts, iteration, phase } => {
+            PrismEvent::NewBestSolution {
+                colors,
+                conflicts,
+                iteration,
+                phase,
+            } => {
                 app.optimization.best_colors = colors;
                 app.optimization.best_conflicts = conflicts;
 
                 app.dialogue.add_system_message(&format!(
                     "🎯 New best solution: {} colors, {} conflicts (iteration {}, {})",
-                    colors, conflicts, iteration, phase.name()
+                    colors,
+                    conflicts,
+                    iteration,
+                    phase.name()
                 ));
             }
 
-            PrismEvent::OptimizationCompleted { total_duration_ms, final_colors, attempts } => {
+            PrismEvent::OptimizationCompleted {
+                total_duration_ms,
+                final_colors,
+                attempts,
+            } => {
                 app.dialogue.add_system_message(&format!(
                     "✓ Optimization completed in {:.2}s\n\
                      Final result: {} colors ({} attempts)",
@@ -272,7 +296,6 @@ impl ReactiveController {
             // ═══════════════════════════════════════════════════════════════
             // GPU Events
             // ═══════════════════════════════════════════════════════════════
-
             PrismEvent::GpuStatus {
                 device_id,
                 name,
@@ -302,7 +325,6 @@ impl ReactiveController {
             // ═══════════════════════════════════════════════════════════════
             // Thermodynamic Events (Phase 2)
             // ═══════════════════════════════════════════════════════════════
-
             PrismEvent::ReplicaUpdate {
                 replica_id,
                 temperature,
@@ -311,7 +333,12 @@ impl ReactiveController {
                 energy,
             } => {
                 // Update or create replica state
-                if let Some(replica) = app.optimization.replicas.iter_mut().find(|r| r.temperature == temperature) {
+                if let Some(replica) = app
+                    .optimization
+                    .replicas
+                    .iter_mut()
+                    .find(|r| r.temperature == temperature)
+                {
                     replica.colors = colors;
                 } else if app.optimization.replicas.len() < 8 {
                     app.optimization.replicas.push(ReplicaState {
@@ -322,7 +349,11 @@ impl ReactiveController {
                 }
             }
 
-            PrismEvent::ReplicaExchange { replica_a, replica_b, accepted } => {
+            PrismEvent::ReplicaExchange {
+                replica_a,
+                replica_b,
+                accepted,
+            } => {
                 if accepted {
                     log::debug!("Replica exchange: {} <-> {}", replica_a, replica_b);
                 }
@@ -331,25 +362,34 @@ impl ReactiveController {
             // ═══════════════════════════════════════════════════════════════
             // Quantum Events (Phase 3)
             // ═══════════════════════════════════════════════════════════════
-
-            PrismEvent::QuantumState { coherence, top_amplitudes, tunneling_rate } => {
+            PrismEvent::QuantumState {
+                coherence,
+                top_amplitudes,
+                tunneling_rate,
+            } => {
                 app.optimization.quantum_coherence = coherence;
                 app.optimization.quantum_amplitudes = top_amplitudes;
             }
 
-            PrismEvent::QuantumMeasurement { measured_colors, pre_collapse_entropy } => {
+            PrismEvent::QuantumMeasurement {
+                measured_colors,
+                pre_collapse_entropy,
+            } => {
                 app.dialogue.add_system_message(&format!(
                     "Quantum measurement: collapsed to {} colors (entropy: {:.3})",
-                    measured_colors,
-                    pre_collapse_entropy
+                    measured_colors, pre_collapse_entropy
                 ));
             }
 
             // ═══════════════════════════════════════════════════════════════
             // Dendritic Events (Phase 0)
             // ═══════════════════════════════════════════════════════════════
-
-            PrismEvent::DendriticUpdate { active_neurons, total_neurons, firing_rate, pattern_detected } => {
+            PrismEvent::DendriticUpdate {
+                active_neurons,
+                total_neurons,
+                firing_rate,
+                pattern_detected,
+            } => {
                 if let Some(pattern) = pattern_detected {
                     app.dialogue.add_system_message(&format!(
                         "Dendritic pattern detected: {} ({}/{} neurons active, {:.1}% firing)",
@@ -364,20 +404,35 @@ impl ReactiveController {
             // ═══════════════════════════════════════════════════════════════
             // FluxNet RL Events
             // ═══════════════════════════════════════════════════════════════
-
-            PrismEvent::RlAction { state, action, q_value, epsilon } => {
+            PrismEvent::RlAction {
+                state,
+                action,
+                q_value,
+                epsilon,
+            } => {
                 log::debug!("RL action: {} (Q={:.3}, ε={:.3})", action, q_value, epsilon);
             }
 
-            PrismEvent::RlReward { reward, cumulative_reward } => {
-                log::debug!("RL reward: {:.3} (cumulative: {:.3})", reward, cumulative_reward);
+            PrismEvent::RlReward {
+                reward,
+                cumulative_reward,
+            } => {
+                log::debug!(
+                    "RL reward: {:.3} (cumulative: {:.3})",
+                    reward,
+                    cumulative_reward
+                );
             }
 
             // ═══════════════════════════════════════════════════════════════
             // LBS Events (Biomolecular Mode)
             // ═══════════════════════════════════════════════════════════════
-
-            PrismEvent::ProteinLoaded { pdb_id, residues, atoms, chains } => {
+            PrismEvent::ProteinLoaded {
+                pdb_id,
+                residues,
+                atoms,
+                chains,
+            } => {
                 // Update protein state
                 app.protein.name = pdb_id.clone();
                 app.protein.residue_count = residues;
@@ -396,10 +451,17 @@ impl ReactiveController {
                 app.protein.lbs_progress.phase_iteration = 0;
                 app.protein.lbs_progress.phase_max_iterations = 1000; // Default, will be updated
 
-                app.dialogue.add_system_message(&format!("LBS: Starting {}...", name));
+                app.dialogue
+                    .add_system_message(&format!("LBS: Starting {}...", name));
             }
 
-            PrismEvent::LbsPhaseProgress { phase, iteration, max_iterations, pockets_found, best_druggability } => {
+            PrismEvent::LbsPhaseProgress {
+                phase,
+                iteration,
+                max_iterations,
+                pockets_found,
+                best_druggability,
+            } => {
                 // Update LBS progress in real-time
                 app.protein.lbs_progress.phase_iteration = iteration;
                 app.protein.lbs_progress.phase_max_iterations = max_iterations;
@@ -408,18 +470,34 @@ impl ReactiveController {
 
                 log::debug!(
                     "LBS {:?}: {}/{} - {} pockets, best druggability: {:.2}",
-                    phase, iteration, max_iterations, pockets_found, best_druggability
+                    phase,
+                    iteration,
+                    max_iterations,
+                    pockets_found,
+                    best_druggability
                 );
             }
 
-            PrismEvent::LbsPhaseCompleted { phase, duration_ms, pockets_found } => {
+            PrismEvent::LbsPhaseCompleted {
+                phase,
+                duration_ms,
+                pockets_found,
+            } => {
                 app.dialogue.add_system_message(&format!(
                     "LBS {:?} completed in {:.2}s: {} pockets found",
-                    phase, duration_ms as f64 / 1000.0, pockets_found
+                    phase,
+                    duration_ms as f64 / 1000.0,
+                    pockets_found
                 ));
             }
 
-            PrismEvent::PocketDetected { pocket_id, volume, druggability, center, residue_count } => {
+            PrismEvent::PocketDetected {
+                pocket_id,
+                volume,
+                druggability,
+                center,
+                residue_count,
+            } => {
                 use super::app::PocketInfo;
 
                 // Add pocket to the app state (convert f32 to f64)
@@ -435,9 +513,9 @@ impl ReactiveController {
                 });
 
                 // Sort by druggability (highest first)
-                app.protein.pockets.sort_by(|a, b| {
-                    b.druggability.partial_cmp(&a.druggability).unwrap()
-                });
+                app.protein
+                    .pockets
+                    .sort_by(|a, b| b.druggability.partial_cmp(&a.druggability).unwrap());
 
                 app.dialogue.add_system_message(&format!(
                     "Pocket #{}: volume={:.1}Å³, druggability={:.2}, {} residues at ({:.1}, {:.1}, {:.1})",
@@ -445,43 +523,76 @@ impl ReactiveController {
                 ));
             }
 
-            PrismEvent::LbsPredictionComplete { total_pockets, best_pocket_druggability, total_duration_ms, gpu_accelerated } => {
+            PrismEvent::LbsPredictionComplete {
+                total_pockets,
+                best_pocket_druggability,
+                total_duration_ms,
+                gpu_accelerated,
+            } => {
                 // Clear current phase to show completion
                 app.protein.lbs_progress.current_phase = None;
                 app.protein.lbs_progress.gpu_accelerated = gpu_accelerated;
 
                 app.dialogue.add_system_message(&format!(
                     "LBS prediction complete: {} pockets (best: {:.2} druggability) in {:.2}s {}",
-                    total_pockets, best_pocket_druggability, total_duration_ms as f64 / 1000.0,
+                    total_pockets,
+                    best_pocket_druggability,
+                    total_duration_ms as f64 / 1000.0,
                     if gpu_accelerated { "[GPU]" } else { "[CPU]" }
                 ));
             }
 
-            PrismEvent::GnnInference { num_nodes, num_edges, chromatic_prediction, confidence, gpu_used, latency_ms } => {
+            PrismEvent::GnnInference {
+                num_nodes,
+                num_edges,
+                chromatic_prediction,
+                confidence,
+                gpu_used,
+                latency_ms,
+            } => {
                 log::debug!(
                     "GNN inference: {} nodes, {} edges -> {} colors (conf: {:.2}) in {}ms {}",
-                    num_nodes, num_edges, chromatic_prediction, confidence, latency_ms,
+                    num_nodes,
+                    num_edges,
+                    chromatic_prediction,
+                    confidence,
+                    latency_ms,
                     if gpu_used { "[GPU]" } else { "[CPU]" }
                 );
             }
 
-            PrismEvent::SasaComputed { num_atoms, exposed_area, buried_area, latency_ms } => {
+            PrismEvent::SasaComputed {
+                num_atoms,
+                exposed_area,
+                buried_area,
+                latency_ms,
+            } => {
                 log::debug!(
                     "SASA computed for {} atoms: exposed={:.1}Å², buried={:.1}Å² in {}ms",
-                    num_atoms, exposed_area, buried_area, latency_ms
+                    num_atoms,
+                    exposed_area,
+                    buried_area,
+                    latency_ms
                 );
             }
 
             // ═══════════════════════════════════════════════════════════════
             // System Events
             // ═══════════════════════════════════════════════════════════════
-
-            PrismEvent::Error { source, message, recoverable } => {
+            PrismEvent::Error {
+                source,
+                message,
+                recoverable,
+            } => {
                 app.dialogue.add_system_message(&format!(
                     "❌ Error from {}: {}\n{}",
                     source,
                     message,
-                    if recoverable { "Attempting recovery..." } else { "Fatal error." }
+                    if recoverable {
+                        "Attempting recovery..."
+                    } else {
+                        "Fatal error."
+                    }
                 ));
             }
 
@@ -570,7 +681,11 @@ impl ReactiveController {
     }
 
     /// Set a parameter
-    pub async fn set_parameter(&self, key: String, value: crate::runtime::events::ParameterValue) -> Result<()> {
+    pub async fn set_parameter(
+        &self,
+        key: String,
+        value: crate::runtime::events::ParameterValue,
+    ) -> Result<()> {
         self.command_tx
             .send(PrismEvent::SetParameter { key, value })
             .await
@@ -595,7 +710,9 @@ impl ReactiveController {
     /// Get the current convergence history from state store
     pub fn get_convergence_history(&self) -> Vec<(u64, usize, usize)> {
         use crate::runtime::state::ConvergencePoint;
-        self.state.convergence_history.to_vec()
+        self.state
+            .convergence_history
+            .to_vec()
             .into_iter()
             .map(|pt: ConvergencePoint| (pt.iteration, pt.colors, pt.conflicts))
             .collect()
@@ -604,7 +721,9 @@ impl ReactiveController {
     /// Get GPU utilization history
     pub fn get_gpu_utilization_history(&self) -> Vec<(u64, f64)> {
         use crate::runtime::state::GpuUtilPoint;
-        self.state.gpu_utilization_history.to_vec()
+        self.state
+            .gpu_utilization_history
+            .to_vec()
             .into_iter()
             .map(|pt: GpuUtilPoint| (pt.timestamp_ms, pt.utilization))
             .collect()
@@ -613,7 +732,9 @@ impl ReactiveController {
     /// Get temperature history (for thermodynamic visualization)
     pub fn get_temperature_history(&self) -> Vec<(u64, usize, f64)> {
         use crate::runtime::state::TemperaturePoint;
-        self.state.temperature_history.to_vec()
+        self.state
+            .temperature_history
+            .to_vec()
             .into_iter()
             .map(|pt: TemperaturePoint| (pt.timestamp_ms, pt.replica_id, pt.temperature))
             .collect()
@@ -708,12 +829,15 @@ mod tests {
         let mut app = App::new(None, "coloring".into(), 0).unwrap();
 
         // Publish a test event
-        event_bus.publish(PrismEvent::GraphLoaded {
-            vertices: 500,
-            edges: 12500,
-            density: 0.1,
-            estimated_chromatic: 48,
-        }).await.unwrap();
+        event_bus
+            .publish(PrismEvent::GraphLoaded {
+                vertices: 500,
+                edges: 12500,
+                density: 0.1,
+                estimated_chromatic: 48,
+            })
+            .await
+            .unwrap();
 
         // Small delay to ensure event is processed
         tokio::time::sleep(Duration::from_millis(10)).await;

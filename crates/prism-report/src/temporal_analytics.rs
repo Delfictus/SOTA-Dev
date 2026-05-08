@@ -88,9 +88,10 @@ pub struct TemporalTopology {
 impl TemporalTopology {
     /// Get CA index for a residue
     pub fn ca_for_residue(&self, res_id: usize) -> Option<usize> {
-        self.ca_indices.iter().position(|&idx| {
-            self.residue_ids.get(idx).copied() == Some(res_id)
-        }).map(|i| self.ca_indices[i])
+        self.ca_indices
+            .iter()
+            .position(|&idx| self.residue_ids.get(idx).copied() == Some(res_id))
+            .map(|i| self.ca_indices[i])
     }
 
     /// Get all atom indices for a residue
@@ -172,7 +173,9 @@ pub fn compute_spike_lifetime_stats(
     let site_events: Vec<_> = events
         .iter()
         .filter(|e| {
-            e.residues.iter().any(|&r| site_residues.contains(&(r as usize)))
+            e.residues
+                .iter()
+                .any(|&r| site_residues.contains(&(r as usize)))
         })
         .collect();
 
@@ -284,7 +287,9 @@ pub fn compute_phase_stats(
     let site_events: Vec<_> = events
         .iter()
         .filter(|e| {
-            e.residues.iter().any(|&r| site_residues.contains(&(r as usize)))
+            e.residues
+                .iter()
+                .any(|&r| site_residues.contains(&(r as usize)))
         })
         .collect();
 
@@ -317,9 +322,15 @@ pub fn compute_phase_stats(
         }
 
         match event.temp_phase {
-            TempPhase::Cold => { cold_events.insert(frame); }
-            TempPhase::Ramp => { ramp_events.insert(frame); }
-            TempPhase::Warm => { warm_events.insert(frame); }
+            TempPhase::Cold => {
+                cold_events.insert(frame);
+            }
+            TempPhase::Ramp => {
+                ramp_events.insert(frame);
+            }
+            TempPhase::Warm => {
+                warm_events.insert(frame);
+            }
         }
     }
 
@@ -415,10 +426,14 @@ pub fn detect_contact_breakages(
             // Check for contact breakage
             if dist_before < CONTACT_THRESHOLD && dist_after - dist_before > BREAKAGE_THRESHOLD {
                 // Find residue names
-                let res_i_name = topology.residue_names.get(ca_i)
+                let res_i_name = topology
+                    .residue_names
+                    .get(ca_i)
                     .map(|s| s.clone())
                     .unwrap_or_else(|| "UNK".to_string());
-                let res_j_name = topology.residue_names.get(ca_j)
+                let res_j_name = topology
+                    .residue_names
+                    .get(ca_j)
                     .map(|s| s.clone())
                     .unwrap_or_else(|| "UNK".to_string());
 
@@ -443,7 +458,9 @@ pub fn detect_contact_breakages(
     breakages.sort_by(|a, b| {
         let delta_a = a.distance_after_a - a.distance_before_a;
         let delta_b = b.distance_after_a - b.distance_before_a;
-        delta_b.partial_cmp(&delta_a).unwrap_or(std::cmp::Ordering::Equal)
+        delta_b
+            .partial_cmp(&delta_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     breakages
@@ -520,7 +537,9 @@ pub fn detect_rotamer_transitions(
         };
 
         // Get residue name
-        let res_name = topology.residue_names.get(chi1_atoms[1])
+        let res_name = topology
+            .residue_names
+            .get(chi1_atoms[1])
             .map(|s| s.clone())
             .unwrap_or_else(|| "UNK".to_string());
 
@@ -568,7 +587,8 @@ pub fn detect_rotamer_transitions(
                 (None, None)
             };
 
-            let is_occluding = occluding_residues.iter()
+            let is_occluding = occluding_residues
+                .iter()
                 .any(|&r| res_name.to_uppercase().contains(r));
 
             transitions.push(RotamerTransition {
@@ -587,7 +607,9 @@ pub fn detect_rotamer_transitions(
 
     // Sort by delta magnitude
     transitions.sort_by(|a, b| {
-        b.delta_chi1_deg.abs().partial_cmp(&a.delta_chi1_deg.abs())
+        b.delta_chi1_deg
+            .abs()
+            .partial_cmp(&a.delta_chi1_deg.abs())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -610,7 +632,9 @@ pub fn count_approximate_hbonds(
 ) -> (usize, usize) {
     // Donor atoms: N, NZ, NE, NH1, NH2, ND1, ND2, NE1, NE2, OG, OH
     // Acceptor atoms: O, OD1, OD2, OE1, OE2, OG, OH, ND1, NE2
-    let donors = ["N", "NZ", "NE", "NH1", "NH2", "ND1", "ND2", "NE1", "NE2", "OG", "OH"];
+    let donors = [
+        "N", "NZ", "NE", "NH1", "NH2", "ND1", "ND2", "NE1", "NE2", "OG", "OH",
+    ];
     let acceptors = ["O", "OD1", "OD2", "OE1", "OE2", "OG", "OH", "ND1", "NE2"];
 
     let mut protein_protein = 0;
@@ -697,8 +721,14 @@ pub fn compute_inter_site_correlation(
     let mut b_open = vec![false; total_frames];
 
     for event in events {
-        let in_a = event.residues.iter().any(|&r| site_a_residues.contains(&(r as usize)));
-        let in_b = event.residues.iter().any(|&r| site_b_residues.contains(&(r as usize)));
+        let in_a = event
+            .residues
+            .iter()
+            .any(|&r| site_a_residues.contains(&(r as usize)));
+        let in_b = event
+            .residues
+            .iter()
+            .any(|&r| site_b_residues.contains(&(r as usize)));
 
         if event.frame_idx < total_frames {
             if in_a {
@@ -762,9 +792,15 @@ pub fn compute_inter_site_correlation(
     let is_synchronized = correlation.abs() > 0.5;
 
     let interpretation = if correlation > 0.5 {
-        format!("Sites open together (positive coupling, r={:.2})", correlation)
+        format!(
+            "Sites open together (positive coupling, r={:.2})",
+            correlation
+        )
     } else if correlation < -0.5 {
-        format!("Sites anti-correlate (one opens when other closes, r={:.2})", correlation)
+        format!(
+            "Sites anti-correlate (one opens when other closes, r={:.2})",
+            correlation
+        )
     } else if mean_lag.abs() > 10.0 {
         format!("Sequential opening (lag={:.0} frames)", mean_lag)
     } else {
@@ -795,38 +831,53 @@ pub fn generate_mechanism_summary(
     let mut parts: Vec<String> = Vec::new();
 
     // Opening timing
-    if let (Some(frame), Some(phase)) = (phase_stats.first_opening_frame, &phase_stats.first_opening_phase) {
-        parts.push(format!("Site first opened at frame {} ({} phase)", frame, phase));
+    if let (Some(frame), Some(phase)) = (
+        phase_stats.first_opening_frame,
+        &phase_stats.first_opening_phase,
+    ) {
+        parts.push(format!(
+            "Site first opened at frame {} ({} phase)",
+            frame, phase
+        ));
     }
 
     // Gating contacts
-    let gating_contacts: Vec<_> = contact_breakages.iter().filter(|c| c.is_gating_contact).collect();
+    let gating_contacts: Vec<_> = contact_breakages
+        .iter()
+        .filter(|c| c.is_gating_contact)
+        .collect();
     if !gating_contacts.is_empty() {
         let c = &gating_contacts[0];
         parts.push(format!(
             "Gating contact {}{}-{}{} broke ({:.1}Å → {:.1}Å)",
-            c.res_i_name, c.res_i, c.res_j_name, c.res_j,
-            c.distance_before_a, c.distance_after_a
+            c.res_i_name, c.res_i, c.res_j_name, c.res_j, c.distance_before_a, c.distance_after_a
         ));
     }
 
     // Rotamer flips
-    let occluding_rotamers: Vec<_> = rotamer_transitions.iter().filter(|r| r.is_occluding).collect();
+    let occluding_rotamers: Vec<_> = rotamer_transitions
+        .iter()
+        .filter(|r| r.is_occluding)
+        .collect();
     if !occluding_rotamers.is_empty() {
         let r = &occluding_rotamers[0];
         parts.push(format!(
             "{}{} χ1 flip ({:.0}° → {:.0}°, Δ={:.0}°)",
-            r.residue_name, r.residue_id,
-            r.chi1_before_deg, r.chi1_after_deg, r.delta_chi1_deg
+            r.residue_name, r.residue_id, r.chi1_before_deg, r.chi1_after_deg, r.delta_chi1_deg
         ));
     }
 
     // H-bond changes
     if let Some(hb) = hbond_changes {
         if hb.intra_protein_delta != 0 {
-            parts.push(format!("{} intra-protein H-bonds {}",
+            parts.push(format!(
+                "{} intra-protein H-bonds {}",
                 hb.intra_protein_delta.abs(),
-                if hb.intra_protein_delta < 0 { "lost" } else { "formed" }
+                if hb.intra_protein_delta < 0 {
+                    "lost"
+                } else {
+                    "formed"
+                }
             ));
         }
     }
@@ -861,7 +912,8 @@ pub fn compute_temporal_metrics(
 
     // Event-based metrics (always computed)
     let lifetime = compute_spike_lifetime_stats(events, site_residues, total_frames);
-    let phase_stats = compute_phase_stats(events, site_residues, cold_frames, ramp_frames, warm_frames);
+    let phase_stats =
+        compute_phase_stats(events, site_residues, cold_frames, ramp_frames, warm_frames);
 
     // Trajectory-based metrics (only if snapshots provided)
     let (contact_breakages, rotamer_transitions, hbond_changes) =
@@ -871,19 +923,29 @@ pub fn compute_temporal_metrics(
                 let first_frame = phase_stats.first_opening_frame.unwrap_or(0);
 
                 // Find before/after snapshots
-                let before_idx = snaps.iter()
+                let before_idx = snaps
+                    .iter()
                     .rposition(|s| s.frame_idx < first_frame)
                     .unwrap_or(0);
-                let after_idx = snaps.iter()
+                let after_idx = snaps
+                    .iter()
                     .position(|s| s.frame_idx >= first_frame)
                     .unwrap_or(snaps.len() - 1);
 
                 let before = &snaps[before_idx];
                 let after = &snaps[after_idx.min(snaps.len() - 1)];
 
-                let contacts = detect_contact_breakages(before, after, topo, site_residues, first_frame);
-                let rotamers = detect_rotamer_transitions(before, after, topo, site_residues, first_frame);
-                let hbonds = Some(compute_hbond_changes(before, after, topo, site_residues, first_frame));
+                let contacts =
+                    detect_contact_breakages(before, after, topo, site_residues, first_frame);
+                let rotamers =
+                    detect_rotamer_transitions(before, after, topo, site_residues, first_frame);
+                let hbonds = Some(compute_hbond_changes(
+                    before,
+                    after,
+                    topo,
+                    site_residues,
+                    first_frame,
+                ));
 
                 (contacts, rotamers, hbonds)
             } else {

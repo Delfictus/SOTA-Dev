@@ -11,10 +11,9 @@
 //! 5. Generate combined topology
 
 use crate::amber_ff14sb::{
-    AmberAtomType, AmberTopology, BondParam, AngleParam, LJParam,
-    get_lj_param, get_atom_mass,
+    get_atom_mass, get_lj_param, AmberAtomType, AmberTopology, AngleParam, BondParam, LJParam,
 };
-use crate::water_model::{TIP3PWater, WaterMolecule, Ion, IonType, distance_sq};
+use crate::water_model::{distance_sq, Ion, IonType, TIP3PWater, WaterMolecule};
 
 // ============================================================================
 // SOLVATION BOX CONFIGURATION
@@ -43,9 +42,9 @@ impl Default for SolvationConfig {
             padding: 10.0,
             min_protein_distance: 2.8,
             min_water_distance: 2.5,
-            target_density: 0.997,  // TIP3P water at 298K
+            target_density: 0.997, // TIP3P water at 298K
             max_box_dimension: 100.0,
-            salt_concentration: 0.0,  // No extra salt by default
+            salt_concentration: 0.0, // No extra salt by default
         }
     }
 }
@@ -116,9 +115,7 @@ impl SolvationBox {
             .collect();
 
         // Get masses
-        let protein_masses: Vec<f32> = atom_types.iter()
-            .map(|&t| get_atom_mass(t))
-            .collect();
+        let protein_masses: Vec<f32> = atom_types.iter().map(|&t| get_atom_mass(t)).collect();
 
         // Calculate bounding box
         let (min_corner, max_corner) = bounding_box(&protein_positions);
@@ -137,8 +134,12 @@ impl SolvationBox {
 
         log::info!(
             "Solvation box: origin=[{:.1}, {:.1}, {:.1}], dims=[{:.1}, {:.1}, {:.1}] Å",
-            box_origin[0], box_origin[1], box_origin[2],
-            box_dimensions[0], box_dimensions[1], box_dimensions[2]
+            box_origin[0],
+            box_origin[1],
+            box_origin[2],
+            box_dimensions[0],
+            box_dimensions[1],
+            box_dimensions[2]
         );
 
         Ok(Self {
@@ -172,15 +173,15 @@ impl SolvationBox {
 
         // Add buffer for hydrogen atoms: H extends ~0.96 Å from O, so add 2*0.96 ≈ 2.0 Å
         // This ensures even H-H contacts are above the minimum distance
-        const H_EXTENSION: f32 = 1.0;  // Conservative buffer for H atoms
+        const H_EXTENSION: f32 = 1.0; // Conservative buffer for H atoms
         let effective_protein_dist = config.min_protein_distance + H_EXTENSION;
-        let effective_water_dist = config.min_water_distance + 2.0 * H_EXTENSION;  // Both waters have H
+        let effective_water_dist = config.min_water_distance + 2.0 * H_EXTENSION; // Both waters have H
 
         let min_dist_sq_protein = effective_protein_dist * effective_protein_dist;
         let min_dist_sq_water = effective_water_dist * effective_water_dist;
 
         let mut placed = 0;
-        let mut seed = 12345u64;  // Deterministic RNG seed
+        let mut seed = 12345u64; // Deterministic RNG seed
 
         for ix in 0..nx {
             for iy in 0..ny {
@@ -215,7 +216,9 @@ impl SolvationBox {
                     }
 
                     // Place water with random orientation
-                    seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    seed = seed
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
                     let water = WaterMolecule::at_position_random(center, seed);
                     self.waters.push(water);
                     placed += 1;
@@ -226,11 +229,7 @@ impl SolvationBox {
         // Update total atoms
         self.total_atoms = self.protein_positions.len() + self.waters.len() * 3;
 
-        log::info!(
-            "Added {} water molecules ({} atoms)",
-            placed,
-            placed * 3
-        );
+        log::info!("Added {} water molecules ({} atoms)", placed, placed * 3);
 
         placed
     }
@@ -243,7 +242,11 @@ impl SolvationBox {
         let net_charge: f32 = self.protein_charges.iter().sum();
         let net_charge_rounded = net_charge.round() as i32;
 
-        log::info!("Protein net charge: {:.2} (rounded: {})", net_charge, net_charge_rounded);
+        log::info!(
+            "Protein net charge: {:.2} (rounded: {})",
+            net_charge,
+            net_charge_rounded
+        );
 
         let mut n_sodium = 0;
         let mut n_chloride = 0;
@@ -260,8 +263,8 @@ impl SolvationBox {
         // Add extra salt if requested
         if config.salt_concentration > 0.0 {
             // Volume in liters
-            let volume_l = self.box_dimensions[0] * self.box_dimensions[1] * self.box_dimensions[2]
-                * 1e-27;  // Å³ to L
+            let volume_l =
+                self.box_dimensions[0] * self.box_dimensions[1] * self.box_dimensions[2] * 1e-27; // Å³ to L
 
             // Number of ion pairs for desired concentration
             let n_pairs = (config.salt_concentration * volume_l * 6.022e23).round() as usize;
@@ -295,7 +298,9 @@ impl SolvationBox {
         // Use 4.5 Å to accommodate the larger Cl- ion
         let min_dist_sq = 4.5_f32 * 4.5_f32;
         self.waters.retain(|water| {
-            !ion_positions.iter().any(|ion_pos| distance_sq(water.o_pos, *ion_pos) < min_dist_sq)
+            !ion_positions
+                .iter()
+                .any(|ion_pos| distance_sq(water.o_pos, *ion_pos) < min_dist_sq)
         });
 
         // Update total atoms
@@ -308,8 +313,8 @@ impl SolvationBox {
 
     /// Find a suitable position for an ion (away from protein and other ions)
     fn find_ion_position(&self, existing_ions: &[[f32; 3]]) -> Option<[f32; 3]> {
-        let min_dist_protein_sq = 5.0_f32 * 5.0_f32;  // 5 Å from protein
-        let min_dist_ion_sq = 4.0_f32 * 4.0_f32;      // 4 Å from other ions
+        let min_dist_protein_sq = 5.0_f32 * 5.0_f32; // 5 Å from protein
+        let min_dist_ion_sq = 4.0_f32 * 4.0_f32; // 4 Å from other ions
 
         // Try random water positions
         for water in &self.waters {
@@ -348,7 +353,7 @@ impl SolvationBox {
     pub fn water_oxygen_indices(&self) -> Vec<usize> {
         let protein_atoms = self.protein_positions.len();
         (0..self.waters.len())
-            .map(|i| protein_atoms + i * 3)  // O is first atom of each water
+            .map(|i| protein_atoms + i * 3) // O is first atom of each water
             .collect()
     }
 
@@ -501,9 +506,9 @@ impl SolvationBox {
     /// Get water density in g/mL
     pub fn water_density(&self) -> f32 {
         let tip3p = TIP3PWater::new();
-        let water_mass = self.waters.len() as f32 * tip3p.molecule_mass();  // amu
-        let water_mass_g = water_mass / 6.022e23;  // grams
-        let volume_ml = self.volume() * 1e-24;  // mL
+        let water_mass = self.waters.len() as f32 * tip3p.molecule_mass(); // amu
+        let water_mass_g = water_mass / 6.022e23; // grams
+        let volume_ml = self.volume() * 1e-24; // mL
         if volume_ml > 0.0 {
             water_mass_g / volume_ml
         } else {
@@ -545,11 +550,7 @@ mod tests {
 
     #[test]
     fn test_bounding_box() {
-        let positions = vec![
-            [0.0, 0.0, 0.0],
-            [10.0, 5.0, 3.0],
-            [5.0, 10.0, 8.0],
-        ];
+        let positions = vec![[0.0, 0.0, 0.0], [10.0, 5.0, 3.0], [5.0, 10.0, 8.0]];
 
         let (min, max) = bounding_box(&positions);
         assert_eq!(min, [0.0, 0.0, 0.0]);
@@ -559,11 +560,7 @@ mod tests {
     #[test]
     fn test_solvation_box_creation() {
         // Simple 3-atom protein
-        let positions = vec![
-            0.0, 0.0, 0.0,
-            5.0, 0.0, 0.0,
-            2.5, 5.0, 0.0,
-        ];
+        let positions = vec![0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 2.5, 5.0, 0.0];
         let atom_types = vec![AmberAtomType::N, AmberAtomType::CT, AmberAtomType::C];
         let charges = vec![-0.4, 0.1, 0.6];
 
@@ -576,12 +573,12 @@ mod tests {
             .expect("Should create solvation box");
 
         assert_eq!(solvbox.protein_positions.len(), 3);
-        assert!((solvbox.box_dimensions[0] - 15.0).abs() < 0.1);  // 5 + 5*2 padding
+        assert!((solvbox.box_dimensions[0] - 15.0).abs() < 0.1); // 5 + 5*2 padding
     }
 
     #[test]
     fn test_water_addition() {
-        let positions = vec![0.0; 30];  // 10 atoms at origin
+        let positions = vec![0.0; 30]; // 10 atoms at origin
         let atom_types = vec![AmberAtomType::CT; 10];
         let charges = vec![0.0; 10];
 
@@ -603,9 +600,9 @@ mod tests {
 
     #[test]
     fn test_neutralization() {
-        let positions = vec![0.0; 9];  // 3 atoms
+        let positions = vec![0.0; 9]; // 3 atoms
         let atom_types = vec![AmberAtomType::N, AmberAtomType::CT, AmberAtomType::C];
-        let charges = vec![-1.0, 0.0, -1.0];  // Net charge = -2
+        let charges = vec![-1.0, 0.0, -1.0]; // Net charge = -2
 
         let config = SolvationConfig {
             padding: 15.0,
@@ -642,7 +639,13 @@ mod tests {
 
         let topo = solvbox.to_topology();
         assert_eq!(topo.n_atoms, solvbox.total_atoms);
-        assert!(topo.atom_types.contains(&AmberAtomType::OW), "Should have water oxygens");
-        assert!(topo.atom_types.contains(&AmberAtomType::HW), "Should have water hydrogens");
+        assert!(
+            topo.atom_types.contains(&AmberAtomType::OW),
+            "Should have water oxygens"
+        );
+        assert!(
+            topo.atom_types.contains(&AmberAtomType::HW),
+            "Should have water hydrogens"
+        );
     }
 }
