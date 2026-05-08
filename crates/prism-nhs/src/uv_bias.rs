@@ -44,15 +44,19 @@
 //! - PHE: ~2-5 K per UV burst
 //! ```
 
+use crate::config::BENZENE_EXTINCTION_254;
+use crate::config::{extinction_to_cross_section, wavelength_to_ev, KB_EV_K};
 use crate::config::{NhsConfig, UvBiasConfig, UvSpectroscopyConfig, ABSORPTION_NORMALIZATION};
-use crate::config::{TRP_EXTINCTION_280, TYR_EXTINCTION_280, PHE_EXTINCTION_280};
-use crate::config::{TRP_LAMBDA_MAX, TYR_LAMBDA_MAX, PHE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX, BENZENE_LAMBDA_MAX};
-use crate::config::{TRP_BANDWIDTH, TYR_BANDWIDTH, PHE_BANDWIDTH, DISULFIDE_BANDWIDTH, BENZENE_BANDWIDTH};
-use crate::config::{DISULFIDE_EXTINCTION_250, DISULFIDE_BOND_MAX_DISTANCE};
-use crate::config::{BENZENE_EXTINCTION_254};
-use crate::config::{wavelength_to_ev, extinction_to_cross_section, KB_EV_K};
-use crate::config::{NEFF_TRP, NEFF_TYR, NEFF_PHE, NEFF_DISULFIDE, NEFF_BENZENE};
+use crate::config::{
+    BENZENE_BANDWIDTH, DISULFIDE_BANDWIDTH, PHE_BANDWIDTH, TRP_BANDWIDTH, TYR_BANDWIDTH,
+};
+use crate::config::{
+    BENZENE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX, PHE_LAMBDA_MAX, TRP_LAMBDA_MAX, TYR_LAMBDA_MAX,
+};
 use crate::config::{CALIBRATED_PHOTON_FLUENCE, DEFAULT_HEAT_YIELD};
+use crate::config::{DISULFIDE_BOND_MAX_DISTANCE, DISULFIDE_EXTINCTION_250};
+use crate::config::{NEFF_BENZENE, NEFF_DISULFIDE, NEFF_PHE, NEFF_TRP, NEFF_TYR};
+use crate::config::{PHE_EXTINCTION_280, TRP_EXTINCTION_280, TYR_EXTINCTION_280};
 use anyhow::Result;
 use rand::Rng;
 use rand_distr::{Distribution, Normal, UnitSphere};
@@ -99,7 +103,6 @@ pub struct AromaticTarget {
     // =========================================================================
     // Enhanced UV Spectroscopy Fields
     // =========================================================================
-
     /// Current local temperature delta from UV absorption (K)
     pub local_temp_delta: f32,
 
@@ -203,7 +206,7 @@ impl ChromophoreType {
     /// Get absorption at specific wavelength using Gaussian profile
     pub fn absorption_at_wavelength(&self, wavelength: f32) -> f32 {
         let delta = wavelength - self.lambda_max();
-        let sigma = self.bandwidth() / 2.355;  // FWHM to sigma
+        let sigma = self.bandwidth() / 2.355; // FWHM to sigma
         self.epsilon_max() * (-0.5 * (delta / sigma).powi(2)).exp()
     }
 
@@ -226,44 +229,49 @@ impl ChromophoreType {
     /// Calibration target: TRP @ 280nm with F=0.024, η=1.0 → ΔT ≈ 20K
     pub fn compute_local_heating(&self, wavelength: f32, photon_fluence: f32) -> f32 {
         {
-        let heat_yield = match self {
-            ChromophoreType::Tryptophan => crate::config::HEAT_YIELD_TRP,
-            ChromophoreType::Tyrosine => crate::config::HEAT_YIELD_TYR,
-            ChromophoreType::Phenylalanine => crate::config::HEAT_YIELD_PHE,
-            ChromophoreType::Disulfide => crate::config::HEAT_YIELD_DISULFIDE,
-            ChromophoreType::Cosolvent => crate::config::HEAT_YIELD_BENZENE,
-        };
-        self.compute_local_heating_with_yield(wavelength, photon_fluence, heat_yield)
+            let heat_yield = match self {
+                ChromophoreType::Tryptophan => crate::config::HEAT_YIELD_TRP,
+                ChromophoreType::Tyrosine => crate::config::HEAT_YIELD_TYR,
+                ChromophoreType::Phenylalanine => crate::config::HEAT_YIELD_PHE,
+                ChromophoreType::Disulfide => crate::config::HEAT_YIELD_DISULFIDE,
+                ChromophoreType::Cosolvent => crate::config::HEAT_YIELD_BENZENE,
+            };
+            self.compute_local_heating_with_yield(wavelength, photon_fluence, heat_yield)
         }
     }
 
     /// Compute local heating with explicit heat yield parameter
-    pub fn compute_local_heating_with_yield(&self, wavelength: f32, photon_fluence: f32, heat_yield: f32) -> f32 {
-        let photon_energy = wavelength_to_ev(wavelength);  // eV
-        let epsilon = self.absorption_at_wavelength(wavelength);  // M⁻¹cm⁻¹
+    pub fn compute_local_heating_with_yield(
+        &self,
+        wavelength: f32,
+        photon_fluence: f32,
+        heat_yield: f32,
+    ) -> f32 {
+        let photon_energy = wavelength_to_ev(wavelength); // eV
+        let epsilon = self.absorption_at_wavelength(wavelength); // M⁻¹cm⁻¹
 
         // CORRECTED: Proper ε → σ conversion (per molecule)
         // σ(Å²) = ε(M⁻¹cm⁻¹) × 3.823×10⁻⁵
-        let sigma = extinction_to_cross_section(epsilon);  // Å²
+        let sigma = extinction_to_cross_section(epsilon); // Å²
 
         // Absorption probability (single-photon regime requires p << 1)
         let p_absorb = sigma * photon_fluence;
 
         // Energy deposited per chromophore
-        let energy_deposited = photon_energy * p_absorb * heat_yield;  // eV
+        let energy_deposited = photon_energy * p_absorb * heat_yield; // eV
 
         // Effective degrees of freedom for local heating (CORRECTED values)
         let n_eff = match self {
-            ChromophoreType::Tryptophan => NEFF_TRP,      // 9.0 - Indole ring
-            ChromophoreType::Tyrosine => NEFF_TYR,        // 10.0 - Phenol ring (6) + OH (4)
-            ChromophoreType::Phenylalanine => NEFF_PHE,   // 9.0 - Benzene ring + side chain
+            ChromophoreType::Tryptophan => NEFF_TRP, // 9.0 - Indole ring
+            ChromophoreType::Tyrosine => NEFF_TYR,   // 10.0 - Phenol ring (6) + OH (4)
+            ChromophoreType::Phenylalanine => NEFF_PHE, // 9.0 - Benzene ring + side chain
             ChromophoreType::Disulfide => NEFF_DISULFIDE, // 2.0 - S-S bond
-            ChromophoreType::Cosolvent => NEFF_BENZENE,   // 6.0 - Benzene ring only
+            ChromophoreType::Cosolvent => NEFF_BENZENE, // 6.0 - Benzene ring only
         };
 
         // Convert to temperature increase via equipartition
         // ΔT = E_dep / (3/2 × k_B × N_eff)
-        energy_deposited / (1.5 * KB_EV_K * n_eff)  // Kelvin
+        energy_deposited / (1.5 * KB_EV_K * n_eff) // Kelvin
     }
 
     /// Get N_eff for this chromophore type
@@ -464,7 +472,9 @@ impl FrequencyHoppingProtocol {
     /// Create fine spectral scan for publication
     pub fn fine_scan() -> Self {
         Self {
-            wavelengths: vec![250.0, 258.0, 262.0, 266.0, 270.0, 274.0, 278.0, 280.0, 285.0, 290.0],
+            wavelengths: vec![
+                250.0, 258.0, 262.0, 266.0, 270.0, 274.0, 278.0, 280.0, 285.0, 290.0,
+            ],
             dwell_steps: 500,
             n_scans: 10,
             current_scan: 0,
@@ -476,7 +486,8 @@ impl FrequencyHoppingProtocol {
 
     /// Get current wavelength
     pub fn current_wavelength(&self) -> f32 {
-        self.wavelengths.get(self.current_wavelength_idx)
+        self.wavelengths
+            .get(self.current_wavelength_idx)
             .copied()
             .unwrap_or(280.0)
     }
@@ -504,9 +515,15 @@ impl FrequencyHoppingProtocol {
     }
 
     /// Record response at current wavelength
-    pub fn record_response(&mut self, frame: usize, spike_count: usize, energy: f32, chromophores: Vec<usize>) {
+    pub fn record_response(
+        &mut self,
+        frame: usize,
+        spike_count: usize,
+        energy: f32,
+        chromophores: Vec<usize>,
+    ) {
         let wavelength = self.current_wavelength();
-        let key = (wavelength * 10.0) as u32;  // 0.1nm resolution
+        let key = (wavelength * 10.0) as u32; // 0.1nm resolution
 
         let response = WavelengthResponse {
             wavelength,
@@ -516,10 +533,7 @@ impl FrequencyHoppingProtocol {
             chromophores_excited: chromophores,
         };
 
-        self.response_buffer
-            .entry(key)
-            .or_default()
-            .push(response);
+        self.response_buffer.entry(key).or_default().push(response);
     }
 
     /// Get spectral response summary (wavelength → average spike rate)
@@ -672,7 +686,8 @@ impl WavelengthAwareSpike {
         }
 
         // Indirect thermal: elevated local temperature
-        if local_temp > 5.0 {  // >5K above ambient
+        if local_temp > 5.0 {
+            // >5K above ambient
             return SpikeCategory::IndirectThermal;
         }
 
@@ -778,8 +793,10 @@ pub struct SpikeCategoryCounts {
 
 impl SpikeCategoryCounts {
     pub fn total(&self) -> usize {
-        self.direct_uv_induced + self.indirect_thermal +
-            self.cooperative_network + self.spontaneous_fluctuation
+        self.direct_uv_induced
+            + self.indirect_thermal
+            + self.cooperative_network
+            + self.spontaneous_fluctuation
     }
 
     pub fn increment(&mut self, category: SpikeCategory) {
@@ -873,7 +890,6 @@ pub struct UvBiasEngine {
     // =========================================================================
     // Enhanced Spectroscopy State
     // =========================================================================
-
     /// Frequency hopping protocol state
     freq_hop_protocol: Option<FrequencyHoppingProtocol>,
 
@@ -1010,7 +1026,8 @@ impl UvBiasEngine {
             }
 
             // Find ring atoms for this residue (filtered by actual ring atom names)
-            let ring_atoms = self.find_ring_atoms(res_idx, &aromatic_type, atom_names, atom_residues);
+            let ring_atoms =
+                self.find_ring_atoms(res_idx, &aromatic_type, atom_names, atom_residues);
             if ring_atoms.is_empty() {
                 continue;
             }
@@ -1028,7 +1045,7 @@ impl UvBiasEngine {
                 ring_normal,
                 ring_plane_vectors,
                 absorption_strength: aromatic_type.absorption_strength(),
-                sasa: 0.0,        // Updated later
+                sasa: 0.0,               // Updated later
                 pocket_probability: 0.0, // Updated later
                 active: false,
                 // Enhanced spectroscopy fields
@@ -1047,8 +1064,10 @@ impl UvBiasEngine {
         self.initialize_temp_states();
 
         // Initialize chromophore response tracking
-        self.chromophore_responses = self.all_targets.iter().map(|t| {
-            ChromophoreResponse {
+        self.chromophore_responses = self
+            .all_targets
+            .iter()
+            .map(|t| ChromophoreResponse {
                 residue_name: t.residue_type.code().to_string(),
                 residue_id: t.residue_idx,
                 chromophore_type: t.residue_type.transition_type().to_string(),
@@ -1059,15 +1078,24 @@ impl UvBiasEngine {
                 nearby_water_density: Vec::new(),
                 spike_triggered: Vec::new(),
                 excitation_wavelength: Vec::new(),
-            }
-        }).collect();
+            })
+            .collect();
 
         log::info!(
             "UvBiasEngine: Initialized {} aromatic targets (Trp: {}, Tyr: {}, Phe: {})",
             self.all_targets.len(),
-            self.all_targets.iter().filter(|t| t.residue_type == ChromophoreType::Tryptophan).count(),
-            self.all_targets.iter().filter(|t| t.residue_type == ChromophoreType::Tyrosine).count(),
-            self.all_targets.iter().filter(|t| t.residue_type == ChromophoreType::Phenylalanine).count(),
+            self.all_targets
+                .iter()
+                .filter(|t| t.residue_type == ChromophoreType::Tryptophan)
+                .count(),
+            self.all_targets
+                .iter()
+                .filter(|t| t.residue_type == ChromophoreType::Tyrosine)
+                .count(),
+            self.all_targets
+                .iter()
+                .filter(|t| t.residue_type == ChromophoreType::Phenylalanine)
+                .count(),
         );
 
         Ok(())
@@ -1088,10 +1116,12 @@ impl UvBiasEngine {
         // IUPAC ring atom names for each aromatic type
         let ring_atom_names: &[&str] = match aromatic_type {
             ChromophoreType::Phenylalanine => &["CG", "CD1", "CD2", "CE1", "CE2", "CZ"],
-            ChromophoreType::Tyrosine => &["CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH"],  // Include OH for π system
-            ChromophoreType::Tryptophan => &["CG", "CD1", "CD2", "NE1", "CE2", "CE3", "CZ2", "CZ3", "CH2"],
-            ChromophoreType::Disulfide => &["SG"],  // Sulfur atoms only
-            ChromophoreType::Cosolvent => &["CB", "CG"],  // Aliphatic sidechain center for virtual BNZ probe
+            ChromophoreType::Tyrosine => &["CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH"], // Include OH for π system
+            ChromophoreType::Tryptophan => {
+                &["CG", "CD1", "CD2", "NE1", "CE2", "CE3", "CZ2", "CZ3", "CH2"]
+            }
+            ChromophoreType::Disulfide => &["SG"], // Sulfur atoms only
+            ChromophoreType::Cosolvent => &["CB", "CG"], // Aliphatic sidechain center for virtual BNZ probe
         };
 
         // Filter atoms to only include ring atoms in this residue
@@ -1099,10 +1129,11 @@ impl UvBiasEngine {
             .iter()
             .enumerate()
             .filter(|(atom_idx, &res_idx)| {
-                res_idx == residue_idx &&
-                atom_names.get(*atom_idx)
-                    .map(|name| ring_atom_names.contains(&name.as_str()))
-                    .unwrap_or(false)
+                res_idx == residue_idx
+                    && atom_names
+                        .get(*atom_idx)
+                        .map(|name| ring_atom_names.contains(&name.as_str()))
+                        .unwrap_or(false)
             })
             .map(|(atom_idx, _)| atom_idx)
             .collect()
@@ -1125,9 +1156,11 @@ impl UvBiasEngine {
             .iter()
             .enumerate()
             .filter(|(i, name)| {
-                *name == "SG" && residue_names.get(residue_ids[*i])
-                    .map(|r| r == "CYS" || r == "CYX")
-                    .unwrap_or(false)
+                *name == "SG"
+                    && residue_names
+                        .get(residue_ids[*i])
+                        .map(|r| r == "CYS" || r == "CYX")
+                        .unwrap_or(false)
             })
             .map(|(i, _)| (i, residue_ids[i]))
             .collect();
@@ -1186,12 +1219,14 @@ impl UvBiasEngine {
 
     /// Initialize temperature states for all chromophores
     fn initialize_temp_states(&mut self) {
-        let tau = self.spectroscopy_config
+        let tau = self
+            .spectroscopy_config
             .as_ref()
             .map(|c| c.thermal_dissipation_tau)
             .unwrap_or(5.0);
 
-        self.temp_states = self.all_targets
+        self.temp_states = self
+            .all_targets
             .iter()
             .map(|_| LocalTemperatureState::new(tau))
             .collect();
@@ -1260,7 +1295,7 @@ impl UvBiasEngine {
         }
 
         // Decay local temperatures for all chromophores
-        let dt = 0.002;  // 2 fs timestep in ps
+        let dt = 0.002; // 2 fs timestep in ps
         for state in &mut self.temp_states {
             state.decay(dt);
         }
@@ -1273,7 +1308,8 @@ impl UvBiasEngine {
         // Update burst state machine
         let should_perturb = self.advance_burst_state();
 
-        if !should_perturb || (self.active_targets.is_empty() && self.active_disulfides.is_empty()) {
+        if !should_perturb || (self.active_targets.is_empty() && self.active_disulfides.is_empty())
+        {
             return None;
         }
 
@@ -1301,7 +1337,7 @@ impl UvBiasEngine {
         if let Some(ref mut protocol) = self.freq_hop_protocol {
             protocol.record_response(
                 self.current_frame,
-                0,  // spike count updated later via record_spikes
+                0, // spike count updated later via record_spikes
                 result.total_energy,
                 self.active_targets.clone(),
             );
@@ -1322,7 +1358,8 @@ impl UvBiasEngine {
         let direction_randomness = self.config.direction_randomness;
 
         // Get photon fluence for temperature calculation
-        let photon_fluence = self.spectroscopy_config
+        let photon_fluence = self
+            .spectroscopy_config
             .as_ref()
             .map(|c| c.photon_fluence)
             .unwrap_or(1.0);
@@ -1332,7 +1369,11 @@ impl UvBiasEngine {
             // Extract data we need before mutating
             let (residue_type, residue_idx, ring_atoms) = {
                 let target = &self.all_targets[target_idx];
-                (target.residue_type, target.residue_idx, target.ring_atoms.clone())
+                (
+                    target.residue_type,
+                    target.residue_idx,
+                    target.ring_atoms.clone(),
+                )
             };
 
             // Compute wavelength-specific absorption
@@ -1370,8 +1411,10 @@ impl UvBiasEngine {
             }
 
             // Record temperature event
-            if local_heating > 1.0 {  // Only record significant heating
-                let dissipation_tau = self.spectroscopy_config
+            if local_heating > 1.0 {
+                // Only record significant heating
+                let dissipation_tau = self
+                    .spectroscopy_config
                     .as_ref()
                     .map(|c| c.thermal_dissipation_tau)
                     .unwrap_or(5.0);
@@ -1383,7 +1426,7 @@ impl UvBiasEngine {
                     delta_t: local_heating,
                     wavelength,
                     dissipation_tau,
-                    neighboring_residues_affected: Vec::new(),  // TODO: compute neighbors
+                    neighboring_residues_affected: Vec::new(), // TODO: compute neighbors
                 });
             }
 
@@ -1409,13 +1452,21 @@ impl UvBiasEngine {
         }
 
         // Process disulfide targets if at appropriate wavelength (~250nm)
-        if self.spectroscopy_config.as_ref().map(|c| c.target_disulfides).unwrap_or(false) {
-            let disulfide_absorption = ChromophoreType::Disulfide.absorption_at_wavelength(wavelength);
+        if self
+            .spectroscopy_config
+            .as_ref()
+            .map(|c| c.target_disulfides)
+            .unwrap_or(false)
+        {
+            let disulfide_absorption =
+                ChromophoreType::Disulfide.absorption_at_wavelength(wavelength);
 
-            if disulfide_absorption > 50.0 {  // Significant absorption near 250nm
+            if disulfide_absorption > 50.0 {
+                // Significant absorption near 250nm
                 for &ss_idx in &self.active_disulfides.clone() {
                     if let Some(ss) = self.disulfide_targets.get(ss_idx) {
-                        let intensity = base_intensity * (disulfide_absorption / ABSORPTION_NORMALIZATION);
+                        let intensity =
+                            base_intensity * (disulfide_absorption / ABSORPTION_NORMALIZATION);
 
                         // Perturb both sulfur atoms
                         for atom_idx in [ss.atom1_idx, ss.atom2_idx] {
@@ -1428,7 +1479,7 @@ impl UvBiasEngine {
                             velocity_deltas.insert(atom_idx, delta);
 
                             let v_sq = delta[0].powi(2) + delta[1].powi(2) + delta[2].powi(2);
-                            total_energy += 0.5 * 32.0 * v_sq;  // m=32 for sulfur
+                            total_energy += 0.5 * 32.0 * v_sq; // m=32 for sulfur
                         }
 
                         // Record disulfide event
@@ -1464,8 +1515,8 @@ impl UvBiasEngine {
                     // Start new burst - first pulse happens now
                     self.next_pattern_id += 1;
                     self.burst_state = BurstState::Bursting {
-                        pulses_remaining: self.config.pulses_per_burst - 1,  // First pulse counts
-                        frames_to_next_pulse: self.config.intra_burst_interval,  // Wait before next
+                        pulses_remaining: self.config.pulses_per_burst - 1, // First pulse counts
+                        frames_to_next_pulse: self.config.intra_burst_interval, // Wait before next
                         pattern_id: self.next_pattern_id,
                     };
                     true
@@ -1574,7 +1625,7 @@ impl UvBiasEngine {
                 chromophore_distance,
                 time_since_uv,
                 local_temp,
-                neurons.len() > 3,  // Consider avalanche if >3 neurons
+                neurons.len() > 3, // Consider avalanche if >3 neurons
             );
 
             self.spike_counts.increment(category);
@@ -1592,7 +1643,7 @@ impl UvBiasEngine {
                 chromophore_distance,
                 nearest_chromophore,
                 local_temp_at_spike: local_temp,
-                temp_gradient: [0.0, 0.0, 0.0],  // TODO: compute gradient
+                temp_gradient: [0.0, 0.0, 0.0], // TODO: compute gradient
                 spike_category: category,
             };
 
@@ -1617,7 +1668,10 @@ impl UvBiasEngine {
     }
 
     /// Find nearest chromophore information for a residue
-    fn find_nearest_chromophore_info(&self, residue: usize) -> (f32, Option<ChromophoreType>, u32, f32) {
+    fn find_nearest_chromophore_info(
+        &self,
+        residue: usize,
+    ) -> (f32, Option<ChromophoreType>, u32, f32) {
         let mut min_distance = f32::MAX;
         let mut nearest_type = None;
         let mut min_time_since_uv = u32::MAX;
@@ -1687,9 +1741,9 @@ impl UvBiasEngine {
                         entry.n_observations += 1;
                         // Update running correlation estimate
                         entry.correlation = 1.0 / (1.0 + (lag as f32 / 5.0));
-                        entry.is_causal =
-                            entry.correlation >= self.config.min_correlation_threshold
-                                && entry.n_observations >= 3;
+                        entry.is_causal = entry.correlation
+                            >= self.config.min_correlation_threshold
+                            && entry.n_observations >= 3;
                     }
                 }
             }
@@ -1698,10 +1752,7 @@ impl UvBiasEngine {
 
     /// Get all established causal correlations
     pub fn get_causal_links(&self) -> Vec<&CausalCorrelation> {
-        self.correlations
-            .values()
-            .filter(|c| c.is_causal)
-            .collect()
+        self.correlations.values().filter(|c| c.is_causal).collect()
     }
 
     /// Get statistics
@@ -1735,7 +1786,8 @@ impl UvBiasEngine {
     /// Get full spectroscopy results for publication output
     pub fn get_spectroscopy_results(&self) -> UvSpectroscopyResults {
         // Build spectral response from frequency hopping data
-        let spectral_response = self.freq_hop_protocol
+        let spectral_response = self
+            .freq_hop_protocol
             .as_ref()
             .map(|p| {
                 p.response_buffer
@@ -1746,7 +1798,8 @@ impl UvBiasEngine {
             .unwrap_or_default();
 
         // Get wavelength-spike correlation
-        let wavelength_spike_correlation = self.freq_hop_protocol
+        let wavelength_spike_correlation = self
+            .freq_hop_protocol
             .as_ref()
             .map(|p| p.get_spectral_response())
             .unwrap_or_default();
@@ -1763,14 +1816,17 @@ impl UvBiasEngine {
         // Build chromophore counts
         let mut chromophore_counts = HashMap::new();
         for target in &self.all_targets {
-            *chromophore_counts.entry(target.residue_type.code().to_string()).or_insert(0) += 1;
+            *chromophore_counts
+                .entry(target.residue_type.code().to_string())
+                .or_insert(0) += 1;
         }
 
         // Compute average local heating
         let avg_heating = if self.temp_history.is_empty() {
             0.0
         } else {
-            self.temp_history.iter().map(|t| t.delta_t).sum::<f32>() / self.temp_history.len() as f32
+            self.temp_history.iter().map(|t| t.delta_t).sum::<f32>()
+                / self.temp_history.len() as f32
         };
 
         UvSpectroscopyResults {
@@ -1788,7 +1844,8 @@ impl UvBiasEngine {
                 total_energy_deposited: self.total_energy_deposited,
                 average_local_heating: avg_heating,
                 peak_local_heating: self.peak_local_temp,
-                wavelengths_scanned: self.freq_hop_protocol
+                wavelengths_scanned: self
+                    .freq_hop_protocol
                     .as_ref()
                     .map(|p| p.wavelengths.clone())
                     .unwrap_or_else(|| vec![280.0]),
@@ -1894,12 +1951,8 @@ impl UvBiasEngine {
         let radius = self.config.target_selection_radius;
 
         for (ss_idx, ss) in self.disulfide_targets.iter_mut().enumerate() {
-            let max_prob = find_max_probability_near(
-                &ss.midpoint,
-                pocket_probability,
-                radius,
-                grid_spacing,
-            );
+            let max_prob =
+                find_max_probability_near(&ss.midpoint, pocket_probability, radius, grid_spacing);
 
             ss.pocket_probability = max_prob;
             ss.active = max_prob >= threshold;
@@ -2143,8 +2196,14 @@ mod tests {
 
     #[test]
     fn test_aromatic_type_absorption() {
-        assert!(ChromophoreType::Tryptophan.absorption_strength() > ChromophoreType::Tyrosine.absorption_strength());
-        assert!(ChromophoreType::Tyrosine.absorption_strength() > ChromophoreType::Phenylalanine.absorption_strength());
+        assert!(
+            ChromophoreType::Tryptophan.absorption_strength()
+                > ChromophoreType::Tyrosine.absorption_strength()
+        );
+        assert!(
+            ChromophoreType::Tyrosine.absorption_strength()
+                > ChromophoreType::Phenylalanine.absorption_strength()
+        );
     }
 
     #[test]
@@ -2160,17 +2219,26 @@ mod tests {
         // TRP should have max absorption at 280nm
         let trp_at_280 = ChromophoreType::Tryptophan.absorption_at_wavelength(280.0);
         let trp_at_258 = ChromophoreType::Tryptophan.absorption_at_wavelength(258.0);
-        assert!(trp_at_280 > trp_at_258, "TRP should absorb more at 280nm than 258nm");
+        assert!(
+            trp_at_280 > trp_at_258,
+            "TRP should absorb more at 280nm than 258nm"
+        );
 
         // PHE should have max absorption at 258nm
         let phe_at_258 = ChromophoreType::Phenylalanine.absorption_at_wavelength(258.0);
         let phe_at_280 = ChromophoreType::Phenylalanine.absorption_at_wavelength(280.0);
-        assert!(phe_at_258 > phe_at_280, "PHE should absorb more at 258nm than 280nm");
+        assert!(
+            phe_at_258 > phe_at_280,
+            "PHE should absorb more at 258nm than 280nm"
+        );
 
         // TYR should have max absorption at 274nm
         let tyr_at_274 = ChromophoreType::Tyrosine.absorption_at_wavelength(274.0);
         let tyr_at_290 = ChromophoreType::Tyrosine.absorption_at_wavelength(290.0);
-        assert!(tyr_at_274 > tyr_at_290, "TYR should absorb more at 274nm than 290nm");
+        assert!(
+            tyr_at_274 > tyr_at_290,
+            "TYR should absorb more at 274nm than 290nm"
+        );
     }
 
     #[test]
@@ -2179,7 +2247,10 @@ mod tests {
         let heating_phe = ChromophoreType::Phenylalanine.compute_local_heating(258.0, 1.0);
 
         // TRP should produce more heating (higher absorption)
-        assert!(heating_trp > heating_phe, "TRP should produce more local heating than PHE");
+        assert!(
+            heating_trp > heating_phe,
+            "TRP should produce more local heating than PHE"
+        );
 
         // Heating should be positive
         assert!(heating_trp > 0.0, "Local heating should be positive");
@@ -2196,7 +2267,10 @@ mod tests {
 
         // Step through dwell period
         for _ in 0..999 {
-            assert!(!protocol.step(), "Wavelength should not change during dwell");
+            assert!(
+                !protocol.step(),
+                "Wavelength should not change during dwell"
+            );
         }
 
         // This step should trigger wavelength change
@@ -2309,21 +2383,26 @@ mod tests {
 
     #[test]
     fn test_local_temp_decay() {
-        let mut state = LocalTemperatureState::new(5.0);  // 5 ps tau
+        let mut state = LocalTemperatureState::new(5.0); // 5 ps tau
 
         // Add heat
-        state.add_heat(20.0);  // +20 K
+        state.add_heat(20.0); // +20 K
         assert_eq!(state.current_delta_t, 20.0);
 
         // Decay for 5 ps (tau)
-        for _ in 0..2500 {  // 2500 steps × 2fs = 5 ps
+        for _ in 0..2500 {
+            // 2500 steps × 2fs = 5 ps
             state.decay(0.002);
         }
 
         // Should be ~1/e of original
         let expected = 20.0 * (-1.0_f32).exp();
-        assert!((state.current_delta_t - expected).abs() < 1.0,
-            "Expected ~{:.1} K after 1 tau, got {:.1} K", expected, state.current_delta_t);
+        assert!(
+            (state.current_delta_t - expected).abs() < 1.0,
+            "Expected ~{:.1} K after 1 tau, got {:.1} K",
+            expected,
+            state.current_delta_t
+        );
     }
 
     // =========================================================================
@@ -2342,53 +2421,79 @@ mod tests {
         //   E_dep = E_photon × p × η = 0.0228 eV
         //   ΔT = E_dep / (1.5 × k_B × N_eff) ≈ 19.6 K
 
-        use crate::config::{extinction_to_cross_section, CALIBRATED_PHOTON_FLUENCE,
-                           TRP_EXTINCTION_280, NEFF_TRP, KB_EV_K, wavelength_to_ev,
-                           DEFAULT_HEAT_YIELD, MAX_ABSORPTION_PROBABILITY};
+        use crate::config::{
+            extinction_to_cross_section, wavelength_to_ev, CALIBRATED_PHOTON_FLUENCE,
+            DEFAULT_HEAT_YIELD, KB_EV_K, MAX_ABSORPTION_PROBABILITY, NEFF_TRP, TRP_EXTINCTION_280,
+        };
 
         let wavelength = 280.0;
-        let epsilon = TRP_EXTINCTION_280;  // 5600
-        let fluence = CALIBRATED_PHOTON_FLUENCE;  // 0.024
-        let eta = DEFAULT_HEAT_YIELD;  // 1.0
-        let n_eff = NEFF_TRP;  // 9.0
+        let epsilon = TRP_EXTINCTION_280; // 5600
+        let fluence = CALIBRATED_PHOTON_FLUENCE; // 0.024
+        let eta = DEFAULT_HEAT_YIELD; // 1.0
+        let n_eff = NEFF_TRP; // 9.0
 
         // Verify cross-section calculation
         let sigma = extinction_to_cross_section(epsilon);
-        assert!((sigma - 0.21409).abs() < 0.001,
-            "σ_TRP mismatch: expected 0.21409 Å², got {:.5} Å²", sigma);
+        assert!(
+            (sigma - 0.21409).abs() < 0.001,
+            "σ_TRP mismatch: expected 0.21409 Å², got {:.5} Å²",
+            sigma
+        );
 
         // Verify absorption probability (single-photon regime)
         let p_absorb = sigma * fluence;
-        assert!((p_absorb - 0.00514).abs() < 0.0001,
-            "p_absorb mismatch: expected 0.00514, got {:.5}", p_absorb);
-        assert!(p_absorb < MAX_ABSORPTION_PROBABILITY,
-            "p_absorb ({}) exceeds single-photon threshold ({})", p_absorb, MAX_ABSORPTION_PROBABILITY);
+        assert!(
+            (p_absorb - 0.00514).abs() < 0.0001,
+            "p_absorb mismatch: expected 0.00514, got {:.5}",
+            p_absorb
+        );
+        assert!(
+            p_absorb < MAX_ABSORPTION_PROBABILITY,
+            "p_absorb ({}) exceeds single-photon threshold ({})",
+            p_absorb,
+            MAX_ABSORPTION_PROBABILITY
+        );
 
         // Verify photon energy
         let e_photon = wavelength_to_ev(wavelength);
-        assert!((e_photon - 4.428).abs() < 0.01,
-            "E_photon mismatch: expected 4.428 eV, got {:.3} eV", e_photon);
+        assert!(
+            (e_photon - 4.428).abs() < 0.01,
+            "E_photon mismatch: expected 4.428 eV, got {:.3} eV",
+            e_photon
+        );
 
         // Verify energy deposited
-        let e_dep = e_photon * p_absorb * 0.74;  // η_TRP = 0.74
-        assert!((e_dep - 0.01687).abs() < 0.001,
-            "E_dep mismatch: expected 0.0228 eV, got {:.4} eV", e_dep);
+        let e_dep = e_photon * p_absorb * 0.74; // η_TRP = 0.74
+        assert!(
+            (e_dep - 0.01687).abs() < 0.001,
+            "E_dep mismatch: expected 0.0228 eV, got {:.4} eV",
+            e_dep
+        );
 
         // Verify temperature rise (THE CALIBRATION TARGET)
         let delta_t = e_dep / (1.5 * KB_EV_K * n_eff);
-        assert!((delta_t - 14.5).abs() < 1.0,
-            "ΔT calibration PASSED (η=0.74): expected ~14.5 K, got {:.1} K", delta_t);
+        assert!(
+            (delta_t - 14.5).abs() < 1.0,
+            "ΔT calibration PASSED (η=0.74): expected ~14.5 K, got {:.1} K",
+            delta_t
+        );
 
         // Also verify via ChromophoreType method
         let delta_t_method = ChromophoreType::Tryptophan.compute_local_heating(wavelength, fluence);
-        assert!((delta_t_method - 14.5).abs() < 1.0,
-            "ChromophoreType.compute_local_heating (η=0.74): expected ~14.5 K, got {:.1} K", delta_t_method);
+        assert!(
+            (delta_t_method - 14.5).abs() < 1.0,
+            "ChromophoreType.compute_local_heating (η=0.74): expected ~14.5 K, got {:.1} K",
+            delta_t_method
+        );
 
         println!("=== TRP @ 280nm Calibration PASSED ===");
         println!("ε = {:.0} M⁻¹cm⁻¹", epsilon);
         println!("σ = {:.5} Å²", sigma);
         println!("F = {:.4} photons/Å²", fluence);
-        println!("p = {:.5} (< {} threshold)", p_absorb, MAX_ABSORPTION_PROBABILITY);
+        println!(
+            "p = {:.5} (< {} threshold)",
+            p_absorb, MAX_ABSORPTION_PROBABILITY
+        );
         println!("E_γ = {:.3} eV", e_photon);
         println!("η = {:.1}", eta);
         println!("E_dep = {:.5} eV", e_dep);
@@ -2428,13 +2533,22 @@ mod tests {
         let trp_at_250 = ChromophoreType::Tryptophan.compute_local_heating(250.0, fluence);
 
         // TRP response should peak at 280nm
-        assert!(trp_at_280 > trp_at_258, "TRP should heat more at 280nm than 258nm");
-        assert!(trp_at_280 > trp_at_250, "TRP should heat more at 280nm than 250nm");
+        assert!(
+            trp_at_280 > trp_at_258,
+            "TRP should heat more at 280nm than 258nm"
+        );
+        assert!(
+            trp_at_280 > trp_at_250,
+            "TRP should heat more at 280nm than 250nm"
+        );
 
         // PHE should respond more at 258nm than 280nm
         let phe_at_258 = ChromophoreType::Phenylalanine.compute_local_heating(258.0, fluence);
         let phe_at_280 = ChromophoreType::Phenylalanine.compute_local_heating(280.0, fluence);
-        assert!(phe_at_258 > phe_at_280, "PHE should heat more at 258nm than 280nm");
+        assert!(
+            phe_at_258 > phe_at_280,
+            "PHE should heat more at 258nm than 280nm"
+        );
 
         println!("Multi-wavelength response verified:");
         println!("  TRP @ 280nm: {:.2} K", trp_at_280);

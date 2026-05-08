@@ -61,7 +61,6 @@ pub struct CrypticSiteEvent {
     pub uv_validated: bool,
 
     // === CCNS (Conformational Crackling Noise Spectroscopy) fields ===
-
     /// Per-spike amplitudes (volume delta or intensity at each spike event)
     pub spike_amplitudes: Vec<f32>,
 
@@ -216,11 +215,7 @@ impl AvalancheDetector {
     }
 
     /// DBSCAN-like spatial clustering
-    fn spatial_clustering(
-        &self,
-        positions: &[[f32; 3]],
-        voxels: &[usize],
-    ) -> Vec<SpikeCluster> {
+    fn spatial_clustering(&self, positions: &[[f32; 3]], voxels: &[usize]) -> Vec<SpikeCluster> {
         let eps = self.config.avalanche_spatial_threshold;
         let min_pts = self.config.min_avalanche_spikes;
 
@@ -310,11 +305,7 @@ impl AvalancheDetector {
     }
 
     /// Match new clusters with existing tracked clusters
-    fn match_and_update_clusters(
-        &mut self,
-        new_clusters: Vec<SpikeCluster>,
-        _residues: &[u32],
-    ) {
+    fn match_and_update_clusters(&mut self, new_clusters: Vec<SpikeCluster>, _residues: &[u32]) {
         let match_threshold = self.config.avalanche_spatial_threshold * 2.0;
 
         for new_cluster in new_clusters {
@@ -411,7 +402,9 @@ impl AvalancheDetector {
 
         // Compute inter-spike intervals from frame indices
         let inter_spike_intervals = if cluster.spike_frames.len() >= 2 {
-            cluster.spike_frames.windows(2)
+            cluster
+                .spike_frames
+                .windows(2)
                 .map(|w| (w[1] as f32) - (w[0] as f32))
                 .collect()
         } else {

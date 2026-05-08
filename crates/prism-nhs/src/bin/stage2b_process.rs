@@ -23,15 +23,13 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[cfg(feature = "gpu")]
 use prism_nhs::{
-    PrismPrepTopology, RmsfCalculator, RmsfAnalysis,
-    TrajectoryClusterer, ClusteringConfig, ClusteringResults,
-    RtProbeAnalyzer, RtAnalysisConfig, RtAnalysisResults,
-    RtProbeSnapshot,
+    ClusteringConfig, ClusteringResults, PrismPrepTopology, RmsfAnalysis, RmsfCalculator,
+    RtAnalysisConfig, RtAnalysisResults, RtProbeAnalyzer, RtProbeSnapshot, TrajectoryClusterer,
 };
 
 #[derive(Parser, Debug)]
@@ -106,9 +104,7 @@ struct RawSpikeEvent {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -150,16 +146,24 @@ fn process_stage2b(args: &Args) -> Result<()> {
     // Step 1: RMSF convergence analysis
     log::info!("\n🔬 Step 1: RMSF Convergence Analysis");
     let rmsf_analysis = if frames.len() >= args.min_frames {
-        let calculator = RmsfCalculator::new(
-            &topology.atom_names,
-            &topology.residue_ids,
-        )?;
+        let calculator = RmsfCalculator::new(&topology.atom_names, &topology.residue_ids)?;
         let analysis = calculator.analyze_convergence(&frames)?;
         log::info!("  Pearson correlation: {:.3}", analysis.correlation);
-        log::info!("  Converged: {}", if analysis.converged { "✅ YES" } else { "❌ NO" });
+        log::info!(
+            "  Converged: {}",
+            if analysis.converged {
+                "✅ YES"
+            } else {
+                "❌ NO"
+            }
+        );
         Some(analysis)
     } else {
-        log::warn!("  ⚠️ Insufficient frames ({} < {}), skipping RMSF", frames.len(), args.min_frames);
+        log::warn!(
+            "  ⚠️ Insufficient frames ({} < {}), skipping RMSF",
+            frames.len(),
+            args.min_frames
+        );
         None
     };
 
@@ -173,7 +177,10 @@ fn process_stage2b(args: &Args) -> Result<()> {
     )?;
     let clustering = clusterer.cluster(&frames, &timesteps, None)?;
     log::info!("  Clusters: {}", clustering.num_clusters);
-    log::info!("  Average cluster size: {:.1} frames", clustering.avg_cluster_size);
+    log::info!(
+        "  Average cluster size: {:.1} frames",
+        clustering.avg_cluster_size
+    );
 
     // Step 3: RT probe analysis (if available)
     log::info!("\n⚡ Step 3: RT Probe Analysis");
@@ -185,7 +192,10 @@ fn process_stage2b(args: &Args) -> Result<()> {
         let analyzer = RtProbeAnalyzer::new(rt_config);
         let analysis = analyzer.analyze(&rt_snapshots)?;
         log::info!("  Void formation events: {}", analysis.void_events.len());
-        log::info!("  Solvation disruption events: {}", analysis.disruption_events.len());
+        log::info!(
+            "  Solvation disruption events: {}",
+            analysis.disruption_events.len()
+        );
         Some(analysis)
     } else {
         log::warn!("  ⚠️ No RT probe data provided, skipping RT analysis");
@@ -207,7 +217,10 @@ fn process_stage2b(args: &Args) -> Result<()> {
         .into_iter()
         .filter(|s| s.quality_score > 0.5)
         .collect();
-    log::info!("  High-quality spikes (score > 0.5): {}", filtered_spikes.len());
+    log::info!(
+        "  High-quality spikes (score > 0.5): {}",
+        filtered_spikes.len()
+    );
 
     // Step 5: Write processed events for Stage 3
     log::info!("\n💾 Step 5: Writing Processed Events");
@@ -229,8 +242,8 @@ fn process_stage2b(args: &Args) -> Result<()> {
 /// - intensity: f32
 #[cfg(feature = "gpu")]
 fn load_raw_spikes(path: &PathBuf) -> Result<Vec<RawSpikeEvent>> {
-    use std::io::{BufRead, BufReader};
     use std::fs::File;
+    use std::io::{BufRead, BufReader};
 
     let file = File::open(path)
         .with_context(|| format!("Failed to open spike events file: {}", path.display()))?;
@@ -252,12 +265,21 @@ fn load_raw_spikes(path: &PathBuf) -> Result<Vec<RawSpikeEvent>> {
         match serde_json::from_str::<RawSpikeEvent>(line) {
             Ok(spike) => spikes.push(spike),
             Err(e) => {
-                log::warn!("Line {}: Failed to parse spike event: {} - {}", line_num, e, line);
+                log::warn!(
+                    "Line {}: Failed to parse spike event: {} - {}",
+                    line_num,
+                    e,
+                    line
+                );
             }
         }
     }
 
-    log::info!("Loaded {} raw spike events from {}", spikes.len(), path.display());
+    log::info!(
+        "Loaded {} raw spike events from {}",
+        spikes.len(),
+        path.display()
+    );
     Ok(spikes)
 }
 
@@ -268,8 +290,8 @@ fn load_raw_spikes(path: &PathBuf) -> Result<Vec<RawSpikeEvent>> {
 /// - JSONL trajectory: trajectory.jsonl (one frame per line)
 #[cfg(feature = "gpu")]
 fn load_trajectory_frames(path: &PathBuf) -> Result<(Vec<Vec<f32>>, Vec<i32>)> {
-    use std::io::{BufRead, BufReader, Read};
     use std::fs::{self, File};
+    use std::io::{BufRead, BufReader, Read};
 
     let mut frames = Vec::new();
     let mut timesteps = Vec::new();
@@ -312,14 +334,8 @@ fn load_trajectory_frames(path: &PathBuf) -> Result<(Vec<Vec<f32>>, Vec<i32>)> {
     log::info!("Looking for binary frame files in: {}", path.display());
     let mut frame_files: Vec<_> = fs::read_dir(path)?
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with("frame_")
-        })
-        .filter(|e| {
-            e.path().extension().map_or(false, |ext| ext == "bin")
-        })
+        .filter(|e| e.file_name().to_string_lossy().starts_with("frame_"))
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "bin"))
         .collect();
 
     // Sort by frame number
@@ -377,10 +393,14 @@ fn load_rt_snapshots(path: &PathBuf) -> Result<Vec<RtProbeSnapshot>> {
     let reader = BufReader::new(file);
 
     // Try parsing as JSON array first
-    let snapshots: Vec<RtProbeSnapshot> = serde_json::from_reader(reader)
-        .with_context(|| "Failed to parse RT snapshots JSON")?;
+    let snapshots: Vec<RtProbeSnapshot> =
+        serde_json::from_reader(reader).with_context(|| "Failed to parse RT snapshots JSON")?;
 
-    log::info!("Loaded {} RT probe snapshots from {}", snapshots.len(), path.display());
+    log::info!(
+        "Loaded {} RT probe snapshots from {}",
+        snapshots.len(),
+        path.display()
+    );
     Ok(snapshots)
 }
 
@@ -402,17 +422,15 @@ fn process_spikes(
         let rmsf_converged = rmsf.map_or(false, |r| r.converged);
 
         // Find cluster for this timestep
-        let (cluster_id, cluster_weight) = find_cluster_for_timestep(
-            spike.timestep,
-            clustering,
-        );
+        let (cluster_id, cluster_weight) = find_cluster_for_timestep(spike.timestep, clustering);
 
         // Check for nearby RT events
-        let (rt_void_nearby, rt_disruption_nearby, rt_leading_signal) = if let Some(rt_analysis) = rt {
-            check_rt_proximity(spike, rt_analysis)
-        } else {
-            (false, false, false)
-        };
+        let (rt_void_nearby, rt_disruption_nearby, rt_leading_signal) =
+            if let Some(rt_analysis) = rt {
+                check_rt_proximity(spike, rt_analysis)
+            } else {
+                (false, false, false)
+            };
 
         // Compute quality score
         let quality_score = compute_quality_score(
@@ -438,7 +456,9 @@ fn process_spikes(
 
     // Sort by quality score descending
     processed.sort_by(|a, b| {
-        b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal)
+        b.quality_score
+            .partial_cmp(&a.quality_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     Ok(processed)
@@ -448,10 +468,7 @@ fn process_spikes(
 ///
 /// Uses the representative frames to find the nearest cluster by timestep.
 #[cfg(feature = "gpu")]
-fn find_cluster_for_timestep(
-    timestep: i32,
-    clustering: &ClusteringResults,
-) -> (usize, f32) {
+fn find_cluster_for_timestep(timestep: i32, clustering: &ClusteringResults) -> (usize, f32) {
     if clustering.representatives.is_empty() {
         return (0, 0.1);
     }
@@ -477,13 +494,10 @@ fn find_cluster_for_timestep(
 ///
 /// Uses both spatial (8Å radius) and temporal (500 timestep) proximity.
 #[cfg(feature = "gpu")]
-fn check_rt_proximity(
-    spike: &RawSpikeEvent,
-    rt: &RtAnalysisResults,
-) -> (bool, bool, bool) {
-    const SPATIAL_THRESHOLD_SQ: f32 = 64.0;  // 8Å radius squared
-    const TIME_WINDOW: i32 = 500;             // timesteps for correlation
-    const LEADING_WINDOW: i32 = 200;          // timesteps before spike for leading signal
+fn check_rt_proximity(spike: &RawSpikeEvent, rt: &RtAnalysisResults) -> (bool, bool, bool) {
+    const SPATIAL_THRESHOLD_SQ: f32 = 64.0; // 8Å radius squared
+    const TIME_WINDOW: i32 = 500; // timesteps for correlation
+    const LEADING_WINDOW: i32 = 200; // timesteps before spike for leading signal
 
     let spike_time = spike.timestep;
     let spike_pos = spike.position;
@@ -509,7 +523,9 @@ fn check_rt_proximity(
             void_nearby = true;
 
             // Check if RT event precedes spike (leading signal)
-            if void_event.timestep < spike_time && (spike_time - void_event.timestep) <= LEADING_WINDOW {
+            if void_event.timestep < spike_time
+                && (spike_time - void_event.timestep) <= LEADING_WINDOW
+            {
                 leading_signal = true;
             }
         }
@@ -603,7 +619,7 @@ fn compute_quality_score(
     let causality_score = if rt_leading_signal {
         1.0
     } else if rt_disruption_nearby {
-        0.6  // Disruption without leading still indicates mechanism
+        0.6 // Disruption without leading still indicates mechanism
     } else {
         0.0
     };
@@ -624,10 +640,10 @@ fn compute_quality_score(
 
     // Tier multiplier: reward multi-tier evidence
     let tier_multiplier = match tiers_passed {
-        3 => 1.0,    // All three tiers: full score
-        2 => 0.85,   // Two tiers: high confidence
-        1 => 0.5,    // One tier: uncertain
-        _ => 0.2,    // No tiers: likely noise
+        3 => 1.0,  // All three tiers: full score
+        2 => 0.85, // Two tiers: high confidence
+        1 => 0.5,  // One tier: uncertain
+        _ => 0.2,  // No tiers: likely noise
     };
 
     (base_score * tier_multiplier).clamp(0.0, 1.0)
@@ -638,8 +654,7 @@ fn write_processed_spikes(spikes: &[ProcessedSpikeEvent], path: &PathBuf) -> Res
     use std::fs::File;
     use std::io::Write;
 
-    let file = File::create(path)
-        .context("Failed to create output file")?;
+    let file = File::create(path).context("Failed to create output file")?;
     let mut writer = std::io::BufWriter::new(file);
 
     for spike in spikes {

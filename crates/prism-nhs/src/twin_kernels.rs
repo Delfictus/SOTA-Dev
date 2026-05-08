@@ -5,9 +5,11 @@
 //! and Tensor Core cross-correlation computation.
 
 use anyhow::{Context, Result};
-use cudarc::driver::{CudaContext, CudaStream, CudaModule, CudaSlice, CudaFunction, LaunchConfig, PushKernelArg};
-use std::sync::Arc;
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+};
 use std::path::Path;
+use std::sync::Arc;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PTX file discovery
@@ -18,7 +20,10 @@ pub fn find_twin_ptx(name: &str) -> Result<String> {
     let candidates = [
         format!("target/ptx/{}", name),
         format!("../../target/ptx/{}", name),
-        format!("crates/prism-gpu/src/kernels/{}", name.replace(".ptx", ".ptx")),
+        format!(
+            "crates/prism-gpu/src/kernels/{}",
+            name.replace(".ptx", ".ptx")
+        ),
     ];
     // Also check OUT_DIR from build.rs
     if let Ok(out_dir) = std::env::var("OUT_DIR") {
@@ -55,32 +60,41 @@ pub fn find_twin_ptx(name: &str) -> Result<String> {
 /// LADD kernels. The persistent coupling kernel spin-waits on both flags.
 /// Step-numbered flags prevent ABA race conditions.
 pub struct TwinSignal {
-    pub flag_a: CudaSlice<u32>,    // [1] — stream A completion flag
-    pub flag_b: CudaSlice<u32>,    // [1] — stream B completion flag
+    pub flag_a: CudaSlice<u32>, // [1] — stream A completion flag
+    pub flag_b: CudaSlice<u32>, // [1] — stream B completion flag
     signal_fn: CudaFunction,
     clear_fn: CudaFunction,
 }
 
 impl TwinSignal {
-    pub fn new(
-        stream: &Arc<CudaStream>,
-        module: &Arc<CudaModule>,
-    ) -> Result<Self> {
+    pub fn new(stream: &Arc<CudaStream>, module: &Arc<CudaModule>) -> Result<Self> {
         let flag_a = stream.alloc_zeros::<u32>(1)?;
         let flag_b = stream.alloc_zeros::<u32>(1)?;
-        let signal_fn = module.load_function("signal_stream_done")
+        let signal_fn = module
+            .load_function("signal_stream_done")
             .context("signal_stream_done not found in PTX")?;
-        let clear_fn = module.load_function("clear_signals")
+        let clear_fn = module
+            .load_function("clear_signals")
             .context("clear_signals not found in PTX")?;
-        Ok(Self { flag_a, flag_b, signal_fn, clear_fn })
+        Ok(Self {
+            flag_a,
+            flag_b,
+            signal_fn,
+            clear_fn,
+        })
     }
 
     /// Signal that stream A has completed step `step_number`.
     /// Must be launched on stream A's CUDA stream.
     pub fn signal_a(&mut self, stream: &Arc<CudaStream>, step_number: u32) -> Result<()> {
-        let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+        let cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
         unsafe {
-            stream.launch_builder(&self.signal_fn)
+            stream
+                .launch_builder(&self.signal_fn)
                 .arg(&mut self.flag_a)
                 .arg(&step_number)
                 .launch(cfg)?;
@@ -91,9 +105,14 @@ impl TwinSignal {
     /// Signal that stream B has completed step `step_number`.
     /// Must be launched on stream B's CUDA stream.
     pub fn signal_b(&mut self, stream: &Arc<CudaStream>, step_number: u32) -> Result<()> {
-        let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+        let cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
         unsafe {
-            stream.launch_builder(&self.signal_fn)
+            stream
+                .launch_builder(&self.signal_fn)
                 .arg(&mut self.flag_b)
                 .arg(&step_number)
                 .launch(cfg)?;
@@ -103,9 +122,14 @@ impl TwinSignal {
 
     /// Clear both flags (called from host or coupling kernel after exchange).
     pub fn clear(&mut self, stream: &Arc<CudaStream>) -> Result<()> {
-        let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+        let cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
         unsafe {
-            stream.launch_builder(&self.clear_fn)
+            stream
+                .launch_builder(&self.clear_fn)
                 .arg(&mut self.flag_a)
                 .arg(&mut self.flag_b)
                 .launch(cfg)?;
@@ -144,7 +168,7 @@ pub struct RingSpikeEvent {
     pub n_nearby_excited: i32,
     pub spike_source: i32,
     pub wavelength_nm: f32,
-    pub primary_residue_id: i32,  // lossless residue attribution (was: pad)
+    pub primary_residue_id: i32, // lossless residue attribution (was: pad)
 }
 
 /// GPU-side ring buffer for spike exchange between twin observation groups.
@@ -161,7 +185,7 @@ pub struct TwinRingBuffer {
     d_staging: CudaSlice<u8>,
     // Kernel functions
     push_batch_fn: CudaFunction,
-    compact_push_fn: Option<CudaFunction>,  // Gate 3: device-side compact+push (zero CPU memcpy)
+    compact_push_fn: Option<CudaFunction>, // Gate 3: device-side compact+push (zero CPU memcpy)
     read_adapt_fn: CudaFunction,
     recovery_fn: CudaFunction,
     reset_fn: CudaFunction,
@@ -186,24 +210,36 @@ impl TwinRingBuffer {
         let staging_capacity = 4096;
         let d_staging = stream.alloc_zeros::<u8>(staging_capacity * spike_size)?;
 
-        let push_batch_fn = module.load_function("ring_buffer_push_batch")
+        let push_batch_fn = module
+            .load_function("ring_buffer_push_batch")
             .context("ring_buffer_push_batch not found in PTX")?;
         let compact_push_fn = module.load_function("compact_and_push").ok();
         if compact_push_fn.is_some() {
             log::info!("  Ring buffer compact_and_push (device-side): loaded");
         }
-        let read_adapt_fn = module.load_function("ring_buffer_read_and_adapt")
+        let read_adapt_fn = module
+            .load_function("ring_buffer_read_and_adapt")
             .context("ring_buffer_read_and_adapt not found in PTX")?;
-        let recovery_fn = module.load_function("ring_buffer_threshold_recovery")
+        let recovery_fn = module
+            .load_function("ring_buffer_threshold_recovery")
             .context("ring_buffer_threshold_recovery not found in PTX")?;
-        let reset_fn = module.load_function("ring_buffer_reset")
+        let reset_fn = module
+            .load_function("ring_buffer_reset")
             .context("ring_buffer_reset not found in PTX")?;
 
         Ok(Self {
-            buffer, head, tail, overflow, capacity,
+            buffer,
+            head,
+            tail,
+            overflow,
+            capacity,
             staging: Vec::with_capacity(staging_capacity),
             d_staging,
-            push_batch_fn, compact_push_fn, read_adapt_fn, recovery_fn, reset_fn,
+            push_batch_fn,
+            compact_push_fn,
+            read_adapt_fn,
+            recovery_fn,
+            reset_fn,
         })
     }
 
@@ -248,7 +284,11 @@ impl TwinRingBuffer {
                 n_nearby_excited: s.n_nearby_excited,
                 spike_source: s.spike_source,
                 wavelength_nm: s.wavelength_nm,
-                primary_residue_id: if s.n_residues > 0 { s.nearby_residues[0] } else { -1 },
+                primary_residue_id: if s.n_residues > 0 {
+                    s.nearby_residues[0]
+                } else {
+                    -1
+                },
             });
         }
 
@@ -262,10 +302,7 @@ impl TwinRingBuffer {
 
         // Upload compacted spikes to GPU staging buffer
         let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(
-                self.staging.as_ptr() as *const u8,
-                n_spikes * 48,
-            )
+            std::slice::from_raw_parts(self.staging.as_ptr() as *const u8, n_spikes * 48)
         };
         stream.memcpy_htod(bytes, &mut self.d_staging)?;
 
@@ -279,7 +316,8 @@ impl TwinRingBuffer {
         let prev_count = 0u32;
         let curr_count = n_spikes as u32;
         unsafe {
-            stream.launch_builder(&self.push_batch_fn)
+            stream
+                .launch_builder(&self.push_batch_fn)
                 .arg(&mut self.buffer)
                 .arg(&mut self.head)
                 .arg(&mut self.tail)
@@ -309,8 +347,8 @@ impl TwinRingBuffer {
     pub fn push_device(
         &mut self,
         stream: &Arc<CudaStream>,
-        d_spike_events: &CudaSlice<u8>,   // engine's d_spike_events buffer
-        d_spike_count: &CudaSlice<i32>,    // engine's d_spike_count
+        d_spike_events: &CudaSlice<u8>, // engine's d_spike_events buffer
+        d_spike_count: &CudaSlice<i32>, // engine's d_spike_count
     ) -> Result<()> {
         self.push_device_with_phase(stream, d_spike_events, d_spike_count, None)
     }
@@ -339,7 +377,8 @@ impl TwinRingBuffer {
         let null_ptr = 0u64;
         if let Some(ps) = d_protocol_state {
             unsafe {
-                stream.launch_builder(compact_fn)
+                stream
+                    .launch_builder(compact_fn)
                     .arg(d_spike_events)
                     .arg(d_spike_count)
                     .arg(&mut self.buffer)
@@ -351,7 +390,8 @@ impl TwinRingBuffer {
             }
         } else {
             unsafe {
-                stream.launch_builder(compact_fn)
+                stream
+                    .launch_builder(compact_fn)
                     .arg(d_spike_events)
                     .arg(d_spike_count)
                     .arg(&mut self.buffer)
@@ -382,9 +422,16 @@ impl TwinRingBuffer {
         decay_constant: f32,
     ) -> Result<()> {
         self.read_and_adapt_with_steering(
-            stream, osc_thresholds, base_thresholds,
-            grid_dims, grid_origin, voxel_size,
-            sensitivity_boost, max_reduction, current_step, decay_constant,
+            stream,
+            osc_thresholds,
+            base_thresholds,
+            grid_dims,
+            grid_origin,
+            voxel_size,
+            sensitivity_boost,
+            max_reduction,
+            current_step,
+            decay_constant,
             None,
         )
     }
@@ -412,25 +459,49 @@ impl TwinRingBuffer {
         let null_ptr = 0u64; // nullptr for ASC when no protocol state
         if let Some(ps) = d_protocol_state {
             unsafe {
-                stream.launch_builder(&self.read_adapt_fn)
-                    .arg(&self.buffer).arg(&mut self.head).arg(&mut self.tail)
-                    .arg(&self.capacity).arg(osc_thresholds).arg(base_thresholds)
-                    .arg(&grid_dims.0).arg(&grid_dims.1).arg(&grid_dims.2)
-                    .arg(&grid_origin.0).arg(&grid_origin.1).arg(&grid_origin.2)
-                    .arg(&voxel_size).arg(&sensitivity_boost).arg(&max_reduction)
-                    .arg(&current_step).arg(&decay_constant)
+                stream
+                    .launch_builder(&self.read_adapt_fn)
+                    .arg(&self.buffer)
+                    .arg(&mut self.head)
+                    .arg(&mut self.tail)
+                    .arg(&self.capacity)
+                    .arg(osc_thresholds)
+                    .arg(base_thresholds)
+                    .arg(&grid_dims.0)
+                    .arg(&grid_dims.1)
+                    .arg(&grid_dims.2)
+                    .arg(&grid_origin.0)
+                    .arg(&grid_origin.1)
+                    .arg(&grid_origin.2)
+                    .arg(&voxel_size)
+                    .arg(&sensitivity_boost)
+                    .arg(&max_reduction)
+                    .arg(&current_step)
+                    .arg(&decay_constant)
                     .arg(ps) // ASC: ProtocolState*
                     .launch(cfg)?;
             }
         } else {
             unsafe {
-                stream.launch_builder(&self.read_adapt_fn)
-                    .arg(&self.buffer).arg(&mut self.head).arg(&mut self.tail)
-                    .arg(&self.capacity).arg(osc_thresholds).arg(base_thresholds)
-                    .arg(&grid_dims.0).arg(&grid_dims.1).arg(&grid_dims.2)
-                    .arg(&grid_origin.0).arg(&grid_origin.1).arg(&grid_origin.2)
-                    .arg(&voxel_size).arg(&sensitivity_boost).arg(&max_reduction)
-                    .arg(&current_step).arg(&decay_constant)
+                stream
+                    .launch_builder(&self.read_adapt_fn)
+                    .arg(&self.buffer)
+                    .arg(&mut self.head)
+                    .arg(&mut self.tail)
+                    .arg(&self.capacity)
+                    .arg(osc_thresholds)
+                    .arg(base_thresholds)
+                    .arg(&grid_dims.0)
+                    .arg(&grid_dims.1)
+                    .arg(&grid_dims.2)
+                    .arg(&grid_origin.0)
+                    .arg(&grid_origin.1)
+                    .arg(&grid_origin.2)
+                    .arg(&voxel_size)
+                    .arg(&sensitivity_boost)
+                    .arg(&max_reduction)
+                    .arg(&current_step)
+                    .arg(&decay_constant)
                     .arg(&null_ptr) // ASC: nullptr
                     .launch(cfg)?;
             }
@@ -454,7 +525,8 @@ impl TwinRingBuffer {
             shared_mem_bytes: 0,
         };
         unsafe {
-            stream.launch_builder(&self.recovery_fn)
+            stream
+                .launch_builder(&self.recovery_fn)
                 .arg(osc_thresholds)
                 .arg(base_thresholds)
                 .arg(&n_voxels_total)
@@ -472,7 +544,8 @@ impl TwinRingBuffer {
             shared_mem_bytes: 0,
         };
         unsafe {
-            stream.launch_builder(&self.reset_fn)
+            stream
+                .launch_builder(&self.reset_fn)
                 .arg(&mut self.head)
                 .arg(&mut self.tail)
                 .arg(&mut self.overflow)
@@ -495,7 +568,7 @@ impl TwinRingBuffer {
 
 /// GPU-side Tensor Core cross-correlation compute context.
 pub struct TwinCcfCompute {
-    spike_matrix_a: CudaSlice<u16>,  // FP16 as u16 (half::f16 → u16 bitcast)
+    spike_matrix_a: CudaSlice<u16>, // FP16 as u16 (half::f16 → u16 bitcast)
     spike_matrix_b: CudaSlice<u16>,
     ccf_output: CudaSlice<f32>,
     norm_a: CudaSlice<f32>,
@@ -525,15 +598,24 @@ impl TwinCcfCompute {
         let norm_a = stream.alloc_zeros::<f32>(n_res as usize)?;
         let norm_b = stream.alloc_zeros::<f32>(n_res as usize)?;
 
-        let ccf_compute_fn = module.load_function("tensor_ccf_compute")
+        let ccf_compute_fn = module
+            .load_function("tensor_ccf_compute")
             .context("tensor_ccf_compute not found in PTX")?;
-        let norms_fn = module.load_function("compute_spike_norms")
+        let norms_fn = module
+            .load_function("compute_spike_norms")
             .context("compute_spike_norms not found in PTX")?;
 
         Ok(Self {
-            spike_matrix_a, spike_matrix_b, ccf_output, norm_a, norm_b,
-            n_res, n_res_padded, n_bins_padded,
-            ccf_compute_fn, norms_fn,
+            spike_matrix_a,
+            spike_matrix_b,
+            ccf_output,
+            norm_a,
+            norm_b,
+            n_res,
+            n_res_padded,
+            n_bins_padded,
+            ccf_compute_fn,
+            norms_fn,
         })
     }
 
@@ -547,7 +629,9 @@ impl TwinCcfCompute {
     ) -> Result<()> {
         // Convert f32 → f16 → u16 bitcast
         let to_u16 = |vals: &[f32]| -> Vec<u16> {
-            vals.iter().map(|&v| half::f16::from_f32(v).to_bits()).collect()
+            vals.iter()
+                .map(|&v| half::f16::from_f32(v).to_bits())
+                .collect()
         };
         let a_u16 = to_u16(matrix_a_f32);
         let b_u16 = to_u16(matrix_b_f32);
@@ -567,13 +651,15 @@ impl TwinCcfCompute {
             shared_mem_bytes: 0,
         };
         unsafe {
-            stream.launch_builder(&self.norms_fn)
+            stream
+                .launch_builder(&self.norms_fn)
                 .arg(&self.spike_matrix_a)
                 .arg(&mut self.norm_a)
                 .arg(&self.n_res)
                 .arg(&self.n_bins_padded)
                 .launch(norm_cfg)?;
-            stream.launch_builder(&self.norms_fn)
+            stream
+                .launch_builder(&self.norms_fn)
                 .arg(&self.spike_matrix_b)
                 .arg(&mut self.norm_b)
                 .arg(&self.n_res)
@@ -591,7 +677,8 @@ impl TwinCcfCompute {
             shared_mem_bytes: 4 * 16 * 16 * 4, // 4 warps × 16×16 × sizeof(float)
         };
         unsafe {
-            stream.launch_builder(&self.ccf_compute_fn)
+            stream
+                .launch_builder(&self.ccf_compute_fn)
                 .arg(&self.spike_matrix_a)
                 .arg(&self.spike_matrix_b)
                 .arg(&mut self.ccf_output)
@@ -636,7 +723,11 @@ pub struct CcfResidueFeatures {
 /// Sanitize a float: replace NaN/Inf with 0.0.
 /// GPU kernels can produce NaN from 0/0 or Inf from overflow.
 fn sanitize(v: f32) -> f32 {
-    if v.is_finite() { v } else { 0.0 }
+    if v.is_finite() {
+        v
+    } else {
+        0.0
+    }
 }
 
 /// Extract per-residue CCF features from n_res × n_res CCF matrix.
@@ -644,49 +735,60 @@ fn sanitize(v: f32) -> f32 {
 /// a residue has zero spikes → zero norm → NaN in CCF output).
 pub fn extract_ccf_features(ccf_matrix: &[f32], n_res: usize) -> Vec<CcfResidueFeatures> {
     if ccf_matrix.len() != n_res * n_res {
-        log::warn!("CCF matrix size {} != expected {}×{}, returning empty features",
-            ccf_matrix.len(), n_res, n_res);
+        log::warn!(
+            "CCF matrix size {} != expected {}×{}, returning empty features",
+            ccf_matrix.len(),
+            n_res,
+            n_res
+        );
         return vec![CcfResidueFeatures::default(); n_res];
     }
 
-    (0..n_res).map(|r| {
-        let row = &ccf_matrix[r * n_res..(r + 1) * n_res];
+    (0..n_res)
+        .map(|r| {
+            let row = &ccf_matrix[r * n_res..(r + 1) * n_res];
 
-        // Filter out NaN/Inf values before any computation
-        let clean_row: Vec<f32> = row.iter().map(|&v| sanitize(v)).collect();
+            // Filter out NaN/Inf values before any computation
+            let clean_row: Vec<f32> = row.iter().map(|&v| sanitize(v)).collect();
 
-        // Peak value and column (max off-diagonal, excluding self-correlation)
-        let (peak_col, peak_val) = clean_row.iter().enumerate()
-            .filter(|(j, _)| *j != r)
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(j, &v)| (j as i32, v))
-            .unwrap_or((0, 0.0));
+            // Peak value and column (max off-diagonal, excluding self-correlation)
+            let (peak_col, peak_val) = clean_row
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != r)
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(j, &v)| (j as i32, v))
+                .unwrap_or((0, 0.0));
 
-        // Width: count of columns with CCF > peak_val * 0.5 (FWHM proxy)
-        let half_max = peak_val * 0.5;
-        let width = clean_row.iter().filter(|&&v| v > half_max).count() as f32;
+            // Width: count of columns with CCF > peak_val * 0.5 (FWHM proxy)
+            let half_max = peak_val * 0.5;
+            let width = clean_row.iter().filter(|&&v| v > half_max).count() as f32;
 
-        // Asymmetry: (sum upper triangle - sum lower triangle) / total
-        // Positive asymmetry = more correlation with higher-index residues
-        let upper: f32 = if r + 1 < n_res { clean_row[r+1..].iter().sum() } else { 0.0 };
-        let lower: f32 = clean_row[..r].iter().sum();
-        let denom = (upper.abs() + lower.abs()).max(1e-8);
-        let asymmetry = (upper - lower) / denom;
+            // Asymmetry: (sum upper triangle - sum lower triangle) / total
+            // Positive asymmetry = more correlation with higher-index residues
+            let upper: f32 = if r + 1 < n_res {
+                clean_row[r + 1..].iter().sum()
+            } else {
+                0.0
+            };
+            let lower: f32 = clean_row[..r].iter().sum();
+            let denom = (upper.abs() + lower.abs()).max(1e-8);
+            let asymmetry = (upper - lower) / denom;
 
-        // Reproducibility: fraction of residues with CCF > 0.1
-        // High reproducibility = this residue correlates with many others
-        let reproducibility = clean_row.iter()
-            .filter(|&&v| v > 0.1)
-            .count() as f32 / n_res.max(1) as f32;
+            // Reproducibility: fraction of residues with CCF > 0.1
+            // High reproducibility = this residue correlates with many others
+            let reproducibility =
+                clean_row.iter().filter(|&&v| v > 0.1).count() as f32 / n_res.max(1) as f32;
 
-        CcfResidueFeatures {
-            ccf_peak_lag: peak_col - r as i32,
-            ccf_peak_value: sanitize(peak_val),
-            ccf_width: width,
-            ccf_asymmetry: sanitize(asymmetry),
-            ccf_reproducibility: sanitize(reproducibility),
-        }
-    }).collect()
+            CcfResidueFeatures {
+                ccf_peak_lag: peak_col - r as i32,
+                ccf_peak_value: sanitize(peak_val),
+                ccf_width: width,
+                ccf_asymmetry: sanitize(asymmetry),
+                ccf_reproducibility: sanitize(reproducibility),
+            }
+        })
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -713,11 +815,15 @@ pub fn build_ccf_matrices(
     let accumulate = |mat: &mut Vec<f32>, spikes: &[crate::fused_engine::GpuSpikeEvent]| {
         for spike in spikes {
             let bin = (spike.timestep / bin_size.max(1)) as usize;
-            if bin >= n_bins { continue; }
+            if bin >= n_bins {
+                continue;
+            }
             let n = spike.n_residues.min(8) as usize;
             for r in 0..n {
                 let resid = spike.nearby_residues[r];
-                if resid < 0 || resid >= n_residues as i32 { continue; }
+                if resid < 0 || resid >= n_residues as i32 {
+                    continue;
+                }
                 mat[resid as usize * n_bins_padded + bin] += spike.intensity;
             }
         }
@@ -758,12 +864,12 @@ pub fn build_ccf_matrices(
 /// Produces [n_res × n_res] TE matrices (A→B and B→A) plus
 /// per-residue mutual information and causal flow direction.
 pub struct TwinTeCompute {
-    te_a_to_b: CudaSlice<f32>,     // [n_res × n_res]
-    te_b_to_a: CudaSlice<f32>,     // [n_res × n_res]
-    mean_a: CudaSlice<f32>,         // [n_res]
-    mean_b: CudaSlice<f32>,         // [n_res]
-    mutual_info: CudaSlice<f32>,    // [n_res]
-    causal_flow: CudaSlice<f32>,    // [n_res]
+    te_a_to_b: CudaSlice<f32>,   // [n_res × n_res]
+    te_b_to_a: CudaSlice<f32>,   // [n_res × n_res]
+    mean_a: CudaSlice<f32>,      // [n_res]
+    mean_b: CudaSlice<f32>,      // [n_res]
+    mutual_info: CudaSlice<f32>, // [n_res]
+    causal_flow: CudaSlice<f32>, // [n_res]
     n_res: i32,
     n_bins: i32,
     n_res_padded: i32,
@@ -789,18 +895,30 @@ impl TwinTeCompute {
         let mutual_info = stream.alloc_zeros::<f32>(n_res as usize)?;
         let causal_flow = stream.alloc_zeros::<f32>(n_res as usize)?;
 
-        let mean_fn = module.load_function("twin_compute_row_means")
+        let mean_fn = module
+            .load_function("twin_compute_row_means")
             .context("twin_compute_row_means not found in PTX")?;
-        let te_fn = module.load_function("twin_binned_te")
+        let te_fn = module
+            .load_function("twin_binned_te")
             .context("twin_binned_te not found in PTX")?;
-        let mi_fn = module.load_function("twin_compute_mutual_info")
+        let mi_fn = module
+            .load_function("twin_compute_mutual_info")
             .context("twin_compute_mutual_info not found in PTX")?;
 
         Ok(Self {
-            te_a_to_b, te_b_to_a, mean_a, mean_b,
-            mutual_info, causal_flow,
-            n_res, n_bins, n_res_padded, n_bins_padded,
-            mean_fn, te_fn, mi_fn,
+            te_a_to_b,
+            te_b_to_a,
+            mean_a,
+            mean_b,
+            mutual_info,
+            causal_flow,
+            n_res,
+            n_bins,
+            n_res_padded,
+            n_bins_padded,
+            mean_fn,
+            te_fn,
+            mi_fn,
         })
     }
 
@@ -809,7 +927,7 @@ impl TwinTeCompute {
     pub fn compute(
         &mut self,
         stream: &Arc<CudaStream>,
-        spike_matrix_a: &CudaSlice<u16>,  // FP16 as u16, same as CCF
+        spike_matrix_a: &CudaSlice<u16>, // FP16 as u16, same as CCF
         spike_matrix_b: &CudaSlice<u16>,
     ) -> Result<()> {
         // Step 1: compute per-row means for binarization
@@ -820,14 +938,16 @@ impl TwinTeCompute {
             shared_mem_bytes: 0,
         };
         unsafe {
-            stream.launch_builder(&self.mean_fn)
+            stream
+                .launch_builder(&self.mean_fn)
                 .arg(spike_matrix_a)
                 .arg(&mut self.mean_a)
                 .arg(&self.n_res)
                 .arg(&self.n_bins)
                 .arg(&self.n_bins_padded)
                 .launch(mean_cfg)?;
-            stream.launch_builder(&self.mean_fn)
+            stream
+                .launch_builder(&self.mean_fn)
                 .arg(spike_matrix_b)
                 .arg(&mut self.mean_b)
                 .arg(&self.n_res)
@@ -847,7 +967,8 @@ impl TwinTeCompute {
         };
         let lag = 1i32;
         unsafe {
-            stream.launch_builder(&self.te_fn)
+            stream
+                .launch_builder(&self.te_fn)
                 .arg(spike_matrix_a)
                 .arg(spike_matrix_b)
                 .arg(&mut self.te_a_to_b)
@@ -870,7 +991,8 @@ impl TwinTeCompute {
             shared_mem_bytes: 0,
         };
         unsafe {
-            stream.launch_builder(&self.mi_fn)
+            stream
+                .launch_builder(&self.mi_fn)
                 .arg(&self.te_a_to_b)
                 .arg(&self.te_b_to_a)
                 .arg(&mut self.mutual_info)
@@ -883,10 +1005,7 @@ impl TwinTeCompute {
     }
 
     /// Download per-residue MI and causal flow to CPU.
-    pub fn download_per_residue(
-        &self,
-        stream: &Arc<CudaStream>,
-    ) -> Result<(Vec<f32>, Vec<f32>)> {
+    pub fn download_per_residue(&self, stream: &Arc<CudaStream>) -> Result<(Vec<f32>, Vec<f32>)> {
         let mut mi = vec![0.0f32; self.n_res as usize];
         let mut cf = vec![0.0f32; self.n_res as usize];
         stream.memcpy_dtoh(&self.mutual_info, &mut mi)?;
@@ -895,19 +1014,19 @@ impl TwinTeCompute {
     }
 
     /// Download per-residue TE(A→B) sum (total outgoing TE from each residue).
-    pub fn download_te_per_residue(
-        &self,
-        stream: &Arc<CudaStream>,
-    ) -> Result<Vec<f32>> {
+    pub fn download_te_per_residue(&self, stream: &Arc<CudaStream>) -> Result<Vec<f32>> {
         let n = self.n_res as usize;
         let mut te_ab = vec![0.0f32; n * n];
         stream.memcpy_dtoh(&self.te_a_to_b, &mut te_ab)?;
         // Sum across columns for each row: total outgoing TE from residue i
-        let per_res: Vec<f32> = (0..n).map(|i| {
-            te_ab[i * n..(i + 1) * n].iter()
-                .filter(|&&v| v > 0.001)
-                .sum()
-        }).collect();
+        let per_res: Vec<f32> = (0..n)
+            .map(|i| {
+                te_ab[i * n..(i + 1) * n]
+                    .iter()
+                    .filter(|&&v| v > 0.001)
+                    .sum()
+            })
+            .collect();
         Ok(per_res)
     }
 }
@@ -938,7 +1057,8 @@ pub struct TwinCouplingPersistent {
 impl TwinCouplingPersistent {
     /// Load the persistent coupling kernel from PTX.
     pub fn new(module: &Arc<CudaModule>) -> Result<Self> {
-        let kernel_fn = module.load_function("twin_coupling_persistent")
+        let kernel_fn = module
+            .load_function("twin_coupling_persistent")
             .context("twin_coupling_persistent not found in PTX")?;
         Ok(Self { kernel_fn })
     }
@@ -991,7 +1111,8 @@ impl TwinCouplingPersistent {
         };
 
         unsafe {
-            stream.launch_builder(&self.kernel_fn)
+            stream
+                .launch_builder(&self.kernel_fn)
                 // Signal flags (params 0-1)
                 .arg(&mut signal.flag_a)
                 .arg(&mut signal.flag_b)
@@ -1053,7 +1174,8 @@ mod tests {
     #[test]
     fn test_ring_spike_event_size() {
         assert_eq!(
-            std::mem::size_of::<RingSpikeEvent>(), 48,
+            std::mem::size_of::<RingSpikeEvent>(),
+            48,
             "RingSpikeEvent must be exactly 48 bytes to match CUDA struct"
         );
     }
@@ -1061,11 +1183,7 @@ mod tests {
     #[test]
     fn test_ccf_feature_extraction_identity() {
         // 3×3 CCF with known structure
-        let ccf = vec![
-            1.0, 0.2, 0.1,
-            0.2, 1.0, 0.3,
-            0.1, 0.3, 1.0,
-        ];
+        let ccf = vec![1.0, 0.2, 0.1, 0.2, 1.0, 0.3, 0.1, 0.3, 1.0];
         let features = extract_ccf_features(&ccf, 3);
         assert_eq!(features.len(), 3);
         // Residue 2's highest off-diagonal is column 1 (0.3)
@@ -1087,9 +1205,7 @@ mod tests {
     fn test_build_ccf_matrices_padding() {
         // 5 residues → padded to 16
         // 100 steps / bin_size=10 = 10 bins → padded to 16
-        let (mat_a, _mat_b, n_res_p, n_bins_p) = build_ccf_matrices(
-            &[], &[], 5, 100, 10,
-        );
+        let (mat_a, _mat_b, n_res_p, n_bins_p) = build_ccf_matrices(&[], &[], 5, 100, 10);
         assert_eq!(n_res_p, 16);
         assert_eq!(n_bins_p, 16);
         assert_eq!(mat_a.len(), 16 * 16);
@@ -1099,21 +1215,25 @@ mod tests {
     fn test_build_ccf_matrices_mean_centering() {
         use crate::fused_engine::GpuSpikeEvent;
         // Create spikes at residue 0, various bins
-        let spikes: Vec<GpuSpikeEvent> = (0..10).map(|t| {
-            let mut s = GpuSpikeEvent::default();
-            s.timestep = t * 10;
-            s.intensity = 1.0;
-            s.nearby_residues[0] = 0;
-            s.n_residues = 1;
-            s
-        }).collect();
+        let spikes: Vec<GpuSpikeEvent> = (0..10)
+            .map(|t| {
+                let mut s = GpuSpikeEvent::default();
+                s.timestep = t * 10;
+                s.intensity = 1.0;
+                s.nearby_residues[0] = 0;
+                s.n_residues = 1;
+                s
+            })
+            .collect();
 
-        let (mat_a, _, n_res_p, n_bins_p) = build_ccf_matrices(
-            &spikes, &[], 3, 100, 10,
-        );
+        let (mat_a, _, n_res_p, n_bins_p) = build_ccf_matrices(&spikes, &[], 3, 100, 10);
 
         // After mean-centering, row 0 should sum to ~0
         let row_sum: f32 = mat_a[0..n_bins_p as usize].iter().sum();
-        assert!(row_sum.abs() < 0.01, "Mean-centered row should sum to ~0, got {}", row_sum);
+        assert!(
+            row_sum.abs() < 0.01,
+            "Mean-centered row should sum to ~0, got {}",
+            row_sum
+        );
     }
 }

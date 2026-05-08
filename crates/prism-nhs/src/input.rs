@@ -246,7 +246,9 @@ impl PrismPrepTopology {
             topology.n_chains
         );
 
-        topology.validate().map_err(|e| anyhow::anyhow!("Topology validation failed: {}", e))?;
+        topology
+            .validate()
+            .map_err(|e| anyhow::anyhow!("Topology validation failed: {}", e))?;
         Ok(topology)
     }
 
@@ -255,13 +257,15 @@ impl PrismPrepTopology {
         if self.residue_names.len() != self.n_atoms {
             return Err(format!(
                 "residue_names length {} != n_atoms {}",
-                self.residue_names.len(), self.n_atoms
+                self.residue_names.len(),
+                self.n_atoms
             ));
         }
         if self.residue_ids.len() != self.n_atoms {
             return Err(format!(
                 "residue_ids length {} != n_atoms {}",
-                self.residue_ids.len(), self.n_atoms
+                self.residue_ids.len(),
+                self.n_atoms
             ));
         }
         let max_res_id = self.residue_ids.iter().max().copied().unwrap_or(0);
@@ -336,10 +340,7 @@ impl PrismPrepTopology {
     /// Check if atom is part of aromatic ring
     fn is_ring_atom(atom_name: &str, res_name: &str) -> bool {
         match res_name {
-            "PHE" => matches!(
-                atom_name,
-                "CG" | "CD1" | "CD2" | "CE1" | "CE2" | "CZ"
-            ),
+            "PHE" => matches!(atom_name, "CG" | "CD1" | "CD2" | "CE1" | "CE2" | "CZ"),
             "TYR" => matches!(
                 atom_name,
                 "CG" | "CD1" | "CD2" | "CE1" | "CE2" | "CZ" | "OH"
@@ -348,10 +349,7 @@ impl PrismPrepTopology {
                 atom_name,
                 "CG" | "CD1" | "CD2" | "NE1" | "CE2" | "CE3" | "CZ2" | "CZ3" | "CH2"
             ),
-            "HIS" => matches!(
-                atom_name,
-                "CG" | "ND1" | "CD2" | "CE1" | "NE2"
-            ),
+            "HIS" => matches!(atom_name, "CG" | "ND1" | "CD2" | "CE1" | "NE2"),
             _ => false,
         }
     }
@@ -441,8 +439,11 @@ impl PrismPrepTopology {
 
             // Safety: central atom must retain at least 1.0 amu
             if m_central_new < 1.0 {
-                log::warn!("HMR: central atom {} would drop to {:.2} amu, skipping cluster",
-                    cluster.central_atom, m_central_new);
+                log::warn!(
+                    "HMR: central atom {} would drop to {:.2} amu, skipping cluster",
+                    cluster.central_atom,
+                    m_central_new
+                );
                 total_mass_after += m_central_orig + cluster.n_hydrogens as f64 * m_h_orig;
                 continue;
             }
@@ -578,35 +579,41 @@ impl NhsPreparedInput {
         log::info!("Preparing system with {:?} solvent mode", solvent_mode);
 
         // Step 1: Validate solvent mode
-        solvent_mode.validate()
+        solvent_mode
+            .validate()
             .context("Invalid solvent mode configuration")?;
 
         // Step 2: Solvate if explicit mode (hybrid starts implicit, adds waters later in Stage 2b)
         let water_atoms = if solvent_mode.starts_explicit() {
             let padding_angstroms = match solvent_mode {
                 SolventMode::Explicit { padding_angstroms } => *padding_angstroms,
-                SolventMode::Hybrid { .. } => padding,  // Use grid padding
-                SolventMode::Implicit => 0.0,  // Won't reach here due to requires_water check
+                SolventMode::Hybrid { .. } => padding, // Use grid padding
+                SolventMode::Implicit => 0.0, // Won't reach here due to requires_water check
             };
 
             let protein_coords = topology.positions.clone();
-            let (water_coords, water_indices) = solvate_protein(&topology, &protein_coords, padding_angstroms)
-                .context("Failed to solvate protein")?;
+            let (water_coords, water_indices) =
+                solvate_protein(&topology, &protein_coords, padding_angstroms)
+                    .context("Failed to solvate protein")?;
 
             let n_waters = water_indices.len();
-            log::info!("Added {} water molecules ({} atoms)", n_waters, water_coords.len() / 3);
+            log::info!(
+                "Added {} water molecules ({} atoms)",
+                n_waters,
+                water_coords.len() / 3
+            );
 
             // Append water positions to topology
             topology.positions.extend_from_slice(&water_coords);
 
             // Append water metadata to all arrays
             for _ in 0..n_waters {
-                topology.elements.push("O".to_string());  // Water oxygen
+                topology.elements.push("O".to_string()); // Water oxygen
                 topology.atom_names.push("O".to_string());
-                topology.residue_ids.push(topology.n_residues);  // All waters in same "residue"
-                topology.chain_ids.push("W".to_string());  // Water chain
-                topology.charges.push(-0.834);  // TIP3P oxygen charge
-                topology.masses.push(15.9994);  // Oxygen mass
+                topology.residue_ids.push(topology.n_residues); // All waters in same "residue"
+                topology.chain_ids.push("W".to_string()); // Water chain
+                topology.charges.push(-0.834); // TIP3P oxygen charge
+                topology.masses.push(15.9994); // Oxygen mass
             }
 
             topology.n_atoms += n_waters;
@@ -614,7 +621,7 @@ impl NhsPreparedInput {
             for _ in 0..n_waters {
                 topology.residue_names.push("HOH".to_string());
             }
-            topology.n_residues += 1;  // All waters count as one "residue" for simplicity
+            topology.n_residues += 1; // All waters count as one "residue" for simplicity
             topology.water_oxygens = water_indices.clone();
 
             Some(water_indices)
@@ -730,15 +737,27 @@ mod tests {
             n_residues: 2,
             n_chains: 1,
             positions: vec![
-                0.0, 0.0, 0.0,   // Atom 0
-                1.0, 0.0, 0.0,   // Atom 1
-                2.0, 0.0, 0.0,   // Atom 2
-                3.0, 0.0, 0.0,   // Atom 3
-                4.0, 0.0, 0.0,   // Atom 4
+                0.0, 0.0, 0.0, // Atom 0
+                1.0, 0.0, 0.0, // Atom 1
+                2.0, 0.0, 0.0, // Atom 2
+                3.0, 0.0, 0.0, // Atom 3
+                4.0, 0.0, 0.0, // Atom 4
             ],
             elements: vec!["C".into(), "N".into(), "O".into(), "C".into(), "C".into()],
-            atom_names: vec!["CA".into(), "N".into(), "O".into(), "CB".into(), "CG".into()],
-            residue_names: vec!["ALA".into(), "ALA".into(), "ALA".into(), "PHE".into(), "PHE".into()],
+            atom_names: vec![
+                "CA".into(),
+                "N".into(),
+                "O".into(),
+                "CB".into(),
+                "CG".into(),
+            ],
+            residue_names: vec![
+                "ALA".into(),
+                "ALA".into(),
+                "ALA".into(),
+                "PHE".into(),
+                "PHE".into(),
+            ],
             residue_ids: vec![0, 0, 0, 1, 1],
             chain_ids: vec!["A".into(); 5],
             charges: vec![0.0; 5],
@@ -766,20 +785,35 @@ mod tests {
             0.5,  // grid_spacing
             10.0, // padding
             &solvent_mode,
-        ).expect("Failed to prepare input");
+        )
+        .expect("Failed to prepare input");
 
         // Check basic fields
         assert_eq!(prepared.total_atoms, 5, "Should have 5 protein atoms");
-        assert!(prepared.water_atoms.is_none(), "Implicit mode should have no waters");
+        assert!(
+            prepared.water_atoms.is_none(),
+            "Implicit mode should have no waters"
+        );
 
         // Check RT targets
-        assert_eq!(prepared.rt_targets.protein_atoms.len(), 5, "Should have 5 protein heavy atoms");
-        assert!(prepared.rt_targets.water_atoms.is_none(), "Should have no water targets");
+        assert_eq!(
+            prepared.rt_targets.protein_atoms.len(),
+            5,
+            "Should have 5 protein heavy atoms"
+        );
+        assert!(
+            prepared.rt_targets.water_atoms.is_none(),
+            "Should have no water targets"
+        );
         // Minimal topology lacks real aromatic ring geometry (CD1/CD2/CE1/CE2/CZ),
         // so aromatic detection may find 0 centers despite PHE residue name.
         // This is acceptable — aromatic detection requires ring atom positions.
         let n_aro = prepared.rt_targets.aromatic_centers.len();
-        assert!(n_aro <= 1, "Should have 0 or 1 aromatic center(s), got {}", n_aro);
+        assert!(
+            n_aro <= 1,
+            "Should have 0 or 1 aromatic center(s), got {}",
+            n_aro
+        );
 
         // Total targets: 5 protein + n_aro aromatics
         assert_eq!(prepared.rt_targets.total_targets, 5 + n_aro);
@@ -790,17 +824,23 @@ mod tests {
     #[test]
     fn test_prepared_input_explicit_mode() {
         let topology = create_minimal_topology();
-        let solvent_mode = SolventMode::Explicit { padding_angstroms: 5.0 };
+        let solvent_mode = SolventMode::Explicit {
+            padding_angstroms: 5.0,
+        };
 
         let prepared = NhsPreparedInput::from_topology(
             topology,
             0.5,  // grid_spacing
             10.0, // padding
             &solvent_mode,
-        ).expect("Failed to prepare input");
+        )
+        .expect("Failed to prepare input");
 
         // Check that waters were added
-        assert!(prepared.water_atoms.is_some(), "Explicit mode should have waters");
+        assert!(
+            prepared.water_atoms.is_some(),
+            "Explicit mode should have waters"
+        );
         let n_waters = prepared.water_atoms.as_ref().unwrap().len();
         assert!(n_waters > 0, "Should have added some waters");
 
@@ -808,8 +848,14 @@ mod tests {
         assert_eq!(prepared.total_atoms, 5 + n_waters);
 
         // Check RT targets include waters
-        assert!(prepared.rt_targets.water_atoms.is_some(), "Should have water targets");
-        assert_eq!(prepared.rt_targets.water_atoms.as_ref().unwrap().len(), n_waters);
+        assert!(
+            prepared.rt_targets.water_atoms.is_some(),
+            "Should have water targets"
+        );
+        assert_eq!(
+            prepared.rt_targets.water_atoms.as_ref().unwrap().len(),
+            n_waters
+        );
 
         println!("Explicit mode: {}", prepared.rt_targets.summary());
         println!("Added {} waters", n_waters);
@@ -820,15 +866,15 @@ mod tests {
         let topology = create_minimal_topology();
         let solvent_mode = SolventMode::Implicit;
 
-        let prepared = NhsPreparedInput::from_topology(
-            topology.clone(),
-            0.5,
-            10.0,
-            &solvent_mode,
-        ).expect("Failed to prepare input");
+        let prepared = NhsPreparedInput::from_topology(topology.clone(), 0.5, 10.0, &solvent_mode)
+            .expect("Failed to prepare input");
 
         // Check all standard fields
-        assert_eq!(prepared.positions.len(), 15, "Should have 5 atoms * 3 coords");
+        assert_eq!(
+            prepared.positions.len(),
+            15,
+            "Should have 5 atoms * 3 coords"
+        );
         assert_eq!(prepared.types.len(), 5);
         assert_eq!(prepared.charges.len(), 5);
         assert_eq!(prepared.residues.len(), 5);

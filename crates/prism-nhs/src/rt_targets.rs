@@ -123,15 +123,21 @@ pub fn identify_rt_targets(
     log::info!("Identifying RT probe targets for {:?} mode", solvent_mode);
 
     // Step 1: Identify protein heavy atoms (no hydrogens)
-    let protein_atoms = identify_heavy_atoms(topology)
-        .context("Failed to identify protein heavy atoms")?;
+    let protein_atoms =
+        identify_heavy_atoms(topology).context("Failed to identify protein heavy atoms")?;
 
-    log::info!("Found {} protein heavy atoms (RT ray origins)", protein_atoms.len());
+    log::info!(
+        "Found {} protein heavy atoms (RT ray origins)",
+        protein_atoms.len()
+    );
 
     // Step 2: Identify water oxygens (explicit mode only)
     let water_atoms = if solvent_mode.requires_water() {
         let waters = topology.water_oxygens.clone();
-        log::info!("Found {} water oxygen atoms (RT solvation probes)", waters.len());
+        log::info!(
+            "Found {} water oxygen atoms (RT solvation probes)",
+            waters.len()
+        );
         Some(waters)
     } else {
         log::info!("Implicit mode: no water atoms for RT probing");
@@ -139,10 +145,13 @@ pub fn identify_rt_targets(
     };
 
     // Step 3: Compute aromatic ring centers for LIF
-    let aromatic_centers = compute_aromatic_centers(topology)
-        .context("Failed to compute aromatic centers")?;
+    let aromatic_centers =
+        compute_aromatic_centers(topology).context("Failed to compute aromatic centers")?;
 
-    log::info!("Found {} aromatic ring centers (RT LIF probes)", aromatic_centers.len());
+    log::info!(
+        "Found {} aromatic ring centers (RT LIF probes)",
+        aromatic_centers.len()
+    );
 
     // Assemble targets
     let mut targets = RtTargets {
@@ -224,7 +233,7 @@ fn compute_aromatic_centers(topology: &PrismPrepTopology) -> Result<Vec<Vec3>> {
 
         // Check if this residue is aromatic
         if *residue_id >= topology.residue_names.len() {
-            continue;  // Invalid residue ID
+            continue; // Invalid residue ID
         }
 
         let residue_name = &topology.residue_names[*residue_id];
@@ -270,7 +279,12 @@ fn compute_aromatic_centers(topology: &PrismPrepTopology) -> Result<Vec<Vec3>> {
 
         log::debug!(
             "Aromatic {} residue {} center: [{:.2}, {:.2}, {:.2}] ({} atoms)",
-            residue_name, residue_id, centroid[0], centroid[1], centroid[2], ring_atoms.len()
+            residue_name,
+            residue_id,
+            centroid[0],
+            centroid[1],
+            centroid[2],
+            ring_atoms.len()
         );
     }
 
@@ -291,25 +305,41 @@ mod tests {
             // Positions for 10 atoms (30 floats)
             positions: vec![
                 // Residue 0 (ALA): N, CA, C, O, CB, H1, H2, H3, HA, HB
-                0.0, 0.0, 0.0,    // 0: N
-                1.5, 0.0, 0.0,    // 1: CA
-                2.0, 1.5, 0.0,    // 2: C
-                3.0, 1.5, 0.0,    // 3: O
-                1.5, 0.0, 1.5,    // 4: CB
+                0.0, 0.0, 0.0, // 0: N
+                1.5, 0.0, 0.0, // 1: CA
+                2.0, 1.5, 0.0, // 2: C
+                3.0, 1.5, 0.0, // 3: O
+                1.5, 0.0, 1.5, // 4: CB
                 // Residue 1 (PHE): CG, CD1, CD2, CE1, CE2
-                5.0, 5.0, 5.0,    // 5: CG
-                6.0, 5.0, 5.0,    // 6: CD1
-                5.0, 6.0, 5.0,    // 7: CD2
-                7.0, 5.5, 5.0,    // 8: CE1
-                6.0, 6.5, 5.0,    // 9: CE2
+                5.0, 5.0, 5.0, // 5: CG
+                6.0, 5.0, 5.0, // 6: CD1
+                5.0, 6.0, 5.0, // 7: CD2
+                7.0, 5.5, 5.0, // 8: CE1
+                6.0, 6.5, 5.0, // 9: CE2
             ],
             elements: vec![
-                "N".into(), "C".into(), "C".into(), "O".into(), "C".into(),
-                "C".into(), "C".into(), "C".into(), "C".into(), "C".into(),
+                "N".into(),
+                "C".into(),
+                "C".into(),
+                "O".into(),
+                "C".into(),
+                "C".into(),
+                "C".into(),
+                "C".into(),
+                "C".into(),
+                "C".into(),
             ],
             atom_names: vec![
-                "N".into(), "CA".into(), "C".into(), "O".into(), "CB".into(),
-                "CG".into(), "CD1".into(), "CD2".into(), "CE1".into(), "CE2".into(),
+                "N".into(),
+                "CA".into(),
+                "C".into(),
+                "O".into(),
+                "CB".into(),
+                "CG".into(),
+                "CD1".into(),
+                "CD2".into(),
+                "CE1".into(),
+                "CE2".into(),
             ],
             residue_names: vec!["ALA".into(), "PHE".into()],
             residue_ids: vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
@@ -345,7 +375,8 @@ mod tests {
         topo.n_atoms = 12;
         topo.elements.push("H".into());
         topo.elements.push("H".into());
-        topo.positions.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        topo.positions
+            .extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         topo.atom_names.push("H1".into());
         topo.atom_names.push("H2".into());
         topo.residue_ids.push(0);
@@ -377,11 +408,23 @@ mod tests {
         let expected_y = (5.0 + 5.0 + 6.0 + 5.5 + 6.5) / 5.0;
         let expected_z = (5.0 + 5.0 + 5.0 + 5.0 + 5.0) / 5.0;
 
-        assert!((centers[0][0] - expected_x).abs() < 0.01, "X centroid incorrect");
-        assert!((centers[0][1] - expected_y).abs() < 0.01, "Y centroid incorrect");
-        assert!((centers[0][2] - expected_z).abs() < 0.01, "Z centroid incorrect");
+        assert!(
+            (centers[0][0] - expected_x).abs() < 0.01,
+            "X centroid incorrect"
+        );
+        assert!(
+            (centers[0][1] - expected_y).abs() < 0.01,
+            "Y centroid incorrect"
+        );
+        assert!(
+            (centers[0][2] - expected_z).abs() < 0.01,
+            "Z centroid incorrect"
+        );
 
-        println!("Aromatic center: [{:.2}, {:.2}, {:.2}]", centers[0][0], centers[0][1], centers[0][2]);
+        println!(
+            "Aromatic center: [{:.2}, {:.2}, {:.2}]",
+            centers[0][0], centers[0][1], centers[0][2]
+        );
     }
 
     #[test]
@@ -393,9 +436,12 @@ mod tests {
 
         // Should have heavy atoms and aromatic centers, but no waters
         assert_eq!(targets.protein_atoms.len(), 10);
-        assert!(targets.water_atoms.is_none(), "Implicit mode should have no waters");
+        assert!(
+            targets.water_atoms.is_none(),
+            "Implicit mode should have no waters"
+        );
         assert_eq!(targets.aromatic_centers.len(), 1);
-        assert_eq!(targets.total_targets, 11);  // 10 protein + 1 aromatic
+        assert_eq!(targets.total_targets, 11); // 10 protein + 1 aromatic
 
         println!("{}", targets.summary());
     }
@@ -406,16 +452,21 @@ mod tests {
         // Add some water oxygens
         topo.water_oxygens = vec![100, 101, 102, 103, 104];
 
-        let solvent_mode = SolventMode::Explicit { padding_angstroms: 10.0 };
+        let solvent_mode = SolventMode::Explicit {
+            padding_angstroms: 10.0,
+        };
 
         let targets = identify_rt_targets(&topo, &solvent_mode).unwrap();
 
         // Should have heavy atoms, aromatic centers, AND waters
         assert_eq!(targets.protein_atoms.len(), 10);
-        assert!(targets.water_atoms.is_some(), "Explicit mode should have waters");
+        assert!(
+            targets.water_atoms.is_some(),
+            "Explicit mode should have waters"
+        );
         assert_eq!(targets.water_atoms.as_ref().unwrap().len(), 5);
         assert_eq!(targets.aromatic_centers.len(), 1);
-        assert_eq!(targets.total_targets, 16);  // 10 protein + 5 water + 1 aromatic
+        assert_eq!(targets.total_targets, 16); // 10 protein + 5 water + 1 aromatic
 
         println!("{}", targets.summary());
     }
@@ -439,6 +490,6 @@ mod tests {
         };
 
         targets.compute_total();
-        assert_eq!(targets.total_targets, 6);  // 3 + 2 + 1
+        assert_eq!(targets.total_targets, 6); // 3 + 2 + 1
     }
 }

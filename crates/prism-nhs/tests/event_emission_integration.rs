@@ -49,8 +49,8 @@ mod gpu_tests {
         let events_path = tmp.path().join("events.jsonl");
 
         // Initialize CUDA context
-        let ctx = CudaContext::new(0)
-            .context("CUDA context required - this test must run on GPU")?;
+        let ctx =
+            CudaContext::new(0).context("CUDA context required - this test must run on GPU")?;
 
         // Load topology - try multiple paths for flexibility
         let topology_paths = [
@@ -76,9 +76,7 @@ mod gpu_tests {
 
         // Create engine
         let mut engine = NhsAmberFusedEngine::new(
-            ctx,
-            &topology,
-            32,  // grid_dim
+            ctx, &topology, 32,  // grid_dim
             1.5, // grid_spacing
         )
         .context("Failed to create NHS engine")?;
@@ -163,17 +161,11 @@ mod gpu_tests {
         // === CRITICAL ASSERTIONS ===
 
         // 1. events.jsonl must exist
-        assert!(
-            events_path.exists(),
-            "FATAL: events.jsonl was not created"
-        );
+        assert!(events_path.exists(), "FATAL: events.jsonl was not created");
 
         // 2. events.jsonl must be non-empty (file size > 0)
         let metadata = fs::metadata(&events_path)?;
-        assert!(
-            metadata.len() > 0,
-            "FATAL: events.jsonl is empty (0 bytes)"
-        );
+        assert!(metadata.len() > 0, "FATAL: events.jsonl is empty (0 bytes)");
 
         // 3. Each line must be valid JSON with required fields
         let file = File::open(&events_path)?;
@@ -187,7 +179,11 @@ mod gpu_tests {
 
             // Parse JSON
             let event: PocketEvent = serde_json::from_str(&line).with_context(|| {
-                format!("Line {} is not valid PocketEvent JSON: {}", line_num + 1, line)
+                format!(
+                    "Line {} is not valid PocketEvent JSON: {}",
+                    line_num + 1,
+                    line
+                )
             })?;
 
             // Validate required fields have sane values
@@ -252,8 +248,8 @@ mod gpu_tests {
     /// Test that download_full_spike_events properly parses GPU buffer
     #[test]
     fn test_download_full_spike_events() -> Result<()> {
-        let ctx = CudaContext::new(0)
-            .context("CUDA context required - this test must run on GPU")?;
+        let ctx =
+            CudaContext::new(0).context("CUDA context required - this test must run on GPU")?;
 
         let topology_paths = [
             "/home/diddy/Desktop/6M0J_topology.json",
@@ -299,10 +295,7 @@ mod gpu_tests {
                     intensity.is_finite() && intensity >= 0.0,
                     "Spike intensity invalid"
                 );
-                assert!(
-                    n_residues <= 8,
-                    "n_residues exceeds max (8)"
-                );
+                assert!(n_residues <= 8, "n_residues exceeds max (8)");
             }
 
             total_spikes += spikes.len();

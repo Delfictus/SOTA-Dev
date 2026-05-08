@@ -31,17 +31,17 @@
 //! - Layers 3+5: Future v2 (frequency coupling, transfer entropy)
 
 use anyhow::{Context, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[cfg(feature = "gpu")]
-use cudarc::driver::{CudaContext, CudaStream, CudaModule};
+use cudarc::driver::{CudaContext, CudaModule, CudaStream};
 
-use crate::persistent_engine::PersistentNhsEngine;
-use crate::input::PrismPrepTopology;
 use crate::fused_engine::CryoUvProtocol;
+use crate::input::PrismPrepTopology;
+use crate::persistent_engine::PersistentNhsEngine;
 #[cfg(feature = "gpu")]
-use crate::twin_kernels::{TwinRingBuffer, find_twin_ptx};
+use crate::twin_kernels::{find_twin_ptx, TwinRingBuffer};
 
 /// Ring buffer size for per-voxel spike history (for CCF computation).
 /// 256 entries captures ~500 steps of spike history at typical rates.
@@ -91,10 +91,10 @@ impl Default for CoupledTwinConfig {
             region_size: 4,
             nma_modes_path: None,
             nma_amplification: 3.0,
-            enable_ccf: false,      // Gate 1: off. Gate 2+: on.
-            enable_exchange: false,  // Gate 1: off. Gate 2+: on.
-            persistent_coupling: false,  // DISABLED on SM120. --persistent-coupling causes SM starvation.
-            graph_coupling: false,       // Default: host-mediated. --graph-coupling for autonomous GPU.
+            enable_ccf: false,          // Gate 1: off. Gate 2+: on.
+            enable_exchange: false,     // Gate 1: off. Gate 2+: on.
+            persistent_coupling: false, // DISABLED on SM120. --persistent-coupling causes SM starvation.
+            graph_coupling: false, // Default: host-mediated. --graph-coupling for autonomous GPU.
         }
     }
 }
@@ -194,7 +194,6 @@ pub struct InterferometricFeatures {
     // DO NOT use these fields for ranking or model training until their
     // corresponding Phase C steps are implemented and validated.
     // ════════════════════════════════════════════════════════════════════
-
     /// Mutual information MI(A, B) at this residue. **PLACEHOLDER: 0.0 until Phase C Step 15**
     pub mutual_information: f32,
     /// Transfer entropy TE(A→B) at this residue. **PLACEHOLDER: 0.0 until Phase C Step 15**
@@ -257,7 +256,7 @@ impl Default for InterferometricFeatures {
 pub struct SiteInterferometricFeatures {
     pub site_id: usize,
     pub n_lining_residues: usize,
-    pub n_lining_with_data: usize,  // how many lining residues had TWIN features
+    pub n_lining_with_data: usize, // how many lining residues had TWIN features
 
     // ── Consensus aggregates ──
     pub mean_agreement: f32,
@@ -276,7 +275,7 @@ pub struct SiteInterferometricFeatures {
 
     // ── Differential aggregates ──
     pub mean_b_over_a: f32,
-    pub barrier_composition_low: f32,   // fraction of lining residues classified LOW
+    pub barrier_composition_low: f32, // fraction of lining residues classified LOW
     pub barrier_composition_medium: f32,
     pub barrier_composition_high: f32,
     pub total_nma_exclusive: u32,
@@ -307,120 +306,201 @@ pub fn aggregate_site_features(
     n_residues: usize,
 ) -> Vec<SiteInterferometricFeatures> {
     // Build resid → feature index lookup
-    let resid_to_idx: std::collections::HashMap<i32, usize> = per_residue.iter()
+    let resid_to_idx: std::collections::HashMap<i32, usize> = per_residue
+        .iter()
         .enumerate()
         .map(|(i, f)| (f.resid, i))
         .collect();
 
-    site_lining_residues.iter().enumerate().map(|(site_id, lining)| {
-        // Collect features for lining residues that have TWIN data
-        let lining_features: Vec<&InterferometricFeatures> = lining.iter()
-            .filter_map(|&resid| resid_to_idx.get(&resid).map(|&idx| &per_residue[idx]))
-            .collect();
+    site_lining_residues
+        .iter()
+        .enumerate()
+        .map(|(site_id, lining)| {
+            // Collect features for lining residues that have TWIN data
+            let lining_features: Vec<&InterferometricFeatures> = lining
+                .iter()
+                .filter_map(|&resid| resid_to_idx.get(&resid).map(|&idx| &per_residue[idx]))
+                .collect();
 
-        let n_lining = lining.len();
-        let n_with_data = lining_features.len();
+            let n_lining = lining.len();
+            let n_with_data = lining_features.len();
 
-        if n_with_data == 0 {
-            return SiteInterferometricFeatures {
-                site_id, n_lining_residues: n_lining, n_lining_with_data: 0,
-                mean_agreement: 0.0, min_agreement: 0.0, max_agreement: 0.0,
-                mean_spatial_coherence: 0.0, mean_consensus_onset: 0.0,
-                mean_ccf_peak: 0.0, max_ccf_peak: 0.0, mean_intra_site_ccf: 0.0,
-                mean_ccf_reproducibility: 0.0,
-                volume: 0.0, druggability: 0.0, is_druggable: false,
-                centroid: [0.0; 3],
-                mean_b_over_a: 0.0,
-                barrier_composition_low: 0.0, barrier_composition_medium: 1.0,
-                barrier_composition_high: 0.0,
-                total_nma_exclusive: 0, total_thermal_exclusive: 0,
-                mean_scout_lead_time: 0.0, mean_predictive_value: 0.0,
-                mean_phase_offset_enrichment: 0.0,
-            };
-        }
+            if n_with_data == 0 {
+                return SiteInterferometricFeatures {
+                    site_id,
+                    n_lining_residues: n_lining,
+                    n_lining_with_data: 0,
+                    mean_agreement: 0.0,
+                    min_agreement: 0.0,
+                    max_agreement: 0.0,
+                    mean_spatial_coherence: 0.0,
+                    mean_consensus_onset: 0.0,
+                    mean_ccf_peak: 0.0,
+                    max_ccf_peak: 0.0,
+                    mean_intra_site_ccf: 0.0,
+                    mean_ccf_reproducibility: 0.0,
+                    volume: 0.0,
+                    druggability: 0.0,
+                    is_druggable: false,
+                    centroid: [0.0; 3],
+                    mean_b_over_a: 0.0,
+                    barrier_composition_low: 0.0,
+                    barrier_composition_medium: 1.0,
+                    barrier_composition_high: 0.0,
+                    total_nma_exclusive: 0,
+                    total_thermal_exclusive: 0,
+                    mean_scout_lead_time: 0.0,
+                    mean_predictive_value: 0.0,
+                    mean_phase_offset_enrichment: 0.0,
+                };
+            }
 
-        let inv_n = 1.0 / n_with_data as f32;
+            let inv_n = 1.0 / n_with_data as f32;
 
-        // Consensus
-        let agreements: Vec<f32> = lining_features.iter().map(|f| f.spike_agreement_ratio).collect();
-        let mean_agreement = agreements.iter().sum::<f32>() * inv_n;
-        let min_agreement = agreements.iter().copied().fold(f32::INFINITY, f32::min);
-        let max_agreement = agreements.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let mean_spatial_coherence = lining_features.iter()
-            .map(|f| f.consensus_spatial_coherence).sum::<f32>() * inv_n;
-        let mean_consensus_onset = lining_features.iter()
-            .map(|f| f.consensus_temporal_onset).sum::<f32>() * inv_n;
+            // Consensus
+            let agreements: Vec<f32> = lining_features
+                .iter()
+                .map(|f| f.spike_agreement_ratio)
+                .collect();
+            let mean_agreement = agreements.iter().sum::<f32>() * inv_n;
+            let min_agreement = agreements.iter().copied().fold(f32::INFINITY, f32::min);
+            let max_agreement = agreements.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let mean_spatial_coherence = lining_features
+                .iter()
+                .map(|f| f.consensus_spatial_coherence)
+                .sum::<f32>()
+                * inv_n;
+            let mean_consensus_onset = lining_features
+                .iter()
+                .map(|f| f.consensus_temporal_onset)
+                .sum::<f32>()
+                * inv_n;
 
-        // CCF
-        let ccf_peaks: Vec<f32> = lining_features.iter().map(|f| f.ccf_peak_value).collect();
-        let mean_ccf_peak = ccf_peaks.iter().sum::<f32>() * inv_n;
-        let max_ccf_peak = ccf_peaks.iter().copied().fold(0.0f32, f32::max);
-        let mean_ccf_reproducibility = lining_features.iter()
-            .map(|f| f.ccf_reproducibility).sum::<f32>() * inv_n;
+            // CCF
+            let ccf_peaks: Vec<f32> = lining_features.iter().map(|f| f.ccf_peak_value).collect();
+            let mean_ccf_peak = ccf_peaks.iter().sum::<f32>() * inv_n;
+            let max_ccf_peak = ccf_peaks.iter().copied().fold(0.0f32, f32::max);
+            let mean_ccf_reproducibility = lining_features
+                .iter()
+                .map(|f| f.ccf_reproducibility)
+                .sum::<f32>()
+                * inv_n;
 
-        // Intra-site CCF: mean CCF between all pairs of lining residues
-        let mean_intra_site_ccf = if let Some(ccf) = ccf_matrix {
-            if n_residues > 0 && n_with_data >= 2 {
-                let lining_indices: Vec<usize> = lining.iter()
-                    .filter_map(|&r| if (r as usize) < n_residues { Some(r as usize) } else { None })
-                    .collect();
-                let mut sum = 0.0f32;
-                let mut count = 0u32;
-                for i in 0..lining_indices.len() {
-                    for j in (i+1)..lining_indices.len() {
-                        let ri = lining_indices[i];
-                        let rj = lining_indices[j];
-                        if ri < n_residues && rj < n_residues {
-                            let val = ccf[ri * n_residues + rj];
-                            if val.is_finite() {
-                                sum += val;
-                                count += 1;
+            // Intra-site CCF: mean CCF between all pairs of lining residues
+            let mean_intra_site_ccf = if let Some(ccf) = ccf_matrix {
+                if n_residues > 0 && n_with_data >= 2 {
+                    let lining_indices: Vec<usize> = lining
+                        .iter()
+                        .filter_map(|&r| {
+                            if (r as usize) < n_residues {
+                                Some(r as usize)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    let mut sum = 0.0f32;
+                    let mut count = 0u32;
+                    for i in 0..lining_indices.len() {
+                        for j in (i + 1)..lining_indices.len() {
+                            let ri = lining_indices[i];
+                            let rj = lining_indices[j];
+                            if ri < n_residues && rj < n_residues {
+                                let val = ccf[ri * n_residues + rj];
+                                if val.is_finite() {
+                                    sum += val;
+                                    count += 1;
+                                }
                             }
                         }
                     }
+                    if count > 0 {
+                        sum / count as f32
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
                 }
-                if count > 0 { sum / count as f32 } else { 0.0 }
-            } else { 0.0 }
-        } else { 0.0 };
+            } else {
+                0.0
+            };
 
-        // Differential
-        let mean_b_over_a = lining_features.iter()
-            .map(|f| if f.b_over_a_ratio.is_finite() { f.b_over_a_ratio } else { 1.0 })
-            .sum::<f32>() * inv_n;
-        let n_low = lining_features.iter().filter(|f| f.barrier_classification == "LOW").count();
-        let n_high = lining_features.iter().filter(|f| f.barrier_classification == "HIGH").count();
-        let n_med = n_with_data - n_low - n_high;
-        let total_nma_exclusive: u32 = lining_features.iter().map(|f| f.nma_exclusive_count).sum();
-        let total_thermal_exclusive: u32 = lining_features.iter().map(|f| f.thermal_exclusive_count).sum();
+            // Differential
+            let mean_b_over_a = lining_features
+                .iter()
+                .map(|f| {
+                    if f.b_over_a_ratio.is_finite() {
+                        f.b_over_a_ratio
+                    } else {
+                        1.0
+                    }
+                })
+                .sum::<f32>()
+                * inv_n;
+            let n_low = lining_features
+                .iter()
+                .filter(|f| f.barrier_classification == "LOW")
+                .count();
+            let n_high = lining_features
+                .iter()
+                .filter(|f| f.barrier_classification == "HIGH")
+                .count();
+            let n_med = n_with_data - n_low - n_high;
+            let total_nma_exclusive: u32 =
+                lining_features.iter().map(|f| f.nma_exclusive_count).sum();
+            let total_thermal_exclusive: u32 = lining_features
+                .iter()
+                .map(|f| f.thermal_exclusive_count)
+                .sum();
 
-        // Scout
-        let mean_scout_lead_time = lining_features.iter()
-            .map(|f| f.scout_lead_time).sum::<f32>() * inv_n;
-        let mean_predictive_value = lining_features.iter()
-            .map(|f| f.scout_predictive_value).sum::<f32>() * inv_n;
-        let mean_phase_offset_enrichment = lining_features.iter()
-            .map(|f| f.phase_offset_enrichment).sum::<f32>() * inv_n;
+            // Scout
+            let mean_scout_lead_time = lining_features
+                .iter()
+                .map(|f| f.scout_lead_time)
+                .sum::<f32>()
+                * inv_n;
+            let mean_predictive_value = lining_features
+                .iter()
+                .map(|f| f.scout_predictive_value)
+                .sum::<f32>()
+                * inv_n;
+            let mean_phase_offset_enrichment = lining_features
+                .iter()
+                .map(|f| f.phase_offset_enrichment)
+                .sum::<f32>()
+                * inv_n;
 
-        SiteInterferometricFeatures {
-            site_id,
-            n_lining_residues: n_lining,
-            n_lining_with_data: n_with_data,
-            mean_agreement, min_agreement, max_agreement,
-            mean_spatial_coherence, mean_consensus_onset,
-            mean_ccf_peak, max_ccf_peak, mean_intra_site_ccf,
-            mean_ccf_reproducibility,
-            // Geometry: populated from binding_sites.json in the caller
-            volume: 0.0, druggability: 0.0, is_druggable: false,
-            centroid: [0.0; 3],
-            mean_b_over_a,
-            barrier_composition_low: n_low as f32 / n_with_data as f32,
-            barrier_composition_medium: n_med as f32 / n_with_data as f32,
-            barrier_composition_high: n_high as f32 / n_with_data as f32,
-            total_nma_exclusive, total_thermal_exclusive,
-            mean_scout_lead_time, mean_predictive_value,
-            mean_phase_offset_enrichment,
-        }
-    }).collect()
+            SiteInterferometricFeatures {
+                site_id,
+                n_lining_residues: n_lining,
+                n_lining_with_data: n_with_data,
+                mean_agreement,
+                min_agreement,
+                max_agreement,
+                mean_spatial_coherence,
+                mean_consensus_onset,
+                mean_ccf_peak,
+                max_ccf_peak,
+                mean_intra_site_ccf,
+                mean_ccf_reproducibility,
+                // Geometry: populated from binding_sites.json in the caller
+                volume: 0.0,
+                druggability: 0.0,
+                is_druggable: false,
+                centroid: [0.0; 3],
+                mean_b_over_a,
+                barrier_composition_low: n_low as f32 / n_with_data as f32,
+                barrier_composition_medium: n_med as f32 / n_with_data as f32,
+                barrier_composition_high: n_high as f32 / n_with_data as f32,
+                total_nma_exclusive,
+                total_thermal_exclusive,
+                mean_scout_lead_time,
+                mean_predictive_value,
+                mean_phase_offset_enrichment,
+            }
+        })
+        .collect()
 }
 
 /// Metadata from the simulation loop, passed to twin_post_process.
@@ -521,8 +601,12 @@ fn compute_spike_density_cpu(
     let mut max = [f32::MIN; 3];
     for s in spikes {
         for d in 0..3 {
-            if s.position[d] < min[d] { min[d] = s.position[d]; }
-            if s.position[d] > max[d] { max[d] = s.position[d]; }
+            if s.position[d] < min[d] {
+                min[d] = s.position[d];
+            }
+            if s.position[d] > max[d] {
+                max[d] = s.position[d];
+            }
         }
     }
     // Expand bounding box by one cell on each side to avoid edge effects
@@ -535,7 +619,9 @@ fn compute_spike_density_cpu(
     let mut map: HashMap<(i32, i32, i32), (f64, u32)> = HashMap::new();
 
     for s in spikes {
-        if s.intensity <= 0.0 { continue; }
+        if s.intensity <= 0.0 {
+            continue;
+        }
         let ix = ((s.position[0] - min[0]) * inv_cell).floor() as i32;
         let iy = ((s.position[1] - min[1]) * inv_cell).floor() as i32;
         let iz = ((s.position[2] - min[2]) * inv_cell).floor() as i32;
@@ -546,7 +632,11 @@ fn compute_spike_density_cpu(
 
     let cells: Vec<DensityCell> = map
         .into_iter()
-        .map(|(idx, (total_intensity, spike_count))| DensityCell { idx, total_intensity, spike_count })
+        .map(|(idx, (total_intensity, spike_count))| DensityCell {
+            idx,
+            total_intensity,
+            spike_count,
+        })
         .collect();
 
     (cells, min)
@@ -576,7 +666,9 @@ fn compute_cpu_cross_correlation(
         let n = sa.n_residues.min(8) as usize;
         for r in 0..n {
             let resid = sa.nearby_residues[r];
-            if resid < 0 { continue; }
+            if resid < 0 {
+                continue;
+            }
             let e = per_res.entry(resid).or_insert((0, 0, 0.0, 0.0));
             e.0 += 1;
             e.2 += sa.intensity;
@@ -587,7 +679,9 @@ fn compute_cpu_cross_correlation(
         let n = sb.n_residues.min(8) as usize;
         for r in 0..n {
             let resid = sb.nearby_residues[r];
-            if resid < 0 { continue; }
+            if resid < 0 {
+                continue;
+            }
             let e = per_res.entry(resid).or_insert((0, 0, 0.0, 0.0));
             e.1 += 1;
             e.3 += sb.intensity;
@@ -616,7 +710,9 @@ fn compute_cpu_cross_correlation(
     for sa in &sample_a {
         for sb in &sample_b {
             let dt = (sa.timestep - sb.timestep).abs();
-            if dt > temporal_thresh_steps { continue; }
+            if dt > temporal_thresh_steps {
+                continue;
+            }
             let dx = sa.position[0] - sb.position[0];
             let dy = sa.position[1] - sb.position[1];
             let dz = sa.position[2] - sb.position[2];
@@ -629,7 +725,7 @@ fn compute_cpu_cross_correlation(
 
     // Scale to estimate total matches
     let scale = (spikes_a.len() as f64 * spikes_b.len() as f64)
-              / (sample_a.len() as f64 * sample_b.len() as f64).max(1.0);
+        / (sample_a.len() as f64 * sample_b.len() as f64).max(1.0);
     n_matches = (sample_matches as f64 * scale) as u64;
 
     (n_matches, per_res)
@@ -648,11 +744,17 @@ fn ccns_phase(timestep: i32, protocol: &CryoUvProtocol) -> usize {
     let p2 = p1 + protocol.ramp_steps;
     let p3 = p2 + protocol.warm_hold_steps;
     let p4 = p3 + protocol.ramp_down_steps;
-    if t < p1 { 0 }
-    else if t < p2 { 1 }
-    else if t < p3 { 2 }
-    else if t < p4 { 3 }
-    else { 4 }
+    if t < p1 {
+        0
+    } else if t < p2 {
+        1
+    } else if t < p3 {
+        2
+    } else if t < p4 {
+        3
+    } else {
+        4
+    }
 }
 
 /// Per-residue per-phase spike counts from a spike vector.
@@ -668,7 +770,9 @@ fn per_residue_phase_counts(
         let n = s.n_residues.min(8) as usize;
         for j in 0..n {
             let resid = s.nearby_residues[j];
-            if resid < 0 { continue; }
+            if resid < 0 {
+                continue;
+            }
             let entry = map.entry(resid).or_insert([0; 5]);
             entry[phase] += 1;
         }
@@ -687,9 +791,13 @@ fn per_residue_onset(
         let n = s.n_residues.min(8) as usize;
         for j in 0..n {
             let resid = s.nearby_residues[j];
-            if resid < 0 { continue; }
+            if resid < 0 {
+                continue;
+            }
             let entry = map.entry(resid).or_insert(i32::MAX);
-            if s.timestep < *entry { *entry = s.timestep; }
+            if s.timestep < *entry {
+                *entry = s.timestep;
+            }
         }
     }
     map
@@ -706,7 +814,9 @@ fn per_residue_intensity(
         let n = s.n_residues.min(8) as usize;
         for j in 0..n {
             let resid = s.nearby_residues[j];
-            if resid < 0 { continue; }
+            if resid < 0 {
+                continue;
+            }
             *map.entry(resid).or_insert(0.0) += s.intensity;
         }
     }
@@ -743,14 +853,36 @@ pub fn run_coupled_twin(
     log::info!("║   PRISM-TWIN: Interferometric Spike Dynamics            ║");
     log::info!("╚══════════════════════════════════════════════════════════╝");
     log::info!("  Stream A (Scout):    seed={}, thermal only", seed_a);
-    log::info!("  Stream B (Observer): seed={}, thermal{}", seed_b,
-        if twin_config.nma_modes_path.is_some() { " + NMA" } else { " only" });
-    log::info!("  Phase offset: {:.0}%", twin_config.phase_offset_fraction * 100.0);
-    log::info!("  Exchange: {} (interval={})",
-        if twin_config.enable_exchange { "ENABLED" } else { "DISABLED" },
-        twin_config.exchange_interval);
-    log::info!("  CCF: {}",
-        if twin_config.enable_ccf { "ENABLED" } else { "DISABLED" });
+    log::info!(
+        "  Stream B (Observer): seed={}, thermal{}",
+        seed_b,
+        if twin_config.nma_modes_path.is_some() {
+            " + NMA"
+        } else {
+            " only"
+        }
+    );
+    log::info!(
+        "  Phase offset: {:.0}%",
+        twin_config.phase_offset_fraction * 100.0
+    );
+    log::info!(
+        "  Exchange: {} (interval={})",
+        if twin_config.enable_exchange {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        },
+        twin_config.exchange_interval
+    );
+    log::info!(
+        "  CCF: {}",
+        if twin_config.enable_ccf {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        }
+    );
 
     // Create CUDA streams
     let stream_a = context.new_stream().context("CUDA stream A")?;
@@ -758,21 +890,34 @@ pub fn run_coupled_twin(
     log::info!("  CUDA streams: A ✓, B ✓");
 
     // Check VRAM before allocation
-    let (vram_free, vram_total) = cudarc::driver::result::mem_get_info()
-        .unwrap_or((0, 0));
-    log::info!("  VRAM: {:.1} GB free / {:.1} GB total",
-        vram_free as f64 / 1e9, vram_total as f64 / 1e9);
+    let (vram_free, vram_total) = cudarc::driver::result::mem_get_info().unwrap_or((0, 0));
+    log::info!(
+        "  VRAM: {:.1} GB free / {:.1} GB total",
+        vram_free as f64 / 1e9,
+        vram_total as f64 / 1e9
+    );
 
     // ── Initialize Engine A (Scout) ──
     log::info!("  Initializing Stream A...");
     let mut engine_a = PersistentNhsEngine::new_on_stream(
-        config_ref, context.clone(), fused_module.clone(), stream_a,
+        config_ref,
+        context.clone(),
+        fused_module.clone(),
+        stream_a,
     )?;
     engine_a.load_topology(topology)?;
-    if hmr { engine_a.set_dt(0.004)?; }
-    if fused_steps > 1 { engine_a.set_fused_inner_steps(fused_steps)?; }
-    if adaptive_dt { engine_a.set_adaptive_dt(true)?; }
-    if ladd_enabled { engine_a.set_ladd_enabled(true); }
+    if hmr {
+        engine_a.set_dt(0.004)?;
+    }
+    if fused_steps > 1 {
+        engine_a.set_fused_inner_steps(fused_steps)?;
+    }
+    if adaptive_dt {
+        engine_a.set_adaptive_dt(true)?;
+    }
+    if ladd_enabled {
+        engine_a.set_ladd_enabled(true);
+    }
     engine_a.set_cryo_uv_protocol(protocol.clone())?;
     engine_a.set_spike_accumulation(true);
     log::info!("  Stream A: ✓");
@@ -780,19 +925,33 @@ pub fn run_coupled_twin(
     // ── Initialize Engine B (Focused Observer) ──
     log::info!("  Initializing Stream B...");
     let mut engine_b = PersistentNhsEngine::new_on_stream(
-        config_ref, context.clone(), fused_module.clone(), stream_b,
+        config_ref,
+        context.clone(),
+        fused_module.clone(),
+        stream_b,
     )?;
     engine_b.load_topology(topology)?;
-    if hmr { engine_b.set_dt(0.004)?; }
-    if fused_steps > 1 { engine_b.set_fused_inner_steps(fused_steps)?; }
-    if adaptive_dt { engine_b.set_adaptive_dt(true)?; }
-    if ladd_enabled { engine_b.set_ladd_enabled(true); }
+    if hmr {
+        engine_b.set_dt(0.004)?;
+    }
+    if fused_steps > 1 {
+        engine_b.set_fused_inner_steps(fused_steps)?;
+    }
+    if adaptive_dt {
+        engine_b.set_adaptive_dt(true)?;
+    }
+    if ladd_enabled {
+        engine_b.set_ladd_enabled(true);
+    }
 
     // NMA perturbation for B only (Layer 4)
     if let Some(ref nma_path) = twin_config.nma_modes_path {
         engine_b.set_nma_amplification(twin_config.nma_amplification);
         engine_b.load_nma_modes(nma_path)?;
-        log::info!("  Stream B: NMA loaded (amplification={:.1})", twin_config.nma_amplification);
+        log::info!(
+            "  Stream B: NMA loaded (amplification={:.1})",
+            twin_config.nma_amplification
+        );
     }
 
     // Gate 3: Phase-offset scheduling
@@ -801,27 +960,46 @@ pub fn run_coupled_twin(
     let offset_steps = (protocol.cold_hold_steps as f32 * twin_config.phase_offset_fraction) as i32;
     let mut protocol_b = protocol.clone();
     protocol_b.cold_hold_steps += offset_steps;
-    let steps_b = steps + offset_steps;  // B runs longer
+    let steps_b = steps + offset_steps; // B runs longer
 
     engine_b.set_cryo_uv_protocol(protocol_b)?;
     engine_b.set_spike_accumulation(true);
 
     log::info!("  Stream B: ✓");
-    log::info!("  Gate 3 phase offset: {} steps ({:.0}% of cold_hold={})",
-        offset_steps, twin_config.phase_offset_fraction * 100.0, protocol.cold_hold_steps);
-    log::info!("  Stream A schedule: cold_hold={}, ramp={}, warm_hold={}, total={}",
-        protocol.cold_hold_steps, protocol.ramp_steps, protocol.warm_hold_steps, steps);
-    log::info!("  Stream B schedule: cold_hold={}, ramp={}, warm_hold={}, total={}",
-        protocol.cold_hold_steps + offset_steps, protocol.ramp_steps, protocol.warm_hold_steps, steps_b);
-    log::info!("  A enters heating at step {}, B enters heating at step {}",
-        protocol.cold_hold_steps, protocol.cold_hold_steps + offset_steps);
+    log::info!(
+        "  Gate 3 phase offset: {} steps ({:.0}% of cold_hold={})",
+        offset_steps,
+        twin_config.phase_offset_fraction * 100.0,
+        protocol.cold_hold_steps
+    );
+    log::info!(
+        "  Stream A schedule: cold_hold={}, ramp={}, warm_hold={}, total={}",
+        protocol.cold_hold_steps,
+        protocol.ramp_steps,
+        protocol.warm_hold_steps,
+        steps
+    );
+    log::info!(
+        "  Stream B schedule: cold_hold={}, ramp={}, warm_hold={}, total={}",
+        protocol.cold_hold_steps + offset_steps,
+        protocol.ramp_steps,
+        protocol.warm_hold_steps,
+        steps_b
+    );
+    log::info!(
+        "  A enters heating at step {}, B enters heating at step {}",
+        protocol.cold_hold_steps,
+        protocol.cold_hold_steps + offset_steps
+    );
 
     // VRAM after allocation
-    let (vram_after, _) = cudarc::driver::result::mem_get_info()
-        .unwrap_or((0, 0));
+    let (vram_after, _) = cudarc::driver::result::mem_get_info().unwrap_or((0, 0));
     let vram_used = (vram_free - vram_after) as f64 / 1e9;
-    log::info!("  VRAM used by twin engines: {:.2} GB ({:.1} GB remaining)",
-        vram_used, vram_after as f64 / 1e9);
+    log::info!(
+        "  VRAM used by twin engines: {:.2} GB ({:.1} GB remaining)",
+        vram_used,
+        vram_after as f64 / 1e9
+    );
 
     // ── RING BUFFER ALLOCATION (TWIN interferometric coupling) ──
     //
@@ -838,9 +1016,11 @@ pub fn run_coupled_twin(
     //   6. periodic threshold recovery (prevent permanent suppression)
 
     let (mut ring_a, mut ring_b, stream_exchange) = if twin_config.enable_exchange {
-        let ring_module = context.load_module(
-            cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("ring_buffer.ptx")?)
-        ).context("Failed to load ring_buffer.ptx")?;
+        let ring_module = context
+            .load_module(cudarc::nvrtc::Ptx::from_file(&find_twin_ptx(
+                "ring_buffer.ptx",
+            )?))
+            .context("Failed to load ring_buffer.ptx")?;
         let stream_ex = context.new_stream().context("CUDA exchange stream")?;
 
         let mut ra = TwinRingBuffer::new(&context, &stream_ex, &ring_module, 8192)?;
@@ -857,8 +1037,12 @@ pub fn run_coupled_twin(
     // ── GATE 3: Device-side compaction via compact_and_push (ring_buffer.cu) ──
     // When graph_coupling is enabled, push_device() replaces push_compacted().
     // No separate DeviceCompactor needed — compact_and_push is in the ring buffer PTX.
-    let use_device_compaction = twin_config.graph_coupling && twin_config.enable_exchange
-        && ring_a.as_ref().map(|r| r.has_device_push()).unwrap_or(false);
+    let use_device_compaction = twin_config.graph_coupling
+        && twin_config.enable_exchange
+        && ring_a
+            .as_ref()
+            .map(|r| r.has_device_push())
+            .unwrap_or(false);
     if use_device_compaction {
         log::info!("  Gate 3: Device-side spike compaction ACTIVE (compact_and_push kernel)");
     }
@@ -870,20 +1054,26 @@ pub fn run_coupled_twin(
     if twin_config.persistent_coupling {
         if let Some(ref se) = stream_exchange {
             // Load signal + coupling PTX modules
-            let signal_module = context.load_module(
-                cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("twin_signal.ptx")?)
-            ).context("Failed to load twin_signal.ptx")?;
-            let coupling_module = context.load_module(
-                cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("twin_coupling_persistent.ptx")?)
-            ).context("Failed to load twin_coupling_persistent.ptx")?;
+            let signal_module = context
+                .load_module(cudarc::nvrtc::Ptx::from_file(&find_twin_ptx(
+                    "twin_signal.ptx",
+                )?))
+                .context("Failed to load twin_signal.ptx")?;
+            let coupling_module = context
+                .load_module(cudarc::nvrtc::Ptx::from_file(&find_twin_ptx(
+                    "twin_coupling_persistent.ptx",
+                )?))
+                .context("Failed to load twin_coupling_persistent.ptx")?;
 
             let mut signal = crate::twin_kernels::TwinSignal::new(se, &signal_module)?;
 
             // Launch persistent coupling kernel — runs for the ENTIRE simulation
             if let (Some(ref mut ra), Some(ref mut rb)) = (&mut ring_a, &mut ring_b) {
-                let persistent = crate::twin_kernels::TwinCouplingPersistent::new(&coupling_module)?;
+                let persistent =
+                    crate::twin_kernels::TwinCouplingPersistent::new(&coupling_module)?;
 
-                let outer_total = ((steps + fused_steps.max(1) as i32 - 1) / fused_steps.max(1) as i32) as u32;
+                let outer_total =
+                    ((steps + fused_steps.max(1) as i32 - 1) / fused_steps.max(1) as i32) as u32;
                 let coupling_config = crate::twin_kernels::TwinCouplingConfig {
                     sensitivity_boost: twin_config.sensitivity_boost,
                     max_reduction_fraction: twin_config.max_threshold_reduction,
@@ -904,21 +1094,34 @@ pub fn run_coupled_twin(
                     let state_a = engine_a.twin_coupling_gpu_state();
                     let state_b = engine_b.twin_coupling_gpu_state();
 
-                    if let (Some((thresh_a, base_a, sbuf_a, sc_a)),
-                            Some((thresh_b, base_b, sbuf_b, sc_b))) = (state_a, state_b) {
+                    if let (
+                        Some((thresh_a, base_a, sbuf_a, sc_a)),
+                        Some((thresh_b, base_b, sbuf_b, sc_b)),
+                    ) = (state_a, state_b)
+                    {
                         persistent.launch(
                             se,
                             &mut signal,
-                            ra, rb,
+                            ra,
+                            rb,
                             8192,
-                            sbuf_a, sc_a,
-                            sbuf_b, sc_b,
-                            thresh_a, base_a,
-                            thresh_b, base_b,
-                            (gx, gy, gz), (ox, oy, oz), vs,
+                            sbuf_a,
+                            sc_a,
+                            sbuf_b,
+                            sc_b,
+                            thresh_a,
+                            base_a,
+                            thresh_b,
+                            base_b,
+                            (gx, gy, gz),
+                            (ox, oy, oz),
+                            vs,
                             &coupling_config,
                         )?;
-                        log::info!("  ✓ Persistent coupling kernel LAUNCHED ({} steps)", outer_total);
+                        log::info!(
+                            "  ✓ Persistent coupling kernel LAUNCHED ({} steps)",
+                            outer_total
+                        );
                     } else {
                         log::warn!("  Persistent coupling: engine GPU state not available");
                     }
@@ -943,10 +1146,12 @@ pub fn run_coupled_twin(
     // The persistent kernel (Gates 0-3) is compiled and launchable but should
     // NOT be used until CUDA cooperative kernel preemption is investigated
     // on the RTX 5080 Blackwell architecture.
-    let use_persistent = false;  // FORCED OFF — see comment above
+    let use_persistent = false; // FORCED OFF — see comment above
     if twin_config.persistent_coupling {
         log::warn!("  --persistent-coupling: DISABLED (SM starvation on Blackwell SM120)");
-        log::warn!("  Using host-mediated coupling (functionally identical, full physics throughput)");
+        log::warn!(
+            "  Using host-mediated coupling (functionally identical, full physics throughput)"
+        );
     }
 
     let diag_enabled = std::env::var("PRISM_TWIN_DIAG").is_ok();
@@ -976,7 +1181,10 @@ pub fn run_coupled_twin(
     if twin_config.graph_coupling {
         log::info!("╔══════════════════════════════════════════════════════════╗");
         log::info!("║   CUDA GRAPH AUTONOMOUS COUPLING MODE                    ║");
-        log::info!("║   One cudaGraphLaunch → GPU runs {} steps             ║", outer_steps);
+        log::info!(
+            "║   One cudaGraphLaunch → GPU runs {} steps             ║",
+            outer_steps
+        );
         log::info!("╚══════════════════════════════════════════════════════════╝");
 
         // Check support
@@ -984,7 +1192,10 @@ pub fn run_coupled_twin(
             anyhow::bail!("--graph-coupling requires CUDA driver ≥ 12.4");
         }
 
-        log::info!("{}", prism_cuda_ext::graph::TwinCouplingGraph::capabilities_report());
+        log::info!(
+            "{}",
+            prism_cuda_ext::graph::TwinCouplingGraph::capabilities_report()
+        );
 
         // TODO: The full graph-based execution path:
         //
@@ -1024,8 +1235,12 @@ pub fn run_coupled_twin(
         log::info!("  Physics remains host-managed (all flags respected)");
     }
 
-    log::info!("  Running {} interleaved outer steps (A={}, B={} fused steps)...",
-        outer_steps, outer_steps_a, outer_steps_b);
+    log::info!(
+        "  Running {} interleaved outer steps (A={}, B={} fused steps)...",
+        outer_steps,
+        outer_steps_a,
+        outer_steps_b
+    );
 
     let start = std::time::Instant::now();
     let mut spikes_a_total = 0usize;
@@ -1038,7 +1253,7 @@ pub fn run_coupled_twin(
     let mut max_nonzero_regions: u32 = 0;
 
     // Ring buffer spike tracking
-    let mut prev_accum_len_a: usize = 0;  // index into accumulated_spikes for delta
+    let mut prev_accum_len_a: usize = 0; // index into accumulated_spikes for delta
     let mut prev_accum_len_b: usize = 0;
     let mut ring_spikes_exchanged: u64 = 0;
     let mut coupling_active_steps: u32 = 0;
@@ -1050,63 +1265,69 @@ pub fn run_coupled_twin(
     let use_graph_coupling = twin_config.graph_coupling && twin_config.enable_exchange;
 
     for step in 0..outer_steps {
-
         // ════════════════════════════════════════════════════════════════════
         // PHASE 1: Cross-stream threshold adaptation (BEFORE engine.run)
         // SKIPPED when persistent coupling is active — the persistent kernel
         // handles threshold adaptation on-device between signal flags.
         if !use_persistent {
-        //
-        // B's recent spikes → lower A's thresholds (make A more sensitive
-        //   in regions where B found activity)
-        // A's recent spikes → lower B's thresholds (symmetric)
-        //
-        // This is the interferometric coupling — detector sensitivity in
-        // one stream is steered by evidence from the other stream.
-        // ════════════════════════════════════════════════════════════════════
-        if let (Some(ref mut rb), Some(ref se)) = (&mut ring_b, &stream_exchange) {
-            if step > 0 {
-                // Get grid geometry from engine A (both engines share the same grid)
-                if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_a.grid_info() {
-                    // B's evidence → adapt A's thresholds
-                    if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
-                        rb.read_and_adapt(
-                            se, thresh_a, base_a,
-                            (gx, gy, gz), (ox, oy, oz), vs,
-                            twin_config.sensitivity_boost,
-                            twin_config.max_threshold_reduction,
-                            step as u32,
-                            500.0,  // decay_constant: spikes > 500 steps old lose influence
-                        )?;
+            //
+            // B's recent spikes → lower A's thresholds (make A more sensitive
+            //   in regions where B found activity)
+            // A's recent spikes → lower B's thresholds (symmetric)
+            //
+            // This is the interferometric coupling — detector sensitivity in
+            // one stream is steered by evidence from the other stream.
+            // ════════════════════════════════════════════════════════════════════
+            if let (Some(ref mut rb), Some(ref se)) = (&mut ring_b, &stream_exchange) {
+                if step > 0 {
+                    // Get grid geometry from engine A (both engines share the same grid)
+                    if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_a.grid_info() {
+                        // B's evidence → adapt A's thresholds
+                        if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
+                            rb.read_and_adapt(
+                                se,
+                                thresh_a,
+                                base_a,
+                                (gx, gy, gz),
+                                (ox, oy, oz),
+                                vs,
+                                twin_config.sensitivity_boost,
+                                twin_config.max_threshold_reduction,
+                                step as u32,
+                                500.0, // decay_constant: spikes > 500 steps old lose influence
+                            )?;
+                        }
                     }
                 }
             }
-        }
-        if let (Some(ref mut ra), Some(ref se)) = (&mut ring_a, &stream_exchange) {
-            if step > 0 {
-                if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_b.grid_info() {
-                    // A's evidence → adapt B's thresholds
-                    if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
-                        ra.read_and_adapt(
-                            se, thresh_b, base_b,
-                            (gx, gy, gz), (ox, oy, oz), vs,
-                            twin_config.sensitivity_boost,
-                            twin_config.max_threshold_reduction,
-                            step as u32,
-                            500.0,
-                        )?;
+            if let (Some(ref mut ra), Some(ref se)) = (&mut ring_a, &stream_exchange) {
+                if step > 0 {
+                    if let Some((gx, gy, gz, ox, oy, oz, vs)) = engine_b.grid_info() {
+                        // A's evidence → adapt B's thresholds
+                        if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
+                            ra.read_and_adapt(
+                                se,
+                                thresh_b,
+                                base_b,
+                                (gx, gy, gz),
+                                (ox, oy, oz),
+                                vs,
+                                twin_config.sensitivity_boost,
+                                twin_config.max_threshold_reduction,
+                                step as u32,
+                                500.0,
+                            )?;
+                        }
                     }
                 }
             }
-        }
-        // Sync exchange stream BEFORE launching fused kernels so threshold
-        // modifications are visible to both engines' next run().
-        if let Some(ref se) = stream_exchange {
-            if step > 0 {
-                se.synchronize()?;
+            // Sync exchange stream BEFORE launching fused kernels so threshold
+            // modifications are visible to both engines' next run().
+            if let Some(ref se) = stream_exchange {
+                if step > 0 {
+                    se.synchronize()?;
+                }
             }
-        }
-
         } // end if !use_persistent (Phase 1)
 
         // ════════════════════════════════════════════════════════════════════
@@ -1119,12 +1340,22 @@ pub fn run_coupled_twin(
                 // Use the ring buffer overflow count as a proxy — if spikes are
                 // being exchanged and read, coupling is active. Full threshold
                 // download would be expensive, so we use the spike count as signal.
-                let overflow_a = ring_b.as_ref().and_then(|r| {
-                    stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
-                }).unwrap_or(0);
-                let overflow_b = ring_a.as_ref().and_then(|r| {
-                    stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
-                }).unwrap_or(0);
+                let overflow_a = ring_b
+                    .as_ref()
+                    .and_then(|r| {
+                        stream_exchange
+                            .as_ref()
+                            .and_then(|se| r.overflow_count(se).ok())
+                    })
+                    .unwrap_or(0);
+                let overflow_b = ring_a
+                    .as_ref()
+                    .and_then(|r| {
+                        stream_exchange
+                            .as_ref()
+                            .and_then(|se| r.overflow_count(se).ok())
+                    })
+                    .unwrap_or(0);
                 // Coupling is active if spikes were exchanged without 100% overflow
                 if overflow_a + overflow_b < ring_spikes_exchanged as u32 {
                     coupling_active_steps += 1;
@@ -1133,9 +1364,14 @@ pub fn run_coupled_twin(
             } else {
                 0.0
             };
-            log::info!("  [DIAG] step={} spikes_per_step={:.1} ring_total={} active={}/{}",
-                step, delta_l2, ring_spikes_exchanged,
-                coupling_active_steps, step / 100);
+            log::info!(
+                "  [DIAG] step={} spikes_per_step={:.1} ring_total={} active={}/{}",
+                step,
+                delta_l2,
+                ring_spikes_exchanged,
+                coupling_active_steps,
+                step / 100
+            );
         }
 
         // ════════════════════════════════════════════════════════════════════
@@ -1146,8 +1382,11 @@ pub fn run_coupled_twin(
             spikes_a_total += summary_a.total_spikes;
         } else if !a_finished {
             a_finished = true;
-            log::info!("  Stream A finished at step {} (B continues for {} more)",
-                step, outer_steps_b - step);
+            log::info!(
+                "  Stream A finished at step {} (B continues for {} more)",
+                step,
+                outer_steps_b - step
+            );
         }
 
         let summary_b = engine_b.run(inner)?;
@@ -1162,17 +1401,22 @@ pub fn run_coupled_twin(
         if use_graph_coupling && step > 0 {
             if let Some(ref coupling_graph) = coupling_replay {
                 // Replay the captured coupling graph — zero host kernel launches
-                coupling_graph.launch()
+                coupling_graph
+                    .launch()
                     .map_err(|e| anyhow::anyhow!("Coupling graph launch failed: {:?}", e))?;
 
                 // Progress logging
                 if (step + 1) % 5000 == 0 || step == outer_steps - 1 {
                     let elapsed = start.elapsed().as_secs_f64();
                     let steps_per_sec = (step + 1) as f64 / elapsed;
-                    log::info!("  [GRAPH] Step {}/{}: ({:.0} steps/s)",
-                        step + 1, outer_steps, steps_per_sec);
+                    log::info!(
+                        "  [GRAPH] Step {}/{}: ({:.0} steps/s)",
+                        step + 1,
+                        outer_steps,
+                        steps_per_sec
+                    );
                 }
-                continue;  // Graph handled all coupling — skip to physics
+                continue; // Graph handled all coupling — skip to physics
             } else if step == 1 {
                 // Step 1: capture the coupling sequence as a CUDA Graph.
                 // Uses Gate 3 push_device() (compact_and_push kernel) — fully capturable.
@@ -1189,22 +1433,32 @@ pub fn run_coupled_twin(
                             if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
                                 if let Some(ref mut rb) = ring_b {
                                     rb.read_and_adapt(
-                                        se, thresh_a, base_a,
-                                        (gx,gy,gz), (ox,oy,oz), vs,
+                                        se,
+                                        thresh_a,
+                                        base_a,
+                                        (gx, gy, gz),
+                                        (ox, oy, oz),
+                                        vs,
                                         twin_config.sensitivity_boost,
                                         twin_config.max_threshold_reduction,
-                                        1, 500.0,
+                                        1,
+                                        500.0,
                                     )?;
                                 }
                             }
                             if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
                                 if let Some(ref mut ra) = ring_a {
                                     ra.read_and_adapt(
-                                        se, thresh_b, base_b,
-                                        (gx,gy,gz), (ox,oy,oz), vs,
+                                        se,
+                                        thresh_b,
+                                        base_b,
+                                        (gx, gy, gz),
+                                        (ox, oy, oz),
+                                        vs,
                                         twin_config.sensitivity_boost,
                                         twin_config.max_threshold_reduction,
-                                        1, 500.0,
+                                        1,
+                                        500.0,
                                     )?;
                                 }
                             }
@@ -1212,16 +1466,16 @@ pub fn run_coupled_twin(
 
                         // Phase 3: device-side spike compaction via compact_and_push (Gate 3)
                         // push_device() launches the compact_and_push kernel — fully capturable.
-                        if let (Some(sbuf_a), Some(sc_a)) = (
-                            engine_a.spike_buffer_gpu(), engine_a.spike_count_gpu(),
-                        ) {
+                        if let (Some(sbuf_a), Some(sc_a)) =
+                            (engine_a.spike_buffer_gpu(), engine_a.spike_count_gpu())
+                        {
                             if let Some(ref mut ra) = ring_a {
                                 ra.push_device(se, sbuf_a, sc_a)?;
                             }
                         }
-                        if let (Some(sbuf_b), Some(sc_b)) = (
-                            engine_b.spike_buffer_gpu(), engine_b.spike_count_gpu(),
-                        ) {
+                        if let (Some(sbuf_b), Some(sc_b)) =
+                            (engine_b.spike_buffer_gpu(), engine_b.spike_count_gpu())
+                        {
                             if let Some(ref mut rb) = ring_b {
                                 rb.push_device(se, sbuf_b, sc_b)?;
                             }
@@ -1261,7 +1515,10 @@ pub fn run_coupled_twin(
                             }
                         }
                         Err(e) => {
-                            log::warn!("  [GRAPH] Capture failed: {} — continuing host-mediated", e);
+                            log::warn!(
+                                "  [GRAPH] Capture failed: {} — continuing host-mediated",
+                                e
+                            );
                             // Attempt to end capture to restore stream to normal mode
                             let _ = se.end_capture(
                                 cudarc::driver::sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH
@@ -1296,78 +1553,81 @@ pub fn run_coupled_twin(
         // SKIPPED when persistent coupling is active — the persistent kernel
         // handles spike compaction + ring push on-device.
         if !use_persistent {
-        //
-        // After engine.run(), new spikes have been downloaded to CPU and
-        // appended to accumulated_spikes. We slice the delta (new since
-        // last push), compact GpuSpikeEvent (92B) → RingSpikeEvent (48B),
-        // upload, and push to the ring buffer.
-        // ════════════════════════════════════════════════════════════════════
-        if twin_config.enable_exchange {
-            let se = stream_exchange.as_ref().unwrap();
+            //
+            // After engine.run(), new spikes have been downloaded to CPU and
+            // appended to accumulated_spikes. We slice the delta (new since
+            // last push), compact GpuSpikeEvent (92B) → RingSpikeEvent (48B),
+            // upload, and push to the ring buffer.
+            // ════════════════════════════════════════════════════════════════════
+            if twin_config.enable_exchange {
+                let se = stream_exchange.as_ref().unwrap();
 
-            if use_device_compaction {
-                // Gate 3: device-side compaction — spikes never leave GPU
-                if let (Some(sbuf_a), Some(sc_a)) = (engine_a.spike_buffer_gpu(), engine_a.spike_count_gpu()) {
-                    if let Some(ref mut ra) = ring_a {
-                        ra.push_device(se, sbuf_a, sc_a)?;
+                if use_device_compaction {
+                    // Gate 3: device-side compaction — spikes never leave GPU
+                    if let (Some(sbuf_a), Some(sc_a)) =
+                        (engine_a.spike_buffer_gpu(), engine_a.spike_count_gpu())
+                    {
+                        if let Some(ref mut ra) = ring_a {
+                            ra.push_device(se, sbuf_a, sc_a)?;
+                        }
                     }
-                }
-                if let (Some(sbuf_b), Some(sc_b)) = (engine_b.spike_buffer_gpu(), engine_b.spike_count_gpu()) {
-                    if let Some(ref mut rb) = ring_b {
-                        rb.push_device(se, sbuf_b, sc_b)?;
+                    if let (Some(sbuf_b), Some(sc_b)) =
+                        (engine_b.spike_buffer_gpu(), engine_b.spike_count_gpu())
+                    {
+                        if let Some(ref mut rb) = ring_b {
+                            rb.push_device(se, sbuf_b, sc_b)?;
+                        }
                     }
-                }
-            } else {
-                // Host-mediated: CPU-side compaction (92→48 bytes) + upload
-                let curr_len_a = engine_a.accumulated_spike_count();
-                if curr_len_a > prev_accum_len_a {
-                    let accum_a = engine_a.get_accumulated_spikes();
-                    let delta_spikes_a = &accum_a[prev_accum_len_a..];
-                    if let Some(ref mut ra) = ring_a {
-                        ra.push_compacted(se, delta_spikes_a)?;
+                } else {
+                    // Host-mediated: CPU-side compaction (92→48 bytes) + upload
+                    let curr_len_a = engine_a.accumulated_spike_count();
+                    if curr_len_a > prev_accum_len_a {
+                        let accum_a = engine_a.get_accumulated_spikes();
+                        let delta_spikes_a = &accum_a[prev_accum_len_a..];
+                        if let Some(ref mut ra) = ring_a {
+                            ra.push_compacted(se, delta_spikes_a)?;
+                        }
+                        ring_spikes_exchanged += delta_spikes_a.len() as u64;
+                        prev_accum_len_a = curr_len_a;
                     }
-                    ring_spikes_exchanged += delta_spikes_a.len() as u64;
-                    prev_accum_len_a = curr_len_a;
-                }
-                let curr_len_b = engine_b.accumulated_spike_count();
-                if curr_len_b > prev_accum_len_b {
-                    let accum_b = engine_b.get_accumulated_spikes();
-                    let delta_spikes_b = &accum_b[prev_accum_len_b..];
-                    if let Some(ref mut rb) = ring_b {
-                        rb.push_compacted(se, delta_spikes_b)?;
-                    }
-                    ring_spikes_exchanged += delta_spikes_b.len() as u64;
-                    prev_accum_len_b = curr_len_b;
-                }
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════════════
-        // PHASE 4: Periodic threshold recovery (every 1000 steps)
-        //
-        // Without recovery, thresholds drift permanently downward as more
-        // spikes accumulate. Recovery gently pushes thresholds back toward
-        // baseline at 1% per call. This means:
-        //   - Recently active voxels: stay suppressed (new spikes keep pushing down)
-        //   - Inactive voxels: recover to baseline over ~100K steps
-        //   - Net effect: coupling is recency-weighted
-        // ════════════════════════════════════════════════════════════════════
-        if twin_config.enable_exchange && step as u32 % 1000 == 0 && step > 0 {
-            let n_voxels = engine_a.total_voxels() as u32;
-            if let Some(ref se) = stream_exchange {
-                if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
-                    if let Some(ref rb) = ring_b {
-                        rb.threshold_recovery(se, thresh_a, base_a, n_voxels, 0.01)?;
-                    }
-                }
-                if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
-                    if let Some(ref ra) = ring_a {
-                        ra.threshold_recovery(se, thresh_b, base_b, n_voxels, 0.01)?;
+                    let curr_len_b = engine_b.accumulated_spike_count();
+                    if curr_len_b > prev_accum_len_b {
+                        let accum_b = engine_b.get_accumulated_spikes();
+                        let delta_spikes_b = &accum_b[prev_accum_len_b..];
+                        if let Some(ref mut rb) = ring_b {
+                            rb.push_compacted(se, delta_spikes_b)?;
+                        }
+                        ring_spikes_exchanged += delta_spikes_b.len() as u64;
+                        prev_accum_len_b = curr_len_b;
                     }
                 }
             }
-        }
 
+            // ════════════════════════════════════════════════════════════════════
+            // PHASE 4: Periodic threshold recovery (every 1000 steps)
+            //
+            // Without recovery, thresholds drift permanently downward as more
+            // spikes accumulate. Recovery gently pushes thresholds back toward
+            // baseline at 1% per call. This means:
+            //   - Recently active voxels: stay suppressed (new spikes keep pushing down)
+            //   - Inactive voxels: recover to baseline over ~100K steps
+            //   - Net effect: coupling is recency-weighted
+            // ════════════════════════════════════════════════════════════════════
+            if twin_config.enable_exchange && step as u32 % 1000 == 0 && step > 0 {
+                let n_voxels = engine_a.total_voxels() as u32;
+                if let Some(ref se) = stream_exchange {
+                    if let Some((thresh_a, base_a)) = engine_a.threshold_buffers_mut() {
+                        if let Some(ref rb) = ring_b {
+                            rb.threshold_recovery(se, thresh_a, base_a, n_voxels, 0.01)?;
+                        }
+                    }
+                    if let Some((thresh_b, base_b)) = engine_b.threshold_buffers_mut() {
+                        if let Some(ref ra) = ring_a {
+                            ra.threshold_recovery(se, thresh_b, base_b, n_voxels, 0.01)?;
+                        }
+                    }
+                }
+            }
         } // end if !use_persistent (Phases 3+4)
 
         // ════════════════════════════════════════════════════════════════════
@@ -1393,7 +1653,9 @@ pub fn run_coupled_twin(
             n_exchanges += 1;
             total_density_a_to_b += density_a;
             total_density_b_to_a += density_b;
-            if nonzero_union > max_nonzero_regions { max_nonzero_regions = nonzero_union; }
+            if nonzero_union > max_nonzero_regions {
+                max_nonzero_regions = nonzero_union;
+            }
 
             log::debug!(
                 "  [exchange #{n_exchanges}] step={step}: density A={density_a:.3e} B={density_b:.3e} union={nonzero_union}"
@@ -1404,12 +1666,22 @@ pub fn run_coupled_twin(
         if (step + 1) % 5000 == 0 || step == outer_steps - 1 {
             let elapsed = start.elapsed().as_secs_f64();
             let steps_per_sec = (step + 1) as f64 / elapsed;
-            let overflow_a = ring_a.as_ref().and_then(|r| {
-                stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
-            }).unwrap_or(0);
-            let overflow_b = ring_b.as_ref().and_then(|r| {
-                stream_exchange.as_ref().and_then(|se| r.overflow_count(se).ok())
-            }).unwrap_or(0);
+            let overflow_a = ring_a
+                .as_ref()
+                .and_then(|r| {
+                    stream_exchange
+                        .as_ref()
+                        .and_then(|se| r.overflow_count(se).ok())
+                })
+                .unwrap_or(0);
+            let overflow_b = ring_b
+                .as_ref()
+                .and_then(|r| {
+                    stream_exchange
+                        .as_ref()
+                        .and_then(|se| r.overflow_count(se).ok())
+                })
+                .unwrap_or(0);
             log::info!("  Step {}/{}: A={} B={} spikes  ring_spikes_exchanged={} overflow_a={} overflow_b={} ({:.0} steps/s)",
                 step + 1, outer_steps, spikes_a_total, spikes_b_total,
                 ring_spikes_exchanged, overflow_a, overflow_b, steps_per_sec);
@@ -1417,7 +1689,10 @@ pub fn run_coupled_twin(
     }
 
     let wall_time = start.elapsed();
-    log::info!("  Simulation complete: {:.1}s wall time", wall_time.as_secs_f64());
+    log::info!(
+        "  Simulation complete: {:.1}s wall time",
+        wall_time.as_secs_f64()
+    );
 
     // ── Collect accumulated spikes + snapshots ──
     let spikes_a = engine_a.get_accumulated_spikes();
@@ -1425,8 +1700,16 @@ pub fn run_coupled_twin(
     let snapshots_a = engine_a.get_snapshots();
     let snapshots_b = engine_b.get_snapshots();
 
-    log::info!("  Stream A: {} spikes, {} snapshots", spikes_a.len(), snapshots_a.len());
-    log::info!("  Stream B: {} spikes, {} snapshots", spikes_b.len(), snapshots_b.len());
+    log::info!(
+        "  Stream A: {} spikes, {} snapshots",
+        spikes_a.len(),
+        snapshots_a.len()
+    );
+    log::info!(
+        "  Stream B: {} spikes, {} snapshots",
+        spikes_b.len(),
+        snapshots_b.len()
+    );
 
     // ── Delegate to shared post-processing ──
     let meta = TwinSimulationMetadata {
@@ -1445,11 +1728,17 @@ pub fn run_coupled_twin(
     };
 
     twin_post_process(
-        spikes_a, spikes_b,
-        snapshots_a, snapshots_b,
-        topology, &protocol, twin_config,
-        &context, stream_exchange.as_ref(),
-        output_dir, &meta,
+        spikes_a,
+        spikes_b,
+        snapshots_a,
+        snapshots_b,
+        topology,
+        &protocol,
+        twin_config,
+        &context,
+        stream_exchange.as_ref(),
+        output_dir,
+        &meta,
     )
 }
 
@@ -1479,7 +1768,6 @@ pub fn twin_post_process(
     output_dir: &std::path::Path,
     meta: &TwinSimulationMetadata,
 ) -> Result<CoupledTwinResult> {
-
     let seed_a = meta.seed_a;
     let seed_b = meta.seed_b;
     let steps = meta.steps;
@@ -1540,11 +1828,18 @@ pub fn twin_post_process(
             "total_snapshots": snapshots_a.len() + snapshots_b.len(),
             "note": "Atomic positions/velocities available via engine.get_snapshots() API. JSON contains metadata only for size efficiency."
         });
-        if let Err(e) = std::fs::write(&ens_path, serde_json::to_string_pretty(&ens_json).unwrap_or_default()) {
+        if let Err(e) = std::fs::write(
+            &ens_path,
+            serde_json::to_string_pretty(&ens_json).unwrap_or_default(),
+        ) {
             log::warn!("  Failed to write ensemble trajectory: {}", e);
         } else {
-            log::info!("  Wrote ensemble trajectory: {} ({} A + {} B snapshots)",
-                ens_path.display(), snapshots_a.len(), snapshots_b.len());
+            log::info!(
+                "  Wrote ensemble trajectory: {} ({} A + {} B snapshots)",
+                ens_path.display(),
+                snapshots_a.len(),
+                snapshots_b.len()
+            );
         }
     }
 
@@ -1558,15 +1853,26 @@ pub fn twin_post_process(
 
         // Write combined spike file with stream_id
         let combined_path = spike_output_path.join("coupled_spikes.json");
-        log::info!("  Writing {} + {} = {} raw spikes to {}",
-            spikes_a.len(), spikes_b.len(), spikes_a.len() + spikes_b.len(),
-            combined_path.display());
+        log::info!(
+            "  Writing {} + {} = {} raw spikes to {}",
+            spikes_a.len(),
+            spikes_b.len(),
+            spikes_a.len() + spikes_b.len(),
+            combined_path.display()
+        );
 
         if let Ok(mut f) = std::fs::File::create(&combined_path) {
-            let _ = writeln!(f, "{{\"n_spikes_a\": {}, \"n_spikes_b\": {}, \"spikes\": [",
-                spikes_a.len(), spikes_b.len());
+            let _ = writeln!(
+                f,
+                "{{\"n_spikes_a\": {}, \"n_spikes_b\": {}, \"spikes\": [",
+                spikes_a.len(),
+                spikes_b.len()
+            );
 
-            let write_spike = |f: &mut std::fs::File, s: &crate::fused_engine::GpuSpikeEvent, stream_id: u8, last: bool| {
+            let write_spike = |f: &mut std::fs::File,
+                               s: &crate::fused_engine::GpuSpikeEvent,
+                               stream_id: u8,
+                               last: bool| {
                 // Copy fields to locals to avoid unaligned packed struct access
                 let ts = s.timestep;
                 let pos = s.position;
@@ -1597,10 +1903,19 @@ pub fn twin_post_process(
                 write_spike(&mut f, s, 1, count == total);
             }
             let _ = writeln!(f, "]}}");
-            log::info!("  ✓ Wrote {} spike records ({:.1} MB)",
-                total, combined_path.metadata().map(|m| m.len() as f64 / 1e6).unwrap_or(0.0));
+            log::info!(
+                "  ✓ Wrote {} spike records ({:.1} MB)",
+                total,
+                combined_path
+                    .metadata()
+                    .map(|m| m.len() as f64 / 1e6)
+                    .unwrap_or(0.0)
+            );
         } else {
-            log::warn!("  ✗ Failed to write coupled spikes to {}", combined_path.display());
+            log::warn!(
+                "  ✗ Failed to write coupled spikes to {}",
+                combined_path.display()
+            );
         }
     }
 
@@ -1638,7 +1953,10 @@ pub fn twin_post_process(
                 );
             }
             Err(e) => {
-                log::warn!("  ✗ TWIN detection failed: {} — spike JSON still written", e);
+                log::warn!(
+                    "  ✗ TWIN detection failed: {} — spike JSON still written",
+                    e
+                );
             }
         }
     }
@@ -1656,7 +1974,10 @@ pub fn twin_post_process(
     // Stage 1: CPU per-residue spike counting (same as before, still needed)
     let per_res_map = if twin_config.enable_ccf {
         let result = compute_cpu_cross_correlation(&spikes_a, &spikes_b, 5.0, 500);
-        log::info!("  CPU co-occurrence matches (A∩B within 5Å / 500 steps): {}", result.0);
+        log::info!(
+            "  CPU co-occurrence matches (A∩B within 5Å / 500 steps): {}",
+            result.0
+        );
         result.1
     } else {
         std::collections::HashMap::new()
@@ -1667,54 +1988,77 @@ pub fn twin_post_process(
     // in old topology files that predate the ResidueMetadata field)
     let n_residues = topology.n_residues;
     let bin_size = 100i32; // 100 steps per time bin
-    let ccf_features_vec = if twin_config.enable_ccf && n_residues > 0 && !spikes_a.is_empty() && !spikes_b.is_empty() {
-        log::info!("  Building CCF matrices: {} residues, {} steps, bin_size={}...",
-            n_residues, steps, bin_size);
-        let ccf_start = std::time::Instant::now();
+    let ccf_features_vec =
+        if twin_config.enable_ccf && n_residues > 0 && !spikes_a.is_empty() && !spikes_b.is_empty()
+        {
+            log::info!(
+                "  Building CCF matrices: {} residues, {} steps, bin_size={}...",
+                n_residues,
+                steps,
+                bin_size
+            );
+            let ccf_start = std::time::Instant::now();
 
-        // Build mean-centered time-binned spike matrices
-        let (mat_a_f32, mat_b_f32, n_res_padded, n_bins_padded) =
-            crate::twin_kernels::build_ccf_matrices(&spikes_a, &spikes_b, n_residues, steps, bin_size);
+            // Build mean-centered time-binned spike matrices
+            let (mat_a_f32, mat_b_f32, n_res_padded, n_bins_padded) =
+                crate::twin_kernels::build_ccf_matrices(
+                    &spikes_a, &spikes_b, n_residues, steps, bin_size,
+                );
 
-        // Attempt GPU CCF
-        let gpu_ccf_result = (|| -> Result<(Vec<f32>, Vec<crate::twin_kernels::CcfResidueFeatures>)> {
-            let ccf_module = context.load_module(
-                cudarc::nvrtc::Ptx::from_file(&crate::twin_kernels::find_twin_ptx("tensor_ccf.ptx")?)
-            ).context("Failed to load tensor_ccf.ptx")?;
+            // Attempt GPU CCF
+            let gpu_ccf_result =
+                (|| -> Result<(Vec<f32>, Vec<crate::twin_kernels::CcfResidueFeatures>)> {
+                    let ccf_module = context
+                        .load_module(cudarc::nvrtc::Ptx::from_file(
+                            &crate::twin_kernels::find_twin_ptx("tensor_ccf.ptx")?,
+                        ))
+                        .context("Failed to load tensor_ccf.ptx")?;
 
-            let se = stream_exchange.as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Exchange stream not available for CCF"))?;
+                    let se = stream_exchange
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("Exchange stream not available for CCF"))?;
 
-            let mut ccf = crate::twin_kernels::TwinCcfCompute::new(
-                se, &ccf_module, n_residues as i32, (steps / bin_size) as i32,
-            )?;
-            ccf.upload_matrices(se, &mat_a_f32, &mat_b_f32)?;
-            ccf.compute(se)?;
-            let ccf_matrix = ccf.download_ccf(se)?;
+                    let mut ccf = crate::twin_kernels::TwinCcfCompute::new(
+                        se,
+                        &ccf_module,
+                        n_residues as i32,
+                        (steps / bin_size) as i32,
+                    )?;
+                    ccf.upload_matrices(se, &mat_a_f32, &mat_b_f32)?;
+                    ccf.compute(se)?;
+                    let ccf_matrix = ccf.download_ccf(se)?;
 
-            let nonzero = ccf_matrix.iter().filter(|&&v| v.abs() > 0.01).count();
-            log::info!("  ✓ GPU CCF: {}×{} matrix, {} non-zero entries ({:.1}%), {:.1}ms",
-                n_residues, n_residues, nonzero,
-                nonzero as f64 / (n_residues * n_residues).max(1) as f64 * 100.0,
-                ccf_start.elapsed().as_secs_f64() * 1000.0);
+                    let nonzero = ccf_matrix.iter().filter(|&&v| v.abs() > 0.01).count();
+                    log::info!(
+                        "  ✓ GPU CCF: {}×{} matrix, {} non-zero entries ({:.1}%), {:.1}ms",
+                        n_residues,
+                        n_residues,
+                        nonzero,
+                        nonzero as f64 / (n_residues * n_residues).max(1) as f64 * 100.0,
+                        ccf_start.elapsed().as_secs_f64() * 1000.0
+                    );
 
-            let features = crate::twin_kernels::extract_ccf_features(&ccf_matrix, n_residues);
-            Ok((ccf_matrix, features))
-        })();
+                    let features =
+                        crate::twin_kernels::extract_ccf_features(&ccf_matrix, n_residues);
+                    Ok((ccf_matrix, features))
+                })();
 
-        match gpu_ccf_result {
-            Ok((_ccf_matrix, features)) => {
-                // TODO: write ccf_matrix to output in Step 13
-                Some(features)
+            match gpu_ccf_result {
+                Ok((_ccf_matrix, features)) => {
+                    // TODO: write ccf_matrix to output in Step 13
+                    Some(features)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "  GPU CCF failed ({}), falling back to zero CCF features",
+                        e
+                    );
+                    None
+                }
             }
-            Err(e) => {
-                log::warn!("  GPU CCF failed ({}), falling back to zero CCF features", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
+        } else {
+            None
+        };
 
     // ── GPU Transfer Entropy (Layer 5: causal spike propagation) ──────────
     //
@@ -1722,64 +2066,81 @@ pub fn twin_post_process(
     //   mutual_information: MI(A,B) from TE matrices
     //   transfer_entropy_a_to_b: total outgoing TE from each residue
     //   causal_flow_direction: net TE direction (positive = information source)
-    let (te_mi, te_causal, te_per_res) = if twin_config.enable_ccf && n_residues > 0
-        && !spikes_a.is_empty() && !spikes_b.is_empty()
-    {
-        log::info!("  Computing GPU Transfer Entropy ({} residues)...", n_residues);
-        let te_start = std::time::Instant::now();
+    let (te_mi, te_causal, te_per_res) =
+        if twin_config.enable_ccf && n_residues > 0 && !spikes_a.is_empty() && !spikes_b.is_empty()
+        {
+            log::info!(
+                "  Computing GPU Transfer Entropy ({} residues)...",
+                n_residues
+            );
+            let te_start = std::time::Instant::now();
 
-        // Rebuild matrices (same as CCF — fast, O(n_spikes))
-        let (mat_a_f32, mat_b_f32, n_res_padded, n_bins_padded) =
-            crate::twin_kernels::build_ccf_matrices(&spikes_a, &spikes_b, n_residues, steps, bin_size);
-        let n_bins = (steps / bin_size) as i32;
+            // Rebuild matrices (same as CCF — fast, O(n_spikes))
+            let (mat_a_f32, mat_b_f32, n_res_padded, n_bins_padded) =
+                crate::twin_kernels::build_ccf_matrices(
+                    &spikes_a, &spikes_b, n_residues, steps, bin_size,
+                );
+            let n_bins = (steps / bin_size) as i32;
 
-        let te_result = (|| -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
-            let te_module = context.load_module(
-                cudarc::nvrtc::Ptx::from_file(&crate::twin_kernels::find_twin_ptx("twin_transfer_entropy.ptx")?)
-            ).context("Failed to load twin_transfer_entropy.ptx")?;
+            let te_result = (|| -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+                let te_module = context
+                    .load_module(cudarc::nvrtc::Ptx::from_file(
+                        &crate::twin_kernels::find_twin_ptx("twin_transfer_entropy.ptx")?,
+                    ))
+                    .context("Failed to load twin_transfer_entropy.ptx")?;
 
-            let se = stream_exchange
-                .ok_or_else(|| anyhow::anyhow!("Exchange stream not available for TE"))?;
+                let se = stream_exchange
+                    .ok_or_else(|| anyhow::anyhow!("Exchange stream not available for TE"))?;
 
-            // Upload matrices (reuse CCF's format: f32 → u16/FP16)
-            let to_u16 = |vals: &[f32]| -> Vec<u16> {
-                vals.iter().map(|&v| half::f16::from_f32(v).to_bits()).collect()
-            };
-            let a_u16 = to_u16(&mat_a_f32);
-            let b_u16 = to_u16(&mat_b_f32);
-            let mut d_mat_a = se.alloc_zeros::<u16>(a_u16.len())?;
-            let mut d_mat_b = se.alloc_zeros::<u16>(b_u16.len())?;
-            se.memcpy_htod(&a_u16, &mut d_mat_a)?;
-            se.memcpy_htod(&b_u16, &mut d_mat_b)?;
+                // Upload matrices (reuse CCF's format: f32 → u16/FP16)
+                let to_u16 = |vals: &[f32]| -> Vec<u16> {
+                    vals.iter()
+                        .map(|&v| half::f16::from_f32(v).to_bits())
+                        .collect()
+                };
+                let a_u16 = to_u16(&mat_a_f32);
+                let b_u16 = to_u16(&mat_b_f32);
+                let mut d_mat_a = se.alloc_zeros::<u16>(a_u16.len())?;
+                let mut d_mat_b = se.alloc_zeros::<u16>(b_u16.len())?;
+                se.memcpy_htod(&a_u16, &mut d_mat_a)?;
+                se.memcpy_htod(&b_u16, &mut d_mat_b)?;
 
-            let mut te = crate::twin_kernels::TwinTeCompute::new(
-                se, &te_module, n_residues as i32, n_bins,
-                n_res_padded, n_bins_padded,
-            )?;
-            te.compute(se, &d_mat_a, &d_mat_b)?;
+                let mut te = crate::twin_kernels::TwinTeCompute::new(
+                    se,
+                    &te_module,
+                    n_residues as i32,
+                    n_bins,
+                    n_res_padded,
+                    n_bins_padded,
+                )?;
+                te.compute(se, &d_mat_a, &d_mat_b)?;
 
-            let (mi, cf) = te.download_per_residue(se)?;
-            let te_per_res = te.download_te_per_residue(se)?;
+                let (mi, cf) = te.download_per_residue(se)?;
+                let te_per_res = te.download_te_per_residue(se)?;
 
-            let nonzero_mi = mi.iter().filter(|&&v| v > 0.001).count();
-            let nonzero_cf = cf.iter().filter(|&&v| v.abs() > 0.001).count();
-            log::info!("  ✓ GPU TE: {} residues, MI non-zero={}, causal_flow non-zero={}, {:.1}ms",
-                n_residues, nonzero_mi, nonzero_cf,
-                te_start.elapsed().as_secs_f64() * 1000.0);
+                let nonzero_mi = mi.iter().filter(|&&v| v > 0.001).count();
+                let nonzero_cf = cf.iter().filter(|&&v| v.abs() > 0.001).count();
+                log::info!(
+                    "  ✓ GPU TE: {} residues, MI non-zero={}, causal_flow non-zero={}, {:.1}ms",
+                    n_residues,
+                    nonzero_mi,
+                    nonzero_cf,
+                    te_start.elapsed().as_secs_f64() * 1000.0
+                );
 
-            Ok((mi, cf, te_per_res))
-        })();
+                Ok((mi, cf, te_per_res))
+            })();
 
-        match te_result {
-            Ok((mi, cf, te)) => (Some(mi), Some(cf), Some(te)),
-            Err(e) => {
-                log::warn!("  GPU TE failed ({}), MI/TE/causal_flow will be zero", e);
-                (None, None, None)
+            match te_result {
+                Ok((mi, cf, te)) => (Some(mi), Some(cf), Some(te)),
+                Err(e) => {
+                    log::warn!("  GPU TE failed ({}), MI/TE/causal_flow will be zero", e);
+                    (None, None, None)
+                }
             }
-        }
-    } else {
-        (None, None, None)
-    };
+        } else {
+            (None, None, None)
+        };
 
     // ── Build per-residue InterferometricFeatures (50 fields) ──────────────
     //
@@ -1802,7 +2163,8 @@ pub fn twin_post_process(
         // Build resid→name lookup. Prefer topology.residues (ResidueMetadata) if
         // populated; fall back to topology.residue_names + residue_ids (atom-indexed
         // arrays) for old topology files where the residues array is empty.
-        let mut resid_to_name: std::collections::HashMap<i32, String> = std::collections::HashMap::new();
+        let mut resid_to_name: std::collections::HashMap<i32, String> =
+            std::collections::HashMap::new();
         if !topology.residues.is_empty() {
             for r in &topology.residues {
                 resid_to_name.insert(r.residue_id, r.residue_name.clone());
@@ -1810,27 +2172,38 @@ pub fn twin_post_process(
         } else {
             // Fall back: residue_names is atom-indexed, residue_ids maps atom→resid
             for (i, &resid) in topology.residue_ids.iter().enumerate() {
-                if i < topology.residue_names.len() && !resid_to_name.contains_key(&(resid as i32)) {
+                if i < topology.residue_names.len() && !resid_to_name.contains_key(&(resid as i32))
+                {
                     resid_to_name.insert(resid as i32, topology.residue_names[i].clone());
                 }
             }
         }
 
         let ccf_by_idx: Vec<crate::twin_kernels::CcfResidueFeatures> = ccf_features_vec
-            .unwrap_or_else(|| vec![crate::twin_kernels::CcfResidueFeatures::default(); n_residues]);
+            .unwrap_or_else(|| {
+                vec![crate::twin_kernels::CcfResidueFeatures::default(); n_residues]
+            });
 
         let mut features: Vec<InterferometricFeatures> = per_res_map
             .iter()
             .filter_map(|(&resid, &(cnt_a, cnt_b, int_a, int_b))| {
-                if cnt_a == 0 && cnt_b == 0 { return None; }
+                if cnt_a == 0 && cnt_b == 0 {
+                    return None;
+                }
 
                 // ── Consensus (12) ──
                 let max_cnt = cnt_a.max(cnt_b) as f32;
                 let min_cnt = cnt_a.min(cnt_b) as f32;
-                let agreement = if max_cnt > 0.0 { min_cnt / max_cnt } else { 0.0 };
+                let agreement = if max_cnt > 0.0 {
+                    min_cnt / max_cnt
+                } else {
+                    0.0
+                };
                 let mean_intensity = if cnt_a + cnt_b > 0 {
                     (int_a + int_b) as f32 / (cnt_a + cnt_b) as f32
-                } else { 0.0 };
+                } else {
+                    0.0
+                };
 
                 // Per-phase consensus: min(A_phase, B_phase) / max(A_phase, B_phase)
                 let pa = phase_counts_a.get(&resid).copied().unwrap_or([0; 5]);
@@ -1846,8 +2219,10 @@ pub fn twin_post_process(
                 let oa = onset_a.get(&resid).copied().unwrap_or(i32::MAX);
                 let ob = onset_b.get(&resid).copied().unwrap_or(i32::MAX);
                 let consensus_onset = if oa < i32::MAX && ob < i32::MAX {
-                    oa.max(ob) as f32  // the later of the two = when consensus starts
-                } else { 0.0 };
+                    oa.max(ob) as f32 // the later of the two = when consensus starts
+                } else {
+                    0.0
+                };
 
                 // ── Cross-correlation (12) ──
                 let ccf = if (resid as usize) < ccf_by_idx.len() {
@@ -1864,19 +2239,31 @@ pub fn twin_post_process(
                 }
 
                 // ── Differential (18) ──
-                let b_over_a = if cnt_a > 0 { cnt_b as f32 / cnt_a as f32 } else { f32::INFINITY };
+                let b_over_a = if cnt_a > 0 {
+                    cnt_b as f32 / cnt_a as f32
+                } else {
+                    f32::INFINITY
+                };
                 let int_total_a = intensity_sum_a.get(&resid).copied().unwrap_or(0.0);
                 let int_total_b = intensity_sum_b.get(&resid).copied().unwrap_or(0.0);
                 let b_over_a_intensity = if int_total_a > 0.0 {
                     int_total_b / int_total_a
-                } else if int_total_b > 0.0 { f32::INFINITY } else { 1.0 };
+                } else if int_total_b > 0.0 {
+                    f32::INFINITY
+                } else {
+                    1.0
+                };
 
                 // NMA vs thermal exclusive: count phases where only one stream is active
                 let mut nma_excl: u32 = 0;
                 let mut thermal_excl: u32 = 0;
                 for i in 0..5 {
-                    if pb[i] > 0 && pa[i] == 0 { nma_excl += pb[i]; }
-                    if pa[i] > 0 && pb[i] == 0 { thermal_excl += pa[i]; }
+                    if pb[i] > 0 && pa[i] == 0 {
+                        nma_excl += pb[i];
+                    }
+                    if pa[i] > 0 && pb[i] == 0 {
+                        thermal_excl += pa[i];
+                    }
                 }
 
                 // Per-phase B/A differential
@@ -1884,7 +2271,11 @@ pub fn twin_post_process(
                 for i in 0..5 {
                     phase_diff[i] = if pa[i] > 0 {
                         pb[i] as f32 / pa[i] as f32
-                    } else if pb[i] > 0 { 2.0 } else { 1.0 };
+                    } else if pb[i] > 0 {
+                        2.0
+                    } else {
+                        1.0
+                    };
                 }
 
                 let barrier_classification = if b_over_a > 1.5 {
@@ -1898,24 +2289,38 @@ pub fn twin_post_process(
                 // ── Scout/propagation (8) ──
                 // Scout lead time: how many steps earlier A fires vs B at this residue
                 let lead_time = if oa < i32::MAX && ob < i32::MAX {
-                    (ob - oa) as f32  // positive = A leads (expected from phase offset)
-                } else { 0.0 };
+                    (ob - oa) as f32 // positive = A leads (expected from phase offset)
+                } else {
+                    0.0
+                };
 
                 // Predictive value: if A fires, does B also fire? (proxy: agreement)
-                let predictive = if cnt_a > 0 && cnt_b > 0 { agreement } else { 0.0 };
+                let predictive = if cnt_a > 0 && cnt_b > 0 {
+                    agreement
+                } else {
+                    0.0
+                };
 
                 // Phase offset enrichment: spike ratio during the offset window
                 // (B's cold_hold extension) vs the rest
                 let offset_window_phase = 0; // cold_hold is phase 0
                 let offset_enrich = if pa[offset_window_phase] > 0 {
                     pb[offset_window_phase] as f32 / pa[offset_window_phase] as f32
-                } else { 1.0 };
+                } else {
+                    1.0
+                };
 
                 // A's intensity when B first fires
                 let scout_intensity = if ob < i32::MAX {
                     // Find A spikes near B's onset time — use mean intensity of A at this residue as proxy
-                    if cnt_a > 0 { int_total_a / cnt_a as f32 } else { 0.0 }
-                } else { 0.0 };
+                    if cnt_a > 0 {
+                        int_total_a / cnt_a as f32
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                };
 
                 let resname = resid_to_name
                     .get(&resid)
@@ -1929,9 +2334,9 @@ pub fn twin_post_process(
                     spike_agreement_ratio: agreement,
                     consensus_intensity_mean: mean_intensity,
                     consensus_phase_profile: consensus_phase,
-                    consensus_spatial_coherence: 0.0,  // populated in second pass (needs neighbor lookup)
+                    consensus_spatial_coherence: 0.0, // populated in second pass (needs neighbor lookup)
                     consensus_temporal_onset: consensus_onset,
-                    n_consensus_neighbors: 0,  // populated in second pass
+                    n_consensus_neighbors: 0, // populated in second pass
                     // Cross-correlation (12)
                     ccf_peak_lag: ccf.ccf_peak_lag,
                     ccf_peak_value: ccf.ccf_peak_value,
@@ -1943,22 +2348,26 @@ pub fn twin_post_process(
                     ccf_frequency_peak: {
                         let mut crossings = 0u32;
                         for i in 1..5 {
-                            if (ccf_per_phase[i] > 0.0) != (ccf_per_phase[i-1] > 0.0) {
+                            if (ccf_per_phase[i] > 0.0) != (ccf_per_phase[i - 1] > 0.0) {
                                 crossings += 1;
                             }
                         }
-                        crossings as f32 / 4.0  // normalized to [0, 1]
+                        crossings as f32 / 4.0 // normalized to [0, 1]
                     },
                     ccf_reproducibility: if ccf.ccf_reproducibility > 0.0 {
                         ccf.ccf_reproducibility
-                    } else { agreement },
+                    } else {
+                        agreement
+                    },
                     // CCF lag consistency: std dev of per-phase CCF values
                     // Low std = consistent CCF across all phases = robust allosteric coupling
                     ccf_lag_consistency: {
                         let mean_phase_ccf: f32 = ccf_per_phase.iter().sum::<f32>() / 5.0;
-                        let var: f32 = ccf_per_phase.iter()
+                        let var: f32 = ccf_per_phase
+                            .iter()
                             .map(|&v| (v - mean_phase_ccf).powi(2))
-                            .sum::<f32>() / 5.0;
+                            .sum::<f32>()
+                            / 5.0;
                         var.sqrt()
                     },
                     // Differential (18)
@@ -1968,12 +2377,12 @@ pub fn twin_post_process(
                     nma_exclusive_count: nma_excl,
                     thermal_exclusive_count: thermal_excl,
                     b_over_a_intensity_ratio: b_over_a_intensity,
-                    nma_responsive_mode: -1,   // PLACEHOLDER: Phase C Step 16 (NMA mode correlation)
-                    nma_mode_eigenvalue: 0.0,  // PLACEHOLDER: Phase C Step 16
+                    nma_responsive_mode: -1, // PLACEHOLDER: Phase C Step 16 (NMA mode correlation)
+                    nma_mode_eigenvalue: 0.0, // PLACEHOLDER: Phase C Step 16
                     barrier_classification,
                     per_phase_differential: phase_diff,
                     differential_onset_lag: lead_time, // reuse lead_time as onset differential
-                    nma_work_at_residue: 0.0,  // PLACEHOLDER: Phase C Step 16 (NMA force integration)
+                    nma_work_at_residue: 0.0, // PLACEHOLDER: Phase C Step 16 (NMA force integration)
                     mechanical_sensitivity: 0.0, // PLACEHOLDER: Phase C Step 16
                     susceptibility_magnitude: 0.0, // PLACEHOLDER: Phase C Step 16
                     // Scout/propagation (8)
@@ -1981,16 +2390,37 @@ pub fn twin_post_process(
                     scout_predictive_value: predictive,
                     phase_offset_enrichment: offset_enrich,
                     scout_intensity_at_onset: scout_intensity,
-                    scout_spatial_propagation: 0.0,  // populated in second pass using CA positions
+                    scout_spatial_propagation: 0.0, // populated in second pass using CA positions
                     // GPU Transfer Entropy (computed by twin_binned_te kernel)
-                    mutual_information: te_mi.as_ref()
-                        .and_then(|v| if (resid as usize) < v.len() { Some(v[resid as usize]) } else { None })
+                    mutual_information: te_mi
+                        .as_ref()
+                        .and_then(|v| {
+                            if (resid as usize) < v.len() {
+                                Some(v[resid as usize])
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(0.0),
-                    transfer_entropy_a_to_b: te_per_res.as_ref()
-                        .and_then(|v| if (resid as usize) < v.len() { Some(v[resid as usize]) } else { None })
+                    transfer_entropy_a_to_b: te_per_res
+                        .as_ref()
+                        .and_then(|v| {
+                            if (resid as usize) < v.len() {
+                                Some(v[resid as usize])
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(0.0),
-                    causal_flow_direction: te_causal.as_ref()
-                        .and_then(|v| if (resid as usize) < v.len() { Some(v[resid as usize]) } else { None })
+                    causal_flow_direction: te_causal
+                        .as_ref()
+                        .and_then(|v| {
+                            if (resid as usize) < v.len() {
+                                Some(v[resid as usize])
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(0.0),
                 })
             })
@@ -2002,14 +2432,18 @@ pub fn twin_post_process(
             if !topology.residues.is_empty() {
                 for r in &topology.residues {
                     if let Some(&ca_idx) = topology.ca_indices.iter().find(|&&idx| {
-                        idx < topology.residue_ids.len() && topology.residue_ids[idx] == r.residue_id as usize
+                        idx < topology.residue_ids.len()
+                            && topology.residue_ids[idx] == r.residue_id as usize
                     }) {
                         if ca_idx * 3 + 2 < topology.positions.len() {
-                            map.insert(r.residue_id, [
-                                topology.positions[ca_idx * 3],
-                                topology.positions[ca_idx * 3 + 1],
-                                topology.positions[ca_idx * 3 + 2],
-                            ]);
+                            map.insert(
+                                r.residue_id,
+                                [
+                                    topology.positions[ca_idx * 3],
+                                    topology.positions[ca_idx * 3 + 1],
+                                    topology.positions[ca_idx * 3 + 2],
+                                ],
+                            );
                         }
                     }
                 }
@@ -2020,7 +2454,8 @@ pub fn twin_post_process(
         // Second pass: compute spatial coherence using CA positions
         if !ca_pos.is_empty() {
             // Build agreement lookup for fast neighbor check
-            let agreement_by_resid: std::collections::HashMap<i32, f32> = features.iter()
+            let agreement_by_resid: std::collections::HashMap<i32, f32> = features
+                .iter()
                 .map(|f| (f.resid, f.spike_agreement_ratio))
                 .collect();
 
@@ -2029,22 +2464,29 @@ pub fn twin_post_process(
                     let mut n_neighbors = 0u32;
                     let mut n_agreeing = 0u32;
                     for (&other_resid, &other_pos) in &ca_pos {
-                        if other_resid == feat.resid { continue; }
+                        if other_resid == feat.resid {
+                            continue;
+                        }
                         let dx = pos[0] - other_pos[0];
                         let dy = pos[1] - other_pos[1];
                         let dz = pos[2] - other_pos[2];
-                        let dist_sq = dx*dx + dy*dy + dz*dz;
-                        if dist_sq <= 64.0 { // 8Å radius
+                        let dist_sq = dx * dx + dy * dy + dz * dz;
+                        if dist_sq <= 64.0 {
+                            // 8Å radius
                             n_neighbors += 1;
                             if let Some(&other_agree) = agreement_by_resid.get(&other_resid) {
-                                if other_agree > 0.5 { n_agreeing += 1; }
+                                if other_agree > 0.5 {
+                                    n_agreeing += 1;
+                                }
                             }
                         }
                     }
                     feat.n_consensus_neighbors = n_agreeing;
                     feat.consensus_spatial_coherence = if n_neighbors > 0 {
                         n_agreeing as f32 / n_neighbors as f32
-                    } else { 0.0 };
+                    } else {
+                        0.0
+                    };
 
                     // Scout spatial propagation computed in third pass below
                 }
@@ -2053,7 +2495,8 @@ pub fn twin_post_process(
 
         // Third pass: scout_spatial_propagation
         // Pre-compute which residues have positive scout_lead_time
-        let a_leading_resids: std::collections::HashSet<i32> = features.iter()
+        let a_leading_resids: std::collections::HashSet<i32> = features
+            .iter()
             .filter(|f| f.scout_lead_time > 0.0)
             .map(|f| f.resid)
             .collect();
@@ -2064,13 +2507,17 @@ pub fn twin_post_process(
                     if let Some(pos) = ca_pos.get(&feat.resid) {
                         let mut max_dist = 0.0f32;
                         for &other_resid in &a_leading_resids {
-                            if other_resid == feat.resid { continue; }
+                            if other_resid == feat.resid {
+                                continue;
+                            }
                             if let Some(&other_pos) = ca_pos.get(&other_resid) {
                                 let dx = pos[0] - other_pos[0];
                                 let dy = pos[1] - other_pos[1];
                                 let dz = pos[2] - other_pos[2];
-                                let dist = (dx*dx + dy*dy + dz*dz).sqrt();
-                                if dist > max_dist { max_dist = dist; }
+                                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                                if dist > max_dist {
+                                    max_dist = dist;
+                                }
                             }
                         }
                         feat.scout_spatial_propagation = max_dist;
@@ -2101,8 +2548,12 @@ pub fn twin_post_process(
         // ════════════════════════════════════════════════════════════════
         let n_populated = 45;
         let n_placeholder = 5;
-        log::info!("  Per-residue features: {}/{} fields populated, {} NMA-dependent placeholders",
-            n_populated, n_populated + n_placeholder, n_placeholder);
+        log::info!(
+            "  Per-residue features: {}/{} fields populated, {} NMA-dependent placeholders",
+            n_populated,
+            n_populated + n_placeholder,
+            n_placeholder
+        );
 
         features
     };
@@ -2120,20 +2571,27 @@ pub fn twin_post_process(
         let sites_path = output_dir.join(format!("{}.binding_sites.json", prefix));
 
         if sites_path.exists() {
-            match std::fs::read_to_string(&sites_path)
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)))
-            {
+            match std::fs::read_to_string(&sites_path).and_then(|s| {
+                serde_json::from_str::<serde_json::Value>(&s)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+            }) {
                 Ok(sites_json) => {
                     let sites = sites_json["sites"].as_array();
                     if let Some(sites) = sites {
                         // Extract lining residue IDs from each site
-                        let site_lining: Vec<Vec<i32>> = sites.iter().map(|site| {
-                            site["lining_residues"].as_array()
-                                .map(|arr| arr.iter()
-                                    .filter_map(|v| v.as_i64().map(|id| id as i32))
-                                    .collect())
-                                .unwrap_or_else(Vec::new)
-                        }).collect();
+                        let site_lining: Vec<Vec<i32>> = sites
+                            .iter()
+                            .map(|site| {
+                                site["lining_residues"]
+                                    .as_array()
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|v| v.as_i64().map(|id| id as i32))
+                                            .collect()
+                                    })
+                                    .unwrap_or_else(Vec::new)
+                            })
+                            .collect();
 
                         let mut result = aggregate_site_features(
                             &site_lining,
@@ -2147,7 +2605,8 @@ pub fn twin_post_process(
                             if i < sites.len() {
                                 let site = &sites[i];
                                 sf.volume = site["volume"].as_f64().unwrap_or(0.0) as f32;
-                                sf.druggability = site["druggability"].as_f64().unwrap_or(0.0) as f32;
+                                sf.druggability =
+                                    site["druggability"].as_f64().unwrap_or(0.0) as f32;
                                 sf.is_druggable = site["is_druggable"].as_bool().unwrap_or(false);
                                 if let Some(centroid) = site["centroid"].as_array() {
                                     if centroid.len() >= 3 {
@@ -2161,8 +2620,11 @@ pub fn twin_post_process(
                             }
                         }
 
-                        log::info!("  Site features: {} sites aggregated from {} per-residue features",
-                            result.len(), per_residue_features.len());
+                        log::info!(
+                            "  Site features: {} sites aggregated from {} per-residue features",
+                            result.len(),
+                            per_residue_features.len()
+                        );
                         for (i, sf) in result.iter().enumerate() {
                             log::info!("    Site {}: {}/{} lining residues, agree={:.3} ccf={:.3} barrier=L{:.0}%/M{:.0}%/H{:.0}%",
                                 i, sf.n_lining_with_data, sf.n_lining_residues,
@@ -2178,17 +2640,24 @@ pub fn twin_post_process(
                     }
                 }
                 Err(e) => {
-                    log::warn!("  Could not read binding_sites.json for site aggregation: {}", e);
+                    log::warn!(
+                        "  Could not read binding_sites.json for site aggregation: {}",
+                        e
+                    );
                     Vec::new()
                 }
             }
         } else {
-            log::warn!("  binding_sites.json not found at {} — skipping site aggregation", sites_path.display());
+            log::warn!(
+                "  binding_sites.json not found at {} — skipping site aggregation",
+                sites_path.display()
+            );
             Vec::new()
         }
     };
 
-    let n_consensus_events = per_residue_features.iter()
+    let n_consensus_events = per_residue_features
+        .iter()
         .filter(|f| f.ccf_peak_value > 0.1)
         .count() as u64;
     let n_differential_events = per_residue_features
@@ -2242,13 +2711,34 @@ pub fn twin_post_process(
     log::info!("╔══════════════════════════════════════════════════════════╗");
     log::info!("║   PRISM-TWIN COMPLETE                                   ║");
     log::info!("╠══════════════════════════════════════════════════════════╣");
-    log::info!("║  Stream A: {:>10} spikes (scout)                   ║", spikes_a.len());
-    log::info!("║  Stream B: {:>10} spikes (observer)                ║", spikes_b.len());
-    log::info!("║  Exchanges:    {:>6}                                   ║", n_exchanges);
-    log::info!("║  CCF matches:  {:>6}                                   ║", n_consensus_events);
-    log::info!("║  Residues:     {:>6}                                   ║", result.per_residue_features.len());
-    log::info!("║  Wall time: {:.1}s                                     ║", meta.wall_time_secs);
-    log::info!("║  VRAM: {:.2} GB used                                   ║", meta.vram_used_gb);
+    log::info!(
+        "║  Stream A: {:>10} spikes (scout)                   ║",
+        spikes_a.len()
+    );
+    log::info!(
+        "║  Stream B: {:>10} spikes (observer)                ║",
+        spikes_b.len()
+    );
+    log::info!(
+        "║  Exchanges:    {:>6}                                   ║",
+        n_exchanges
+    );
+    log::info!(
+        "║  CCF matches:  {:>6}                                   ║",
+        n_consensus_events
+    );
+    log::info!(
+        "║  Residues:     {:>6}                                   ║",
+        result.per_residue_features.len()
+    );
+    log::info!(
+        "║  Wall time: {:.1}s                                     ║",
+        meta.wall_time_secs
+    );
+    log::info!(
+        "║  VRAM: {:.2} GB used                                   ║",
+        meta.vram_used_gb
+    );
     log::info!("╚══════════════════════════════════════════════════════════╝");
 
     Ok(result)
@@ -2280,10 +2770,16 @@ mod tests {
         assert_eq!(c.phase_offset_fraction, 0.20);
         assert_eq!(c.exchange_interval, 100);
         assert!(!c.enable_ccf, "CCF should be off by default (Gate 1)");
-        assert!(!c.enable_exchange, "Exchange should be off by default (Gate 1)");
+        assert!(
+            !c.enable_exchange,
+            "Exchange should be off by default (Gate 1)"
+        );
         assert!(c.sensitivity_boost > 0.0);
         assert!(c.max_threshold_reduction > 0.0);
-        assert!(c.max_threshold_reduction <= 1.0, "Max reduction must be ≤ 1.0 (100%)");
+        assert!(
+            c.max_threshold_reduction <= 1.0,
+            "Max reduction must be ≤ 1.0 (100%)"
+        );
         assert!(c.nma_modes_path.is_none());
     }
 
@@ -2298,7 +2794,10 @@ mod tests {
         assert_eq!(f.nma_responsive_mode, -1);
         assert_eq!(f.mutual_information, 0.0, "MI must be 0 (placeholder)");
         assert_eq!(f.transfer_entropy_a_to_b, 0.0, "TE must be 0 (placeholder)");
-        assert_eq!(f.causal_flow_direction, 0.0, "Causal flow must be 0 (placeholder)");
+        assert_eq!(
+            f.causal_flow_direction, 0.0,
+            "Causal flow must be 0 (placeholder)"
+        );
     }
 
     #[test]
@@ -2336,7 +2835,11 @@ mod tests {
         // 2 identity fields (resid, resname) + 48 feature fields = 50 total
         // But arrays serialize as arrays inside the object, so count keys
         let n_keys = obj.len();
-        assert!(n_keys >= 30, "Expected ≥30 JSON keys for 50-field struct, got {}", n_keys);
+        assert!(
+            n_keys >= 30,
+            "Expected ≥30 JSON keys for 50-field struct, got {}",
+            n_keys
+        );
     }
 
     #[test]
@@ -2389,22 +2892,33 @@ mod tests {
     fn test_per_residue_phase_counts_basic() {
         use crate::fused_engine::GpuSpikeEvent;
         let protocol = CryoUvProtocol {
-            start_temp: 50.0, end_temp: 300.0,
-            cold_hold_steps: 100, ramp_steps: 100, warm_hold_steps: 100,
+            start_temp: 50.0,
+            end_temp: 300.0,
+            cold_hold_steps: 100,
+            ramp_steps: 100,
+            warm_hold_steps: 100,
             current_step: 0,
-            uv_burst_energy: 0.5, uv_burst_interval: 500, uv_burst_duration: 10,
-            scan_wavelengths: vec![280.0], wavelength_dwell_steps: 100,
-            ramp_down_steps: 100, cold_return_steps: 100,
+            uv_burst_energy: 0.5,
+            uv_burst_interval: 500,
+            uv_burst_duration: 10,
+            scan_wavelengths: vec![280.0],
+            wavelength_dwell_steps: 100,
+            ramp_down_steps: 100,
+            cold_return_steps: 100,
             stepped_holds: Vec::new(),
         };
 
         let mut spike = GpuSpikeEvent::default();
-        spike.timestep = 50;  // cold_hold phase
+        spike.timestep = 50; // cold_hold phase
         spike.nearby_residues[0] = 0;
         spike.n_residues = 1;
 
         let counts = per_residue_phase_counts(&[spike], &protocol);
-        assert_eq!(counts.get(&0).unwrap()[0], 1, "Should have 1 spike in cold_hold");
+        assert_eq!(
+            counts.get(&0).unwrap()[0],
+            1,
+            "Should have 1 spike in cold_hold"
+        );
         assert_eq!(counts.get(&0).unwrap()[1], 0, "Should have 0 in heating");
     }
 
@@ -2413,12 +2927,20 @@ mod tests {
     fn test_per_residue_onset() {
         use crate::fused_engine::GpuSpikeEvent;
         let mut s1 = GpuSpikeEvent::default();
-        s1.timestep = 1000; s1.nearby_residues[0] = 5; s1.n_residues = 1;
+        s1.timestep = 1000;
+        s1.nearby_residues[0] = 5;
+        s1.n_residues = 1;
         let mut s2 = GpuSpikeEvent::default();
-        s2.timestep = 500; s2.nearby_residues[0] = 5; s2.n_residues = 1;
+        s2.timestep = 500;
+        s2.nearby_residues[0] = 5;
+        s2.n_residues = 1;
 
         let onset = per_residue_onset(&[s1, s2]);
-        assert_eq!(*onset.get(&5).unwrap(), 500, "Onset should be earliest timestep");
+        assert_eq!(
+            *onset.get(&5).unwrap(),
+            500,
+            "Onset should be earliest timestep"
+        );
     }
 }
 
@@ -2500,17 +3022,19 @@ pub fn run_coupled_twin_autonomous(
     log::info!("  Chunk size: {} steps", config.chunk_size);
     log::info!("  Total steps: {}", config.total_steps);
     log::info!("  Coupling: device-side compact_and_push → ring buffer → read_adapt");
-    log::info!("  CPU involvement: NL rebuild only (every {} steps)", config.chunk_size);
+    log::info!(
+        "  CPU involvement: NL rebuild only (every {} steps)",
+        config.chunk_size
+    );
 
     // ── Helper: launch one complete coupled TWIN step ──
-    let launch_one_coupled_step = |
-        ea: &mut crate::fused_engine::NhsAmberFusedEngine,
-        eb: &mut crate::fused_engine::NhsAmberFusedEngine,
-        ra: &mut crate::twin_kernels::TwinRingBuffer,
-        rb: &mut crate::twin_kernels::TwinRingBuffer,
-        s: &std::sync::Arc<cudarc::driver::CudaStream>,
-        cfg: &AutonomousTwinConfig,
-    | -> anyhow::Result<()> {
+    let launch_one_coupled_step = |ea: &mut crate::fused_engine::NhsAmberFusedEngine,
+                                   eb: &mut crate::fused_engine::NhsAmberFusedEngine,
+                                   ra: &mut crate::twin_kernels::TwinRingBuffer,
+                                   rb: &mut crate::twin_kernels::TwinRingBuffer,
+                                   s: &std::sync::Arc<cudarc::driver::CudaStream>,
+                                   cfg: &AutonomousTwinConfig|
+     -> anyhow::Result<()> {
         // Group A: Director → Physics → multi_lif → housekeeping
         ea.step_autonomous_kernels(s)?;
 
@@ -2519,11 +3043,20 @@ pub fn run_coupled_twin_autonomous(
 
         // Interferometric bridge: ring_a → B's thresholds
         {
-            let g = eb.grid_info();  // immutable borrow first
-            let (thresh_b, base_b) = eb.threshold_buffers_mut();  // then mutable
-            ra.read_and_adapt(s, thresh_b, base_b,
-                (g.0,g.1,g.2), (g.3,g.4,g.5), g.6,
-                cfg.sensitivity_boost, cfg.max_reduction, 0, 0.001)?;
+            let g = eb.grid_info(); // immutable borrow first
+            let (thresh_b, base_b) = eb.threshold_buffers_mut(); // then mutable
+            ra.read_and_adapt(
+                s,
+                thresh_b,
+                base_b,
+                (g.0, g.1, g.2),
+                (g.3, g.4, g.5),
+                g.6,
+                cfg.sensitivity_boost,
+                cfg.max_reduction,
+                0,
+                0.001,
+            )?;
         }
 
         // Group B: Director → Physics → multi_lif → housekeeping
@@ -2536,9 +3069,18 @@ pub fn run_coupled_twin_autonomous(
         {
             let g = ea.grid_info();
             let (thresh_a, base_a) = ea.threshold_buffers_mut();
-            rb.read_and_adapt(s, thresh_a, base_a,
-                (g.0,g.1,g.2), (g.3,g.4,g.5), g.6,
-                cfg.sensitivity_boost, cfg.max_reduction, 0, 0.001)?;
+            rb.read_and_adapt(
+                s,
+                thresh_a,
+                base_a,
+                (g.0, g.1, g.2),
+                (g.3, g.4, g.5),
+                g.6,
+                cfg.sensitivity_boost,
+                cfg.max_reduction,
+                0,
+                0.001,
+            )?;
         }
 
         Ok(())
@@ -2546,14 +3088,14 @@ pub fn run_coupled_twin_autonomous(
 
     // ── Capture one coupled step as a CUDA Graph ──
     log::info!("Capturing TWIN dual-engine step as CUDA Graph...");
-    stream.begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+    stream
+        .begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
         .map_err(|e| anyhow::anyhow!("TWIN graph capture begin failed: {:?}", e))?;
 
     launch_one_coupled_step(engine_a, engine_b, ring_a, ring_b, &stream, config)?;
 
-    let graph = stream.end_capture(
-        sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH
-    )
+    let graph = stream
+        .end_capture(sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH)
         .map_err(|e| anyhow::anyhow!("TWIN graph capture end failed: {:?}", e))?
         .ok_or_else(|| anyhow::anyhow!("TWIN graph capture produced null graph"))?;
 
@@ -2568,22 +3110,34 @@ pub fn run_coupled_twin_autonomous(
 
         // Replay the dual-engine graph (zero CPU involvement per step)
         for _ in 0..steps_this_chunk {
-            graph.launch()
+            graph
+                .launch()
                 .map_err(|e| anyhow::anyhow!("TWIN graph launch failed: {:?}", e))?;
         }
         steps_completed += steps_this_chunk;
 
         // Synchronize
-        stream.synchronize()
+        stream
+            .synchronize()
             .map_err(|e| anyhow::anyhow!("TWIN sync failed: {:?}", e))?;
 
         // Poll heartbeats (both engines)
-        let status_a = crate::graph_capture::poll_heartbeat_async(&stream, &engine_a.d_protocol_state)?;
-        let status_b = crate::graph_capture::poll_heartbeat_async(&stream, &engine_b.d_protocol_state)?;
+        let status_a =
+            crate::graph_capture::poll_heartbeat_async(&stream, &engine_a.d_protocol_state)?;
+        let status_b =
+            crate::graph_capture::poll_heartbeat_async(&stream, &engine_b.d_protocol_state)?;
         if status_a != 0 || status_b != 0 {
-            let (label, code) = if status_a != 0 { ("Group A", status_a) } else { ("Group B", status_b) };
-            log::error!("TWIN HEARTBEAT ABORT ({}) at step {}: status={}",
-                label, steps_completed, code);
+            let (label, code) = if status_a != 0 {
+                ("Group A", status_a)
+            } else {
+                ("Group B", status_b)
+            };
+            log::error!(
+                "TWIN HEARTBEAT ABORT ({}) at step {}: status={}",
+                label,
+                steps_completed,
+                code
+            );
             return Ok(steps_completed);
         }
 
@@ -2592,11 +3146,19 @@ pub fn run_coupled_twin_autonomous(
         engine_b.rebuild_neighbor_lists_if_needed()?;
 
         if chunk_idx % 10 == 0 {
-            log::info!("  TWIN chunk {}/{}: {} coupled steps", chunk_idx+1, n_chunks, steps_completed);
+            log::info!(
+                "  TWIN chunk {}/{}: {} coupled steps",
+                chunk_idx + 1,
+                n_chunks,
+                steps_completed
+            );
         }
     }
 
-    log::info!("TWIN autonomous loop complete: {} coupled steps", steps_completed);
+    log::info!(
+        "TWIN autonomous loop complete: {} coupled steps",
+        steps_completed
+    );
     Ok(steps_completed)
 }
 
@@ -2753,14 +3315,35 @@ pub fn run_multi_differential_twin(
     log::info!("╔═══════════════════════════════════════════════════════════════╗");
     log::info!("║  PRISM-TWIN MULTI-DIFFERENTIAL INTERFEROMETRIC OBSERVATION     ║");
     log::info!("╠═══════════════════════════════════════════════════════════════╣");
-    log::info!("║  Groups: {}                                                    ║", n_groups);
-    log::info!("║  Engines/group: {}                                             ║", epg);
-    log::info!("║  Total engines: {}                                             ║", total);
+    log::info!(
+        "║  Groups: {}                                                    ║",
+        n_groups
+    );
+    log::info!(
+        "║  Engines/group: {}                                             ║",
+        epg
+    );
+    log::info!(
+        "║  Total engines: {}                                             ║",
+        total
+    );
     log::info!("╚═══════════════════════════════════════════════════════════════╝");
-    for (i, (proto, label)) in config.group_protocols.iter().zip(&config.group_labels).enumerate() {
-        log::info!("  Group {} [{}]: {}K→{}K, UV={:.0}kcal, interval={}, ramp={}",
-            i, label, proto.start_temp, proto.end_temp,
-            proto.uv_burst_energy, proto.uv_burst_interval, proto.ramp_steps);
+    for (i, (proto, label)) in config
+        .group_protocols
+        .iter()
+        .zip(&config.group_labels)
+        .enumerate()
+    {
+        log::info!(
+            "  Group {} [{}]: {}K→{}K, UV={:.0}kcal, interval={}, ramp={}",
+            i,
+            label,
+            proto.start_temp,
+            proto.end_temp,
+            proto.uv_burst_energy,
+            proto.uv_burst_interval,
+            proto.ramp_steps
+        );
     }
 
     // Check VRAM
@@ -2768,8 +3351,12 @@ pub fn run_multi_differential_twin(
     let estimated_per_engine = 1_200_000_000u64; // ~1.2GB per engine
     let estimated_total = estimated_per_engine * total as u64;
     if estimated_total > vram_free as u64 {
-        log::warn!("  VRAM: {:.1}GB free, need ~{:.1}GB for {} engines — may OOM",
-            vram_free as f64 / 1e9, estimated_total as f64 / 1e9, total);
+        log::warn!(
+            "  VRAM: {:.1}GB free, need ~{:.1}GB for {} engines — may OOM",
+            vram_free as f64 / 1e9,
+            estimated_total as f64 / 1e9,
+            total
+        );
     }
 
     std::fs::create_dir_all(output_dir)?;
@@ -2794,17 +3381,34 @@ pub fn run_multi_differential_twin(
             let seed = config.base_seed + (group_idx as u64) * 1000 + (engine_idx as u64);
             let stream = streams[flat_idx].clone();
 
-            log::info!("  Initializing engine {}/{} (group={} [{}], seed={})...",
-                flat_idx + 1, total, group_idx, label, seed);
+            log::info!(
+                "  Initializing engine {}/{} (group={} [{}], seed={})...",
+                flat_idx + 1,
+                total,
+                group_idx,
+                label,
+                seed
+            );
 
             let mut engine = PersistentNhsEngine::new_on_stream(
-                &batch_config, context.clone(), fused_module.clone(), stream,
+                &batch_config,
+                context.clone(),
+                fused_module.clone(),
+                stream,
             )?;
             engine.load_topology(topology)?;
-            if config.hmr { engine.set_dt(0.004)?; }
-            if config.fused_steps > 1 { engine.set_fused_inner_steps(config.fused_steps)?; }
-            if config.adaptive_dt { engine.set_adaptive_dt(true)?; }
-            if config.ladd_enabled { engine.set_ladd_enabled(true); }
+            if config.hmr {
+                engine.set_dt(0.004)?;
+            }
+            if config.fused_steps > 1 {
+                engine.set_fused_inner_steps(config.fused_steps)?;
+            }
+            if config.adaptive_dt {
+                engine.set_adaptive_dt(true)?;
+            }
+            if config.ladd_enabled {
+                engine.set_ladd_enabled(true);
+            }
             engine.set_cryo_uv_protocol(proto.clone())?;
             engine.set_spike_accumulation(true);
 
@@ -2816,20 +3420,29 @@ pub fn run_multi_differential_twin(
     // Create a shared ring buffer for N-way coupling
     // Each group pushes its spikes; all groups read from the shared ring
     let exchange_stream = context.new_stream()?;
-    let rb_module = context.load_module(
-        cudarc::nvrtc::Ptx::from_file(&find_twin_ptx("ring_buffer.ptx")?)
-    )?;
+    let rb_module = context.load_module(cudarc::nvrtc::Ptx::from_file(&find_twin_ptx(
+        "ring_buffer.ptx",
+    )?))?;
     let mut ring_buffers: Vec<TwinRingBuffer> = (0..n_groups)
         .map(|_| TwinRingBuffer::new(&context, &exchange_stream, &rb_module, 16384).unwrap())
         .collect();
-    log::info!("  Ring buffers: {} (one per group, capacity=16384)", n_groups);
+    log::info!(
+        "  Ring buffers: {} (one per group, capacity=16384)",
+        n_groups
+    );
 
     // Determine steps per group (each protocol may have different total_steps)
-    let steps_per_group: Vec<i32> = config.group_protocols.iter()
+    let steps_per_group: Vec<i32> = config
+        .group_protocols
+        .iter()
         .map(|p| p.total_steps())
         .collect();
     let max_steps = *steps_per_group.iter().max().unwrap_or(&35000);
-    log::info!("  Steps per group: {:?} (max={})", steps_per_group, max_steps);
+    log::info!(
+        "  Steps per group: {:?} (max={})",
+        steps_per_group,
+        max_steps
+    );
 
     // ── Main simulation loop ──
     let mut group_spikes = vec![0u64; n_groups];
@@ -2844,7 +3457,8 @@ pub fn run_multi_differential_twin(
         }
 
         // Spike exchange: every exchange_interval steps
-        if config.coupling.enable_exchange && step > 0
+        if config.coupling.enable_exchange
+            && step > 0
             && step as u32 % config.coupling.exchange_interval == 0
         {
             // Each group pushes its new spikes to its ring buffer
@@ -2865,18 +3479,26 @@ pub fn run_multi_differential_twin(
             // N-way coupling: each group reads from ALL OTHER groups' ring buffers
             for target_group in 0..n_groups {
                 for source_group in 0..n_groups {
-                    if source_group == target_group { continue; }
+                    if source_group == target_group {
+                        continue;
+                    }
                     // Source group's ring buffer → target group's thresholds
                     for engine_idx in 0..epg {
                         let flat_idx = target_group * epg + engine_idx;
                         if let Some((gx, gy, gz, ox, oy, oz, vs)) = engines[flat_idx].grid_info() {
-                            if let Some((thresh, base)) = engines[flat_idx].threshold_buffers_mut() {
+                            if let Some((thresh, base)) = engines[flat_idx].threshold_buffers_mut()
+                            {
                                 ring_buffers[source_group].read_and_adapt(
-                                    &exchange_stream, thresh, base,
-                                    (gx, gy, gz), (ox, oy, oz), vs,
+                                    &exchange_stream,
+                                    thresh,
+                                    base,
+                                    (gx, gy, gz),
+                                    (ox, oy, oz),
+                                    vs,
                                     config.coupling.sensitivity_boost,
                                     config.coupling.max_threshold_reduction,
-                                    step as u32, 500.0,
+                                    step as u32,
+                                    500.0,
                                 )?;
                             }
                         }
@@ -2896,7 +3518,11 @@ pub fn run_multi_differential_twin(
                         for src in 0..n_groups {
                             if src != group_idx {
                                 ring_buffers[src].threshold_recovery(
-                                    &exchange_stream, thresh, base, n_voxels, 0.01,
+                                    &exchange_stream,
+                                    thresh,
+                                    base,
+                                    n_voxels,
+                                    0.01,
                                 )?;
                             }
                         }
@@ -2909,8 +3535,13 @@ pub fn run_multi_differential_twin(
         if (step + 1) % 5000 == 0 || step == max_steps - 1 {
             let elapsed = start.elapsed().as_secs_f64();
             let sps = (step + 1) as f64 / elapsed;
-            log::info!("  Step {}/{}: {:.0} steps/s, {:.1}s elapsed",
-                step + 1, max_steps, sps, elapsed);
+            log::info!(
+                "  Step {}/{}: {:.0} steps/s, {:.1}s elapsed",
+                step + 1,
+                max_steps,
+                sps,
+                elapsed
+            );
         }
     }
 
@@ -2935,10 +3566,21 @@ pub fn run_multi_differential_twin(
     log::info!("║  MULTI-DIFFERENTIAL TWIN COMPLETE                              ║");
     log::info!("╠═══════════════════════════════════════════════════════════════╣");
     for (i, (label, spikes)) in config.group_labels.iter().zip(&group_spikes).enumerate() {
-        log::info!("║  Group {} [{}]: {:>12} spikes                     ║", i, label, spikes);
+        log::info!(
+            "║  Group {} [{}]: {:>12} spikes                     ║",
+            i,
+            label,
+            spikes
+        );
     }
-    log::info!("║  Total: {:>12} spikes                                    ║", total_spikes);
-    log::info!("║  Wall time: {:.1}s                                           ║", wall_time);
+    log::info!(
+        "║  Total: {:>12} spikes                                    ║",
+        total_spikes
+    );
+    log::info!(
+        "║  Wall time: {:.1}s                                           ║",
+        wall_time
+    );
     log::info!("╚═══════════════════════════════════════════════════════════════╝");
 
     // Post-process: aggregate spikes from all engines and run TWIN detection
@@ -2957,21 +3599,34 @@ pub fn run_multi_differential_twin(
         }
     }
 
-    log::info!("  Post-processing: {} scout spikes + {} observer spikes",
-        all_spikes_a.len(), all_spikes_b.len());
+    log::info!(
+        "  Post-processing: {} scout spikes + {} observer spikes",
+        all_spikes_a.len(),
+        all_spikes_b.len()
+    );
 
     // Run TWIN detection on the aggregated streams
     let prefix = std::path::Path::new(&topology.source_pdb)
-        .file_stem().and_then(|s| s.to_str())
+        .file_stem()
+        .and_then(|s| s.to_str())
         .map(|s| s.replace("_sanitized", "").replace("_clean", ""))
         .unwrap_or_else(|| "prism_multi_twin".to_string());
 
     match crate::twin_detection::detect_and_write_twin_sites(
-        &all_spikes_a, &all_spikes_b, topology, output_dir, &prefix, None,
+        &all_spikes_a,
+        &all_spikes_b,
+        topology,
+        output_dir,
+        &prefix,
+        None,
     ) {
         Ok(summary) => {
-            log::info!("  TWIN detection: {} sites ({} consensus, {} barrier-gated)",
-                summary.n_sites, summary.n_consensus_sites, summary.n_barrier_gated_sites);
+            log::info!(
+                "  TWIN detection: {} sites ({} consensus, {} barrier-gated)",
+                summary.n_sites,
+                summary.n_consensus_sites,
+                summary.n_barrier_gated_sites
+            );
         }
         Err(e) => log::warn!("  TWIN detection failed: {}", e),
     }

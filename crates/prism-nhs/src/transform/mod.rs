@@ -505,7 +505,9 @@ impl<T> AuditOutcome<T> {
     pub fn into_result(self) -> Result<(T, Vec<TransformViolation>), AbortedAudit> {
         match self {
             AuditOutcome::Accepted { output, .. } => Ok((output, Vec::new())),
-            AuditOutcome::Quarantined { output, violations, .. } => Ok((output, violations)),
+            AuditOutcome::Quarantined {
+                output, violations, ..
+            } => Ok((output, violations)),
             AuditOutcome::Aborted { record, violations } => {
                 Err(AbortedAudit { record, violations })
             }
@@ -536,13 +538,19 @@ impl fmt::Display for AbortedAudit {
         write!(
             f,
             "transform {} aborted under {} tolerance ({} violation(s)): ",
-            self.record.transform, self.record.tolerance, self.violations.len()
+            self.record.transform,
+            self.record.tolerance,
+            self.violations.len()
         )?;
         for (i, v) in self.violations.iter().enumerate() {
             if i > 0 {
                 f.write_str("; ")?;
             }
-            write!(f, "[{}:{} → {}] {:?}", v.transform, v.law, v.routing, v.evidence)?;
+            write!(
+                f,
+                "[{}:{} → {}] {:?}",
+                v.transform, v.law, v.routing, v.evidence
+            )?;
         }
         Ok(())
     }
@@ -628,7 +636,11 @@ pub trait AuditedTransform {
         } else if violations.iter().any(|v| v.routing == AuditRouting::Abort) {
             AuditOutcome::Aborted { record, violations }
         } else {
-            AuditOutcome::Quarantined { output, record, violations }
+            AuditOutcome::Quarantined {
+                output,
+                record,
+                violations,
+            }
         }
     }
 }

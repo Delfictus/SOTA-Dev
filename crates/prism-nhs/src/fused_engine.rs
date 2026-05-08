@@ -20,19 +20,18 @@
 //! - UV burst energy dissipation (prevents geometry explosion in frozen systems)
 
 use anyhow::{bail, Context, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use std::sync::{Arc, OnceLock};
-use std::net::TcpStream;
 use std::io::Write;
+use std::net::TcpStream;
 use std::ptr;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
-    sys, CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
-    LaunchConfig, PushKernelArg, DevicePtrMut, DevicePtr,
-    DriverError,
+    sys, CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtr, DevicePtrMut,
+    DriverError, LaunchConfig, PushKernelArg,
 };
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
@@ -40,14 +39,14 @@ use cudarc::nvrtc::Ptx;
 use crate::input::PrismPrepTopology;
 
 #[cfg(feature = "gpu")]
-fn tier8_director_driver_error_text(
-    rc: sys::CUresult,
-) -> (String, String) {
+fn tier8_director_driver_error_text(rc: sys::CUresult) -> (String, String) {
     let err = DriverError(rc);
-    let name = err.error_name()
+    let name = err
+        .error_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("cuGetErrorName failed: {:?}", e));
-    let text = err.error_string()
+    let text = err
+        .error_string()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("cuGetErrorString failed: {:?}", e));
     (name, text)
@@ -109,17 +108,16 @@ fn tier8_get_deferred_drain_context() -> Option<Tier8DeferredDrainContext> {
     TIER8_DEFERRED_DRAIN_CONTEXT.with(|slot| slot.borrow().clone())
 }
 use crate::config::{
-    extinction_to_cross_section, wavelength_to_ev, KB_EV_K,
-    CALIBRATED_PHOTON_FLUENCE, DEFAULT_HEAT_YIELD,
-    NEFF_TRP, NEFF_TYR, NEFF_PHE, NEFF_DISULFIDE, NEFF_BENZENE,
-    TRP_LAMBDA_MAX, TYR_LAMBDA_MAX, PHE_LAMBDA_MAX, DISULFIDE_LAMBDA_MAX, BENZENE_LAMBDA_MAX,
-    TRP_EXTINCTION_280, TYR_EXTINCTION_274, PHE_EXTINCTION_258, DISULFIDE_EXTINCTION_250, BENZENE_EXTINCTION_254,
-    TRP_BANDWIDTH, TYR_BANDWIDTH, PHE_BANDWIDTH, DISULFIDE_BANDWIDTH, BENZENE_BANDWIDTH,
+    extinction_to_cross_section, wavelength_to_ev, BENZENE_BANDWIDTH, BENZENE_EXTINCTION_254,
+    BENZENE_LAMBDA_MAX, CALIBRATED_PHOTON_FLUENCE, DEFAULT_HEAT_YIELD, DISULFIDE_BANDWIDTH,
+    DISULFIDE_EXTINCTION_250, DISULFIDE_LAMBDA_MAX, KB_EV_K, NEFF_BENZENE, NEFF_DISULFIDE,
+    NEFF_PHE, NEFF_TRP, NEFF_TYR, PHE_BANDWIDTH, PHE_EXTINCTION_258, PHE_LAMBDA_MAX, TRP_BANDWIDTH,
+    TRP_EXTINCTION_280, TRP_LAMBDA_MAX, TYR_BANDWIDTH, TYR_EXTINCTION_274, TYR_LAMBDA_MAX,
 };
 
 // Import ultimate engine for hyperoptimized kernel path
 #[cfg(feature = "gpu")]
-use crate::ultimate_engine::{UltimateEngine, UltimateEngineConfig, OptimizationLevel};
+use crate::ultimate_engine::{OptimizationLevel, UltimateEngine, UltimateEngineConfig};
 
 // ============================================================================
 // GPU STRUCT TYPES (must match CUDA kernel exactly)
@@ -181,7 +179,7 @@ pub struct GpuLJParam {
 #[derive(Debug, Clone, Copy)]
 pub struct GpuHCluster {
     pub central_atom: i32,
-    pub hydrogen_atoms: [i32; 3],  // -1 for unused
+    pub hydrogen_atoms: [i32; 3], // -1 for unused
     pub bond_lengths: [f32; 3],
     pub n_hydrogens: i32,
     pub inv_mass_central: f32,
@@ -301,15 +299,15 @@ pub struct GpuSpikeEvent {
     pub nearby_residues: [i32; 8],
     pub n_residues: i32,
     // Enhanced metadata for downstream docking/analysis
-    pub spike_source: i32,           // 1=UV, 2=LIF
-    pub wavelength_nm: f32,          // UV wavelength (0 for LIF)
-    pub aromatic_type: i32,          // 0=TRP, 1=TYR, 2=PHE, 3=SS, -1=none
-    pub aromatic_residue_id: i32,    // closest excited aromatic residue (-1 for LIF)
-    pub water_density: f32,          // local water density
-    pub vibrational_energy: f32,     // UV energy deposited (0 for LIF)
-    pub n_nearby_excited: i32,       // excited aromatics in range (pi-stacking)
-    pub wd_change: f32,              // |water_density - water_density_prev| for SDST energy_gradient
-    pub phase_bits: u32,             // 10-bit CCNS phase angle (0-1023 → 0-2π) from ProtocolState
+    pub spike_source: i32,        // 1=UV, 2=LIF
+    pub wavelength_nm: f32,       // UV wavelength (0 for LIF)
+    pub aromatic_type: i32,       // 0=TRP, 1=TYR, 2=PHE, 3=SS, -1=none
+    pub aromatic_residue_id: i32, // closest excited aromatic residue (-1 for LIF)
+    pub water_density: f32,       // local water density
+    pub vibrational_energy: f32,  // UV energy deposited (0 for LIF)
+    pub n_nearby_excited: i32,    // excited aromatics in range (pi-stacking)
+    pub wd_change: f32,           // |water_density - water_density_prev| for SDST energy_gradient
+    pub phase_bits: u32,          // 10-bit CCNS phase angle (0-1023 → 0-2π) from ProtocolState
 }
 
 #[cfg(feature = "gpu")]
@@ -471,8 +469,8 @@ impl CryoUvProtocol {
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 500,
-            ramp_down_steps: 6000,       // Symmetric cooldown 300K→50K (hysteresis)
-            cold_return_steps: 4000,     // Cold return hold (detect re-closure)
+            ramp_down_steps: 6000,   // Symmetric cooldown 300K→50K (hysteresis)
+            cold_return_steps: 4000, // Cold return hold (detect re-closure)
             stepped_holds: vec![],
         }
     }
@@ -519,14 +517,14 @@ impl CryoUvProtocol {
     /// - 211 nm: HIS/HID/HIE/HIP (histidine imidazole ring)
     pub fn fast_35k() -> Self {
         Self {
-            start_temp: 50.0,           // Ultra-cold start
-            end_temp: 300.0,            // Physiological end
-            cold_hold_steps: 14000,     // Aggressive cold hold (was 20K)
-            ramp_steps: 6000,           // Faster ramp 50K→300K (was 8K)
-            warm_hold_steps: 15000,     // Extended warm hold for production sampling (was 2K)
+            start_temp: 50.0,       // Ultra-cold start
+            end_temp: 300.0,        // Physiological end
+            cold_hold_steps: 14000, // Aggressive cold hold (was 20K)
+            ramp_steps: 6000,       // Faster ramp 50K→300K (was 8K)
+            warm_hold_steps: 15000, // Extended warm hold for production sampling (was 2K)
             current_step: 0,
-            uv_burst_energy: 42.0,      // +40% energy: faster aromatic excitation (was 30.0)
-            uv_burst_interval: 250,     // More frequent probing (was 400)
+            uv_burst_energy: 42.0, // +40% energy: faster aromatic excitation (was 30.0)
+            uv_burst_interval: 250, // More frequent probing (was 400)
             uv_burst_duration: 50,
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
@@ -549,14 +547,14 @@ impl CryoUvProtocol {
     /// for consistent aromatic excitation.
     pub fn fast_25k() -> Self {
         Self {
-            start_temp: 50.0,           // Ultra-cold start
-            end_temp: 300.0,            // Physiological end
-            cold_hold_steps: 8000,      // Minimal cold hold
-            ramp_steps: 4000,           // Fast ramp 50K→300K
-            warm_hold_steps: 8000,      // Compact warm hold
+            start_temp: 50.0,      // Ultra-cold start
+            end_temp: 300.0,       // Physiological end
+            cold_hold_steps: 8000, // Minimal cold hold
+            ramp_steps: 4000,      // Fast ramp 50K→300K
+            warm_hold_steps: 8000, // Compact warm hold
             current_step: 0,
-            uv_burst_energy: 42.0,      // Same as fast_35k
-            uv_burst_interval: 250,     // Same as fast_35k
+            uv_burst_energy: 42.0,  // Same as fast_35k
+            uv_burst_interval: 250, // Same as fast_35k
             uv_burst_duration: 50,
             // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
@@ -581,11 +579,11 @@ impl CryoUvProtocol {
             start_temp: 50.0,
             end_temp: 310.0,
             cold_hold_steps: 10000,
-            ramp_steps: 4000,           // Fast ramp — rapid thermal shock
+            ramp_steps: 4000, // Fast ramp — rapid thermal shock
             warm_hold_steps: 12000,
             current_step: 0,
-            uv_burst_energy: 48.0,      // High UV — aggressive probing
-            uv_burst_interval: 200,     // Frequent bursts
+            uv_burst_energy: 48.0,  // High UV — aggressive probing
+            uv_burst_interval: 200, // Frequent bursts
             uv_burst_duration: 60,
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 250,
@@ -599,14 +597,14 @@ impl CryoUvProtocol {
     /// Purpose: observe which pockets persist under near-physiological conditions.
     pub fn twin_equilibrium_observer() -> Self {
         Self {
-            start_temp: 150.0,          // Warm start — no extreme cryo
+            start_temp: 150.0, // Warm start — no extreme cryo
             end_temp: 310.0,
             cold_hold_steps: 6000,
-            ramp_steps: 10000,          // Slow ramp — gentle equilibration
-            warm_hold_steps: 16000,     // Extended warm hold — persistence test
+            ramp_steps: 10000,      // Slow ramp — gentle equilibration
+            warm_hold_steps: 16000, // Extended warm hold — persistence test
             current_step: 0,
-            uv_burst_energy: 25.0,      // Moderate UV — observation, not perturbation
-            uv_burst_interval: 400,     // Less frequent
+            uv_burst_energy: 25.0, // Moderate UV — observation, not perturbation
+            uv_burst_interval: 400, // Less frequent
             uv_burst_duration: 40,
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 400,
@@ -620,16 +618,16 @@ impl CryoUvProtocol {
     /// Purpose: detect aromatic-driven conformational changes (TRP/TYR/PHE gates).
     pub fn twin_uv_aromatic_probe() -> Self {
         Self {
-            start_temp: 200.0,          // Moderate constant temperature
-            end_temp: 280.0,            // Narrow range — minimize thermal noise
+            start_temp: 200.0, // Moderate constant temperature
+            end_temp: 280.0,   // Narrow range — minimize thermal noise
             cold_hold_steps: 8000,
-            ramp_steps: 4000,           // Minimal ramp
-            warm_hold_steps: 20000,     // Long observation at ~constant T
+            ramp_steps: 4000,       // Minimal ramp
+            warm_hold_steps: 20000, // Long observation at ~constant T
             current_step: 0,
-            uv_burst_energy: 60.0,      // Maximum UV — aromatic excitation focus
-            uv_burst_interval: 150,     // Very frequent
-            uv_burst_duration: 80,      // Long bursts
-            scan_wavelengths: vec![280.0, 274.0],  // TRP + TYR only (strongest absorbers)
+            uv_burst_energy: 60.0,  // Maximum UV — aromatic excitation focus
+            uv_burst_interval: 150, // Very frequent
+            uv_burst_duration: 80,  // Long bursts
+            scan_wavelengths: vec![280.0, 274.0], // TRP + TYR only (strongest absorbers)
             wavelength_dwell_steps: 200,
             ramp_down_steps: 3000,
             cold_return_steps: 2000,
@@ -645,15 +643,15 @@ impl CryoUvProtocol {
             end_temp: 300.0,
             cold_hold_steps: 6000,
             ramp_steps: 6000,
-            warm_hold_steps: 6000,      // Balanced warm hold
+            warm_hold_steps: 6000, // Balanced warm hold
             current_step: 0,
-            uv_burst_energy: 35.0,      // Moderate UV
+            uv_burst_energy: 35.0, // Moderate UV
             uv_burst_interval: 300,
             uv_burst_duration: 50,
             scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
             wavelength_dwell_steps: 300,
-            ramp_down_steps: 8000,      // SLOW cooldown — key for hysteresis detection
-            cold_return_steps: 8000,    // EXTENDED cold return — watch for re-closure
+            ramp_down_steps: 8000, // SLOW cooldown — key for hysteresis detection
+            cold_return_steps: 8000, // EXTENDED cold return — watch for re-closure
             stepped_holds: vec![],
         }
     }
@@ -698,7 +696,8 @@ impl CryoUvProtocol {
             for (hold_temp, hold_steps) in &self.stepped_holds {
                 // Ramp segment: prev_temp → hold_temp
                 if ramp_start < cursor + steps_per_ramp_segment {
-                    let progress = (ramp_start - cursor) as f32 / steps_per_ramp_segment.max(1) as f32;
+                    let progress =
+                        (ramp_start - cursor) as f32 / steps_per_ramp_segment.max(1) as f32;
                     return prev_temp + progress * (hold_temp - prev_temp);
                 }
                 cursor += steps_per_ramp_segment;
@@ -783,7 +782,10 @@ impl CryoUvProtocol {
 
     /// Whether we're in a hold phase (constant temperature = can use larger dt)
     pub fn is_hold_phase(&self) -> bool {
-        matches!(self.current_phase(), CryoPhase::ColdHold | CryoPhase::WarmHold | CryoPhase::ColdReturn)
+        matches!(
+            self.current_phase(),
+            CryoPhase::ColdHold | CryoPhase::WarmHold | CryoPhase::ColdReturn
+        )
     }
 
     /// Whether this protocol has hysteresis (cooling) phases enabled
@@ -817,8 +819,12 @@ impl CryoUvProtocol {
     /// and intermediate hold steps if stepped holds are configured)
     pub fn total_steps(&self) -> i32 {
         let stepped_hold_time: i32 = self.stepped_holds.iter().map(|(_, h)| h).sum();
-        self.cold_hold_steps + self.ramp_steps + stepped_hold_time
-            + self.warm_hold_steps + self.ramp_down_steps + self.cold_return_steps
+        self.cold_hold_steps
+            + self.ramp_steps
+            + stepped_hold_time
+            + self.warm_hold_steps
+            + self.ramp_down_steps
+            + self.cold_return_steps
     }
 
     /// Create a hysteresis version of this protocol (full thermal cycle)
@@ -826,8 +832,8 @@ impl CryoUvProtocol {
     /// Adds a cooling ramp and cold return hold mirroring the heating phases.
     /// The full cycle is: cold_hold → ramp_up → warm_hold → ramp_down → cold_return
     pub fn with_hysteresis(mut self) -> Self {
-        self.ramp_down_steps = self.ramp_steps;          // Mirror the heating ramp
-        self.cold_return_steps = self.cold_hold_steps;   // Mirror the cold hold
+        self.ramp_down_steps = self.ramp_steps; // Mirror the heating ramp
+        self.cold_return_steps = self.cold_hold_steps; // Mirror the cold hold
         self
     }
 }
@@ -836,7 +842,10 @@ impl CryoUvProtocol {
 ///
 /// This struct is kept for backward compatibility but should not be used in new code.
 /// The cryo-thermal and UV-LIF systems are now unified.
-#[deprecated(since = "1.2.0", note = "Use CryoUvProtocol instead - cryo and UV are now unified")]
+#[deprecated(
+    since = "1.2.0",
+    note = "Use CryoUvProtocol instead - cryo and UV are now unified"
+)]
 #[derive(Debug, Clone)]
 pub struct TemperatureProtocol {
     /// Starting temperature (Kelvin)
@@ -1029,7 +1038,6 @@ pub struct SpikeQualityScore {
     // =========================================================================
     // Confidence Metrics (0.0 - 1.0)
     // =========================================================================
-
     /// Spike intensity relative to threshold (higher = more confident)
     /// Calculated as (intensity - threshold) / (max_observed - threshold)
     pub intensity_score: f32,
@@ -1049,7 +1057,6 @@ pub struct SpikeQualityScore {
     // =========================================================================
     // Structural Context Metrics
     // =========================================================================
-
     /// Distance to nearest aromatic residue (Å)
     /// Lower values suggest UV-mediated dewetting
     pub aromatic_proximity: f32,
@@ -1067,7 +1074,6 @@ pub struct SpikeQualityScore {
     // =========================================================================
     // Alignment Metrics
     // =========================================================================
-
     /// Local RMSD of atoms within spike voxel (Å)
     pub local_rmsd: f32,
 
@@ -1077,7 +1083,6 @@ pub struct SpikeQualityScore {
     // =========================================================================
     // Combined Scores
     // =========================================================================
-
     /// Overall confidence score (weighted combination)
     pub overall_confidence: f32,
 
@@ -1099,7 +1104,8 @@ impl SpikeQualityScore {
             ((1.0 - (self.aromatic_proximity / 10.0).min(1.0)), 0.10),
         ];
 
-        self.overall_confidence = weights.iter()
+        self.overall_confidence = weights
+            .iter()
             .map(|(score, weight)| score * weight)
             .sum::<f32>()
             .clamp(0.0, 1.0);
@@ -1216,13 +1222,20 @@ pub struct KccData {
 impl KccData {
     pub fn empty() -> Self {
         Self {
-            temporal_corr: Vec::new(), direction_score: Vec::new(),
-            motion_efficiency: Vec::new(), burst_motion: Vec::new(),
-            phase_shift: Vec::new(), causal_lag: Vec::new(),
-            lag_corr_peak: Vec::new(), local_cov: Vec::new(),
-            net_dx: Vec::new(), net_dy: Vec::new(), net_dz: Vec::new(),
+            temporal_corr: Vec::new(),
+            direction_score: Vec::new(),
+            motion_efficiency: Vec::new(),
+            burst_motion: Vec::new(),
+            phase_shift: Vec::new(),
+            causal_lag: Vec::new(),
+            lag_corr_peak: Vec::new(),
+            local_cov: Vec::new(),
+            net_dx: Vec::new(),
+            net_dy: Vec::new(),
+            net_dz: Vec::new(),
             sum_m: Vec::new(),
-            residue_count: Vec::new(), active_causal: Vec::new(),
+            residue_count: Vec::new(),
+            active_causal: Vec::new(),
             n_residues: 0,
         }
     }
@@ -1263,12 +1276,14 @@ impl SpikePersistenceTracker {
     pub fn compute_persistence(&self, position: [f32; 3]) -> (f32, usize) {
         let radius_sq = self.cluster_radius * self.cluster_radius;
 
-        let count = self.history.iter()
+        let count = self
+            .history
+            .iter()
             .filter(|(pos, _)| {
                 let dx = pos[0] - position[0];
                 let dy = pos[1] - position[1];
                 let dz = pos[2] - position[2];
-                dx*dx + dy*dy + dz*dz < radius_sq
+                dx * dx + dy * dy + dz * dz < radius_sq
             })
             .count();
 
@@ -1317,7 +1332,7 @@ pub fn compute_rmsd_subset(
             let dx = positions_a[i3] - positions_b[i3];
             let dy = positions_a[i3 + 1] - positions_b[i3 + 1];
             let dz = positions_a[i3 + 2] - positions_b[i3 + 2];
-            sum_sq += dx*dx + dy*dy + dz*dz;
+            sum_sq += dx * dx + dy * dy + dz * dz;
             count += 1;
         }
     }
@@ -1330,11 +1345,7 @@ pub fn compute_rmsd_subset(
 }
 
 /// Find atoms within a given radius of a position
-pub fn find_atoms_near_position(
-    positions: &[f32],
-    center: [f32; 3],
-    radius: f32,
-) -> Vec<usize> {
+pub fn find_atoms_near_position(positions: &[f32], center: [f32; 3], radius: f32) -> Vec<usize> {
     let radius_sq = radius * radius;
     let n_atoms = positions.len() / 3;
     let mut nearby = Vec::new();
@@ -1345,7 +1356,7 @@ pub fn find_atoms_near_position(
         let dy = positions[i3 + 1] - center[1];
         let dz = positions[i3 + 2] - center[2];
 
-        if dx*dx + dy*dy + dz*dz < radius_sq {
+        if dx * dx + dy * dy + dz * dz < radius_sq {
             nearby.push(i);
         }
     }
@@ -1358,7 +1369,7 @@ pub fn find_atoms_near_position(
 pub fn compute_alignment_quality(
     positions_a: &[f32],
     positions_b: &[f32],
-    reference_rmsd: f32,  // Expected RMSD for "good" alignment
+    reference_rmsd: f32, // Expected RMSD for "good" alignment
 ) -> f32 {
     let n_atoms = positions_a.len().min(positions_b.len()) / 3;
     if n_atoms == 0 {
@@ -1372,7 +1383,7 @@ pub fn compute_alignment_quality(
         let dx = positions_a[i3] - positions_b[i3];
         let dy = positions_a[i3 + 1] - positions_b[i3 + 1];
         let dz = positions_a[i3 + 2] - positions_b[i3 + 2];
-        sum_sq += dx*dx + dy*dy + dz*dz;
+        sum_sq += dx * dx + dy * dy + dz * dz;
     }
 
     let rmsd = (sum_sq / n_atoms as f32).sqrt();
@@ -1391,7 +1402,10 @@ pub fn compute_alignment_quality(
 /// UV burst configuration for pump-probe with multi-wavelength spectroscopy.
 /// This struct is deprecated because UV-LIF coupling should ALWAYS be used with
 /// cryo-thermal protocols. Use the unified `CryoUvProtocol` instead.
-#[deprecated(since = "1.2.0", note = "Use CryoUvProtocol instead - UV is now unified with cryo protocol")]
+#[deprecated(
+    since = "1.2.0",
+    note = "Use CryoUvProtocol instead - UV is now unified with cryo protocol"
+)]
 #[derive(Debug, Clone)]
 pub struct UvProbeConfig {
     /// Master enable/disable for UV bursts
@@ -1412,7 +1426,6 @@ pub struct UvProbeConfig {
     // =========================================================================
     // Enhanced UV Spectroscopy Fields
     // =========================================================================
-
     /// Enable frequency hopping (wavelength scanning)
     pub frequency_hopping_enabled: bool,
     /// Wavelengths to scan (nm)
@@ -1513,7 +1526,7 @@ impl UvProbeConfig {
         if self.frequency_hopping_enabled && !self.scan_wavelengths.is_empty() {
             self.scan_wavelengths[self.current_wavelength_idx % self.scan_wavelengths.len()]
         } else {
-            280.0  // Default to tryptophan λmax
+            280.0 // Default to tryptophan λmax
         }
     }
 
@@ -1531,17 +1544,25 @@ impl UvProbeConfig {
 
         // CANONICAL ordering: 0=TRP, 1=TYR, 2=PHE, 3=S-S, 4=BNZ
         let (lambda_max, epsilon_max, bandwidth) = match chromophore_type {
-            0 => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // TRP @ 280nm
-            1 => (TYR_LAMBDA_MAX, TYR_EXTINCTION_274, TYR_BANDWIDTH),      // TYR @ 274nm
-            2 => (PHE_LAMBDA_MAX, PHE_EXTINCTION_258, PHE_BANDWIDTH),      // PHE @ 258nm
-            3 => (DISULFIDE_LAMBDA_MAX, DISULFIDE_EXTINCTION_250, DISULFIDE_BANDWIDTH), // S-S @ 250nm
-            4 => (BENZENE_LAMBDA_MAX, BENZENE_EXTINCTION_254, BENZENE_BANDWIDTH), // BNZ @ 254nm
-            _ => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH),      // Default to TRP
+            0 => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH), // TRP @ 280nm
+            1 => (TYR_LAMBDA_MAX, TYR_EXTINCTION_274, TYR_BANDWIDTH), // TYR @ 274nm
+            2 => (PHE_LAMBDA_MAX, PHE_EXTINCTION_258, PHE_BANDWIDTH), // PHE @ 258nm
+            3 => (
+                DISULFIDE_LAMBDA_MAX,
+                DISULFIDE_EXTINCTION_250,
+                DISULFIDE_BANDWIDTH,
+            ), // S-S @ 250nm
+            4 => (
+                BENZENE_LAMBDA_MAX,
+                BENZENE_EXTINCTION_254,
+                BENZENE_BANDWIDTH,
+            ), // BNZ @ 254nm
+            _ => (TRP_LAMBDA_MAX, TRP_EXTINCTION_280, TRP_BANDWIDTH), // Default to TRP
         };
 
         // Gaussian absorption profile: ε(λ) = ε_max × exp[-(λ-λ_max)²/(2σ²)]
         let delta = wavelength - lambda_max;
-        let sigma = bandwidth / 2.355;  // FWHM to sigma
+        let sigma = bandwidth / 2.355; // FWHM to sigma
         epsilon_max * (-0.5 * (delta / sigma).powi(2)).exp()
     }
 
@@ -1578,7 +1599,7 @@ impl UvProbeConfig {
         let e_photon = wavelength_to_ev(wavelength);
 
         // Calibrated photon fluence
-        let fluence = CALIBRATED_PHOTON_FLUENCE;  // 0.024 photons/Å²
+        let fluence = CALIBRATED_PHOTON_FLUENCE; // 0.024 photons/Å²
 
         // Absorption probability (single-photon regime)
         let p_absorb = sigma * fluence;
@@ -1644,14 +1665,15 @@ impl UvProbeConfig {
             self.steps_at_wavelength += 1;
             if self.steps_at_wavelength >= self.dwell_steps {
                 self.steps_at_wavelength = 0;
-                self.current_wavelength_idx = (self.current_wavelength_idx + 1) % self.scan_wavelengths.len();
+                self.current_wavelength_idx =
+                    (self.current_wavelength_idx + 1) % self.scan_wavelengths.len();
                 log::debug!("UV wavelength hop: {:.1}nm", self.current_wavelength());
             }
         }
 
         // Decay local temperatures (exponential decay, τ in ps, dt = 2fs = 0.002ps)
         if self.track_local_temperature {
-            let dt = 0.002;  // 2 fs timestep
+            let dt = 0.002; // 2 fs timestep
             let decay = (-dt / self.thermal_dissipation_tau).exp();
             for temp in &mut self.local_temp_deltas {
                 *temp *= decay;
@@ -1716,10 +1738,10 @@ const T_REF: f32 = 300.0;
 const T_MIN: f32 = 10.0;
 
 /// Dielectric constant at reference temperature
-const EPSILON_REF: f32 = 78.5;  // Water at 300K
+const EPSILON_REF: f32 = 78.5; // Water at 300K
 
 /// Dielectric constant at low temperature (ice-like)
-const EPSILON_LOW: f32 = 3.2;   // Ice at 100K
+const EPSILON_LOW: f32 = 3.2; // Ice at 100K
 
 /// UV energy dissipation factor at cold temps (prevents geometry explosion)
 const UV_COLD_DISSIPATION: f32 = 0.3;
@@ -1729,7 +1751,7 @@ const UV_COLD_DISSIPATION: f32 = 0.3;
 // ============================================================================
 
 /// Maximum grid dimension (must match CUDA MAX_GRID_DIM=128)
-const MAX_GRID_DIM: usize = 128;  // Must match CUDA MAX_GRID_DIM in nhs_amber_fused.cu
+const MAX_GRID_DIM: usize = 128; // Must match CUDA MAX_GRID_DIM in nhs_amber_fused.cu
 
 /// Block size for 1D kernels
 const BLOCK_SIZE_1D: usize = 256;
@@ -1926,21 +1948,21 @@ pub struct NhsAmberFusedEngine {
     d_spike_grid: CudaSlice<i32>,
     d_spike_grid_efp: CudaSlice<i32>,
     // Signal preservation buffers (accumulated across all timesteps)
-    d_voxel_hit_grid: CudaSlice<i32>,       // [total_voxels] spatial recurrence
-    d_last_uv_step: CudaSlice<i32>,         // [total_voxels] last UV event timestep
-    d_coupled_spike_grid: CudaSlice<i32>,   // [total_voxels] UV→LIF causal counter
-    d_primary_residue_id: CudaSlice<i32>,   // [total_voxels] dominant residue ID
+    d_voxel_hit_grid: CudaSlice<i32>, // [total_voxels] spatial recurrence
+    d_last_uv_step: CudaSlice<i32>,   // [total_voxels] last UV event timestep
+    d_coupled_spike_grid: CudaSlice<i32>, // [total_voxels] UV→LIF causal counter
+    d_primary_residue_id: CudaSlice<i32>, // [total_voxels] dominant residue ID
     d_primary_residue_count: CudaSlice<i32>, // [total_voxels] dominant residue count
     // KCC v2-full: per-residue GPU-resident buffers
-    d_reference_positions: CudaSlice<f32>,    // [n_atoms*3] initial positions for CA restraints
-    d_ca_mask: CudaSlice<i32>,                // [n_atoms] 1=CA atom, 0=other
-    ca_mask_cpu: Vec<i32>,                    // CPU copy of CA mask for position restraints
-    d_residue_ca_idx: CudaSlice<i32>,        // [n_residues] CA atom index per residue
-    d_residue_step_causal: CudaSlice<i32>,   // [n_residues] per-step causal counter (zeroed each step)
-    d_residue_prev_x: CudaSlice<f32>,        // [n_residues] previous CA position
+    d_reference_positions: CudaSlice<f32>, // [n_atoms*3] initial positions for CA restraints
+    d_ca_mask: CudaSlice<i32>,             // [n_atoms] 1=CA atom, 0=other
+    ca_mask_cpu: Vec<i32>,                 // CPU copy of CA mask for position restraints
+    d_residue_ca_idx: CudaSlice<i32>,      // [n_residues] CA atom index per residue
+    d_residue_step_causal: CudaSlice<i32>, // [n_residues] per-step causal counter (zeroed each step)
+    d_residue_prev_x: CudaSlice<f32>,      // [n_residues] previous CA position
     d_residue_prev_y: CudaSlice<f32>,
     d_residue_prev_z: CudaSlice<f32>,
-    d_residue_sum_m: CudaSlice<f32>,         // [n_residues] streaming reductions
+    d_residue_sum_m: CudaSlice<f32>, // [n_residues] streaming reductions
     d_residue_sum_m2: CudaSlice<f32>,
     d_residue_sum_c: CudaSlice<f32>,
     d_residue_sum_c2: CudaSlice<f32>,
@@ -1951,9 +1973,9 @@ pub struct NhsAmberFusedEngine {
     d_residue_count: CudaSlice<u32>,
     d_residue_active_causal: CudaSlice<u32>,
     // KCC event-driven ring buffer [n_residues * 64] (20 bytes per event)
-    d_kcc_ring: CudaSlice<u8>,               // [n_residues * 64 * 20] as raw bytes (KCCEvent struct)
-    d_kcc_ring_head: CudaSlice<u32>,         // [n_residues] circular write pointer
-    d_kcc_last_event_step: CudaSlice<u32>,   // [n_residues] step of last event (init 0xFFFFFFFF)
+    d_kcc_ring: CudaSlice<u8>, // [n_residues * 64 * 20] as raw bytes (KCCEvent struct)
+    d_kcc_ring_head: CudaSlice<u32>, // [n_residues] circular write pointer
+    d_kcc_last_event_step: CudaSlice<u32>, // [n_residues] step of last event (init 0xFFFFFFFF)
     // KCC output descriptors [n_residues]
     d_kcc_temporal_corr: CudaSlice<f32>,
     d_kcc_direction_score: CudaSlice<f32>,
@@ -1976,20 +1998,20 @@ pub struct NhsAmberFusedEngine {
     d_efp_lif_potential: CudaSlice<f32>,
 
     // Multi-neuron LIF buffers (K=8 neurons per voxel)
-    d_neuron_potential: CudaSlice<f32>,   // [total_voxels * 8]
-    d_neuron_threshold: CudaSlice<f32>,   // [total_voxels * 8]
+    d_neuron_potential: CudaSlice<f32>,  // [total_voxels * 8]
+    d_neuron_threshold: CudaSlice<f32>,  // [total_voxels * 8]
     d_base_threshold: CudaSlice<f32>,    // [total_voxels * 8] snapshot for TWIN floor
-    d_neuron_mean: CudaSlice<f32>,        // [total_voxels * 8]
-    d_neuron_refractory: CudaSlice<i32>,  // [total_voxels * 8]
-    d_coupling_a: CudaSlice<f32>,         // [total_voxels] double-buffer A
-    d_coupling_b: CudaSlice<f32>,         // [total_voxels] double-buffer B
-    coupling_phase: bool,                  // false = read A/write B, true = read B/write A
+    d_neuron_mean: CudaSlice<f32>,       // [total_voxels * 8]
+    d_neuron_refractory: CudaSlice<i32>, // [total_voxels * 8]
+    d_coupling_a: CudaSlice<f32>,        // [total_voxels] double-buffer A
+    d_coupling_b: CudaSlice<f32>,        // [total_voxels] double-buffer B
+    coupling_phase: bool,                // false = read A/write B, true = read B/write A
     multi_lif_kernel: CudaFunction,
     init_multi_neuron_kernel: CudaFunction,
 
     // Sparse tile index: only launch blocks for tiles containing atoms
-    d_active_tiles: CudaSlice<i32>,       // [n_active_tiles * 3] packed (bx, by, bz) triplets
-    n_active_tiles: u32,                  // number of active tiles
+    d_active_tiles: CudaSlice<i32>, // [n_active_tiles * 3] packed (bx, by, bz) triplets
+    n_active_tiles: u32,            // number of active tiles
 
     // Fused multi-step: run N AMBER steps per 1 multi-LIF observation
     // Gives ~Nx speedup since multi-LIF dominates GPU time (99.1%)
@@ -1997,7 +2019,7 @@ pub struct NhsAmberFusedEngine {
 
     // Adaptive dt: use base_dt during ramps, base_dt * 1.5 during holds
     adaptive_dt_enabled: bool,
-    base_dt: f32,  // stores the base dt for adaptive scaling
+    base_dt: f32, // stores the base dt for adaptive scaling
 
     // Wave B.1 — G26 chronometric gearbox is the sole master of the
     // chronometric plane when active.  When `gearbox_active == true`
@@ -2015,14 +2037,14 @@ pub struct NhsAmberFusedEngine {
 
     // PRISM-TWIN v3.0 Gate 2: GPU-side housekeeping (replaces CPU memcpy round-trips)
     // Uses existing d_reference_positions + d_ca_mask fields for CA restraints
-    director_graph_fn: Option<CudaFunction>,  // conditional-handle-aware Director variant
+    director_graph_fn: Option<CudaFunction>, // conditional-handle-aware Director variant
     heartbeat_fn: Option<CudaFunction>,
     ca_restraint_fn: Option<CudaFunction>,
     coupling_clear_fn: Option<CudaFunction>,
     com_reduce_fn: Option<CudaFunction>,
     com_correct_fn: Option<CudaFunction>,
     com_accum_clear_fn: Option<CudaFunction>,
-    d_com_accumulator: CudaSlice<f32>,   // [4] COM reduction accumulator
+    d_com_accumulator: CudaSlice<f32>, // [4] COM reduction accumulator
 
     // Spike output (events as raw bytes)
     d_spike_events: CudaSlice<u8>,
@@ -2043,7 +2065,7 @@ pub struct NhsAmberFusedEngine {
 
     // Simulation parameters
     dt: f32,
-    gamma_base: f32,     // Base friction at 300K
+    gamma_base: f32, // Base friction at 300K
     cutoff: f32,
     timestep: i32,
 
@@ -2063,32 +2085,32 @@ pub struct NhsAmberFusedEngine {
     // ====================================================================
     // EXCITED STATE DYNAMICS BUFFERS (true UV photophysics)
     // ====================================================================
-    d_is_excited: CudaSlice<i32>,              // [n_aromatics] - excitation flag
-    d_time_since_excitation: CudaSlice<f32>,   // [n_aromatics] - time tracking
-    d_electronic_population: CudaSlice<f32>,   // [n_aromatics] - 0.0-1.0 population
-    d_vibrational_energy: CudaSlice<f32>,      // [n_aromatics] - kcal/mol
-    d_franck_condon_progress: CudaSlice<f32>,  // [n_aromatics] - relaxation progress
-    d_ground_state_charges: CudaSlice<f32>,    // [n_atoms] - original charges
-    d_atom_to_aromatic: CudaSlice<i32>,        // [n_atoms] - -1 or aromatic index
-    d_aromatic_type: CudaSlice<i32>,           // [n_aromatics] - CANONICAL: 0=TRP,1=TYR,2=PHE,3=S-S,4=BNZ
-    d_ring_normals: CudaSlice<f32>,            // [n_aromatics * 3] - precomputed normals
-    d_aromatic_centroids: CudaSlice<f32>,      // [n_aromatics * 3] - aromatic ring centroid positions (updated per-step)
-    d_aromatic_neighbors: CudaSlice<u8>,       // [n_aromatics] - AromaticNeighbors structs
+    d_is_excited: CudaSlice<i32>, // [n_aromatics] - excitation flag
+    d_time_since_excitation: CudaSlice<f32>, // [n_aromatics] - time tracking
+    d_electronic_population: CudaSlice<f32>, // [n_aromatics] - 0.0-1.0 population
+    d_vibrational_energy: CudaSlice<f32>, // [n_aromatics] - kcal/mol
+    d_franck_condon_progress: CudaSlice<f32>, // [n_aromatics] - relaxation progress
+    d_ground_state_charges: CudaSlice<f32>, // [n_atoms] - original charges
+    d_atom_to_aromatic: CudaSlice<i32>, // [n_atoms] - -1 or aromatic index
+    d_aromatic_type: CudaSlice<i32>, // [n_aromatics] - CANONICAL: 0=TRP,1=TYR,2=PHE,3=S-S,4=BNZ
+    d_ring_normals: CudaSlice<f32>, // [n_aromatics * 3] - precomputed normals
+    d_aromatic_centroids: CudaSlice<f32>, // [n_aromatics * 3] - aromatic ring centroid positions (updated per-step)
+    d_aromatic_neighbors: CudaSlice<u8>,  // [n_aromatics] - AromaticNeighbors structs
     aromatic_neighbors_size: usize,
     n_aromatics: usize,
-    d_uv_signal_prev: CudaSlice<f32>,          // [grid_dim³] - per-voxel previous UV signal for derivative filter
+    d_uv_signal_prev: CudaSlice<f32>, // [grid_dim³] - per-voxel previous UV signal for derivative filter
 
     // Aromatic topology buffers for init kernels (Issue #3 fix)
-    d_aromatic_atom_indices: CudaSlice<i32>,  // [n_aromatics * 16] - flat array of ring atom indices
-    d_aromatic_n_atoms: CudaSlice<i32>,       // [n_aromatics] - count of atoms per aromatic
+    d_aromatic_atom_indices: CudaSlice<i32>, // [n_aromatics * 16] - flat array of ring atom indices
+    d_aromatic_n_atoms: CudaSlice<i32>,      // [n_aromatics] - count of atoms per aromatic
 
     // ====================================================================
     // O(N) CELL LIST / NEIGHBOR LIST BUFFERS
     // ====================================================================
     // Cell list constants (matches CUDA kernel)
-    cell_size: f32,                           // = 10.0 Å (matches NB_CUTOFF)
-    max_atoms_per_cell: usize,                // = 128
-    neighbor_list_size: usize,                // = 256 per atom
+    cell_size: f32,            // = 10.0 Å (matches NB_CUTOFF)
+    max_atoms_per_cell: usize, // = 128
+    neighbor_list_size: usize, // = 256 per atom
 
     // Cell grid dimensions (computed from bounding box)
     cell_nx: i32,
@@ -2097,18 +2119,18 @@ pub struct NhsAmberFusedEngine {
     cell_origin: [f32; 3],
 
     // GPU buffers for cell list
-    d_cell_list: CudaSlice<i32>,              // [n_total_cells * MAX_ATOMS_PER_CELL]
-    d_cell_counts: CudaSlice<i32>,            // [n_total_cells]
-    d_atom_cell: CudaSlice<i32>,              // [n_atoms] - which cell each atom is in
+    d_cell_list: CudaSlice<i32>,   // [n_total_cells * MAX_ATOMS_PER_CELL]
+    d_cell_counts: CudaSlice<i32>, // [n_total_cells]
+    d_atom_cell: CudaSlice<i32>,   // [n_atoms] - which cell each atom is in
 
     // GPU buffers for neighbor list
-    d_neighbor_list: CudaSlice<i32>,          // [n_atoms * NEIGHBOR_LIST_SIZE]
-    d_n_neighbors: CudaSlice<i32>,            // [n_atoms] - actual neighbor count per atom
+    d_neighbor_list: CudaSlice<i32>, // [n_atoms * NEIGHBOR_LIST_SIZE]
+    d_n_neighbors: CudaSlice<i32>,   // [n_atoms] - actual neighbor count per atom
 
     // Rebuild control
-    neighbor_list_rebuild_interval: i32,      // Rebuild every N steps (typically 10-20)
-    steps_since_rebuild: i32,                 // Counter
-    use_neighbor_list: bool,                  // Enable O(N) path (true for n_atoms > 500)
+    neighbor_list_rebuild_interval: i32, // Rebuild every N steps (typically 10-20)
+    steps_since_rebuild: i32,            // Counter
+    use_neighbor_list: bool,             // Enable O(N) path (true for n_atoms > 500)
 
     // Captured data
     spike_events: Vec<SpikeEvent>,
@@ -2116,13 +2138,13 @@ pub struct NhsAmberFusedEngine {
 
     // Spike quality scoring support
     spike_persistence_tracker: SpikePersistenceTracker,
-    reference_positions: Vec<f32>,  // Initial positions for RMSD calculation
-    last_uv_burst_timestep: i32,    // For UV correlation scoring
-    last_spike_count: i32,          // Preserved spike count from last sync (for download after reset)
+    reference_positions: Vec<f32>, // Initial positions for RMSD calculation
+    last_uv_burst_timestep: i32,   // For UV correlation scoring
+    last_spike_count: i32, // Preserved spike count from last sync (for download after reset)
 
     // Spike accumulation for analysis (across sync intervals)
-    accumulate_spikes: bool,        // When true, download and accumulate spikes during sync
-    accumulated_spikes: Vec<GpuSpikeEvent>,  // Accumulated spikes from all sync intervals
+    accumulate_spikes: bool, // When true, download and accumulate spikes during sync
+    accumulated_spikes: Vec<GpuSpikeEvent>, // Accumulated spikes from all sync intervals
 
     // Live monitor connection
     live_monitor: Option<TcpStream>,
@@ -2352,11 +2374,18 @@ impl NhsAmberFusedEngine {
         grid_dim: usize,
         grid_spacing: f32,
     ) -> Result<Self> {
-        log::info!("Creating NHS-AMBER Fused Engine: {} atoms, grid {}³",
-            topology.n_atoms, grid_dim);
+        log::info!(
+            "Creating NHS-AMBER Fused Engine: {} atoms, grid {}³",
+            topology.n_atoms,
+            grid_dim
+        );
 
         if grid_dim > MAX_GRID_DIM {
-            bail!("Grid dimension {} exceeds maximum {}", grid_dim, MAX_GRID_DIM);
+            bail!(
+                "Grid dimension {} exceeds maximum {}",
+                grid_dim,
+                MAX_GRID_DIM
+            );
         }
 
         let n_atoms = topology.n_atoms;
@@ -2381,7 +2410,9 @@ impl NhsAmberFusedEngine {
         // 1. Relative to executable: ../assets/ptx/ (release bundle)
         // 2. Development paths (workspace root, tests)
 
-        let (fused_module, loaded_path): (Arc<CudaModule>, String) = if let Ok(env_dir) = std::env::var("PRISM4D_PTX_DIR") {
+        let (fused_module, loaded_path): (Arc<CudaModule>, String) = if let Ok(env_dir) =
+            std::env::var("PRISM4D_PTX_DIR")
+        {
             // STRICT: Environment variable is set - use ONLY this path, no fallback
             let ptx_path = std::path::PathBuf::from(&env_dir).join("nhs_amber_fused.ptx");
             let path_str = ptx_path.display().to_string();
@@ -2396,20 +2427,24 @@ impl NhsAmberFusedEngine {
                      To fix:\n\
                      - Verify the path contains nhs_amber_fused.ptx\n\
                      - Or unset PRISM4D_PTX_DIR to use automatic path resolution",
-                    env_dir, path_str
+                    env_dir,
+                    path_str
                 );
             }
 
-            let module = context.load_module(Ptx::from_file(&path_str))
-                .with_context(|| format!(
-                    "FATAL: PRISM4D_PTX_DIR is set but PTX failed to load.\n\
+            let module = context
+                .load_module(Ptx::from_file(&path_str))
+                .with_context(|| {
+                    format!(
+                        "FATAL: PRISM4D_PTX_DIR is set but PTX failed to load.\n\
                      \n\
                      PRISM4D_PTX_DIR={}\n\
                      PTX file: {}\n\
                      \n\
                      The file exists but CUDA could not load it. Check PTX compatibility.",
-                    env_dir, path_str
-                ))?;
+                        env_dir, path_str
+                    )
+                })?;
 
             (module, path_str)
         } else {
@@ -2428,9 +2463,15 @@ impl NhsAmberFusedEngine {
 
             // 2. Development paths
             ptx_paths.push(std::path::PathBuf::from("target/ptx/nhs_amber_fused.ptx"));
-            ptx_paths.push(std::path::PathBuf::from("../../target/ptx/nhs_amber_fused.ptx"));
-            ptx_paths.push(std::path::PathBuf::from("../prism-gpu/src/kernels/nhs_amber_fused.ptx"));
-            ptx_paths.push(std::path::PathBuf::from("crates/prism-gpu/src/kernels/nhs_amber_fused.ptx"));
+            ptx_paths.push(std::path::PathBuf::from(
+                "../../target/ptx/nhs_amber_fused.ptx",
+            ));
+            ptx_paths.push(std::path::PathBuf::from(
+                "../prism-gpu/src/kernels/nhs_amber_fused.ptx",
+            ));
+            ptx_paths.push(std::path::PathBuf::from(
+                "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx",
+            ));
 
             let mut tried_paths: Vec<String> = Vec::new();
             let mut result: Option<(Arc<CudaModule>, String)> = None;
@@ -2460,7 +2501,11 @@ impl NhsAmberFusedEngine {
                      - Set PRISM4D_PTX_DIR=/path/to/ptx/dir\n\
                      - Or ensure assets/ptx/nhs_amber_fused.ptx exists relative to executable\n\
                      - Or run from workspace root with target/ptx/ available",
-                    tried_paths.iter().map(|p| format!("  - {}", p)).collect::<Vec<_>>().join("\n")
+                    tried_paths
+                        .iter()
+                        .map(|p| format!("  - {}", p))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 )
             })?
         };
@@ -2468,24 +2513,31 @@ impl NhsAmberFusedEngine {
         log::info!("Loaded fused kernel PTX from: {}", loaded_path);
 
         let fused_step_kernel = fused_module.load_function("nhs_amber_fused_step")?;
-        let voxel_step_kernel = fused_module.load_function("nhs_voxel_step")
+        let voxel_step_kernel = fused_module
+            .load_function("nhs_voxel_step")
             .unwrap_or_else(|_| fused_step_kernel.clone());
         let fused_step_kernel = fused_module.load_function("nhs_amber_fused_step")?;
         let init_rng_kernel = fused_module.load_function("init_rng_states")?;
         let init_lif_kernel = fused_module.load_function("init_lif_state")?;
         // These kernels are optional - try to load, use defaults if missing
-        let init_warp_matrix_kernel = fused_module.load_function("init_warp_matrix")
+        let init_warp_matrix_kernel = fused_module
+            .load_function("init_warp_matrix")
             .unwrap_or_else(|_| fused_step_kernel.clone());
-        let build_uv_targets_kernel = fused_module.load_function("build_uv_targets")
+        let build_uv_targets_kernel = fused_module
+            .load_function("build_uv_targets")
             .unwrap_or_else(|_| fused_step_kernel.clone());
 
         // Multi-neuron LIF kernels
-        let multi_lif_kernel = fused_module.load_function("nhs_voxel_step_multi_lif")
+        let multi_lif_kernel = fused_module
+            .load_function("nhs_voxel_step_multi_lif")
             .unwrap_or_else(|_| {
-                log::warn!("nhs_voxel_step_multi_lif not found in PTX, falling back to single-neuron");
+                log::warn!(
+                    "nhs_voxel_step_multi_lif not found in PTX, falling back to single-neuron"
+                );
                 fused_step_kernel.clone()
             });
-        let init_multi_neuron_kernel = fused_module.load_function("init_multi_neuron")
+        let init_multi_neuron_kernel = fused_module
+            .load_function("init_multi_neuron")
             .unwrap_or_else(|_| fused_step_kernel.clone());
 
         // PRISM-TWIN v3.0: Protocol Director kernel (GPU-resident state machine)
@@ -2497,12 +2549,19 @@ impl NhsAmberFusedEngine {
                         Ok(director_module) => {
                             match director_module.load_function("protocol_director") {
                                 Ok(f) => {
-                                    log::info!("  Protocol Director kernel: ✓ loaded from {}", ptx_path);
-                                    let d_protocol_state = stream.alloc_zeros::<u8>(
-                                        std::mem::size_of::<crate::protocol_state::ProtocolState>()
-                                    )?;
+                                    log::info!(
+                                        "  Protocol Director kernel: ✓ loaded from {}",
+                                        ptx_path
+                                    );
+                                    let d_protocol_state =
+                                        stream.alloc_zeros::<u8>(std::mem::size_of::<
+                                            crate::protocol_state::ProtocolState,
+                                        >(
+                                        ))?;
                                     // Graph-conditional variant (optional — CUDA 12.4+)
-                                    let graph_fn = director_module.load_function("protocol_director_graph").ok();
+                                    let graph_fn = director_module
+                                        .load_function("protocol_director_graph")
+                                        .ok();
                                     if graph_fn.is_some() {
                                         log::info!("  Protocol Director (graph variant): ✓ loaded");
                                     }
@@ -2510,27 +2569,30 @@ impl NhsAmberFusedEngine {
                                 }
                                 Err(e) => {
                                     log::warn!("protocol_director function not found: {}", e);
-                                    let d_protocol_state = stream.alloc_zeros::<u8>(
-                                        std::mem::size_of::<crate::protocol_state::ProtocolState>()
-                                    )?;
+                                    let d_protocol_state =
+                                        stream.alloc_zeros::<u8>(std::mem::size_of::<
+                                            crate::protocol_state::ProtocolState,
+                                        >(
+                                        ))?;
                                     (fused_step_kernel.clone(), d_protocol_state, None)
                                 }
                             }
                         }
                         Err(e) => {
                             log::warn!("Failed to load protocol_director.ptx: {}", e);
-                            let d_protocol_state = stream.alloc_zeros::<u8>(
-                                std::mem::size_of::<crate::protocol_state::ProtocolState>()
-                            )?;
+                            let d_protocol_state =
+                                stream.alloc_zeros::<u8>(std::mem::size_of::<
+                                    crate::protocol_state::ProtocolState,
+                                >())?;
                             (fused_step_kernel.clone(), d_protocol_state, None)
                         }
                     }
                 }
                 Err(e) => {
                     log::warn!("protocol_director.ptx not found: {}", e);
-                    let d_protocol_state = stream.alloc_zeros::<u8>(
-                        std::mem::size_of::<crate::protocol_state::ProtocolState>()
-                    )?;
+                    let d_protocol_state = stream.alloc_zeros::<u8>(std::mem::size_of::<
+                        crate::protocol_state::ProtocolState,
+                    >())?;
                     (fused_step_kernel.clone(), d_protocol_state, None)
                 }
             }
@@ -2538,8 +2600,14 @@ impl NhsAmberFusedEngine {
         let (director_fn, d_protocol_state, director_graph_fn) = director_fn;
 
         // Gate 2: Housekeeping kernels (GPU-side COM removal, CA restraints, heartbeat)
-        let (heartbeat_fn, ca_restraint_fn, coupling_clear_fn,
-             com_reduce_fn, com_correct_fn, com_accum_clear_fn) = {
+        let (
+            heartbeat_fn,
+            ca_restraint_fn,
+            coupling_clear_fn,
+            com_reduce_fn,
+            com_correct_fn,
+            com_accum_clear_fn,
+        ) = {
             match crate::twin_kernels::find_twin_ptx("housekeeping.ptx") {
                 Ok(ptx_path) => {
                     match context.load_module(cudarc::nvrtc::Ptx::from_file(&ptx_path)) {
@@ -2555,7 +2623,10 @@ impl NhsAmberFusedEngine {
                             )
                         }
                         Err(e) => {
-                            log::warn!("Failed to load housekeeping.ptx: {} — falling back to CPU", e);
+                            log::warn!(
+                                "Failed to load housekeeping.ptx: {} — falling back to CPU",
+                                e
+                            );
                             (None, None, None, None, None, None)
                         }
                     }
@@ -2592,10 +2663,14 @@ impl NhsAmberFusedEngine {
         // LADD kernel functions (optional — graceful fallback if not in PTX)
         let ladd_update_voxels_kernel = fused_module.load_function("ladd_update_voxels").ok();
         let ladd_compute_density_kernel = fused_module.load_function("ladd_compute_density").ok();
-        let ladd_accumulate_density_kernel = fused_module.load_function("ladd_accumulate_density").ok();
-        let ladd_accumulate_reference_kernel = fused_module.load_function("ladd_accumulate_reference").ok();
+        let ladd_accumulate_density_kernel =
+            fused_module.load_function("ladd_accumulate_density").ok();
+        let ladd_accumulate_reference_kernel =
+            fused_module.load_function("ladd_accumulate_reference").ok();
         let ladd_detect_and_emit_kernel = fused_module.load_function("ladd_detect_and_emit").ok();
-        let ladd_build_offsets_kernel = fused_module.load_function("ladd_build_departure_offsets").ok();
+        let ladd_build_offsets_kernel = fused_module
+            .load_function("ladd_build_departure_offsets")
+            .ok();
         let ladd_scatter_kernel = fused_module.load_function("ladd_scatter_departures").ok();
         if ladd_update_voxels_kernel.is_some() && ladd_detect_and_emit_kernel.is_some() {
             log::info!("  LADD kernels: ✓ loaded (7 functions, sorted departure scan)");
@@ -2625,7 +2700,9 @@ impl NhsAmberFusedEngine {
         // CA atom mask: 1 if atom is a CA, 0 otherwise
         let mut ca_mask = vec![0i32; n_atoms];
         for &ca_idx in &topology.ca_indices {
-            if ca_idx < n_atoms { ca_mask[ca_idx] = 1; }
+            if ca_idx < n_atoms {
+                ca_mask[ca_idx] = 1;
+            }
         }
         let mut d_ca_mask: CudaSlice<i32> = stream.alloc_zeros(n_atoms)?;
         stream.memcpy_htod(&ca_mask, &mut d_ca_mask)?;
@@ -2649,31 +2726,37 @@ impl NhsAmberFusedEngine {
         let lj_size = std::mem::size_of::<GpuLJParam>();
 
         // Build bond parameters
-        let bonds: Vec<GpuBondParam> = topology.bonds.iter().map(|b| {
-            GpuBondParam {
+        let bonds: Vec<GpuBondParam> = topology
+            .bonds
+            .iter()
+            .map(|b| GpuBondParam {
                 i: b.i as i32,
                 j: b.j as i32,
                 r0: b.r0 as f32,
                 k: b.k as f32,
-            }
-        }).collect();
+            })
+            .collect();
         let d_bonds: CudaSlice<u8> = stream.alloc_zeros((n_bonds.max(1) * bond_size))?;
 
         // Build angle parameters
-        let angles: Vec<GpuAngleParam> = topology.angles.iter().map(|a| {
-            GpuAngleParam {
+        let angles: Vec<GpuAngleParam> = topology
+            .angles
+            .iter()
+            .map(|a| GpuAngleParam {
                 i: a.i as i32,
                 j: a.j as i32,
                 k: a.k_idx as i32,
                 theta0: a.theta0 as f32,
                 force_k: a.force_k as f32,
-            }
-        }).collect();
+            })
+            .collect();
         let d_angles: CudaSlice<u8> = stream.alloc_zeros((n_angles.max(1) * angle_size))?;
 
         // Build dihedral parameters
-        let dihedrals: Vec<GpuDihedralParam> = topology.dihedrals.iter().map(|d| {
-            GpuDihedralParam {
+        let dihedrals: Vec<GpuDihedralParam> = topology
+            .dihedrals
+            .iter()
+            .map(|d| GpuDihedralParam {
                 i: d.i as i32,
                 j: d.j as i32,
                 k: d.k_idx as i32,
@@ -2681,56 +2764,109 @@ impl NhsAmberFusedEngine {
                 periodicity: d.periodicity as i32,
                 phase: d.phase as f32,
                 force_k: d.force_k as f32,
-            }
-        }).collect();
-        let d_dihedrals: CudaSlice<u8> = stream.alloc_zeros((n_dihedrals.max(1) * dihedral_size))?;
+            })
+            .collect();
+        let d_dihedrals: CudaSlice<u8> =
+            stream.alloc_zeros((n_dihedrals.max(1) * dihedral_size))?;
 
         // Build LJ parameters
-        let lj_params: Vec<GpuLJParam> = topology.lj_params.iter().map(|lj| {
-            GpuLJParam {
+        let lj_params: Vec<GpuLJParam> = topology
+            .lj_params
+            .iter()
+            .map(|lj| GpuLJParam {
                 sigma: lj.sigma as f32,
                 epsilon: lj.epsilon as f32,
-            }
-        }).collect();
+            })
+            .collect();
         let d_lj_params: CudaSlice<u8> = stream.alloc_zeros(n_atoms * lj_size)?;
 
         // LADD: classify each atom into 8 categories
-        let atom_categories: Vec<u8> = (0..n_atoms).map(|i| {
-            let element = topology.elements.get(i).map(|s| s.trim()).unwrap_or("");
-            if element == "H" { return 255u8; } // hydrogen sentinel
-            let name = topology.atom_names.get(i).map(|s| s.trim()).unwrap_or("");
-            let resname = topology.residue_names.get(i).map(|s| s.trim()).unwrap_or("");
-            // Backbone polar: N, O, OXT
-            if name == "N" || name == "O" || name == "OXT" { return 0; }
-            // Backbone carbon: CA, C
-            if name == "CA" || name == "C" { return 1; }
-            // Sulfur
-            if element == "S" || name == "SG" || name == "SD" { return 6; }
-            // Aromatic ring atoms
-            let arom_res = ["TRP","TYR","PHE","HIS","HID","HIE","HIP"];
-            let ring_atoms = ["CG","CD1","CD2","CE1","CE2","CE3","CZ","CZ2","CZ3","CH2","NE1","ND1","NE2"];
-            if arom_res.contains(&resname) && ring_atoms.contains(&name) { return 5; }
-            // Charged sidechain
-            match (resname, name) {
-                ("ASP", "OD1") | ("ASP", "OD2") |
-                ("GLU", "OE1") | ("GLU", "OE2") |
-                ("LYS", "NZ") |
-                ("ARG", "NE") | ("ARG", "NH1") | ("ARG", "NH2") => return 4,
-                _ => {}
-            }
-            // Polar sidechain (O or N not caught above)
-            if element == "O" || element == "N" { return 3; }
-            // Hydrophobic carbon
-            if element == "C" { return 2; }
-            7 // OTHER
-        }).collect();
+        let atom_categories: Vec<u8> = (0..n_atoms)
+            .map(|i| {
+                let element = topology.elements.get(i).map(|s| s.trim()).unwrap_or("");
+                if element == "H" {
+                    return 255u8;
+                } // hydrogen sentinel
+                let name = topology.atom_names.get(i).map(|s| s.trim()).unwrap_or("");
+                let resname = topology
+                    .residue_names
+                    .get(i)
+                    .map(|s| s.trim())
+                    .unwrap_or("");
+                // Backbone polar: N, O, OXT
+                if name == "N" || name == "O" || name == "OXT" {
+                    return 0;
+                }
+                // Backbone carbon: CA, C
+                if name == "CA" || name == "C" {
+                    return 1;
+                }
+                // Sulfur
+                if element == "S" || name == "SG" || name == "SD" {
+                    return 6;
+                }
+                // Aromatic ring atoms
+                let arom_res = ["TRP", "TYR", "PHE", "HIS", "HID", "HIE", "HIP"];
+                let ring_atoms = [
+                    "CG", "CD1", "CD2", "CE1", "CE2", "CE3", "CZ", "CZ2", "CZ3", "CH2", "NE1",
+                    "ND1", "NE2",
+                ];
+                if arom_res.contains(&resname) && ring_atoms.contains(&name) {
+                    return 5;
+                }
+                // Charged sidechain
+                match (resname, name) {
+                    ("ASP", "OD1")
+                    | ("ASP", "OD2")
+                    | ("GLU", "OE1")
+                    | ("GLU", "OE2")
+                    | ("LYS", "NZ")
+                    | ("ARG", "NE")
+                    | ("ARG", "NH1")
+                    | ("ARG", "NH2") => return 4,
+                    _ => {}
+                }
+                // Polar sidechain (O or N not caught above)
+                if element == "O" || element == "N" {
+                    return 3;
+                }
+                // Hydrophobic carbon
+                if element == "C" {
+                    return 2;
+                }
+                7 // OTHER
+            })
+            .collect();
         let d_atom_categories: CudaSlice<u8> = stream.alloc_zeros(n_atoms)?;
         {
             let mut hist = [0u32; 9]; // 0-7 + hydrogen(255)
-            for &c in &atom_categories { if c == 255 { hist[8] += 1; } else { hist[c as usize] += 1; } }
-            let cat_names = ["BB_POLAR","BB_CARBON","SC_HYDRO","SC_POLAR","SC_CHARGED","SC_AROMATIC","SULFUR","OTHER","HYDROGEN"];
-            log::info!("  LADD atom classification: {}", cat_names.iter().zip(hist.iter())
-                .map(|(n,c)| format!("{}={}", n, c)).collect::<Vec<_>>().join(", "));
+            for &c in &atom_categories {
+                if c == 255 {
+                    hist[8] += 1;
+                } else {
+                    hist[c as usize] += 1;
+                }
+            }
+            let cat_names = [
+                "BB_POLAR",
+                "BB_CARBON",
+                "SC_HYDRO",
+                "SC_POLAR",
+                "SC_CHARGED",
+                "SC_AROMATIC",
+                "SULFUR",
+                "OTHER",
+                "HYDROGEN",
+            ];
+            log::info!(
+                "  LADD atom classification: {}",
+                cat_names
+                    .iter()
+                    .zip(hist.iter())
+                    .map(|(n, c)| format!("{}={}", n, c))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
 
         // LADD: allocate voxel tracking + density arrays
@@ -2753,13 +2889,16 @@ impl NhsAmberFusedEngine {
         let d_positions_prev_ladd: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
 
         // Derive 1-4 pairs from dihedrals (atoms i,l at opposite ends)
-        let mut pairs14_per_atom: Vec<std::collections::HashSet<usize>> = vec![std::collections::HashSet::new(); n_atoms];
+        let mut pairs14_per_atom: Vec<std::collections::HashSet<usize>> =
+            vec![std::collections::HashSet::new(); n_atoms];
         // Also build 1-2 and 1-3 sets to exclude them from 1-4
-        let mut bonded_12: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+        let mut bonded_12: std::collections::HashSet<(usize, usize)> =
+            std::collections::HashSet::new();
         for b in &topology.bonds {
             bonded_12.insert((b.i.min(b.j), b.i.max(b.j)));
         }
-        let mut bonded_13: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
+        let mut bonded_13: std::collections::HashSet<(usize, usize)> =
+            std::collections::HashSet::new();
         for a in &topology.angles {
             bonded_13.insert((a.i.min(a.k_idx), a.i.max(a.k_idx)));
         }
@@ -2801,7 +2940,8 @@ impl NhsAmberFusedEngine {
             topology.exclusions.iter().map(|e| e.len()).sum::<usize>() as f32 / n_atoms as f32);
 
         let d_exclusion_list: CudaSlice<i32> = stream.alloc_zeros(exclusion_list.len().max(1))?;
-        let d_exclusion_offsets: CudaSlice<i32> = stream.alloc_zeros(exclusion_offsets.len().max(1))?;
+        let d_exclusion_offsets: CudaSlice<i32> =
+            stream.alloc_zeros(exclusion_offsets.len().max(1))?;
         let d_pairs14_list: CudaSlice<i32> = stream.alloc_zeros(pairs14_list.len().max(1))?;
         let d_pairs14_offsets: CudaSlice<i32> = stream.alloc_zeros(pairs14_offsets.len().max(1))?;
 
@@ -2828,14 +2968,16 @@ impl NhsAmberFusedEngine {
             h_clusters.push(gpu_cluster);
         }
         let n_clusters = h_clusters.len();
-        let d_h_clusters: CudaSlice<u8> = stream.alloc_zeros((n_clusters.max(1) * h_cluster_size))?;
+        let d_h_clusters: CudaSlice<u8> =
+            stream.alloc_zeros((n_clusters.max(1) * h_cluster_size))?;
 
         // ====================================================================
         // BUILD UV TARGETS (aromatic residues) + EXCITED STATE MAPPINGS
         // ====================================================================
 
         let uv_target_size = std::mem::size_of::<GpuUVTarget>();
-        let mut aromatic_residues: Vec<i32> = topology.aromatic_residues()
+        let mut aromatic_residues: Vec<i32> = topology
+            .aromatic_residues()
             .into_iter()
             .map(|r| r as i32)
             .collect();
@@ -2869,17 +3011,19 @@ impl NhsAmberFusedEngine {
             //   2 = PHE (Phenylalanine)
             //   3 = S-S (Disulfide)
             //   4 = BNZ (Benzene cosolvent)
-            let res_name = topology.residue_ids.iter()
+            let res_name = topology
+                .residue_ids
+                .iter()
                 .position(|&r| r as i32 == res_id)
                 .map(|idx| topology.residue_names[idx].as_str())
                 .unwrap_or("");
 
             let (absorption, arom_type) = match res_name {
-                "TRP" => (1.0, 0),  // TRP = 0 (canonical)
-                "TYR" => (0.6, 1),  // TYR = 1 (canonical)
-                "PHE" => (0.2, 2),  // PHE = 2 (canonical)
-                "CYS" | "CYX" => (0.1, 3),  // S-S = 3 (canonical)
-                _ => (0.3, 1),  // Default to TYR
+                "TRP" => (1.0, 0),         // TRP = 0 (canonical)
+                "TYR" => (0.6, 1),         // TYR = 1 (canonical)
+                "PHE" => (0.2, 2),         // PHE = 2 (canonical)
+                "CYS" | "CYX" => (0.1, 3), // S-S = 3 (canonical)
+                _ => (0.3, 1),             // Default to TYR
             };
             target.absorption_strength = absorption;
             target.aromatic_type = arom_type;
@@ -2902,12 +3046,14 @@ impl NhsAmberFusedEngine {
         if cosolvent_enabled {
             let mut cosolvent_count = 0usize;
             // Collect unique residue IDs for hydrophobic residues not already targeted
-            let mut seen_res_ids: std::collections::HashSet<i32> = 
+            let mut seen_res_ids: std::collections::HashSet<i32> =
                 aromatic_residues.iter().copied().collect();
 
             for atom_idx in 0..n_atoms {
                 let res_id = topology.residue_ids[atom_idx] as i32;
-                if seen_res_ids.contains(&res_id) && !matches!(topology.residue_names[atom_idx].as_str(), "TRP") {
+                if seen_res_ids.contains(&res_id)
+                    && !matches!(topology.residue_names[atom_idx].as_str(), "TRP")
+                {
                     continue;
                 }
                 let res_name = topology.residue_names[atom_idx].as_str();
@@ -2925,28 +3071,33 @@ impl NhsAmberFusedEngine {
                 for (aidx, &atom_res) in topology.residue_ids.iter().enumerate() {
                     if atom_res as i32 == res_id && atom_count < 16 {
                         target.atom_indices[atom_count] = aidx as i32;
-                        if atom_to_aromatic[aidx] < 0 { atom_to_aromatic[aidx] = aromatic_idx as i32; }
+                        if atom_to_aromatic[aidx] < 0 {
+                            atom_to_aromatic[aidx] = aromatic_idx as i32;
+                        }
                         atom_count += 1;
                     }
                 }
                 target.n_atoms = atom_count as i32;
                 // BNZ cosolvent: ε=204 vs TRP ε=5600 → absorption ~0.036 relative
                 target.absorption_strength = 0.036;
-                target.aromatic_type = 4;  // BNZ = 4 (canonical)
+                target.aromatic_type = 4; // BNZ = 4 (canonical)
                 aromatic_types.push(4);
                 aromatic_residues.push(res_id);
                 uv_targets.push(target);
                 cosolvent_count += 1;
             }
             if cosolvent_count > 0 {
-                log::info!("🧪 Benzene cosolvent: injected {} virtual probes on LEU/ILE/VAL/TRP residues",
-                    cosolvent_count);
+                log::info!(
+                    "🧪 Benzene cosolvent: injected {} virtual probes on LEU/ILE/VAL/TRP residues",
+                    cosolvent_count
+                );
             }
         }
 
         let n_uv_targets = uv_targets.len().min(MAX_UV_TARGETS);
-        let n_aromatics = n_uv_targets;  // Same as UV targets
-        let d_uv_targets: CudaSlice<u8> = stream.alloc_zeros((n_uv_targets.max(1) * uv_target_size))?;
+        let n_aromatics = n_uv_targets; // Same as UV targets
+        let d_uv_targets: CudaSlice<u8> =
+            stream.alloc_zeros((n_uv_targets.max(1) * uv_target_size))?;
 
         // ====================================================================
         // ALLOCATE EXCITED STATE BUFFERS
@@ -2970,11 +3121,13 @@ impl NhsAmberFusedEngine {
 
         // Aromatic neighbors for vibrational energy transfer
         let aromatic_neighbors_size = std::mem::size_of::<GpuAromaticNeighbors>();
-        let d_aromatic_neighbors: CudaSlice<u8> = stream.alloc_zeros(n_aromatics.max(1) * aromatic_neighbors_size)?;
+        let d_aromatic_neighbors: CudaSlice<u8> =
+            stream.alloc_zeros(n_aromatics.max(1) * aromatic_neighbors_size)?;
 
         // Aromatic topology buffers for init kernels (Issue #3 fix)
         // These are needed by build_aromatic_neighbors and compute_ring_normals CUDA kernels
-        let d_aromatic_atom_indices: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1) * 16)?;
+        let d_aromatic_atom_indices: CudaSlice<i32> =
+            stream.alloc_zeros(n_aromatics.max(1) * 16)?;
         let d_aromatic_n_atoms: CudaSlice<i32> = stream.alloc_zeros(n_aromatics.max(1))?;
 
         // ====================================================================
@@ -2982,7 +3135,7 @@ impl NhsAmberFusedEngine {
         // ====================================================================
 
         // Cell list constants (must match CUDA kernel defines)
-        const CELL_SIZE: f32 = 10.0;         // Matches NB_CUTOFF
+        const CELL_SIZE: f32 = 10.0; // Matches NB_CUTOFF
         const MAX_ATOMS_PER_CELL: usize = 128;
         const NEIGHBOR_LIST_SIZE: usize = 256;
         const MAX_CELLS_PER_DIM: i32 = 32;
@@ -3002,13 +3155,25 @@ impl NhsAmberFusedEngine {
             max_pos[2] - min_pos[2] + 2.0 * cell_padding,
         ];
 
-        let cell_nx = ((extent[0] / CELL_SIZE).ceil() as i32).min(MAX_CELLS_PER_DIM).max(1);
-        let cell_ny = ((extent[1] / CELL_SIZE).ceil() as i32).min(MAX_CELLS_PER_DIM).max(1);
-        let cell_nz = ((extent[2] / CELL_SIZE).ceil() as i32).min(MAX_CELLS_PER_DIM).max(1);
+        let cell_nx = ((extent[0] / CELL_SIZE).ceil() as i32)
+            .min(MAX_CELLS_PER_DIM)
+            .max(1);
+        let cell_ny = ((extent[1] / CELL_SIZE).ceil() as i32)
+            .min(MAX_CELLS_PER_DIM)
+            .max(1);
+        let cell_nz = ((extent[2] / CELL_SIZE).ceil() as i32)
+            .min(MAX_CELLS_PER_DIM)
+            .max(1);
         let n_total_cells = (cell_nx * cell_ny * cell_nz) as usize;
 
-        log::info!("Cell grid: {}x{}x{} = {} cells (cell size {} Å)",
-            cell_nx, cell_ny, cell_nz, n_total_cells, CELL_SIZE);
+        log::info!(
+            "Cell grid: {}x{}x{} = {} cells (cell size {} Å)",
+            cell_nx,
+            cell_ny,
+            cell_nz,
+            n_total_cells,
+            CELL_SIZE
+        );
 
         // Allocate cell list buffers
         let d_cell_list: CudaSlice<i32> = stream.alloc_zeros(n_total_cells * MAX_ATOMS_PER_CELL)?;
@@ -3021,9 +3186,15 @@ impl NhsAmberFusedEngine {
 
         // Enable neighbor list for systems with > 500 atoms (where O(N) beats O(N²))
         let use_neighbor_list = n_atoms > 500;
-        log::info!("Neighbor list mode: {} (n_atoms={})",
-            if use_neighbor_list { "ENABLED (O(N))" } else { "DISABLED (O(N²))" },
-            n_atoms);
+        log::info!(
+            "Neighbor list mode: {} (n_atoms={})",
+            if use_neighbor_list {
+                "ENABLED (O(N))"
+            } else {
+                "DISABLED (O(N²))"
+            },
+            n_atoms
+        );
 
         // ====================================================================
         // ALLOCATE WARP MATRIX (voxel-to-atom mapping)
@@ -3069,8 +3240,11 @@ impl NhsAmberFusedEngine {
             stream.memcpy_htod(&sentinel, &mut buf)?;
             buf
         };
-        log::info!("Signal preservation buffers: {} voxels x 5 grids = {:.1} MB",
-            total_voxels, (total_voxels * 5 * 4) as f64 / 1048576.0);
+        log::info!(
+            "Signal preservation buffers: {} voxels x 5 grids = {:.1} MB",
+            total_voxels,
+            (total_voxels * 5 * 4) as f64 / 1048576.0
+        );
 
         // KCC v2-full: per-residue GPU-resident buffers
         let n_residues = topology.n_residues;
@@ -3142,7 +3316,8 @@ impl NhsAmberFusedEngine {
         }
         // Load KCC kernels
         let kcc_residue_update_kernel = fused_module.load_function("kcc_residue_update")?;
-        let kcc_compute_descriptors_kernel = fused_module.load_function("kcc_compute_rich_descriptors")?;
+        let kcc_compute_descriptors_kernel =
+            fused_module.load_function("kcc_compute_rich_descriptors")?;
         let kcc_streaming_bytes = n_residues * (15 * 4 + 2 * 4); // 15 floats + 2 u32s
         let kcc_ring_bytes = ring_total * kcc_event_size + n_residues * 8; // events + head + last_step
         let kcc_output_bytes = n_residues * 8 * 4; // 8 output descriptors
@@ -3177,16 +3352,23 @@ impl NhsAmberFusedEngine {
         let d_coupling_b: CudaSlice<f32> = stream.alloc_zeros(total_voxels)?;
         // Sparse tile index — placeholder, resized in build_warp_matrix()
         let d_active_tiles: CudaSlice<i32> = stream.alloc_zeros(1)?;
-        log::info!("Multi-neuron LIF: {} voxels x {} neurons = {} neuron states ({:.1} MB)",
-            total_voxels, k_neurons, total_voxels * k_neurons,
-            (total_voxels * k_neurons * 4 * 3 + total_voxels * k_neurons * 4 + total_voxels * 4 * 2) as f64 / 1048576.0);
+        log::info!(
+            "Multi-neuron LIF: {} voxels x {} neurons = {} neuron states ({:.1} MB)",
+            total_voxels,
+            k_neurons,
+            total_voxels * k_neurons,
+            (total_voxels * k_neurons * 4 * 3 + total_voxels * k_neurons * 4 + total_voxels * 4 * 2)
+                as f64
+                / 1048576.0
+        );
 
         // ====================================================================
         // ALLOCATE SPIKE OUTPUT
         // ====================================================================
 
         let spike_event_size = std::mem::size_of::<GpuSpikeEvent>();
-        let d_spike_events: CudaSlice<u8> = stream.alloc_zeros(MAX_SPIKES_PER_STEP * spike_event_size)?;
+        let d_spike_events: CudaSlice<u8> =
+            stream.alloc_zeros(MAX_SPIKES_PER_STEP * spike_event_size)?;
         let d_spike_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
 
         // ====================================================================
@@ -3252,7 +3434,7 @@ impl NhsAmberFusedEngine {
             d_departure_local_slot,
             d_sorted_departure_atoms,
             d_positions_prev_ladd,
-            ladd_enabled: false, // set via set_ladd_enabled()
+            ladd_enabled: false,         // set via set_ladd_enabled()
             ladd_cold_hold_steps: 14000, // default, overridden by set_ladd_cold_hold()
 
             // Struct sizes for GPU memory layout
@@ -3301,15 +3483,30 @@ impl NhsAmberFusedEngine {
             ca_mask_cpu: ca_mask,
             d_residue_ca_idx,
             d_residue_step_causal,
-            d_residue_prev_x, d_residue_prev_y, d_residue_prev_z,
-            d_residue_sum_m, d_residue_sum_m2,
-            d_residue_sum_c, d_residue_sum_c2, d_residue_sum_mc,
-            d_residue_net_dx, d_residue_net_dy, d_residue_net_dz,
-            d_residue_count, d_residue_active_causal,
-            d_kcc_ring, d_kcc_ring_head, d_kcc_last_event_step,
-            d_kcc_temporal_corr, d_kcc_direction_score, d_kcc_motion_efficiency,
-            d_kcc_burst_motion, d_kcc_phase_shift, d_kcc_causal_lag,
-            d_kcc_lag_corr_peak, d_kcc_local_cov,
+            d_residue_prev_x,
+            d_residue_prev_y,
+            d_residue_prev_z,
+            d_residue_sum_m,
+            d_residue_sum_m2,
+            d_residue_sum_c,
+            d_residue_sum_c2,
+            d_residue_sum_mc,
+            d_residue_net_dx,
+            d_residue_net_dy,
+            d_residue_net_dz,
+            d_residue_count,
+            d_residue_active_causal,
+            d_kcc_ring,
+            d_kcc_ring_head,
+            d_kcc_last_event_step,
+            d_kcc_temporal_corr,
+            d_kcc_direction_score,
+            d_kcc_motion_efficiency,
+            d_kcc_burst_motion,
+            d_kcc_phase_shift,
+            d_kcc_causal_lag,
+            d_kcc_lag_corr_peak,
+            d_kcc_local_cov,
             kcc_residue_update_kernel,
             kcc_compute_descriptors_kernel,
             n_residues,
@@ -3373,9 +3570,9 @@ impl NhsAmberFusedEngine {
             grid_spacing,
             grid_origin,
 
-            dt: 0.002,          // 2 fs timestep
-            gamma_base: 10.0,   // Base friction at 300K (ps^-1) - higher for stability
-            cutoff: 10.0,       // 10 Angstrom nonbonded cutoff
+            dt: 0.002,        // 2 fs timestep
+            gamma_base: 10.0, // Base friction at 300K (ps^-1) - higher for stability
+            cutoff: 10.0,     // 10 Angstrom nonbonded cutoff
             timestep: 0,
 
             cryo_enabled: true,
@@ -3423,7 +3620,7 @@ impl NhsAmberFusedEngine {
             d_atom_cell,
             d_neighbor_list,
             d_n_neighbors,
-            neighbor_list_rebuild_interval: 20,  // Rebuild every 20 steps
+            neighbor_list_rebuild_interval: 20, // Rebuild every 20 steps
             steps_since_rebuild: 0,
             use_neighbor_list,
 
@@ -3436,10 +3633,10 @@ impl NhsAmberFusedEngine {
             ensemble_snapshots: Vec::new(),
 
             // Spike quality scoring support
-            spike_persistence_tracker: SpikePersistenceTracker::new(5.0),  // 5Å clustering radius
+            spike_persistence_tracker: SpikePersistenceTracker::new(5.0), // 5Å clustering radius
             reference_positions: topology.positions.clone(),
-            last_uv_burst_timestep: -1000,  // No burst yet
-            last_spike_count: 0,            // Will be updated on each sync before reset
+            last_uv_burst_timestep: -1000, // No burst yet
+            last_spike_count: 0,           // Will be updated on each sync before reset
 
             // Spike accumulation (disabled by default, enable with set_spike_accumulation)
             accumulate_spikes: false,
@@ -3471,12 +3668,22 @@ impl NhsAmberFusedEngine {
         };
 
         // Upload all data to GPU
-        engine.upload_topology_structs(topology, &bonds, &angles, &dihedrals, &lj_params,
-                                        &exclusion_list, &exclusion_offsets,
-                                        &pairs14_list, &pairs14_offsets,
-                                        &atom_categories,
-                                        &h_clusters, &uv_targets,
-                                        &atom_to_aromatic, &aromatic_types)?;
+        engine.upload_topology_structs(
+            topology,
+            &bonds,
+            &angles,
+            &dihedrals,
+            &lj_params,
+            &exclusion_list,
+            &exclusion_offsets,
+            &pairs14_list,
+            &pairs14_offsets,
+            &atom_categories,
+            &h_clusters,
+            &uv_targets,
+            &atom_to_aromatic,
+            &aromatic_types,
+        )?;
 
         // Initialize RNG
         engine.init_rng(42)?;
@@ -3488,7 +3695,9 @@ impl NhsAmberFusedEngine {
         engine.init_multi_neuron_state()?;
 
         // TWIN: snapshot initialized thresholds as base reference for ring buffer
-        engine.stream.memcpy_dtod(&engine.d_neuron_threshold, &mut engine.d_base_threshold)?;
+        engine
+            .stream
+            .memcpy_dtod(&engine.d_neuron_threshold, &mut engine.d_base_threshold)?;
 
         // Build warp matrix
         engine.build_warp_matrix()?;
@@ -3499,13 +3708,25 @@ impl NhsAmberFusedEngine {
         // ====================================================================
         engine.init_aromatic_neighbors()?;
         engine.compute_ring_normals()?;
-        engine.compute_aromatic_centroids()?;  // UV-LIF coupling requires centroid positions
+        engine.compute_aromatic_centroids()?; // UV-LIF coupling requires centroid positions
 
         log::info!("NHS-AMBER Fused Engine created successfully");
-        log::info!("  Bonds: {}, Angles: {}, Dihedrals: {}", n_bonds, n_angles, n_dihedrals);
+        log::info!(
+            "  Bonds: {}, Angles: {}, Dihedrals: {}",
+            n_bonds,
+            n_angles,
+            n_dihedrals
+        );
         log::info!("  H-Clusters (SHAKE): {}", n_clusters);
         log::info!("  UV Targets: {}", n_uv_targets);
-        log::info!("  Cryogenic physics: {}", if engine.cryo_enabled { "ENABLED" } else { "disabled" });
+        log::info!(
+            "  Cryogenic physics: {}",
+            if engine.cryo_enabled {
+                "ENABLED"
+            } else {
+                "disabled"
+            }
+        );
 
         Ok(engine)
     }
@@ -3515,8 +3736,11 @@ impl NhsAmberFusedEngine {
     /// Call apply_focused_lambda() after cold_hold to focus it on frustrated regions.
     pub fn set_solute_lambda(&mut self, lambda: f32) {
         self.solute_lambda = lambda.clamp(0.1, 1.0);
-        log::info!("REST2 solute lambda: {:.3} (effective T_PES = {:.0}K at 300K)",
-            self.solute_lambda, 300.0 / self.solute_lambda);
+        log::info!(
+            "REST2 solute lambda: {:.3} (effective T_PES = {:.0}K at 300K)",
+            self.solute_lambda,
+            300.0 / self.solute_lambda
+        );
     }
 
     /// Focus REST2 λ on spike-frustrated atoms.
@@ -3537,7 +3761,8 @@ impl NhsAmberFusedEngine {
         }
 
         // Count spikes per residue (via the warp matrix nearby_residues field)
-        let mut residue_spike_count: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+        let mut residue_spike_count: std::collections::HashMap<i32, usize> =
+            std::collections::HashMap::new();
         for spike in spikes {
             // GpuSpikeEvent is #[repr(C, packed)] — read fields via copy to avoid unaligned access
             let nearby = spike.nearby_residues;
@@ -3558,12 +3783,15 @@ impl NhsAmberFusedEngine {
         // === PASS 1: Narrow window — top 10% frustrated residues by spike count ===
         // Top quartile (25%) was too broad — 28% of protein softened, diluting sampling.
         // Top 10% focuses on the most dynamically frustrated residues.
-        let mut sorted_residues: Vec<(i32, usize)> = residue_spike_count.iter()
+        let mut sorted_residues: Vec<(i32, usize)> = residue_spike_count
+            .iter()
             .map(|(&res_id, &count)| (res_id, count))
             .collect();
         sorted_residues.sort_by(|a, b| b.1.cmp(&a.1)); // descending by count
 
-        let top_n = (sorted_residues.len() / 10).max(5).min(sorted_residues.len()); // top 10%, min 5
+        let top_n = (sorted_residues.len() / 10)
+            .max(5)
+            .min(sorted_residues.len()); // top 10%, min 5
         let top_frustrated: Vec<(i32, usize)> = sorted_residues[..top_n].to_vec();
 
         // === PASS 2: Spatial centering — focus on residues near the spike density peak ===
@@ -3573,9 +3801,11 @@ impl NhsAmberFusedEngine {
 
         // Get atom positions for centroid computation
         let mut positions_flat = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_dtoh(&self.d_positions, &mut positions_flat)?;
+        self.stream
+            .memcpy_dtoh(&self.d_positions, &mut positions_flat)?;
         let mut residue_ids = vec![0i32; self.n_atoms];
-        self.stream.memcpy_dtoh(&self.d_residue_ids, &mut residue_ids)?;
+        self.stream
+            .memcpy_dtoh(&self.d_residue_ids, &mut residue_ids)?;
 
         // === PASS 2: Spatial centering via per-residue CoM ===
         // Instead of one global centroid (which lands in empty space when residues
@@ -3584,12 +3814,14 @@ impl NhsAmberFusedEngine {
         // residues are within 15Å. The residue with the most neighbors is the
         // center of the frustrated cluster = the conformational barrier region.
 
-        let top_res_set: std::collections::HashSet<i32> = top_frustrated.iter()
-            .map(|&(res_id, _)| res_id).collect();
+        let top_res_set: std::collections::HashSet<i32> =
+            top_frustrated.iter().map(|&(res_id, _)| res_id).collect();
 
         // Compute CoM for each frustrated residue
-        let mut res_com: std::collections::HashMap<i32, [f64; 3]> = std::collections::HashMap::new();
-        let mut res_atom_count: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+        let mut res_com: std::collections::HashMap<i32, [f64; 3]> =
+            std::collections::HashMap::new();
+        let mut res_atom_count: std::collections::HashMap<i32, usize> =
+            std::collections::HashMap::new();
         for (atom_idx, &res_id) in residue_ids.iter().enumerate() {
             if top_res_set.contains(&res_id) {
                 let com = res_com.entry(res_id).or_insert([0.0; 3]);
@@ -3601,7 +3833,9 @@ impl NhsAmberFusedEngine {
         }
         for (res_id, com) in res_com.iter_mut() {
             let n = *res_atom_count.get(res_id).unwrap_or(&1) as f64;
-            com[0] /= n; com[1] /= n; com[2] /= n;
+            com[0] /= n;
+            com[1] /= n;
+            com[2] /= n;
         }
 
         // Find densest cluster center: residue with most frustrated neighbors within 15Å
@@ -3614,11 +3848,13 @@ impl NhsAmberFusedEngine {
         for (&res_a, com_a) in &res_com {
             let mut n_neighbors = 0usize;
             for (&res_b, com_b) in &res_com {
-                if res_a == res_b { continue; }
+                if res_a == res_b {
+                    continue;
+                }
                 let dx = com_a[0] - com_b[0];
                 let dy = com_a[1] - com_b[1];
                 let dz = com_a[2] - com_b[2];
-                if dx*dx + dy*dy + dz*dz <= cluster_radius_sq {
+                if dx * dx + dy * dy + dz * dz <= cluster_radius_sq {
                     n_neighbors += 1;
                 }
             }
@@ -3657,9 +3893,14 @@ impl NhsAmberFusedEngine {
         }
 
         // Upload to GPU
-        self.stream.memcpy_htod(&atom_lambda, &mut self.d_atom_lambda)?;
+        self.stream
+            .memcpy_htod(&atom_lambda, &mut self.d_atom_lambda)?;
 
-        let pct = if self.n_atoms > 0 { n_softened as f32 / self.n_atoms as f32 * 100.0 } else { 0.0 };
+        let pct = if self.n_atoms > 0 {
+            n_softened as f32 / self.n_atoms as f32 * 100.0
+        } else {
+            0.0
+        };
         log::info!("Focused REST2: {}/{} atoms softened ({:.1}%, λ={:.2}→1.0 gradient), center=res{} ({:.1},{:.1},{:.1}), {} neighbors in 15Å cluster",
             n_softened, self.n_atoms, pct, self.solute_lambda,
             best_center_res, best_center_com[0], best_center_com[1], best_center_com[2],
@@ -3678,7 +3919,8 @@ impl NhsAmberFusedEngine {
         if self.gearbox_active != active {
             log::info!(
                 "[GEARBOX HIERARCHY] gearbox_active: {} → {} (legacy --adaptive-dt {} from now on)",
-                self.gearbox_active, active,
+                self.gearbox_active,
+                active,
                 if active { "BYPASSED" } else { "active" }
             );
         }
@@ -3686,26 +3928,37 @@ impl NhsAmberFusedEngine {
     }
 
     /// Read accessor — true while the V2 captured pipeline owns dt.
-    pub fn is_gearbox_active(&self) -> bool { self.gearbox_active }
+    pub fn is_gearbox_active(&self) -> bool {
+        self.gearbox_active
+    }
 
     /// Telemetry observer — current host-side integration timestep (ps).
     /// Pure observer; does not mutate engine state. Used by the per-chunk
     /// adaptive_dt history persistence in nhs_rt_full.
-    pub fn current_dt_ps(&self) -> f64 { self.dt as f64 }
+    pub fn current_dt_ps(&self) -> f64 {
+        self.dt as f64
+    }
 
     /// Telemetry observer — base (pre-adaptive-scale) timestep (ps).
-    pub fn base_dt_ps(&self) -> f64 { self.base_dt as f64 }
+    pub fn base_dt_ps(&self) -> f64 {
+        self.base_dt as f64
+    }
 
     /// Telemetry observer — true while host-side adaptive_dt heuristic
     /// is the writer of `self.dt` (i.e., not in V2 gearbox mode).
-    pub fn adaptive_dt_enabled(&self) -> bool { self.adaptive_dt_enabled }
+    pub fn adaptive_dt_enabled(&self) -> bool {
+        self.adaptive_dt_enabled
+    }
 
     pub fn set_adaptive_dt(&mut self, enabled: bool) {
         self.adaptive_dt_enabled = enabled;
         self.base_dt = self.dt;
-        log::info!("Adaptive dt: {} (base={:.4}ps, hold={:.4}ps)",
+        log::info!(
+            "Adaptive dt: {} (base={:.4}ps, hold={:.4}ps)",
             if enabled { "ENABLED" } else { "disabled" },
-            self.base_dt, self.base_dt * 1.5);
+            self.base_dt,
+            self.base_dt * 1.5
+        );
     }
 
     /// Enable spike-guided adaptive bias: closed-loop UV energy modulation driven
@@ -3717,7 +3970,9 @@ impl NhsAmberFusedEngine {
         if enabled {
             // Reset activity map and multipliers
             self.spike_activity_map.iter_mut().for_each(|v| *v = 0.0);
-            self.adaptive_bias_multipliers.iter_mut().for_each(|v| *v = 1.0);
+            self.adaptive_bias_multipliers
+                .iter_mut()
+                .for_each(|v| *v = 1.0);
             self.adaptive_bias_total_boosts = 0;
             // Adaptive bias REQUIRES spike accumulation to track activity
             if !self.accumulate_spikes {
@@ -3743,8 +3998,14 @@ impl NhsAmberFusedEngine {
 
     /// Get threshold + protocol state buffers for GPU-direct TWIN coupling.
     /// Single borrow that gives both mutable threshold and protocol state access.
-    pub fn coupling_buffers_for_twin(&mut self) -> Option<(&mut CudaSlice<f32>, &CudaSlice<f32>, &mut CudaSlice<u8>)> {
-        Some((&mut self.d_neuron_threshold, &self.d_neuron_mean, &mut self.d_protocol_state))
+    pub fn coupling_buffers_for_twin(
+        &mut self,
+    ) -> Option<(&mut CudaSlice<f32>, &CudaSlice<f32>, &mut CudaSlice<u8>)> {
+        Some((
+            &mut self.d_neuron_threshold,
+            &self.d_neuron_mean,
+            &mut self.d_protocol_state,
+        ))
     }
 
     /// ASC steering: write focus residue + UV boost to GPU ProtocolState.
@@ -3752,7 +4013,11 @@ impl NhsAmberFusedEngine {
     pub fn set_steering_focus_residue(&mut self, residue_id: i32) {
         let size = std::mem::size_of::<crate::protocol_state::ProtocolState>();
         let mut buf = vec![0u8; size];
-        if self.stream.memcpy_dtoh(&self.d_protocol_state, &mut buf).is_ok() {
+        if self
+            .stream
+            .memcpy_dtoh(&self.d_protocol_state, &mut buf)
+            .is_ok()
+        {
             // steering_uv_boost at offset 148
             buf[148..152].copy_from_slice(&1.5f32.to_ne_bytes());
             // steering_focus_residue at offset 156
@@ -3814,9 +4079,15 @@ impl NhsAmberFusedEngine {
     /// Returns (dim_x, dim_y, dim_z, origin_x, origin_y, origin_z, spacing).
     pub fn grid_info(&self) -> (i32, i32, i32, f32, f32, f32, f32) {
         let dim = self.grid_dim as i32;
-        (dim, dim, dim,
-         self.grid_origin[0], self.grid_origin[1], self.grid_origin[2],
-         self.grid_spacing)
+        (
+            dim,
+            dim,
+            dim,
+            self.grid_origin[0],
+            self.grid_origin[1],
+            self.grid_origin[2],
+            self.grid_spacing,
+        )
     }
 
     /// Total number of voxels (dim³).
@@ -3843,11 +4114,13 @@ impl NhsAmberFusedEngine {
     ///
     /// Returns: (thresh_mut, base, spike_buf, spike_count)
     /// SAFETY: the returned references point to distinct GPU allocations.
-    pub fn twin_coupling_gpu_state(&mut self) -> (
-        &mut CudaSlice<f32>,  // d_neuron_threshold
-        &CudaSlice<f32>,      // d_base_threshold
-        &CudaSlice<u8>,       // d_spike_events
-        &CudaSlice<i32>,      // d_spike_count
+    pub fn twin_coupling_gpu_state(
+        &mut self,
+    ) -> (
+        &mut CudaSlice<f32>, // d_neuron_threshold
+        &CudaSlice<f32>,     // d_base_threshold
+        &CudaSlice<u8>,      // d_spike_events
+        &CudaSlice<i32>,     // d_spike_count
     ) {
         let thresh = &mut self.d_neuron_threshold as *mut CudaSlice<f32>;
         let base = &self.d_base_threshold as *const CudaSlice<f32>;
@@ -3882,19 +4155,30 @@ impl NhsAmberFusedEngine {
         let json: serde_json::Value = serde_json::from_str(&raw)
             .with_context(|| format!("Failed to parse NMA JSON from {}", nma_json_path))?;
 
-        let n_modes = json["n_modes"].as_u64()
+        let n_modes = json["n_modes"]
+            .as_u64()
             .context("NMA JSON missing 'n_modes'")? as usize;
-        let n_residues = json["n_residues"].as_u64()
+        let n_residues = json["n_residues"]
+            .as_u64()
             .context("NMA JSON missing 'n_residues'")? as usize;
 
         if n_modes == 0 || n_residues == 0 {
-            bail!("NMA JSON has zero modes ({}) or residues ({})", n_modes, n_residues);
+            bail!(
+                "NMA JSON has zero modes ({}) or residues ({})",
+                n_modes,
+                n_residues
+            );
         }
 
-        let modes = json["modes"].as_array()
+        let modes = json["modes"]
+            .as_array()
             .context("NMA JSON missing 'modes' array")?;
         if modes.len() != n_modes {
-            bail!("NMA JSON: n_modes={} but modes array has {} entries", n_modes, modes.len());
+            bail!(
+                "NMA JSON: n_modes={} but modes array has {} entries",
+                n_modes,
+                modes.len()
+            );
         }
 
         // Flatten all mode displacements: [n_modes * n_residues * 3]
@@ -3902,20 +4186,34 @@ impl NhsAmberFusedEngine {
         let mut force_scales = Vec::with_capacity(n_modes);
 
         for (i, mode) in modes.iter().enumerate() {
-            let fs = mode["force_scale"].as_f64()
-                .with_context(|| format!("Mode {} missing 'force_scale'", i))? as f32;
+            let fs = mode["force_scale"]
+                .as_f64()
+                .with_context(|| format!("Mode {} missing 'force_scale'", i))?
+                as f32;
             force_scales.push(fs);
 
-            let disp = mode["displacements"].as_array()
+            let disp = mode["displacements"]
+                .as_array()
                 .with_context(|| format!("Mode {} missing 'displacements'", i))?;
             if disp.len() != n_residues {
-                bail!("Mode {}: expected {} displacement vectors, got {}", i, n_residues, disp.len());
+                bail!(
+                    "Mode {}: expected {} displacement vectors, got {}",
+                    i,
+                    n_residues,
+                    disp.len()
+                );
             }
             for (j, vec3) in disp.iter().enumerate() {
-                let arr = vec3.as_array()
-                    .with_context(|| format!("Mode {} residue {}: displacement not an array", i, j))?;
+                let arr = vec3.as_array().with_context(|| {
+                    format!("Mode {} residue {}: displacement not an array", i, j)
+                })?;
                 if arr.len() != 3 {
-                    bail!("Mode {} residue {}: expected [dx,dy,dz], got {} elements", i, j, arr.len());
+                    bail!(
+                        "Mode {} residue {}: expected [dx,dy,dz], got {} elements",
+                        i,
+                        j,
+                        arr.len()
+                    );
                 }
                 for k in 0..3 {
                     displacements.push(arr[k].as_f64().unwrap_or(0.0) as f32);
@@ -3924,12 +4222,18 @@ impl NhsAmberFusedEngine {
         }
 
         // Parse CA indices
-        let ca_indices_json = json["ca_indices"].as_array()
+        let ca_indices_json = json["ca_indices"]
+            .as_array()
             .context("NMA JSON missing 'ca_indices'")?;
         if ca_indices_json.len() != n_residues {
-            bail!("NMA JSON: n_residues={} but ca_indices has {} entries", n_residues, ca_indices_json.len());
+            bail!(
+                "NMA JSON: n_residues={} but ca_indices has {} entries",
+                n_residues,
+                ca_indices_json.len()
+            );
         }
-        let ca_indices: Vec<i32> = ca_indices_json.iter()
+        let ca_indices: Vec<i32> = ca_indices_json
+            .iter()
             .map(|v| v.as_i64().unwrap_or(0) as i32)
             .collect();
 
@@ -3954,10 +4258,17 @@ impl NhsAmberFusedEngine {
         self.nma_enabled = true;
         self.nma_work_per_mode = vec![0.0f64; n_modes];
 
-        log::info!("NMA perturbation loaded: {} modes × {} residues from {}",
-            n_modes, n_residues, nma_json_path);
-        log::info!("  Amplification: {:.1}x, scan fraction: {:.0}%",
-            self.nma_amplification, self.nma_scan_fraction * 100.0);
+        log::info!(
+            "NMA perturbation loaded: {} modes × {} residues from {}",
+            n_modes,
+            n_residues,
+            nma_json_path
+        );
+        log::info!(
+            "  Amplification: {:.1}x, scan fraction: {:.0}%",
+            self.nma_amplification,
+            self.nma_scan_fraction * 100.0
+        );
         for (i, &s) in force_scales.iter().enumerate() {
             log::debug!("  Mode {}: force_scale={:.4}", i, s);
         }
@@ -3969,7 +4280,10 @@ impl NhsAmberFusedEngine {
     /// With N=4, each step() call advances MD 4x but only observes once → ~4x speedup.
     pub fn set_fused_inner_steps(&mut self, n: u32) {
         let n = n.max(1);
-        log::info!("Fused multi-step: {} AMBER steps per multi-LIF observation", n);
+        log::info!(
+            "Fused multi-step: {} AMBER steps per multi-LIF observation",
+            n
+        );
         self.fused_inner_steps = n;
     }
 
@@ -3977,10 +4291,15 @@ impl NhsAmberFusedEngine {
     /// Use 0.004 (4fs) with HMR-repartitioned masses.
     pub fn set_dt(&mut self, new_dt: f64) {
         let new_dt_f32 = new_dt as f32;
-        log::info!("Timestep changed: {:.4} ps → {:.4} ps ({:.0} fs → {:.0} fs)",
-            self.dt, new_dt_f32, self.dt as f64 * 1000.0, new_dt * 1000.0);
+        log::info!(
+            "Timestep changed: {:.4} ps → {:.4} ps ({:.0} fs → {:.0} fs)",
+            self.dt,
+            new_dt_f32,
+            self.dt as f64 * 1000.0,
+            new_dt * 1000.0
+        );
         self.dt = new_dt_f32;
-        self.base_dt = new_dt_f32;  // update base_dt for adaptive scaling
+        self.base_dt = new_dt_f32; // update base_dt for adaptive scaling
     }
 
     /// Compute friction coefficient with equilibration boost and cryogenic physics
@@ -3999,13 +4318,13 @@ impl NhsAmberFusedEngine {
         // This is CRITICAL for structures that haven't been energy-minimized
         // gamma=1000 ps⁻¹ with dt=0.002 ps gives c1=exp(-2)≈0.135 (86.5% damping per step!)
         const EQUILIBRATION_STEPS: i32 = 10000;
-        const EQUILIBRATION_GAMMA: f32 = 1000.0;  // Extreme damping (ps⁻¹)
+        const EQUILIBRATION_GAMMA: f32 = 1000.0; // Extreme damping (ps⁻¹)
 
         let base_gamma = if self.timestep < EQUILIBRATION_STEPS {
             // Exponential decay from EQUILIBRATION_GAMMA to gamma_base
             // This provides strong damping early, then gradually relaxes
             let progress = self.timestep as f32 / EQUILIBRATION_STEPS as f32;
-            let decay = (-3.0 * progress).exp();  // Exponential decay factor
+            let decay = (-3.0 * progress).exp(); // Exponential decay factor
             EQUILIBRATION_GAMMA * decay + self.gamma_base * (1.0 - decay)
         } else {
             self.gamma_base
@@ -4100,93 +4419,162 @@ impl NhsAmberFusedEngine {
         aromatic_types: &[i32],
     ) -> Result<()> {
         // Positions (flatten [x,y,z] format)
-        log::info!("  upload: positions src={} dst={}", topology.positions.len(), self.d_positions.len());
-        self.stream.memcpy_htod(&topology.positions, &mut self.d_positions)?;
+        log::info!(
+            "  upload: positions src={} dst={}",
+            topology.positions.len(),
+            self.d_positions.len()
+        );
+        self.stream
+            .memcpy_htod(&topology.positions, &mut self.d_positions)?;
 
         // Initialize velocities from Maxwell-Boltzmann at starting temperature
         let temp = self.temp_protocol.current_temperature();
         let velocities = self.generate_maxwell_boltzmann_velocities(&topology.masses, temp);
-        self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+        self.stream
+            .memcpy_htod(&velocities, &mut self.d_velocities)?;
 
         // Masses
-        log::info!("  upload: masses src={} dst={}", topology.masses.len(), self.d_masses.len());
-        self.stream.memcpy_htod(&topology.masses, &mut self.d_masses)?;
+        log::info!(
+            "  upload: masses src={} dst={}",
+            topology.masses.len(),
+            self.d_masses.len()
+        );
+        self.stream
+            .memcpy_htod(&topology.masses, &mut self.d_masses)?;
 
         // Charges
-        log::info!("  upload: charges src={} dst={}", topology.charges.len(), self.d_charges.len());
-        self.stream.memcpy_htod(&topology.charges, &mut self.d_charges)?;
+        log::info!(
+            "  upload: charges src={} dst={}",
+            topology.charges.len(),
+            self.d_charges.len()
+        );
+        self.stream
+            .memcpy_htod(&topology.charges, &mut self.d_charges)?;
 
         // Atom types
         log::info!("  upload: atom_types building...");
-        let atom_types: Vec<i32> = topology.classify_atoms()
+        let atom_types: Vec<i32> = topology
+            .classify_atoms()
             .iter()
             .map(|t| t.as_i32())
             .collect();
-        log::info!("  upload: atom_types src={} dst={}", atom_types.len(), self.d_atom_types.len());
-        self.stream.memcpy_htod(&atom_types, &mut self.d_atom_types)?;
+        log::info!(
+            "  upload: atom_types src={} dst={}",
+            atom_types.len(),
+            self.d_atom_types.len()
+        );
+        self.stream
+            .memcpy_htod(&atom_types, &mut self.d_atom_types)?;
 
         log::info!("  upload: residue_ids building...");
         // Residue IDs
-        let residue_ids: Vec<i32> = topology.residue_ids.iter()
-            .map(|&r| r as i32)
-            .collect();
-        log::info!("  upload: residue_ids src={} dst={}", residue_ids.len(), self.d_residue_ids.len());
-        self.stream.memcpy_htod(&residue_ids, &mut self.d_residue_ids)?;
+        let residue_ids: Vec<i32> = topology.residue_ids.iter().map(|&r| r as i32).collect();
+        log::info!(
+            "  upload: residue_ids src={} dst={}",
+            residue_ids.len(),
+            self.d_residue_ids.len()
+        );
+        self.stream
+            .memcpy_htod(&residue_ids, &mut self.d_residue_ids)?;
 
         // AMBER parameters - convert structs to bytes for GPU upload
         if !bonds.is_empty() {
             let bonds_bytes = Self::structs_to_bytes(bonds);
-            log::info!("  upload: bonds src_bytes={} dst_bytes={}", bonds_bytes.len(), self.d_bonds.len());
+            log::info!(
+                "  upload: bonds src_bytes={} dst_bytes={}",
+                bonds_bytes.len(),
+                self.d_bonds.len()
+            );
             self.stream.memcpy_htod(&bonds_bytes, &mut self.d_bonds)?;
         }
         if !angles.is_empty() {
             let angles_bytes = Self::structs_to_bytes(angles);
-            log::info!("  upload: angles src_bytes={} dst_bytes={}", angles_bytes.len(), self.d_angles.len());
+            log::info!(
+                "  upload: angles src_bytes={} dst_bytes={}",
+                angles_bytes.len(),
+                self.d_angles.len()
+            );
             self.stream.memcpy_htod(&angles_bytes, &mut self.d_angles)?;
         }
         if !dihedrals.is_empty() {
             let dihedrals_bytes = Self::structs_to_bytes(dihedrals);
-            log::info!("  upload: dihedrals src_bytes={} dst_bytes={}", dihedrals_bytes.len(), self.d_dihedrals.len());
-            self.stream.memcpy_htod(&dihedrals_bytes, &mut self.d_dihedrals)?;
+            log::info!(
+                "  upload: dihedrals src_bytes={} dst_bytes={}",
+                dihedrals_bytes.len(),
+                self.d_dihedrals.len()
+            );
+            self.stream
+                .memcpy_htod(&dihedrals_bytes, &mut self.d_dihedrals)?;
         }
         if !lj_params.is_empty() {
             let lj_bytes = Self::structs_to_bytes(lj_params);
-            log::info!("  upload: lj src_bytes={} dst_bytes={}", lj_bytes.len(), self.d_lj_params.len());
+            log::info!(
+                "  upload: lj src_bytes={} dst_bytes={}",
+                lj_bytes.len(),
+                self.d_lj_params.len()
+            );
             self.stream.memcpy_htod(&lj_bytes, &mut self.d_lj_params)?;
         }
 
         // Exclusion list (CSR format)
         if !exclusion_list.is_empty() {
-            log::info!("  upload: exclusion_list src={} dst={}", exclusion_list.len(), self.d_exclusion_list.len());
-            self.stream.memcpy_htod(exclusion_list, &mut self.d_exclusion_list)?;
+            log::info!(
+                "  upload: exclusion_list src={} dst={}",
+                exclusion_list.len(),
+                self.d_exclusion_list.len()
+            );
+            self.stream
+                .memcpy_htod(exclusion_list, &mut self.d_exclusion_list)?;
         }
-        log::info!("  upload: exclusion_offsets src={} dst={}", exclusion_offsets.len(), self.d_exclusion_offsets.len());
-        self.stream.memcpy_htod(exclusion_offsets, &mut self.d_exclusion_offsets)?;
+        log::info!(
+            "  upload: exclusion_offsets src={} dst={}",
+            exclusion_offsets.len(),
+            self.d_exclusion_offsets.len()
+        );
+        self.stream
+            .memcpy_htod(exclusion_offsets, &mut self.d_exclusion_offsets)?;
 
         // 1-4 pair list (CSR format)
         if !pairs14_list.is_empty() {
-            log::info!("  upload: pairs14_list src={} dst={}", pairs14_list.len(), self.d_pairs14_list.len());
-            self.stream.memcpy_htod(pairs14_list, &mut self.d_pairs14_list)?;
+            log::info!(
+                "  upload: pairs14_list src={} dst={}",
+                pairs14_list.len(),
+                self.d_pairs14_list.len()
+            );
+            self.stream
+                .memcpy_htod(pairs14_list, &mut self.d_pairs14_list)?;
         }
-        self.stream.memcpy_htod(pairs14_offsets, &mut self.d_pairs14_offsets)?;
+        self.stream
+            .memcpy_htod(pairs14_offsets, &mut self.d_pairs14_offsets)?;
 
         // LADD atom categories
         if !atom_categories.is_empty() {
-            self.stream.memcpy_htod(atom_categories, &mut self.d_atom_categories)?;
+            self.stream
+                .memcpy_htod(atom_categories, &mut self.d_atom_categories)?;
         }
 
         // SHAKE H-clusters
         if !h_clusters.is_empty() {
             let h_clusters_bytes = Self::structs_to_bytes(h_clusters);
-            log::info!("  upload: h_clusters src_bytes={} dst_bytes={}", h_clusters_bytes.len(), self.d_h_clusters.len());
-            self.stream.memcpy_htod(&h_clusters_bytes, &mut self.d_h_clusters)?;
+            log::info!(
+                "  upload: h_clusters src_bytes={} dst_bytes={}",
+                h_clusters_bytes.len(),
+                self.d_h_clusters.len()
+            );
+            self.stream
+                .memcpy_htod(&h_clusters_bytes, &mut self.d_h_clusters)?;
         }
 
         // UV targets
         if !uv_targets.is_empty() {
             let uv_targets_bytes = Self::structs_to_bytes(uv_targets);
-            log::info!("  upload: uv_targets src_bytes={} dst_bytes={}", uv_targets_bytes.len(), self.d_uv_targets.len());
-            self.stream.memcpy_htod(&uv_targets_bytes, &mut self.d_uv_targets)?;
+            log::info!(
+                "  upload: uv_targets src_bytes={} dst_bytes={}",
+                uv_targets_bytes.len(),
+                self.d_uv_targets.len()
+            );
+            self.stream
+                .memcpy_htod(&uv_targets_bytes, &mut self.d_uv_targets)?;
         }
 
         // ====================================================================
@@ -4194,16 +4582,27 @@ impl NhsAmberFusedEngine {
         // ====================================================================
 
         // Ground state charges (copy of original charges for reference)
-        log::info!("  upload: ground_state_charges src={} dst={}", topology.charges.len(), self.d_ground_state_charges.len());
-        self.stream.memcpy_htod(&topology.charges, &mut self.d_ground_state_charges)?;
+        log::info!(
+            "  upload: ground_state_charges src={} dst={}",
+            topology.charges.len(),
+            self.d_ground_state_charges.len()
+        );
+        self.stream
+            .memcpy_htod(&topology.charges, &mut self.d_ground_state_charges)?;
 
         // Atom to aromatic mapping
-        log::info!("  upload: atom_to_aromatic src={} dst={}", atom_to_aromatic.len(), self.d_atom_to_aromatic.len());
-        self.stream.memcpy_htod(atom_to_aromatic, &mut self.d_atom_to_aromatic)?;
+        log::info!(
+            "  upload: atom_to_aromatic src={} dst={}",
+            atom_to_aromatic.len(),
+            self.d_atom_to_aromatic.len()
+        );
+        self.stream
+            .memcpy_htod(atom_to_aromatic, &mut self.d_atom_to_aromatic)?;
 
         // Aromatic types
         if !aromatic_types.is_empty() {
-            self.stream.memcpy_htod(aromatic_types, &mut self.d_aromatic_type)?;
+            self.stream
+                .memcpy_htod(aromatic_types, &mut self.d_aromatic_type)?;
         }
 
         // ====================================================================
@@ -4225,17 +4624,28 @@ impl NhsAmberFusedEngine {
                 }
             }
 
-            self.stream.memcpy_htod(&aromatic_atom_indices_flat, &mut self.d_aromatic_atom_indices)?;
-            self.stream.memcpy_htod(&aromatic_n_atoms_flat, &mut self.d_aromatic_n_atoms)?;
+            self.stream.memcpy_htod(
+                &aromatic_atom_indices_flat,
+                &mut self.d_aromatic_atom_indices,
+            )?;
+            self.stream
+                .memcpy_htod(&aromatic_n_atoms_flat, &mut self.d_aromatic_n_atoms)?;
 
-            log::info!("Uploaded aromatic topology: {} aromatics with ring atom indices", n_aromatics);
+            log::info!(
+                "Uploaded aromatic topology: {} aromatics with ring atom indices",
+                n_aromatics
+            );
         }
 
         // Initialize excited state arrays to zero (ground state)
         // d_is_excited, d_electronic_population, d_vibrational_energy, etc. are already zero-initialized
 
-        log::info!("Uploaded topology: {} bonds, {} angles, {} dihedrals",
-            self.n_bonds, self.n_angles, self.n_dihedrals);
+        log::info!(
+            "Uploaded topology: {} bonds, {} angles, {} dihedrals",
+            self.n_bonds,
+            self.n_angles,
+            self.n_dihedrals
+        );
         log::info!("Excited state: {} aromatics mapped", self.n_aromatics);
 
         Ok(())
@@ -4311,7 +4721,7 @@ impl NhsAmberFusedEngine {
     /// Build warp matrix (voxel-to-atom mapping) on CPU
     fn build_warp_matrix(&mut self) -> Result<()> {
         let total_voxels = self.grid_dim * self.grid_dim * self.grid_dim;
-        let cutoff_sq = 64.0f32;  // 8 Angstrom cutoff for warp mapping
+        let cutoff_sq = 64.0f32; // 8 Angstrom cutoff for warp mapping
 
         // Download current positions
         let mut positions = vec![0.0f32; self.n_atoms * 3];
@@ -4374,17 +4784,22 @@ impl NhsAmberFusedEngine {
 
         // Upload to GPU as bytes
         let warp_bytes = Self::structs_to_bytes(&warp_entries);
-        self.stream.memcpy_htod(&warp_bytes, &mut self.d_warp_matrix)?;
+        self.stream
+            .memcpy_htod(&warp_bytes, &mut self.d_warp_matrix)?;
 
         // Diagnostic: count voxels with atoms
         let voxels_with_atoms = warp_entries.iter().filter(|e| e.n_atoms > 0).count();
-        let avg_atoms_per_voxel = warp_entries.iter()
-            .map(|e| e.n_atoms as f32)
-            .sum::<f32>() / total_voxels as f32;
+        let avg_atoms_per_voxel =
+            warp_entries.iter().map(|e| e.n_atoms as f32).sum::<f32>() / total_voxels as f32;
         let max_atoms = warp_entries.iter().map(|e| e.n_atoms).max().unwrap_or(0);
 
-        log::info!("Built warp matrix: {} voxels ({} with atoms, avg {:.1} atoms/voxel, max {})",
-            total_voxels, voxels_with_atoms, avg_atoms_per_voxel, max_atoms);
+        log::info!(
+            "Built warp matrix: {} voxels ({} with atoms, avg {:.1} atoms/voxel, max {})",
+            total_voxels,
+            voxels_with_atoms,
+            avg_atoms_per_voxel,
+            max_atoms
+        );
 
         // Build sparse tile index: only tiles with ≥1 atom-containing voxel
         let tile_x = 4u32;
@@ -4402,9 +4817,13 @@ impl NhsAmberFusedEngine {
                     // Check if any voxel in this tile has atoms
                     let mut has_any = false;
                     for lz in 0..tile_z {
-                        if has_any { break; }
+                        if has_any {
+                            break;
+                        }
                         for ly in 0..tile_y {
-                            if has_any { break; }
+                            if has_any {
+                                break;
+                            }
                             for lx in 0..tile_x {
                                 let vx = tbx * tile_x + lx;
                                 let vy = tby * tile_y + ly;
@@ -4440,13 +4859,18 @@ impl NhsAmberFusedEngine {
             0.0
         };
 
-        log::info!("Sparse tile index: {}/{} active tiles ({:.1}% empty tiles skipped)",
-            self.n_active_tiles, total_tiles, pct_saved);
+        log::info!(
+            "Sparse tile index: {}/{} active tiles ({:.1}% empty tiles skipped)",
+            self.n_active_tiles,
+            total_tiles,
+            pct_saved
+        );
 
         // Upload active tile list to GPU
         if !active_tiles.is_empty() {
             self.d_active_tiles = self.stream.alloc_zeros::<i32>(active_tiles.len())?;
-            self.stream.memcpy_htod(&active_tiles, &mut self.d_active_tiles)?;
+            self.stream
+                .memcpy_htod(&active_tiles, &mut self.d_active_tiles)?;
         }
 
         Ok(())
@@ -4527,7 +4951,11 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch init_multi_neuron")?;
 
-        log::info!("Multi-neuron LIF bank initialized: {} voxels x {} neurons", total_voxels, k_neurons);
+        log::info!(
+            "Multi-neuron LIF bank initialized: {} voxels x {} neurons",
+            total_voxels,
+            k_neurons
+        );
         self.stream.synchronize()?;
         Ok(())
     }
@@ -4545,7 +4973,8 @@ impl NhsAmberFusedEngine {
         }
 
         // Load the build_aromatic_neighbors kernel
-        let build_neighbors_kernel = self._fused_module
+        let build_neighbors_kernel = self
+            ._fused_module
             .load_function("build_aromatic_neighbors")
             .context("Failed to load build_aromatic_neighbors kernel")?;
 
@@ -4556,7 +4985,7 @@ impl NhsAmberFusedEngine {
             shared_mem_bytes: 0,
         };
 
-        let neighbor_cutoff = 5.0f32;  // 5 Angstroms - atoms within this distance receive vibrational energy
+        let neighbor_cutoff = 5.0f32; // 5 Angstroms - atoms within this distance receive vibrational energy
 
         // Kernel signature from nhs_amber_fused.cu:
         // build_aromatic_neighbors(
@@ -4584,8 +5013,11 @@ impl NhsAmberFusedEngine {
         .context("Failed to launch build_aromatic_neighbors")?;
 
         self.stream.synchronize()?;
-        log::info!("Built aromatic neighbor lists for {} aromatics (cutoff {:.1}A)",
-            self.n_aromatics, neighbor_cutoff);
+        log::info!(
+            "Built aromatic neighbor lists for {} aromatics (cutoff {:.1}A)",
+            self.n_aromatics,
+            neighbor_cutoff
+        );
 
         Ok(())
     }
@@ -4604,7 +5036,8 @@ impl NhsAmberFusedEngine {
         }
 
         // Load the compute_ring_normals kernel
-        let compute_normals_kernel = self._fused_module
+        let compute_normals_kernel = self
+            ._fused_module
             .load_function("compute_ring_normals")
             .context("Failed to load compute_ring_normals kernel")?;
 
@@ -4661,13 +5094,16 @@ impl NhsAmberFusedEngine {
 
         // Download current positions from GPU (flat: [x0,y0,z0, x1,y1,z1, ...])
         let mut positions_host = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_dtoh(&self.d_positions, &mut positions_host)?;
+        self.stream
+            .memcpy_dtoh(&self.d_positions, &mut positions_host)?;
 
         // Download aromatic atom indices and counts
         let mut aromatic_atom_indices = vec![0i32; self.n_aromatics * 16];
         let mut aromatic_n_atoms = vec![0i32; self.n_aromatics];
-        self.stream.memcpy_dtoh(&self.d_aromatic_atom_indices, &mut aromatic_atom_indices)?;
-        self.stream.memcpy_dtoh(&self.d_aromatic_n_atoms, &mut aromatic_n_atoms)?;
+        self.stream
+            .memcpy_dtoh(&self.d_aromatic_atom_indices, &mut aromatic_atom_indices)?;
+        self.stream
+            .memcpy_dtoh(&self.d_aromatic_n_atoms, &mut aromatic_n_atoms)?;
 
         // DEBUG: Print first few aromatic counts and positions
         log::debug!("Computing aromatic centroids:");
@@ -4676,12 +5112,23 @@ impl NhsAmberFusedEngine {
             let first_atom = aromatic_atom_indices[arom_idx * 16];
             let pos = if (first_atom as usize) < self.n_atoms {
                 let idx = first_atom as usize;
-                [positions_host[idx * 3], positions_host[idx * 3 + 1], positions_host[idx * 3 + 2]]
+                [
+                    positions_host[idx * 3],
+                    positions_host[idx * 3 + 1],
+                    positions_host[idx * 3 + 2],
+                ]
             } else {
                 [0.0, 0.0, 0.0]
             };
-            log::debug!("  Aromatic {}: n_atoms={}, first_atom_idx={}, pos=({:.2}, {:.2}, {:.2})",
-                       arom_idx, n, first_atom, pos[0], pos[1], pos[2]);
+            log::debug!(
+                "  Aromatic {}: n_atoms={}, first_atom_idx={}, pos=({:.2}, {:.2}, {:.2})",
+                arom_idx,
+                n,
+                first_atom,
+                pos[0],
+                pos[1],
+                pos[2]
+            );
         }
 
         // Compute centroids for each aromatic
@@ -4716,24 +5163,35 @@ impl NhsAmberFusedEngine {
         // DEBUG: Print computed centroids
         log::debug!("Computed centroids (first 3):");
         for arom_idx in 0..self.n_aromatics.min(3) {
-            log::debug!("  Centroid {}: ({:.2}, {:.2}, {:.2})",
-                       arom_idx,
-                       centroids_flat[arom_idx * 3 + 0],
-                       centroids_flat[arom_idx * 3 + 1],
-                       centroids_flat[arom_idx * 3 + 2]);
+            log::debug!(
+                "  Centroid {}: ({:.2}, {:.2}, {:.2})",
+                arom_idx,
+                centroids_flat[arom_idx * 3 + 0],
+                centroids_flat[arom_idx * 3 + 1],
+                centroids_flat[arom_idx * 3 + 2]
+            );
         }
 
         // Upload centroids to GPU
-        self.stream.memcpy_htod(&centroids_flat, &mut self.d_aromatic_centroids)?;
-        self.stream.synchronize()?;  // Ensure upload completes (per-stream, avoids device-wide serialization)
+        self.stream
+            .memcpy_htod(&centroids_flat, &mut self.d_aromatic_centroids)?;
+        self.stream.synchronize()?; // Ensure upload completes (per-stream, avoids device-wide serialization)
 
         // Verify upload by reading back
         let mut verify = vec![0.0f32; self.n_aromatics * 3];
-        self.stream.memcpy_dtoh(&self.d_aromatic_centroids, &mut verify)?;
-        log::debug!("Verification - centroid 0 from GPU: ({:.2}, {:.2}, {:.2})",
-                   verify[0], verify[1], verify[2]);
+        self.stream
+            .memcpy_dtoh(&self.d_aromatic_centroids, &mut verify)?;
+        log::debug!(
+            "Verification - centroid 0 from GPU: ({:.2}, {:.2}, {:.2})",
+            verify[0],
+            verify[1],
+            verify[2]
+        );
 
-        log::info!("Computed and uploaded aromatic centroids for {} aromatics", self.n_aromatics);
+        log::info!(
+            "Computed and uploaded aromatic centroids for {} aromatics",
+            self.n_aromatics
+        );
         Ok(())
     }
 
@@ -4752,13 +5210,14 @@ impl NhsAmberFusedEngine {
     /// 3. build_neighbor_list - find neighbors within cutoff
     pub fn rebuild_neighbor_lists(&mut self) -> Result<()> {
         if !self.use_neighbor_list {
-            return Ok(());  // O(N²) path, no neighbor lists needed
+            return Ok(()); // O(N²) path, no neighbor lists needed
         }
 
         let n_total_cells = (self.cell_nx * self.cell_ny * self.cell_nz) as usize;
 
         // Step 1: Reset cell counts
-        let reset_kernel = self._fused_module
+        let reset_kernel = self
+            ._fused_module
             .load_function("reset_cell_counts")
             .context("Failed to load reset_cell_counts kernel")?;
 
@@ -4779,7 +5238,8 @@ impl NhsAmberFusedEngine {
         .context("Failed to launch reset_cell_counts")?;
 
         // Step 2: Build cell list
-        let build_cell_kernel = self._fused_module
+        let build_cell_kernel = self
+            ._fused_module
             .load_function("build_cell_list")
             .context("Failed to load build_cell_list kernel")?;
 
@@ -4809,12 +5269,13 @@ impl NhsAmberFusedEngine {
         .context("Failed to launch build_cell_list")?;
 
         // Step 3: Build neighbor list
-        let build_neighbor_kernel = self._fused_module
+        let build_neighbor_kernel = self
+            ._fused_module
             .load_function("build_neighbor_list")
             .context("Failed to load build_neighbor_list kernel")?;
 
         // Use cutoff with 20% buffer for list reuse between rebuilds
-        let cutoff_sq_with_buffer = self.cutoff * self.cutoff * 1.44;  // 1.2^2 = 1.44
+        let cutoff_sq_with_buffer = self.cutoff * self.cutoff * 1.44; // 1.2^2 = 1.44
 
         unsafe {
             self.stream
@@ -4848,7 +5309,8 @@ impl NhsAmberFusedEngine {
     /// in the main fused kernel. For large proteins (>1000 atoms), this
     /// provides a 50-100x speedup.
     fn compute_nonbonded_with_neighbor_list(&mut self) -> Result<()> {
-        let compute_nb_kernel = self._fused_module
+        let compute_nb_kernel = self
+            ._fused_module
             .load_function("compute_nonbonded_neighborlist")
             .context("Failed to load compute_nonbonded_neighborlist kernel")?;
 
@@ -4929,7 +5391,9 @@ impl NhsAmberFusedEngine {
         self.ultimate_engine = Some(ultimate);
         self.optimization_level = OptimizationLevel::Ultimate;
 
-        log::info!("Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active");
+        log::info!(
+            "Ultimate mode enabled: SoA layout, occupancy tuning, all 14 optimizations active"
+        );
 
         Ok(())
     }
@@ -4965,14 +5429,13 @@ impl NhsAmberFusedEngine {
     pub fn step_ultimate(&mut self) -> Result<StepResult> {
         if let Some(ref mut ultimate) = self.ultimate_engine {
             // Sync positions from ultimate engine back if needed
-            let result = ultimate.step()
-                .context("Ultimate kernel step failed")?;
+            let result = ultimate.step().context("Ultimate kernel step failed")?;
 
             // Convert result to StepResult
             Ok(StepResult {
                 timestep: result.timestep,
                 temperature: result.temperature,
-                spike_count: 0,  // Ultimate kernel doesn't track spikes yet
+                spike_count: 0, // Ultimate kernel doesn't track spikes yet
                 uv_burst_active: false,
                 current_wavelength_nm: None,
             })
@@ -4989,7 +5452,8 @@ impl NhsAmberFusedEngine {
     /// intermediate CPU-GPU synchronization.
     pub fn step_batch_ultimate(&mut self, n_steps: i32) -> Result<StepResult> {
         if let Some(ref mut ultimate) = self.ultimate_engine {
-            let result = ultimate.step_batch(n_steps)
+            let result = ultimate
+                .step_batch(n_steps)
                 .context("Ultimate kernel batch step failed")?;
 
             Ok(StepResult {
@@ -5039,19 +5503,28 @@ impl NhsAmberFusedEngine {
     ///     let results = engine.step_parallel_replicas(100)?;  // 100 steps each
     /// }
     /// ```
-    pub fn init_parallel_streams(&mut self, n_replicas: usize, topology: &PrismPrepTopology) -> Result<()> {
+    pub fn init_parallel_streams(
+        &mut self,
+        n_replicas: usize,
+        topology: &PrismPrepTopology,
+    ) -> Result<()> {
         let n_replicas = n_replicas.min(MAX_PARALLEL_STREAMS);
 
         if n_replicas == 0 {
             bail!("Must have at least 1 replica");
         }
 
-        log::info!("Initializing {} parallel CUDA streams for concurrent replica execution", n_replicas);
+        log::info!(
+            "Initializing {} parallel CUDA streams for concurrent replica execution",
+            n_replicas
+        );
 
         // Create stream pool
         self.stream_pool.clear();
         for i in 0..n_replicas {
-            let stream = self.context.new_stream()
+            let stream = self
+                .context
+                .new_stream()
                 .with_context(|| format!("Failed to create CUDA stream {}", i))?;
             self.stream_pool.push(stream);
         }
@@ -5059,7 +5532,7 @@ impl NhsAmberFusedEngine {
         // Allocate per-replica state buffers
         self.replica_states.clear();
         let n_atoms = topology.n_atoms;
-        let rng_state_size = std::mem::size_of::<[u32; 48]>();  // curandState
+        let rng_state_size = std::mem::size_of::<[u32; 48]>(); // curandState
         let spike_event_size = self.spike_event_size;
 
         for replica_id in 0..n_replicas {
@@ -5070,7 +5543,8 @@ impl NhsAmberFusedEngine {
             let mut d_velocities: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
             let d_forces: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
             let d_rng_states: CudaSlice<u8> = stream.alloc_zeros(n_atoms * rng_state_size)?;
-            let d_spike_events: CudaSlice<u8> = stream.alloc_zeros(MAX_SPIKES_PER_STEP * spike_event_size)?;
+            let d_spike_events: CudaSlice<u8> =
+                stream.alloc_zeros(MAX_SPIKES_PER_STEP * spike_event_size)?;
             let d_spike_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
 
             // Copy initial positions from main buffer
@@ -5093,18 +5567,29 @@ impl NhsAmberFusedEngine {
             });
 
             // Initialize RNG for this replica with unique seed
-            self.init_rng_on_stream(stream, &self.replica_states[replica_id].d_rng_states,
-                                    42 + replica_id as u64)?;
+            self.init_rng_on_stream(
+                stream,
+                &self.replica_states[replica_id].d_rng_states,
+                42 + replica_id as u64,
+            )?;
         }
 
         self.n_parallel_streams = n_replicas;
-        log::info!("Parallel streams initialized: {} replicas ready for concurrent execution", n_replicas);
+        log::info!(
+            "Parallel streams initialized: {} replicas ready for concurrent execution",
+            n_replicas
+        );
 
         Ok(())
     }
 
     /// Initialize RNG on a specific stream
-    fn init_rng_on_stream(&self, stream: &CudaStream, d_rng_states: &CudaSlice<u8>, seed: u64) -> Result<()> {
+    fn init_rng_on_stream(
+        &self,
+        stream: &CudaStream,
+        d_rng_states: &CudaSlice<u8>,
+        seed: u64,
+    ) -> Result<()> {
         let n_blocks = (self.n_atoms as u32).div_ceil(BLOCK_SIZE_1D as u32);
         let cfg = LaunchConfig {
             grid_dim: (n_blocks, 1, 1),
@@ -5147,8 +5632,8 @@ impl NhsAmberFusedEngine {
         let effective_gamma = self.compute_cryo_friction(current_temp);
 
         // Determine UV burst parameters (shared across replicas)
-        let uv_burst_active = self.uv_config.enabled &&
-            (self.timestep % self.uv_config.burst_interval) < self.uv_config.burst_duration;
+        let uv_burst_active = self.uv_config.enabled
+            && (self.timestep % self.uv_config.burst_interval) < self.uv_config.burst_duration;
         let uv_target_idx = if uv_burst_active {
             self.uv_config.current_target as i32
         } else {
@@ -5284,14 +5769,19 @@ impl NhsAmberFusedEngine {
         let mut results = Vec::with_capacity(n_replicas);
         for replica in &self.replica_states {
             let mut spike_count = [0i32];
-            self.stream_pool[replica.replica_id].memcpy_dtoh(&replica.d_spike_count, &mut spike_count)?;
+            self.stream_pool[replica.replica_id]
+                .memcpy_dtoh(&replica.d_spike_count, &mut spike_count)?;
 
             results.push(StepResult {
                 timestep: replica.timestep,
                 temperature: current_temp,
                 spike_count: spike_count[0] as usize,
                 uv_burst_active,
-                current_wavelength_nm: if uv_burst_active { Some(uv_wavelength_nm) } else { None },
+                current_wavelength_nm: if uv_burst_active {
+                    Some(uv_wavelength_nm)
+                } else {
+                    None
+                },
             });
         }
 
@@ -5310,11 +5800,16 @@ impl NhsAmberFusedEngine {
     /// Get positions from a specific replica
     pub fn get_replica_positions(&self, replica_id: usize) -> Result<Vec<f32>> {
         if replica_id >= self.n_parallel_streams {
-            bail!("Replica {} not initialized (only {} replicas)", replica_id, self.n_parallel_streams);
+            bail!(
+                "Replica {} not initialized (only {} replicas)",
+                replica_id,
+                self.n_parallel_streams
+            );
         }
 
         let mut positions = vec![0.0f32; self.n_atoms * 3];
-        self.stream_pool[replica_id].memcpy_dtoh(&self.replica_states[replica_id].d_positions, &mut positions)?;
+        self.stream_pool[replica_id]
+            .memcpy_dtoh(&self.replica_states[replica_id].d_positions, &mut positions)?;
         Ok(positions)
     }
 
@@ -5356,25 +5851,46 @@ impl NhsAmberFusedEngine {
             if offset + self.spike_event_size <= bytes.len() {
                 // Parse the SpikeEvent from bytes (matches GPU struct layout)
                 let timestep = i32::from_le_bytes([
-                    bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3]
+                    bytes[offset],
+                    bytes[offset + 1],
+                    bytes[offset + 2],
+                    bytes[offset + 3],
                 ]);
                 let voxel_idx = i32::from_le_bytes([
-                    bytes[offset+4], bytes[offset+5], bytes[offset+6], bytes[offset+7]
+                    bytes[offset + 4],
+                    bytes[offset + 5],
+                    bytes[offset + 6],
+                    bytes[offset + 7],
                 ]);
                 let x = f32::from_le_bytes([
-                    bytes[offset+8], bytes[offset+9], bytes[offset+10], bytes[offset+11]
+                    bytes[offset + 8],
+                    bytes[offset + 9],
+                    bytes[offset + 10],
+                    bytes[offset + 11],
                 ]);
                 let y = f32::from_le_bytes([
-                    bytes[offset+12], bytes[offset+13], bytes[offset+14], bytes[offset+15]
+                    bytes[offset + 12],
+                    bytes[offset + 13],
+                    bytes[offset + 14],
+                    bytes[offset + 15],
                 ]);
                 let z = f32::from_le_bytes([
-                    bytes[offset+16], bytes[offset+17], bytes[offset+18], bytes[offset+19]
+                    bytes[offset + 16],
+                    bytes[offset + 17],
+                    bytes[offset + 18],
+                    bytes[offset + 19],
                 ]);
                 let intensity = f32::from_le_bytes([
-                    bytes[offset+20], bytes[offset+21], bytes[offset+22], bytes[offset+23]
+                    bytes[offset + 20],
+                    bytes[offset + 21],
+                    bytes[offset + 22],
+                    bytes[offset + 23],
                 ]);
                 let temperature = f32::from_le_bytes([
-                    bytes[offset+24], bytes[offset+25], bytes[offset+26], bytes[offset+27]
+                    bytes[offset + 24],
+                    bytes[offset + 25],
+                    bytes[offset + 26],
+                    bytes[offset + 27],
                 ]);
 
                 spikes.push(SpikeEvent {
@@ -5383,8 +5899,8 @@ impl NhsAmberFusedEngine {
                     position: [x, y, z],
                     intensity,
                     temperature,
-                    nearby_residues: Vec::new(),  // Not parsed from GPU
-                    uv_burst_active: false,  // Would need to track per-step
+                    nearby_residues: Vec::new(), // Not parsed from GPU
+                    uv_burst_active: false,      // Would need to track per-step
                 });
             }
         }
@@ -5436,7 +5952,7 @@ impl NhsAmberFusedEngine {
 
         #[allow(deprecated)]
         let uv_config = UvProbeConfig {
-            enabled: true,  // ALWAYS ENABLED in cryo-UV mode
+            enabled: true, // ALWAYS ENABLED in cryo-UV mode
             burst_energy: protocol.uv_burst_energy,
             burst_interval: protocol.uv_burst_interval,
             burst_duration: protocol.uv_burst_duration,
@@ -5452,8 +5968,10 @@ impl NhsAmberFusedEngine {
         // PRISM-TWIN v3.0: Initialize GPU-resident ProtocolState
         // The Director kernel will update this each step before physics kernels read it.
         {
-            let total_steps = (protocol.cold_hold_steps + protocol.ramp_steps
-                + protocol.warm_hold_steps + protocol.ramp_down_steps
+            let total_steps = (protocol.cold_hold_steps
+                + protocol.ramp_steps
+                + protocol.warm_hold_steps
+                + protocol.ramp_down_steps
                 + protocol.cold_return_steps) as u32;
             let ps = crate::protocol_state::ProtocolState::from_cryo_uv(
                 &protocol,
@@ -5472,18 +5990,31 @@ impl NhsAmberFusedEngine {
                     std::mem::size_of::<crate::protocol_state::ProtocolState>(),
                 )
             };
-            self.stream.memcpy_htod(ps_bytes, &mut self.d_protocol_state)?;
+            self.stream
+                .memcpy_htod(ps_bytes, &mut self.d_protocol_state)?;
             log::info!("  ProtocolState uploaded to GPU ({} bytes)", ps_bytes.len());
         }
 
         log::info!("╔═══════════════════════════════════════════════════════════════╗");
         log::info!("║  UNIFIED CRYO-UV PROTOCOL ACTIVATED                           ║");
         log::info!("╚═══════════════════════════════════════════════════════════════╝");
-        log::info!("  Temperature: {}K → {}K", protocol.start_temp, protocol.end_temp);
-        log::info!("  Phases: cold_hold={}, ramp={}, warm_hold={}",
-            protocol.cold_hold_steps, protocol.ramp_steps, protocol.warm_hold_steps);
-        log::info!("  UV bursts: {}kcal/mol every {} steps ({} step duration)",
-            protocol.uv_burst_energy, protocol.uv_burst_interval, protocol.uv_burst_duration);
+        log::info!(
+            "  Temperature: {}K → {}K",
+            protocol.start_temp,
+            protocol.end_temp
+        );
+        log::info!(
+            "  Phases: cold_hold={}, ramp={}, warm_hold={}",
+            protocol.cold_hold_steps,
+            protocol.ramp_steps,
+            protocol.warm_hold_steps
+        );
+        log::info!(
+            "  UV bursts: {}kcal/mol every {} steps ({} step duration)",
+            protocol.uv_burst_energy,
+            protocol.uv_burst_interval,
+            protocol.uv_burst_duration
+        );
         log::info!("  Wavelengths: {:?} nm", protocol.scan_wavelengths);
         log::info!("  ✓ UV-LIF coupling: ACTIVE (100% aromatic localization)");
 
@@ -5497,9 +6028,15 @@ impl NhsAmberFusedEngine {
     #[deprecated(since = "1.2.0", note = "Use set_cryo_uv_protocol() instead")]
     pub fn set_temperature_protocol(&mut self, protocol: TemperatureProtocol) -> Result<()> {
         self.temp_protocol = protocol.clone();
-        log::warn!("⚠️  DEPRECATED: set_temperature_protocol() - Use set_cryo_uv_protocol() instead");
-        log::info!("Set temperature protocol: {}K -> {}K over {} steps",
-            protocol.start_temp, protocol.end_temp, protocol.ramp_steps);
+        log::warn!(
+            "⚠️  DEPRECATED: set_temperature_protocol() - Use set_cryo_uv_protocol() instead"
+        );
+        log::info!(
+            "Set temperature protocol: {}K -> {}K over {} steps",
+            protocol.start_temp,
+            protocol.end_temp,
+            protocol.ramp_steps
+        );
         Ok(())
     }
 
@@ -5556,303 +6093,328 @@ impl NhsAmberFusedEngine {
         let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
 
         for inner_idx in 0..n_inner {
+            // ── CENTER-OF-MASS VELOCITY REMOVAL (every 100 steps, GPU-side Gate 2) ──
+            // Langevin thermostat injects random forces that create net momentum.
+            // GPU-side warp-shuffle reduction + broadcast correction — zero CPU memcpy.
+            if self.timestep > 0 && self.timestep % 100 == 0 {
+                if let (Some(ref clear_fn), Some(ref reduce_fn), Some(ref correct_fn)) = (
+                    &self.com_accum_clear_fn,
+                    &self.com_reduce_fn,
+                    &self.com_correct_fn,
+                ) {
+                    let one_cfg = LaunchConfig {
+                        grid_dim: (1, 1, 1),
+                        block_dim: (1, 1, 1),
+                        shared_mem_bytes: 0,
+                    };
+                    let atom_cfg = LaunchConfig {
+                        grid_dim: ((self.n_atoms as u32).div_ceil(256), 1, 1),
+                        block_dim: (256, 1, 1),
+                        shared_mem_bytes: 0,
+                    };
+                    // 1. Clear accumulator
+                    unsafe {
+                        self.stream
+                            .launch_builder(clear_fn)
+                            .arg(&mut self.d_com_accumulator)
+                            .launch(one_cfg)
+                    }
+                    .context("Failed to launch com_accumulator_clear")?;
+                    // 2. Reduce: warp-shuffle mass-weighted velocity sums → atomicAdd to accumulator
+                    unsafe {
+                        self.stream
+                            .launch_builder(reduce_fn)
+                            .arg(&self.d_velocities)
+                            .arg(&self.d_masses)
+                            .arg(&n_atoms_i32)
+                            .arg(&mut self.d_com_accumulator)
+                            .launch(atom_cfg)
+                    }
+                    .context("Failed to launch com_reduce")?;
+                    // 3. Correct: subtract COM velocity from all atoms
+                    unsafe {
+                        self.stream
+                            .launch_builder(correct_fn)
+                            .arg(&mut self.d_velocities)
+                            .arg(&n_atoms_i32)
+                            .arg(&self.d_com_accumulator)
+                            .launch(atom_cfg)
+                    }
+                    .context("Failed to launch com_correct")?;
+                }
+            }
 
-        // ── CENTER-OF-MASS VELOCITY REMOVAL (every 100 steps, GPU-side Gate 2) ──
-        // Langevin thermostat injects random forces that create net momentum.
-        // GPU-side warp-shuffle reduction + broadcast correction — zero CPU memcpy.
-        if self.timestep > 0 && self.timestep % 100 == 0 {
-            if let (Some(ref clear_fn), Some(ref reduce_fn), Some(ref correct_fn)) =
-                (&self.com_accum_clear_fn, &self.com_reduce_fn, &self.com_correct_fn)
+            // Get current temperature from protocol (simulated annealing ramp)
+            current_temp = self.temp_protocol.current_temperature();
+
+            // Adaptive dt: use 1.5x during hold phases (constant T, forces change slowly).
+            // Wave B.1 hierarchy: when the G26 gearbox is active the PointerSwap
+            // kernel is the sole writer of d_protocol->dt; the legacy host-side
+            // adaptive heuristic must NOT race with it.
+            if self.adaptive_dt_enabled && !self.gearbox_active {
+                if self.temp_protocol.is_hold_phase() {
+                    self.dt = self.base_dt * 1.5;
+                } else {
+                    self.dt = self.base_dt;
+                }
+            }
+
+            // Compute cryogenic physics parameters
+            effective_gamma = self.compute_cryo_friction(current_temp);
+            _effective_dielectric = self.compute_cryo_dielectric(current_temp);
+
+            // ====================================================================
+            // O(N) NEIGHBOR LIST REBUILD (if needed)
+            // ====================================================================
+            // Rebuild every N steps or on first step
+            if self.use_neighbor_list {
+                self.steps_since_rebuild += 1;
+                if self.steps_since_rebuild >= self.neighbor_list_rebuild_interval
+                    || self.timestep == 0
+                {
+                    self.rebuild_neighbor_lists()?;
+                }
+            }
+
+            // Determine UV burst state and parameters
+            let uv_burst_active = self.uv_config.is_burst_active();
+            let uv_target_idx = self.uv_config.get_target_idx().unwrap_or(0) as i32;
+            let base_uv_energy = self.compute_uv_energy(self.uv_config.burst_energy, current_temp);
+            // Apply spike-guided adaptive bias: boost UV for aromatics near high-activity voxels
+            let uv_burst_energy =
+                self.compute_adaptive_uv_energy(base_uv_energy, self.uv_config.current_target);
+            let uv_wavelength_nm = self.uv_config.current_wavelength(); // GPU wavelength-dependent σ(λ)
+
+            // Track last UV burst timestep for spike quality scoring
+            if uv_burst_active {
+                self.last_uv_burst_timestep = self.timestep;
+            }
+
+            // Record local temperature change when UV burst is active (spectroscopy tracking)
+            if uv_burst_active && self.uv_config.track_local_temperature {
+                let target_idx = self.uv_config.current_target;
+                if target_idx < self.aromatic_types.len() {
+                    let aromatic_type = self.aromatic_types[target_idx];
+                    let delta_t = self.uv_config.compute_local_heating(aromatic_type);
+                    self.uv_config.record_heating(target_idx, delta_t);
+                    // Track total energy deposited (convert burst energy to eV: 1 kcal/mol ≈ 0.043 eV)
+                    self.uv_config.total_energy_deposited += uv_burst_energy * 0.043;
+
+                    // Debug: Log CPU-side physics for comparison with GPU
+                    // Enable with RUST_LOG=debug or RUST_LOG=prism_nhs=debug
+                    if log::log_enabled!(log::Level::Debug) && self.timestep % 10000 == 0 {
+                        let wavelength = self.uv_config.current_wavelength();
+                        let epsilon = self.uv_config.extinction_at_wavelength(aromatic_type);
+                        let sigma = crate::config::extinction_to_cross_section(epsilon);
+                        let fluence = crate::config::CALIBRATED_PHOTON_FLUENCE;
+                        let p_absorb = sigma * fluence;
+                        let e_photon = crate::config::wavelength_to_ev(wavelength);
+                        let chromophore_name = match aromatic_type {
+                            0 => "TRP",
+                            1 => "TYR",
+                            2 => "PHE",
+                            3 => "S-S",
+                            4 => "BNZ",
+                            _ => "UNK",
+                        };
+                        log::debug!(
+                        "[UV CPU] step={} type={} λ={:.0}nm σ={:.5}Å² F={:.4} p={:.6} E_γ={:.3}eV ΔT={:.2}K",
+                        self.timestep, chromophore_name, wavelength, sigma, fluence, p_absorb, e_photon, delta_t
+                    );
+                    }
+                }
+            }
+
+            // NOTE: spike_count is NOT reset here!
+            // Spikes accumulate across steps and are only reset AFTER sync (when we've read them).
+            // This preserves spike timestamps across the sync interval for proper UV correlation analysis.
+
+            // ====================================================================
+            // LAUNCH DIRECTOR KERNEL (same stream — ordering guarantees visibility)
+            // ====================================================================
             {
-                let one_cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
-                let atom_cfg = LaunchConfig {
+                let director_cfg = LaunchConfig {
+                    grid_dim: (1, 1, 1),
+                    block_dim: (1, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+                unsafe {
+                    self.stream
+                        .launch_builder(&self.director_fn)
+                        .arg(&mut self.d_protocol_state)
+                        .launch(director_cfg)
+                }
+                .context("Failed to launch protocol_director kernel")?;
+            }
+
+            // ====================================================================
+            // LAUNCH FUSED KERNEL
+            // ====================================================================
+
+            // Compute launch configuration
+            let n_blocks = (self.n_atoms as u32).div_ceil(BLOCK_SIZE_1D as u32);
+            let cfg = LaunchConfig {
+                grid_dim: (n_blocks, 1, 1),
+                block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
+                shared_mem_bytes: 0,
+            };
+
+            // Convert parameters to kernel-compatible types
+            let n_atoms_i32 = self.n_atoms as i32;
+            let n_bonds_i32 = self.n_bonds as i32;
+            let n_angles_i32 = self.n_angles as i32;
+            let n_dihedrals_i32 = self.n_dihedrals as i32;
+            let n_clusters_i32 = self.n_clusters as i32;
+            let grid_dim_i32 = self.grid_dim as i32;
+            let n_uv_targets_i32 = self.n_uv_targets as i32;
+            let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
+
+            // LADD: save positions before MD step for displacement computation
+            if self.ladd_enabled {
+                self.stream
+                    .memcpy_dtod(&self.d_positions, &mut self.d_positions_prev_ladd)?;
+            }
+
+            // M1.2.17 — zero per-atom PE components before this step's
+            // force kernels accumulate into them.  Stream-ordered so the
+            // memset retires before the kernel launch reads.
+            self.stream
+                .memset_zeros(&mut self.d_potential_energy_components)?;
+
+            unsafe {
+                self.stream
+                    .launch_builder(&self.fused_step_kernel)
+                    // Atom state (float3* treated as f32* with 3x elements)
+                    .arg(&mut self.d_positions)
+                    .arg(&mut self.d_velocities)
+                    .arg(&mut self.d_forces)
+                    .arg(&self.d_masses)
+                    .arg(&self.d_charges)
+                    .arg(&self.d_atom_types)
+                    .arg(&self.d_residue_ids)
+                    .arg(&n_atoms_i32)
+                    // AMBER parameters
+                    .arg(&self.d_bonds)
+                    .arg(&n_bonds_i32)
+                    .arg(&self.d_angles)
+                    .arg(&n_angles_i32)
+                    .arg(&self.d_dihedrals)
+                    .arg(&n_dihedrals_i32)
+                    .arg(&self.d_lj_params)
+                    .arg(&self.d_exclusion_list)
+                    .arg(&self.d_exclusion_offsets)
+                    .arg(&self.d_pairs14_list)
+                    .arg(&self.d_pairs14_offsets)
+                    // SHAKE clusters
+                    .arg(&self.d_h_clusters)
+                    .arg(&n_clusters_i32)
+                    // Grid buffers
+                    .arg(&mut self.d_exclusion_field)
+                    .arg(&mut self.d_water_density)
+                    .arg(&mut self.d_water_density_prev)
+                    .arg(&mut self.d_lif_potential)
+                    .arg(&mut self.d_spike_grid)
+                    // Grid origin (individual floats for cudarc compatibility)
+                    .arg(&self.grid_origin[0])
+                    .arg(&self.grid_origin[1])
+                    .arg(&self.grid_origin[2])
+                    .arg(&self.grid_spacing)
+                    .arg(&grid_dim_i32)
+                    // Warp matrix
+                    .arg(&mut self.d_warp_matrix)
+                    // UV targets
+                    .arg(&self.d_uv_targets)
+                    .arg(&n_uv_targets_i32)
+                    // PRISM-TWIN v3.0: GPU-resident protocol state (replaces temp/UV/dt/gamma/timestep scalars)
+                    .arg(&self.d_protocol_state)
+                    // Excited state dynamics (true photophysics)
+                    .arg(&mut self.d_is_excited)
+                    .arg(&mut self.d_time_since_excitation)
+                    .arg(&mut self.d_electronic_population)
+                    .arg(&mut self.d_vibrational_energy)
+                    .arg(&mut self.d_franck_condon_progress)
+                    .arg(&self.d_ground_state_charges)
+                    .arg(&self.d_atom_to_aromatic)
+                    .arg(&self.d_aromatic_type)
+                    .arg(&self.d_ring_normals)
+                    .arg(&self.d_aromatic_centroids)
+                    .arg(&mut self.d_uv_signal_prev)
+                    .arg(&self.d_aromatic_neighbors)
+                    .arg(&(self.n_aromatics as i32))
+                    // Spike output
+                    .arg(&mut self.d_spike_events)
+                    .arg(&mut self.d_spike_count)
+                    .arg(&max_spikes_i32)
+                    // Static simulation parameters
+                    .arg(&self.cutoff)
+                    // RNG state
+                    .arg(&mut self.d_rng_states)
+                    // O(N) neighbor list (optional)
+                    .arg(&self.d_neighbor_list)
+                    .arg(&self.d_n_neighbors)
+                    .arg(&(if self.use_neighbor_list { 1i32 } else { 0i32 }))
+                    // EFP buffers
+                    .arg(&self.d_efp_potential)
+                    .arg(&self.d_efp_potential_prev)
+                    .arg(&self.d_efp_lif_potential)
+                    .arg(&mut self.d_spike_grid_efp)
+                    .arg(&self.d_atom_lambda)
+                    // Signal preservation buffers
+                    .arg(&mut self.d_voxel_hit_grid)
+                    .arg(&mut self.d_last_uv_step)
+                    .arg(&mut self.d_coupled_spike_grid)
+                    .arg(&mut self.d_primary_residue_id)
+                    .arg(&mut self.d_primary_residue_count)
+                    .arg(&mut self.d_residue_step_causal)
+                    // M1.2.17 — per-atom potential-energy components (f64).
+                    .arg(&mut self.d_potential_energy_components)
+                    // M1.2.18.5 — VRAM-native total-external-work scalar (f64, 1 element).
+                    // apply_vibrational_transfer atomicAdd-f64s ΔK here per UV kick.
+                    .arg(&mut self.d_external_work_buffer)
+                    .launch(cfg)
+            }
+            .context("Failed to launch nhs_amber_fused_step kernel")?;
+
+            // ── CA POSITION RESTRAINTS (GPU-side, Gate 2) ──
+            // Replaces CPU memcpy_dtoh→correct→memcpy_htod with a single GPU kernel.
+            // Reads temperature from ProtocolState to compute k and alpha.
+            if let Some(ref ca_fn) = self.ca_restraint_fn {
+                let ca_cfg = LaunchConfig {
                     grid_dim: ((self.n_atoms as u32).div_ceil(256), 1, 1),
                     block_dim: (256, 1, 1),
                     shared_mem_bytes: 0,
                 };
-                // 1. Clear accumulator
                 unsafe {
-                    self.stream.launch_builder(clear_fn)
-                        .arg(&mut self.d_com_accumulator)
-                        .launch(one_cfg)
-                }.context("Failed to launch com_accumulator_clear")?;
-                // 2. Reduce: warp-shuffle mass-weighted velocity sums → atomicAdd to accumulator
-                unsafe {
-                    self.stream.launch_builder(reduce_fn)
-                        .arg(&self.d_velocities)
-                        .arg(&self.d_masses)
+                    self.stream
+                        .launch_builder(ca_fn)
+                        .arg(&mut self.d_positions)
+                        .arg(&self.d_reference_positions)
+                        .arg(&self.d_ca_mask)
                         .arg(&n_atoms_i32)
-                        .arg(&mut self.d_com_accumulator)
-                        .launch(atom_cfg)
-                }.context("Failed to launch com_reduce")?;
-                // 3. Correct: subtract COM velocity from all atoms
-                unsafe {
-                    self.stream.launch_builder(correct_fn)
-                        .arg(&mut self.d_velocities)
-                        .arg(&n_atoms_i32)
-                        .arg(&self.d_com_accumulator)
-                        .launch(atom_cfg)
-                }.context("Failed to launch com_correct")?;
+                        .arg(&self.d_protocol_state)
+                        .launch(ca_cfg)
+                }
+                .context("Failed to launch apply_ca_restraints kernel")?;
             }
-        }
 
-        // Get current temperature from protocol (simulated annealing ramp)
-        current_temp = self.temp_protocol.current_temperature();
+            // Save UV state for StepResult reporting (uses state from last inner step)
+            last_uv_burst_active = uv_burst_active;
+            last_uv_wavelength_nm = uv_wavelength_nm;
 
-        // Adaptive dt: use 1.5x during hold phases (constant T, forces change slowly).
-        // Wave B.1 hierarchy: when the G26 gearbox is active the PointerSwap
-        // kernel is the sole writer of d_protocol->dt; the legacy host-side
-        // adaptive heuristic must NOT race with it.
-        if self.adaptive_dt_enabled && !self.gearbox_active {
-            if self.temp_protocol.is_hold_phase() {
-                self.dt = self.base_dt * 1.5;
-            } else {
-                self.dt = self.base_dt;
-            }
-        }
+            // Advance protocols for inner substeps (all except the last — that's done after multi-LIF)
+            if inner_idx < n_inner - 1 {
+                self.temp_protocol.advance();
+                self.uv_config.advance();
+                self.timestep += 1;
 
-        // Compute cryogenic physics parameters
-        effective_gamma = self.compute_cryo_friction(current_temp);
-        _effective_dielectric = self.compute_cryo_dielectric(current_temp);
-
-        // ====================================================================
-        // O(N) NEIGHBOR LIST REBUILD (if needed)
-        // ====================================================================
-        // Rebuild every N steps or on first step
-        if self.use_neighbor_list {
-            self.steps_since_rebuild += 1;
-            if self.steps_since_rebuild >= self.neighbor_list_rebuild_interval || self.timestep == 0 {
-                self.rebuild_neighbor_lists()?;
-            }
-        }
-
-        // Determine UV burst state and parameters
-        let uv_burst_active = self.uv_config.is_burst_active();
-        let uv_target_idx = self.uv_config.get_target_idx().unwrap_or(0) as i32;
-        let base_uv_energy = self.compute_uv_energy(self.uv_config.burst_energy, current_temp);
-        // Apply spike-guided adaptive bias: boost UV for aromatics near high-activity voxels
-        let uv_burst_energy = self.compute_adaptive_uv_energy(base_uv_energy, self.uv_config.current_target);
-        let uv_wavelength_nm = self.uv_config.current_wavelength();  // GPU wavelength-dependent σ(λ)
-
-        // Track last UV burst timestep for spike quality scoring
-        if uv_burst_active {
-            self.last_uv_burst_timestep = self.timestep;
-        }
-
-        // Record local temperature change when UV burst is active (spectroscopy tracking)
-        if uv_burst_active && self.uv_config.track_local_temperature {
-            let target_idx = self.uv_config.current_target;
-            if target_idx < self.aromatic_types.len() {
-                let aromatic_type = self.aromatic_types[target_idx];
-                let delta_t = self.uv_config.compute_local_heating(aromatic_type);
-                self.uv_config.record_heating(target_idx, delta_t);
-                // Track total energy deposited (convert burst energy to eV: 1 kcal/mol ≈ 0.043 eV)
-                self.uv_config.total_energy_deposited += uv_burst_energy * 0.043;
-
-                // Debug: Log CPU-side physics for comparison with GPU
-                // Enable with RUST_LOG=debug or RUST_LOG=prism_nhs=debug
-                if log::log_enabled!(log::Level::Debug) && self.timestep % 10000 == 0 {
-                    let wavelength = self.uv_config.current_wavelength();
-                    let epsilon = self.uv_config.extinction_at_wavelength(aromatic_type);
-                    let sigma = crate::config::extinction_to_cross_section(epsilon);
-                    let fluence = crate::config::CALIBRATED_PHOTON_FLUENCE;
-                    let p_absorb = sigma * fluence;
-                    let e_photon = crate::config::wavelength_to_ev(wavelength);
-                    let chromophore_name = match aromatic_type {
-                        0 => "TRP", 1 => "TYR", 2 => "PHE", 3 => "S-S", 4 => "BNZ", _ => "UNK"
-                    };
-                    log::debug!(
-                        "[UV CPU] step={} type={} λ={:.0}nm σ={:.5}Å² F={:.4} p={:.6} E_γ={:.3}eV ΔT={:.2}K",
-                        self.timestep, chromophore_name, wavelength, sigma, fluence, p_absorb, e_photon, delta_t
-                    );
+                // Neighbor list rebuild check for inner substeps
+                if self.use_neighbor_list {
+                    self.steps_since_rebuild += 1;
+                    if self.steps_since_rebuild >= self.neighbor_list_rebuild_interval {
+                        self.rebuild_neighbor_lists()?;
+                    }
                 }
             }
-        }
-
-        // NOTE: spike_count is NOT reset here!
-        // Spikes accumulate across steps and are only reset AFTER sync (when we've read them).
-        // This preserves spike timestamps across the sync interval for proper UV correlation analysis.
-
-        // ====================================================================
-        // LAUNCH DIRECTOR KERNEL (same stream — ordering guarantees visibility)
-        // ====================================================================
-        {
-            let director_cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
-            unsafe {
-                self.stream
-                    .launch_builder(&self.director_fn)
-                    .arg(&mut self.d_protocol_state)
-                    .launch(director_cfg)
-            }
-            .context("Failed to launch protocol_director kernel")?;
-        }
-
-        // ====================================================================
-        // LAUNCH FUSED KERNEL
-        // ====================================================================
-
-        // Compute launch configuration
-        let n_blocks = (self.n_atoms as u32).div_ceil(BLOCK_SIZE_1D as u32);
-        let cfg = LaunchConfig {
-            grid_dim: (n_blocks, 1, 1),
-            block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
-            shared_mem_bytes: 0,
-        };
-
-        // Convert parameters to kernel-compatible types
-        let n_atoms_i32 = self.n_atoms as i32;
-        let n_bonds_i32 = self.n_bonds as i32;
-        let n_angles_i32 = self.n_angles as i32;
-        let n_dihedrals_i32 = self.n_dihedrals as i32;
-        let n_clusters_i32 = self.n_clusters as i32;
-        let grid_dim_i32 = self.grid_dim as i32;
-        let n_uv_targets_i32 = self.n_uv_targets as i32;
-        let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
-
-        // LADD: save positions before MD step for displacement computation
-        if self.ladd_enabled {
-            self.stream.memcpy_dtod(&self.d_positions, &mut self.d_positions_prev_ladd)?;
-        }
-
-        // M1.2.17 — zero per-atom PE components before this step's
-        // force kernels accumulate into them.  Stream-ordered so the
-        // memset retires before the kernel launch reads.
-        self.stream.memset_zeros(&mut self.d_potential_energy_components)?;
-
-        unsafe {
-            self.stream
-                .launch_builder(&self.fused_step_kernel)
-                // Atom state (float3* treated as f32* with 3x elements)
-                .arg(&mut self.d_positions)
-                .arg(&mut self.d_velocities)
-                .arg(&mut self.d_forces)
-                .arg(&self.d_masses)
-                .arg(&self.d_charges)
-                .arg(&self.d_atom_types)
-                .arg(&self.d_residue_ids)
-                .arg(&n_atoms_i32)
-                // AMBER parameters
-                .arg(&self.d_bonds)
-                .arg(&n_bonds_i32)
-                .arg(&self.d_angles)
-                .arg(&n_angles_i32)
-                .arg(&self.d_dihedrals)
-                .arg(&n_dihedrals_i32)
-                .arg(&self.d_lj_params)
-                .arg(&self.d_exclusion_list)
-                .arg(&self.d_exclusion_offsets)
-                .arg(&self.d_pairs14_list)
-                .arg(&self.d_pairs14_offsets)
-                // SHAKE clusters
-                .arg(&self.d_h_clusters)
-                .arg(&n_clusters_i32)
-                // Grid buffers
-                .arg(&mut self.d_exclusion_field)
-                .arg(&mut self.d_water_density)
-                .arg(&mut self.d_water_density_prev)
-                .arg(&mut self.d_lif_potential)
-                .arg(&mut self.d_spike_grid)
-                // Grid origin (individual floats for cudarc compatibility)
-                .arg(&self.grid_origin[0])
-                .arg(&self.grid_origin[1])
-                .arg(&self.grid_origin[2])
-                .arg(&self.grid_spacing)
-                .arg(&grid_dim_i32)
-                // Warp matrix
-                .arg(&mut self.d_warp_matrix)
-                // UV targets
-                .arg(&self.d_uv_targets)
-                .arg(&n_uv_targets_i32)
-                // PRISM-TWIN v3.0: GPU-resident protocol state (replaces temp/UV/dt/gamma/timestep scalars)
-                .arg(&self.d_protocol_state)
-                // Excited state dynamics (true photophysics)
-                .arg(&mut self.d_is_excited)
-                .arg(&mut self.d_time_since_excitation)
-                .arg(&mut self.d_electronic_population)
-                .arg(&mut self.d_vibrational_energy)
-                .arg(&mut self.d_franck_condon_progress)
-                .arg(&self.d_ground_state_charges)
-                .arg(&self.d_atom_to_aromatic)
-                .arg(&self.d_aromatic_type)
-                .arg(&self.d_ring_normals)
-                .arg(&self.d_aromatic_centroids)
-                .arg(&mut self.d_uv_signal_prev)
-                .arg(&self.d_aromatic_neighbors)
-                .arg(&(self.n_aromatics as i32))
-                // Spike output
-                .arg(&mut self.d_spike_events)
-                .arg(&mut self.d_spike_count)
-                .arg(&max_spikes_i32)
-                // Static simulation parameters
-                .arg(&self.cutoff)
-                // RNG state
-                .arg(&mut self.d_rng_states)
-                // O(N) neighbor list (optional)
-                .arg(&self.d_neighbor_list)
-                .arg(&self.d_n_neighbors)
-                .arg(&(if self.use_neighbor_list { 1i32 } else { 0i32 }))
-                // EFP buffers
-                .arg(&self.d_efp_potential)
-                .arg(&self.d_efp_potential_prev)
-                .arg(&self.d_efp_lif_potential)
-                .arg(&mut self.d_spike_grid_efp)
-                .arg(&self.d_atom_lambda)
-                // Signal preservation buffers
-                .arg(&mut self.d_voxel_hit_grid)
-                .arg(&mut self.d_last_uv_step)
-                .arg(&mut self.d_coupled_spike_grid)
-                .arg(&mut self.d_primary_residue_id)
-                .arg(&mut self.d_primary_residue_count)
-                .arg(&mut self.d_residue_step_causal)
-                // M1.2.17 — per-atom potential-energy components (f64).
-                .arg(&mut self.d_potential_energy_components)
-                // M1.2.18.5 — VRAM-native total-external-work scalar (f64, 1 element).
-                // apply_vibrational_transfer atomicAdd-f64s ΔK here per UV kick.
-                .arg(&mut self.d_external_work_buffer)
-                .launch(cfg)
-        }
-        .context("Failed to launch nhs_amber_fused_step kernel")?;
-
-        // ── CA POSITION RESTRAINTS (GPU-side, Gate 2) ──
-        // Replaces CPU memcpy_dtoh→correct→memcpy_htod with a single GPU kernel.
-        // Reads temperature from ProtocolState to compute k and alpha.
-        if let Some(ref ca_fn) = self.ca_restraint_fn {
-            let ca_cfg = LaunchConfig {
-                grid_dim: ((self.n_atoms as u32).div_ceil(256), 1, 1),
-                block_dim: (256, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            unsafe {
-                self.stream
-                    .launch_builder(ca_fn)
-                    .arg(&mut self.d_positions)
-                    .arg(&self.d_reference_positions)
-                    .arg(&self.d_ca_mask)
-                    .arg(&n_atoms_i32)
-                    .arg(&self.d_protocol_state)
-                    .launch(ca_cfg)
-            }
-            .context("Failed to launch apply_ca_restraints kernel")?;
-        }
-
-        // Save UV state for StepResult reporting (uses state from last inner step)
-        last_uv_burst_active = uv_burst_active;
-        last_uv_wavelength_nm = uv_wavelength_nm;
-
-        // Advance protocols for inner substeps (all except the last — that's done after multi-LIF)
-        if inner_idx < n_inner - 1 {
-            self.temp_protocol.advance();
-            self.uv_config.advance();
-            self.timestep += 1;
-
-            // Neighbor list rebuild check for inner substeps
-            if self.use_neighbor_list {
-                self.steps_since_rebuild += 1;
-                if self.steps_since_rebuild >= self.neighbor_list_rebuild_interval {
-                    self.rebuild_neighbor_lists()?;
-                }
-            }
-        }
         } // end inner AMBER loop
 
         // ====================================================================
@@ -5867,12 +6429,12 @@ impl NhsAmberFusedEngine {
         let tile_x = 4u32;
         let tile_y = 2u32;
         let tile_z = 2u32;
-        let threads_per_block = tile_x * tile_y * tile_z * 8;  // 16 voxels * 8 neurons = 128
-        let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);  // 96
-        // Shared memory: halo(96) + trig LUT(24) + flags(2) + aromatic cache(64*10=640) = 762 floats = 3048 bytes
+        let threads_per_block = tile_x * tile_y * tile_z * 8; // 16 voxels * 8 neurons = 128
+        let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2); // 96
+                                                                    // Shared memory: halo(96) + trig LUT(24) + flags(2) + aromatic cache(64*10=640) = 762 floats = 3048 bytes
         let max_arom_cached = 64u32;
-        let shared_mem = (halo_size + 26 + max_arom_cached * 10) * 4;  // 762 * sizeof(float) = 3048 bytes
-        // Use sparse tile index if available, fall back to full 3D grid
+        let shared_mem = (halo_size + 26 + max_arom_cached * 10) * 4; // 762 * sizeof(float) = 3048 bytes
+                                                                      // Use sparse tile index if available, fall back to full 3D grid
         let n_tiles = if self.n_active_tiles > 0 {
             self.n_active_tiles
         } else {
@@ -5887,8 +6449,13 @@ impl NhsAmberFusedEngine {
             shared_mem_bytes: shared_mem,
         };
         let n_active_tiles_i32 = self.n_active_tiles as i32;
-        log::trace!("Multi-LIF kernel: {} active tiles (block={} shared={}B) for {} voxels",
-            n_tiles, threads_per_block, shared_mem, total_voxels);
+        log::trace!(
+            "Multi-LIF kernel: {} active tiles (block={} shared={}B) for {} voxels",
+            n_tiles,
+            threads_per_block,
+            shared_mem,
+            total_voxels
+        );
 
         // Coupling double-buffer: phase=false → read A, write B; phase=true → read B, write A
         let n_aromatics_i32 = self.n_aromatics as i32;
@@ -6048,12 +6615,14 @@ impl NhsAmberFusedEngine {
 
                 // Reset departure counters
                 self.stream.memset_zeros(&mut self.d_departure_count)?;
-                self.stream.memset_zeros(&mut self.d_departure_count_per_voxel)?;
+                self.stream
+                    .memset_zeros(&mut self.d_departure_count_per_voxel)?;
                 self.stream.memset_zeros(&mut self.d_departure_local_slot)?;
 
                 // 1. Assign atoms to voxels + detect departures + per-voxel counts
                 unsafe {
-                    self.stream.launch_builder(k_update)
+                    self.stream
+                        .launch_builder(k_update)
                         .arg(&self.d_positions)
                         .arg(&self.d_atom_categories)
                         .arg(&mut self.d_atom_voxel_curr)
@@ -6070,38 +6639,45 @@ impl NhsAmberFusedEngine {
                         .arg(&n_atoms_i32)
                         .arg(&max_dep_i32)
                         .launch(atom_cfg)
-                }.context("LADD: ladd_update_voxels failed")?;
+                }
+                .context("LADD: ladd_update_voxels failed")?;
 
                 // 2. Reset density grid
                 unsafe {
-                    self.stream.launch_builder(k_reset)
+                    self.stream
+                        .launch_builder(k_reset)
                         .arg(&mut self.d_ladd_voxel_density)
                         .arg(&n_atoms_i32)
                         .arg(&total_voxels_i32)
                         .launch(voxel_cfg_ladd)
-                }.context("LADD: ladd_compute_density failed")?;
+                }
+                .context("LADD: ladd_compute_density failed")?;
 
                 // 3. Accumulate density
                 unsafe {
-                    self.stream.launch_builder(k_accum)
+                    self.stream
+                        .launch_builder(k_accum)
                         .arg(&self.d_atom_voxel_curr)
                         .arg(&self.d_atom_categories)
                         .arg(&mut self.d_ladd_voxel_density)
                         .arg(&n_atoms_i32)
                         .launch(atom_cfg)
-                }.context("LADD: ladd_accumulate_density failed")?;
+                }
+                .context("LADD: ladd_accumulate_density failed")?;
 
                 // 4. During cold_hold phase, accumulate reference density
                 if self.timestep < self.ladd_cold_hold_steps {
                     unsafe {
-                        self.stream.launch_builder(k_ref)
+                        self.stream
+                            .launch_builder(k_ref)
                             .arg(&self.d_ladd_voxel_density)
                             .arg(&mut self.d_ladd_density_ref)
                             .arg(&mut self.d_ladd_density_m2)
                             .arg(&mut self.d_ladd_ref_count)
                             .arg(&total_voxels_i32)
                             .launch(voxel_cfg_ladd)
-                    }.context("LADD: ladd_accumulate_reference failed")?;
+                    }
+                    .context("LADD: ladd_accumulate_reference failed")?;
                 }
 
                 // 5. LADD spike detection + emission (after cold_hold phase only)
@@ -6113,30 +6689,38 @@ impl NhsAmberFusedEngine {
                     ) {
                         // 5a. Build exclusive prefix sum of per-voxel departure counts
                         let single_cfg = cudarc::driver::LaunchConfig {
-                            grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0,
+                            grid_dim: (1, 1, 1),
+                            block_dim: (1, 1, 1),
+                            shared_mem_bytes: 0,
                         };
                         unsafe {
-                            self.stream.launch_builder(k_offsets)
+                            self.stream
+                                .launch_builder(k_offsets)
                                 .arg(&self.d_departure_count_per_voxel)
                                 .arg(&mut self.d_departure_offsets)
                                 .arg(&total_voxels_i32)
                                 .launch(single_cfg)
-                        }.context("LADD: ladd_build_departure_offsets failed")?;
+                        }
+                        .context("LADD: ladd_build_departure_offsets failed")?;
 
                         // 5b. Scatter departures into sorted order
                         // Read departure_count from GPU to size the scatter launch
                         let mut dep_count_host = [0i32];
-                        self.stream.memcpy_dtoh(&self.d_departure_count, &mut dep_count_host)?;
+                        self.stream
+                            .memcpy_dtoh(&self.d_departure_count, &mut dep_count_host)?;
                         let n_dep = dep_count_host[0].min(max_dep_i32) as u32;
 
                         if n_dep > 0 {
                             let dep_blocks = ((n_dep + 255) / 256) as u32;
                             let dep_cfg = cudarc::driver::LaunchConfig {
-                                grid_dim: (dep_blocks, 1, 1), block_dim: (256, 1, 1), shared_mem_bytes: 0,
+                                grid_dim: (dep_blocks, 1, 1),
+                                block_dim: (256, 1, 1),
+                                shared_mem_bytes: 0,
                             };
                             let n_dep_i32 = n_dep as i32;
                             unsafe {
-                                self.stream.launch_builder(k_scatter)
+                                self.stream
+                                    .launch_builder(k_scatter)
                                     .arg(&self.d_departure_atoms)
                                     .arg(&self.d_departure_src_voxels)
                                     .arg(&n_dep_i32)
@@ -6144,14 +6728,16 @@ impl NhsAmberFusedEngine {
                                     .arg(&mut self.d_departure_local_slot)
                                     .arg(&mut self.d_sorted_departure_atoms)
                                     .launch(dep_cfg)
-                            }.context("LADD: ladd_scatter_departures failed")?;
+                            }
+                            .context("LADD: ladd_scatter_departures failed")?;
                         }
 
                         // 5c. Detect depletion + emit spikes (using sorted departure buffer)
                         let max_spikes_i32 = 500000i32;
                         let timestep_i32 = self.timestep;
                         unsafe {
-                            self.stream.launch_builder(k_detect)
+                            self.stream
+                                .launch_builder(k_detect)
                                 .arg(&self.d_ladd_voxel_density)
                                 .arg(&self.d_ladd_density_ref)
                                 .arg(&self.d_ladd_density_m2)
@@ -6174,7 +6760,8 @@ impl NhsAmberFusedEngine {
                                 .arg(&timestep_i32)
                                 .arg(&total_voxels_i32)
                                 .launch(voxel_cfg_ladd)
-                        }.context("LADD: ladd_detect_and_emit failed")?;
+                        }
+                        .context("LADD: ladd_detect_and_emit failed")?;
                     }
                 }
 
@@ -6195,13 +6782,15 @@ impl NhsAmberFusedEngine {
                 shared_mem_bytes: 0,
             };
             unsafe {
-                self.stream.launch_builder(clear_fn)
+                self.stream
+                    .launch_builder(clear_fn)
                     .arg(&mut self.d_coupling_a)
                     .arg(&mut self.d_coupling_b)
                     .arg(&total_voxels)
                     .arg(&self.d_protocol_state)
                     .launch(clear_cfg)
-            }.context("Failed to launch coupling_buffer_clear")?;
+            }
+            .context("Failed to launch coupling_buffer_clear")?;
         } else {
             // Fallback: CPU-conditional memset
             if self.coupling_phase {
@@ -6215,14 +6804,20 @@ impl NhsAmberFusedEngine {
         // Sample every 32nd atom for NaN/divergence. Runs on same stream — negligible cost.
         if let Some(ref hb_fn) = self.heartbeat_fn {
             let hb_n = ((self.n_atoms / 32) as u32).div_ceil(256).max(1);
-            let hb_cfg = LaunchConfig { grid_dim: (hb_n, 1, 1), block_dim: (256, 1, 1), shared_mem_bytes: 0 };
+            let hb_cfg = LaunchConfig {
+                grid_dim: (hb_n, 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
             unsafe {
-                self.stream.launch_builder(hb_fn)
+                self.stream
+                    .launch_builder(hb_fn)
                     .arg(&self.d_positions)
                     .arg(&n_atoms_i32)
                     .arg(&mut self.d_protocol_state)
                     .launch(hb_cfg)
-            }.context("Failed to launch heartbeat_check")?;
+            }
+            .context("Failed to launch heartbeat_check")?;
         }
 
         // ====================================================================
@@ -6238,11 +6833,13 @@ impl NhsAmberFusedEngine {
             };
             // Determine protocol phase: 0=cold_hold, 1=ramp, 2=warm_hold
             let phase = if self.temp_protocol.current_step < self.temp_protocol.hold_steps {
-                0i32  // cold hold
-            } else if self.temp_protocol.current_step < self.temp_protocol.hold_steps + self.temp_protocol.ramp_steps {
-                1i32  // ramp
+                0i32 // cold hold
+            } else if self.temp_protocol.current_step
+                < self.temp_protocol.hold_steps + self.temp_protocol.ramp_steps
+            {
+                1i32 // ramp
             } else {
-                2i32  // warm hold
+                2i32 // warm hold
             };
             unsafe {
                 self.stream
@@ -6277,7 +6874,8 @@ impl NhsAmberFusedEngine {
         // NMA perturbation (warm_hold phase only)
         // In TemperatureProtocol: cold_hold_steps (phase 1) → ramp_steps (phase 2) → hold_steps (phase 3 = warm hold)
         if self.nma_enabled {
-            let warm_hold_start = self.temp_protocol.cold_hold_steps + self.temp_protocol.ramp_steps;
+            let warm_hold_start =
+                self.temp_protocol.cold_hold_steps + self.temp_protocol.ramp_steps;
             let warm_hold_end = warm_hold_start + self.temp_protocol.hold_steps;
             let step = self.temp_protocol.current_step;
 
@@ -6303,9 +6901,12 @@ impl NhsAmberFusedEngine {
                 let mode_start = warm_hold_start + (active_mode as i32 * steps_per_mode_scan);
                 let mode_end = mode_start + steps_per_mode_scan;
                 let gate = if step < mode_start + ramp {
-                    0.5 * (1.0 - ((step - mode_start) as f32 * std::f32::consts::PI / ramp as f32).cos())
+                    0.5 * (1.0
+                        - ((step - mode_start) as f32 * std::f32::consts::PI / ramp as f32).cos())
                 } else if step > mode_end - ramp {
-                    0.5 * (1.0 + ((step - (mode_end - ramp)) as f32 * std::f32::consts::PI / ramp as f32).cos())
+                    0.5 * (1.0
+                        + ((step - (mode_end - ramp)) as f32 * std::f32::consts::PI / ramp as f32)
+                            .cos())
                 } else {
                     1.0f32
                 };
@@ -6321,9 +6922,19 @@ impl NhsAmberFusedEngine {
                     shared_mem_bytes: 0,
                 };
 
-                if let (Some(ref d_disp), Some(ref d_scales), Some(ref d_ca), Some(ref mut d_counts), Some(ref nma_kern)) =
-                    (&self.d_nma_displacements, &self.d_nma_force_scales, &self.d_nma_ca_indices,
-                     &mut self.d_nma_spike_counts, &self.nma_perturbation_kernel) {
+                if let (
+                    Some(ref d_disp),
+                    Some(ref d_scales),
+                    Some(ref d_ca),
+                    Some(ref mut d_counts),
+                    Some(ref nma_kern),
+                ) = (
+                    &self.d_nma_displacements,
+                    &self.d_nma_force_scales,
+                    &self.d_nma_ca_indices,
+                    &mut self.d_nma_spike_counts,
+                    &self.nma_perturbation_kernel,
+                ) {
                     let n_res = self.nma_n_residues as i32;
                     let mode = active_mode as i32;
                     let force_cap = 10.0f32;
@@ -6343,7 +6954,8 @@ impl NhsAmberFusedEngine {
                             .arg(&dt)
                             .arg(&force_cap)
                             .launch(nma_cfg)
-                    }.ok(); // Don't fail the whole step if NMA kernel fails
+                    }
+                    .ok(); // Don't fail the whole step if NMA kernel fails
                 }
             }
         }
@@ -6363,7 +6975,8 @@ impl NhsAmberFusedEngine {
             self.stream.synchronize()?;
 
             let mut spike_count_host = [0i32];
-            self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
+            self.stream
+                .memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
             let spikes = spike_count_host[0] as usize;
 
             // Activity-based snapshot capture - multiple triggers
@@ -6371,9 +6984,9 @@ impl NhsAmberFusedEngine {
 
             // Trigger 1: Spike activity threshold (adaptive based on temperature)
             let spike_threshold = if current_temp < 150.0 {
-                5  // Lower threshold at cryogenic temps (events are rarer but more significant)
+                5 // Lower threshold at cryogenic temps (events are rarer but more significant)
             } else if current_temp < 250.0 {
-                8  // Medium threshold during transition
+                8 // Medium threshold during transition
             } else {
                 12 // Higher threshold at physiological temps
             };
@@ -6387,11 +7000,20 @@ impl NhsAmberFusedEngine {
 
             // Capture snapshot if any activity trigger fires
             if spike_trigger {
-                self.capture_ensemble_snapshot_with_trigger(current_temp, SnapshotTrigger::SpikeActivity)?;
+                self.capture_ensemble_snapshot_with_trigger(
+                    current_temp,
+                    SnapshotTrigger::SpikeActivity,
+                )?;
             } else if uv_trigger {
-                self.capture_ensemble_snapshot_with_trigger(current_temp, SnapshotTrigger::UvResponse)?;
+                self.capture_ensemble_snapshot_with_trigger(
+                    current_temp,
+                    SnapshotTrigger::UvResponse,
+                )?;
             } else if temp_trigger && spikes >= 2 {
-                self.capture_ensemble_snapshot_with_trigger(current_temp, SnapshotTrigger::TemperatureTransition)?;
+                self.capture_ensemble_snapshot_with_trigger(
+                    current_temp,
+                    SnapshotTrigger::TemperatureTransition,
+                )?;
             }
 
             // Preserve spike count before reset (for download_full_spike_events)
@@ -6405,89 +7027,127 @@ impl NhsAmberFusedEngine {
                 // Download ONLY the actual spike bytes (not the full 6MB buffer!)
                 // This is a major performance optimization - copies bytes_needed instead of 6MB
                 let mut full_buffer = vec![0u8; MAX_SPIKES_PER_STEP * self.spike_event_size];
-                self.stream.memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
+                self.stream
+                    .memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
 
                 // Parse and accumulate spike events
                 for i in 0..n_to_download {
                     let offset = i * self.spike_event_size;
                     let timestep = i32::from_le_bytes([
-                        full_buffer[offset], full_buffer[offset + 1],
-                        full_buffer[offset + 2], full_buffer[offset + 3],
+                        full_buffer[offset],
+                        full_buffer[offset + 1],
+                        full_buffer[offset + 2],
+                        full_buffer[offset + 3],
                     ]);
                     let voxel_idx = i32::from_le_bytes([
-                        full_buffer[offset + 4], full_buffer[offset + 5],
-                        full_buffer[offset + 6], full_buffer[offset + 7],
+                        full_buffer[offset + 4],
+                        full_buffer[offset + 5],
+                        full_buffer[offset + 6],
+                        full_buffer[offset + 7],
                     ]);
                     let pos_x = f32::from_le_bytes([
-                        full_buffer[offset + 8], full_buffer[offset + 9],
-                        full_buffer[offset + 10], full_buffer[offset + 11],
+                        full_buffer[offset + 8],
+                        full_buffer[offset + 9],
+                        full_buffer[offset + 10],
+                        full_buffer[offset + 11],
                     ]);
                     let pos_y = f32::from_le_bytes([
-                        full_buffer[offset + 12], full_buffer[offset + 13],
-                        full_buffer[offset + 14], full_buffer[offset + 15],
+                        full_buffer[offset + 12],
+                        full_buffer[offset + 13],
+                        full_buffer[offset + 14],
+                        full_buffer[offset + 15],
                     ]);
                     let pos_z = f32::from_le_bytes([
-                        full_buffer[offset + 16], full_buffer[offset + 17],
-                        full_buffer[offset + 18], full_buffer[offset + 19],
+                        full_buffer[offset + 16],
+                        full_buffer[offset + 17],
+                        full_buffer[offset + 18],
+                        full_buffer[offset + 19],
                     ]);
                     let intensity = f32::from_le_bytes([
-                        full_buffer[offset + 20], full_buffer[offset + 21],
-                        full_buffer[offset + 22], full_buffer[offset + 23],
+                        full_buffer[offset + 20],
+                        full_buffer[offset + 21],
+                        full_buffer[offset + 22],
+                        full_buffer[offset + 23],
                     ]);
                     let mut nearby_residues = [0i32; 8];
                     for r in 0..8 {
                         let r_offset = offset + 24 + r * 4;
                         nearby_residues[r] = i32::from_le_bytes([
-                            full_buffer[r_offset], full_buffer[r_offset + 1],
-                            full_buffer[r_offset + 2], full_buffer[r_offset + 3],
+                            full_buffer[r_offset],
+                            full_buffer[r_offset + 1],
+                            full_buffer[r_offset + 2],
+                            full_buffer[r_offset + 3],
                         ]);
                     }
                     let n_residues = i32::from_le_bytes([
-                        full_buffer[offset + 56], full_buffer[offset + 57],
-                        full_buffer[offset + 58], full_buffer[offset + 59],
+                        full_buffer[offset + 56],
+                        full_buffer[offset + 57],
+                        full_buffer[offset + 58],
+                        full_buffer[offset + 59],
                     ]);
 
                     // Parse enhanced metadata (offsets 60-91)
                     let spike_source = i32::from_le_bytes([
-                        full_buffer[offset + 60], full_buffer[offset + 61],
-                        full_buffer[offset + 62], full_buffer[offset + 63],
+                        full_buffer[offset + 60],
+                        full_buffer[offset + 61],
+                        full_buffer[offset + 62],
+                        full_buffer[offset + 63],
                     ]);
                     let wavelength_nm = f32::from_le_bytes([
-                        full_buffer[offset + 64], full_buffer[offset + 65],
-                        full_buffer[offset + 66], full_buffer[offset + 67],
+                        full_buffer[offset + 64],
+                        full_buffer[offset + 65],
+                        full_buffer[offset + 66],
+                        full_buffer[offset + 67],
                     ]);
                     let aromatic_type = i32::from_le_bytes([
-                        full_buffer[offset + 68], full_buffer[offset + 69],
-                        full_buffer[offset + 70], full_buffer[offset + 71],
+                        full_buffer[offset + 68],
+                        full_buffer[offset + 69],
+                        full_buffer[offset + 70],
+                        full_buffer[offset + 71],
                     ]);
                     let aromatic_residue_id = i32::from_le_bytes([
-                        full_buffer[offset + 72], full_buffer[offset + 73],
-                        full_buffer[offset + 74], full_buffer[offset + 75],
+                        full_buffer[offset + 72],
+                        full_buffer[offset + 73],
+                        full_buffer[offset + 74],
+                        full_buffer[offset + 75],
                     ]);
                     let water_density = f32::from_le_bytes([
-                        full_buffer[offset + 76], full_buffer[offset + 77],
-                        full_buffer[offset + 78], full_buffer[offset + 79],
+                        full_buffer[offset + 76],
+                        full_buffer[offset + 77],
+                        full_buffer[offset + 78],
+                        full_buffer[offset + 79],
                     ]);
                     let vibrational_energy = f32::from_le_bytes([
-                        full_buffer[offset + 80], full_buffer[offset + 81],
-                        full_buffer[offset + 82], full_buffer[offset + 83],
+                        full_buffer[offset + 80],
+                        full_buffer[offset + 81],
+                        full_buffer[offset + 82],
+                        full_buffer[offset + 83],
                     ]);
                     let n_nearby_excited = i32::from_le_bytes([
-                        full_buffer[offset + 84], full_buffer[offset + 85],
-                        full_buffer[offset + 86], full_buffer[offset + 87],
+                        full_buffer[offset + 84],
+                        full_buffer[offset + 85],
+                        full_buffer[offset + 86],
+                        full_buffer[offset + 87],
                     ]);
                     let wd_change = f32::from_le_bytes([
-                        full_buffer[offset + 88], full_buffer[offset + 89],
-                        full_buffer[offset + 90], full_buffer[offset + 91],
+                        full_buffer[offset + 88],
+                        full_buffer[offset + 89],
+                        full_buffer[offset + 90],
+                        full_buffer[offset + 91],
                     ]);
                     let phase_bits = u32::from_le_bytes([
-                        full_buffer[offset + 92], full_buffer[offset + 93],
-                        full_buffer[offset + 94], full_buffer[offset + 95],
+                        full_buffer[offset + 92],
+                        full_buffer[offset + 93],
+                        full_buffer[offset + 94],
+                        full_buffer[offset + 95],
                     ]);
                     if self.accumulated_spikes.len() < 5 {
                         log::info!("SPIKE DEBUG #{}: pos=[{:.2}, {:.2}, {:.2}] voxel={} src={} wl={:.0} arom_type={} intensity={:.3} phase={}/1024",
                             self.accumulated_spikes.len(), pos_x, pos_y, pos_z, voxel_idx, spike_source, wavelength_nm, aromatic_type, intensity, phase_bits);
-                        log::info!("  raw bytes[0..24]: {:?}", &full_buffer[offset..offset+24]);
+                        log::info!(
+                            "  raw bytes[0..24]: {:?}",
+                            &full_buffer[offset..offset + 24]
+                        );
                     }
                     self.accumulated_spikes.push(GpuSpikeEvent {
                         timestep,
@@ -6610,7 +7270,7 @@ impl NhsAmberFusedEngine {
             } else {
                 0.0
             };
-            let uv_wavelength_nm = self.uv_config.current_wavelength();  // GPU wavelength-dependent σ(λ)
+            let uv_wavelength_nm = self.uv_config.current_wavelength(); // GPU wavelength-dependent σ(λ)
 
             // Record local temperature change when UV burst is active (spectroscopy tracking)
             if uv_burst_active && self.uv_config.track_local_temperature {
@@ -6635,7 +7295,11 @@ impl NhsAmberFusedEngine {
 
             // Launch Director kernel (same stream — ordering guarantees visibility)
             {
-                let director_cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+                let director_cfg = LaunchConfig {
+                    grid_dim: (1, 1, 1),
+                    block_dim: (1, 1, 1),
+                    shared_mem_bytes: 0,
+                };
                 unsafe {
                     self.stream
                         .launch_builder(&self.director_fn)
@@ -6654,7 +7318,8 @@ impl NhsAmberFusedEngine {
             };
 
             // M1.2.17 — zero per-atom PE components before each step.
-            self.stream.memset_zeros(&mut self.d_potential_energy_components)?;
+            self.stream
+                .memset_zeros(&mut self.d_potential_energy_components)?;
 
             unsafe {
                 self.stream
@@ -6667,15 +7332,19 @@ impl NhsAmberFusedEngine {
                     .arg(&self.d_atom_types)
                     .arg(&self.d_residue_ids)
                     .arg(&n_atoms_i32)
-                    .arg(&self.d_bonds).arg(&n_bonds_i32)
-                    .arg(&self.d_angles).arg(&n_angles_i32)
-                    .arg(&self.d_dihedrals).arg(&n_dihedrals_i32)
+                    .arg(&self.d_bonds)
+                    .arg(&n_bonds_i32)
+                    .arg(&self.d_angles)
+                    .arg(&n_angles_i32)
+                    .arg(&self.d_dihedrals)
+                    .arg(&n_dihedrals_i32)
                     .arg(&self.d_lj_params)
                     .arg(&self.d_exclusion_list)
                     .arg(&self.d_exclusion_offsets)
                     .arg(&self.d_pairs14_list)
                     .arg(&self.d_pairs14_offsets)
-                    .arg(&self.d_h_clusters).arg(&n_clusters_i32)
+                    .arg(&self.d_h_clusters)
+                    .arg(&n_clusters_i32)
                     .arg(&mut self.d_exclusion_field)
                     .arg(&mut self.d_water_density)
                     .arg(&mut self.d_water_density_prev)
@@ -6687,7 +7356,8 @@ impl NhsAmberFusedEngine {
                     .arg(&self.grid_spacing)
                     .arg(&grid_dim_i32)
                     .arg(&mut self.d_warp_matrix)
-                    .arg(&self.d_uv_targets).arg(&n_uv_targets_i32)
+                    .arg(&self.d_uv_targets)
+                    .arg(&n_uv_targets_i32)
                     // PRISM-TWIN v3.0: GPU-resident protocol state
                     .arg(&self.d_protocol_state)
                     // Excited state dynamics
@@ -6756,7 +7426,8 @@ impl NhsAmberFusedEngine {
 
         // Read final spike count
         let mut spike_count_host = [0i32];
-        self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
+        self.stream
+            .memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
         let num_spikes = spike_count_host[0] as usize;
 
         Ok(StepResult {
@@ -6776,12 +7447,12 @@ impl NhsAmberFusedEngine {
     fn is_temperature_transition_point(&self, current_temp: f32) -> bool {
         // Key transition temperatures for protein dynamics
         let transition_temps = [
-            80.0,   // Glass transition
-            150.0,  // Onset of anharmonic motion
-            200.0,  // Methyl group rotation activation
-            250.0,  // Side chain flexibility onset
-            273.0,  // Near water freezing point
-            300.0,  // Physiological
+            80.0,  // Glass transition
+            150.0, // Onset of anharmonic motion
+            200.0, // Methyl group rotation activation
+            250.0, // Side chain flexibility onset
+            273.0, // Near water freezing point
+            300.0, // Physiological
         ];
 
         // Check if we're within 5K of any transition point
@@ -6794,7 +7465,11 @@ impl NhsAmberFusedEngine {
     }
 
     /// Capture an ensemble snapshot with activity-based trigger reason
-    fn capture_ensemble_snapshot_with_trigger(&mut self, temperature: f32, trigger: SnapshotTrigger) -> Result<()> {
+    fn capture_ensemble_snapshot_with_trigger(
+        &mut self,
+        temperature: f32,
+        trigger: SnapshotTrigger,
+    ) -> Result<()> {
         // Download current positions and velocities
         let positions = self.get_positions()?;
         let velocities = self.get_velocities()?;
@@ -6826,13 +7501,11 @@ impl NhsAmberFusedEngine {
             trigger_spikes.push(spike);
 
             // Record spike for persistence tracking
-            self.spike_persistence_tracker.record_spike(gpu_spike.position, self.timestep);
+            self.spike_persistence_tracker
+                .record_spike(gpu_spike.position, self.timestep);
 
             // Compute quality score for this spike with actual intensity
-            let mut quality = self.compute_spike_quality_score(
-                gpu_spike.position,
-                temperature,
-            );
+            let mut quality = self.compute_spike_quality_score(gpu_spike.position, temperature);
             // Override intensity with actual GPU value
             quality.intensity_score = (gpu_spike.intensity / 3.0).clamp(0.0, 1.0);
             quality.compute_overall_confidence();
@@ -6843,7 +7516,7 @@ impl NhsAmberFusedEngine {
         let alignment_quality = compute_alignment_quality(
             &positions,
             &self.reference_positions,
-            2.5,  // 2.5Å reference RMSD for "good" alignment
+            2.5, // 2.5Å reference RMSD for "good" alignment
         );
 
         // Compute spike region RMSD (atoms near any spike)
@@ -6882,9 +7555,11 @@ impl NhsAmberFusedEngine {
         self.ensemble_snapshots.push(snapshot);
 
         if self.ensemble_snapshots.len() % 10 == 0 {
-            log::info!("Captured {} ensemble snapshots (avg quality: {:.2})",
+            log::info!(
+                "Captured {} ensemble snapshots (avg quality: {:.2})",
                 self.ensemble_snapshots.len(),
-                self.average_spike_quality());
+                self.average_spike_quality()
+            );
         }
 
         Ok(())
@@ -6897,18 +7572,19 @@ impl NhsAmberFusedEngine {
         temperature: f32,
     ) -> SpikeQualityScore {
         // Get persistence score from tracker
-        let (persistence_score, _count) = self.spike_persistence_tracker.compute_persistence(position);
+        let (persistence_score, _count) =
+            self.spike_persistence_tracker.compute_persistence(position);
 
         // Compute UV correlation
         // Higher score if spike occurred shortly after a UV burst
         let steps_since_uv = (self.timestep - self.last_uv_burst_timestep).abs();
         let uv_correlation = if self.uv_config.is_burst_active() {
-            0.95  // Very high correlation if UV active now
+            0.95 // Very high correlation if UV active now
         } else if steps_since_uv < 500 {
             // Within 1ps of UV burst - high correlation
             0.8 * (1.0 - steps_since_uv as f32 / 500.0)
         } else {
-            0.1  // Low correlation
+            0.1 // Low correlation
         };
 
         // Find nearest aromatic residue
@@ -6923,7 +7599,7 @@ impl NhsAmberFusedEngine {
                     let dx = positions[approx_pos_idx] - position[0];
                     let dy = positions[approx_pos_idx + 1] - position[1];
                     let dz = positions[approx_pos_idx + 2] - position[2];
-                    let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+                    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                     if dist < aromatic_proximity {
                         aromatic_proximity = dist;
                     }
@@ -6931,7 +7607,7 @@ impl NhsAmberFusedEngine {
             }
         }
         if aromatic_proximity == f32::MAX {
-            aromatic_proximity = 20.0;  // Default if no aromatics
+            aromatic_proximity = 20.0; // Default if no aromatics
         }
 
         // Thermal stability: higher if temperature is stable (near target)
@@ -6940,10 +7616,10 @@ impl NhsAmberFusedEngine {
 
         // Flexibility score: based on local mobility (simplified)
         // In a real implementation, this would track RMSF of nearby atoms
-        let flexibility_score = 0.5;  // Placeholder
+        let flexibility_score = 0.5; // Placeholder
 
         // Find atoms near spike position for local RMSD
-        let current_positions = &self.reference_positions;  // Would use actual current positions
+        let current_positions = &self.reference_positions; // Would use actual current positions
         let nearby_atoms = find_atoms_near_position(current_positions, position, 6.0);
         let local_rmsd = if !nearby_atoms.is_empty() {
             // Simplified: just count atoms as proxy for structural change
@@ -6953,13 +7629,13 @@ impl NhsAmberFusedEngine {
         };
 
         let mut score = SpikeQualityScore {
-            intensity_score: 0.7,  // Would come from actual spike intensity
+            intensity_score: 0.7, // Would come from actual spike intensity
             persistence_score,
             uv_correlation,
             thermal_stability,
             aromatic_proximity,
             flexibility_score,
-            hydrogen_bond_disruption: 0,  // Would need H-bond analysis
+            hydrogen_bond_disruption: 0, // Would need H-bond analysis
             hydrophobic_neighbors: nearby_atoms.len() as i32,
             local_rmsd,
             contributing_atoms: nearby_atoms.len() as i32,
@@ -6991,7 +7667,8 @@ impl NhsAmberFusedEngine {
     /// Get current velocities from GPU
     pub fn get_velocities(&self) -> Result<Vec<f32>> {
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
-        self.stream.memcpy_dtoh(&self.d_velocities, &mut velocities)?;
+        self.stream
+            .memcpy_dtoh(&self.d_velocities, &mut velocities)?;
         Ok(velocities)
     }
 
@@ -7000,7 +7677,8 @@ impl NhsAmberFusedEngine {
     pub fn get_water_density(&self) -> Result<Vec<f32>> {
         let total_voxels = self.grid_dim * self.grid_dim * self.grid_dim;
         let mut water_density = vec![0.0f32; total_voxels];
-        self.stream.memcpy_dtoh(&self.d_water_density, &mut water_density)?;
+        self.stream
+            .memcpy_dtoh(&self.d_water_density, &mut water_density)?;
         Ok(water_density)
     }
 
@@ -7008,7 +7686,8 @@ impl NhsAmberFusedEngine {
     pub fn get_lif_potential(&self) -> Result<Vec<f32>> {
         let total_voxels = self.grid_dim * self.grid_dim * self.grid_dim;
         let mut potentials = vec![0.0f32; total_voxels];
-        self.stream.memcpy_dtoh(&self.d_lif_potential, &mut potentials)?;
+        self.stream
+            .memcpy_dtoh(&self.d_lif_potential, &mut potentials)?;
         Ok(potentials)
     }
 
@@ -7016,7 +7695,8 @@ impl NhsAmberFusedEngine {
     pub fn get_exclusion_field(&self) -> Result<Vec<f32>> {
         let total_voxels = self.grid_dim * self.grid_dim * self.grid_dim;
         let mut exclusion = vec![0.0f32; total_voxels];
-        self.stream.memcpy_dtoh(&self.d_exclusion_field, &mut exclusion)?;
+        self.stream
+            .memcpy_dtoh(&self.d_exclusion_field, &mut exclusion)?;
         Ok(exclusion)
     }
 
@@ -7090,14 +7770,17 @@ impl NhsAmberFusedEngine {
         // and is only usable with CUDA Graph conditional nodes, not basic
         // stream capture. Basic stream capture works fine with the 1-arg variant.
         {
-            let cfg = LaunchConfig { grid_dim: (1,1,1), block_dim: (1,1,1), shared_mem_bytes: 0 };
+            let cfg = LaunchConfig {
+                grid_dim: (1, 1, 1),
+                block_dim: (1, 1, 1),
+                shared_mem_bytes: 0,
+            };
             let grid_dim = cfg.grid_dim;
             let block_dim = cfg.block_dim;
             let shared_mem_bytes = cfg.shared_mem_bytes;
             let raw_stream = stream.cu_stream();
             let expected_ctx = stream.context().cu_ctx();
-            let mut capture_status =
-                sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+            let mut capture_status = sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
             let mut capture_id: sys::cuuint64_t = 0;
             let mut capture_graph: sys::CUgraph = ptr::null_mut();
             let mut deps_ptr: *const sys::CUgraphNode = ptr::null();
@@ -7117,10 +7800,7 @@ impl NhsAmberFusedEngine {
                 sys::CUresult::CUDA_SUCCESS
             };
             let capture_active = capture_tagger_active
-                && matches!(
-                    capture_info_rc,
-                    sys::CUresult::CUDA_SUCCESS
-                )
+                && matches!(capture_info_rc, sys::CUresult::CUDA_SUCCESS)
                 && matches!(
                     capture_status,
                     sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_ACTIVE
@@ -7176,10 +7856,7 @@ impl NhsAmberFusedEngine {
                 .as_ref()
                 .map(|ctx| ctx.drain_count)
                 .unwrap_or(0);
-            let deferred_drain_rc = deferred_drain_ctx
-                .as_ref()
-                .map(|ctx| ctx.rc)
-                .unwrap_or(0);
+            let deferred_drain_rc = deferred_drain_ctx.as_ref().map(|ctx| ctx.rc).unwrap_or(0);
             let deferred_drain_name = deferred_drain_ctx
                 .as_ref()
                 .map(|ctx| ctx.cuda_name.as_str())
@@ -7189,7 +7866,8 @@ impl NhsAmberFusedEngine {
                 .map(|ctx| ctx.cuda_string.as_str())
                 .unwrap_or("none");
             let res = unsafe {
-                stream.launch_builder(&self.director_fn)
+                stream
+                    .launch_builder(&self.director_fn)
                     .arg(&mut self.d_protocol_state)
                     .launch(cfg)
             };
@@ -7300,7 +7978,10 @@ impl NhsAmberFusedEngine {
                 }
             }
             if let Err(e) = res {
-                return Err(anyhow::anyhow!("step_autonomous: Director launch failed: {:?}", e));
+                return Err(anyhow::anyhow!(
+                    "step_autonomous: Director launch failed: {:?}",
+                    e
+                ));
             }
         }
         if let Some(t) = tagger.as_deref_mut() {
@@ -7326,7 +8007,8 @@ impl NhsAmberFusedEngine {
         stream.memset_zeros(&mut self.d_potential_energy_components)?;
 
         unsafe {
-            stream.launch_builder(&self.fused_step_kernel)
+            stream
+                .launch_builder(&self.fused_step_kernel)
                 .arg(&mut self.d_positions)
                 .arg(&mut self.d_velocities)
                 .arg(&mut self.d_forces)
@@ -7335,15 +8017,19 @@ impl NhsAmberFusedEngine {
                 .arg(&self.d_atom_types)
                 .arg(&self.d_residue_ids)
                 .arg(&n_atoms_i32)
-                .arg(&self.d_bonds).arg(&n_bonds_i32)
-                .arg(&self.d_angles).arg(&n_angles_i32)
-                .arg(&self.d_dihedrals).arg(&n_dihedrals_i32)
+                .arg(&self.d_bonds)
+                .arg(&n_bonds_i32)
+                .arg(&self.d_angles)
+                .arg(&n_angles_i32)
+                .arg(&self.d_dihedrals)
+                .arg(&n_dihedrals_i32)
                 .arg(&self.d_lj_params)
                 .arg(&self.d_exclusion_list)
                 .arg(&self.d_exclusion_offsets)
                 .arg(&self.d_pairs14_list)
                 .arg(&self.d_pairs14_offsets)
-                .arg(&self.d_h_clusters).arg(&n_clusters_i32)
+                .arg(&self.d_h_clusters)
+                .arg(&n_clusters_i32)
                 .arg(&mut self.d_exclusion_field)
                 .arg(&mut self.d_water_density)
                 .arg(&mut self.d_water_density_prev)
@@ -7355,7 +8041,8 @@ impl NhsAmberFusedEngine {
                 .arg(&self.grid_spacing)
                 .arg(&grid_dim_i32)
                 .arg(&mut self.d_warp_matrix)
-                .arg(&self.d_uv_targets).arg(&n_uv_targets_i32)
+                .arg(&self.d_uv_targets)
+                .arg(&n_uv_targets_i32)
                 .arg(&self.d_protocol_state)
                 .arg(&mut self.d_is_excited)
                 .arg(&mut self.d_time_since_excitation)
@@ -7394,7 +8081,8 @@ impl NhsAmberFusedEngine {
                 // M1.2.18.5 — VRAM-native total-external-work scalar.
                 .arg(&mut self.d_external_work_buffer)
                 .launch(physics_cfg)
-        }.context("step_autonomous: Physics kernel failed")?;
+        }
+        .context("step_autonomous: Physics kernel failed")?;
         if let Some(t) = tagger.as_deref_mut() {
             let _ = t.record_node("fused_step")?;
         }
@@ -7406,7 +8094,9 @@ impl NhsAmberFusedEngine {
         // Multi-LIF kernel (uses coupling_phase from ProtocolState)
         let n_aromatics_i32 = self.n_aromatics as i32;
         let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as u32;
-        let tile_x = 4u32; let tile_y = 2u32; let tile_z = 2u32;
+        let tile_x = 4u32;
+        let tile_y = 2u32;
+        let tile_z = 2u32;
         let threads_per_block = tile_x * tile_y * tile_z * 8;
         let halo_size = (tile_x + 2) * (tile_y + 2) * (tile_z + 2);
         let max_arom_cached = 64u32;
@@ -7428,7 +8118,8 @@ impl NhsAmberFusedEngine {
 
         // For autonomous path, always pass both coupling buffers (kernel reads phase from ProtocolState)
         unsafe {
-            stream.launch_builder(&self.multi_lif_kernel)
+            stream
+                .launch_builder(&self.multi_lif_kernel)
                 .arg(&self.d_positions)
                 .arg(&n_atoms_i32)
                 .arg(&grid_dim_i32)
@@ -7484,7 +8175,8 @@ impl NhsAmberFusedEngine {
                 .arg(&(self.ladd_enabled as i32))
                 .arg(&self.ladd_cold_hold_steps)
                 .launch(voxel_cfg)
-        }.context("step_autonomous: multi_lif failed")?;
+        }
+        .context("step_autonomous: multi_lif failed")?;
         if let Some(t) = tagger.as_deref_mut() {
             let _ = t.record_node("multi_lif")?;
         }
@@ -7536,11 +8228,7 @@ impl NhsAmberFusedEngine {
     ///   across calls (e.g., chunk_idx * chunk_size + chunk_size). Used by
     ///   the kernel for ring buffer event timestamps and event coalescing.
     /// * `current_phase` — 0 = cold_hold, 1 = ramp, 2 = warm_hold.
-    pub fn kcc_step_once(
-        &mut self,
-        current_step: u32,
-        current_phase: i32,
-    ) -> Result<()> {
+    pub fn kcc_step_once(&mut self, current_step: u32, current_phase: i32) -> Result<()> {
         if self.n_residues == 0 {
             return Ok(());
         }
@@ -7589,7 +8277,10 @@ impl NhsAmberFusedEngine {
     /// Returns the voxel indices and positions where spikes occurred
     pub fn download_spike_events(&self, max_spikes: usize) -> Result<Vec<(i32, [f32; 3])>> {
         let full_events = self.download_full_spike_events(max_spikes)?;
-        Ok(full_events.into_iter().map(|e| (e.voxel_idx, e.position)).collect())
+        Ok(full_events
+            .into_iter()
+            .map(|e| (e.voxel_idx, e.position))
+            .collect())
     }
 
     /// Download full spike events from GPU with all fields
@@ -7597,7 +8288,8 @@ impl NhsAmberFusedEngine {
     pub fn download_full_spike_events(&self, max_spikes: usize) -> Result<Vec<GpuSpikeEvent>> {
         // Get spike count from GPU, or use last_spike_count if GPU counter was reset
         let mut spike_count = [0i32];
-        self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count)?;
+        self.stream
+            .memcpy_dtoh(&self.d_spike_count, &mut spike_count)?;
 
         // If GPU counter is 0, use the preserved last_spike_count from before reset
         let effective_count = if spike_count[0] == 0 && self.last_spike_count > 0 {
@@ -7607,7 +8299,9 @@ impl NhsAmberFusedEngine {
         };
 
         // Cap at both max_spikes parameter AND MAX_SPIKES_PER_STEP (buffer size limit)
-        let n_spikes = (effective_count as usize).min(max_spikes).min(MAX_SPIKES_PER_STEP);
+        let n_spikes = (effective_count as usize)
+            .min(max_spikes)
+            .min(MAX_SPIKES_PER_STEP);
 
         if n_spikes == 0 {
             return Ok(Vec::new());
@@ -7619,7 +8313,8 @@ impl NhsAmberFusedEngine {
         // Create a view into just the spike events we need
         let full_bytes = MAX_SPIKES_PER_STEP * self.spike_event_size;
         let mut full_buffer = vec![0u8; full_bytes];
-        self.stream.memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
+        self.stream
+            .memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
 
         // Parse spike events
         let mut events = Vec::with_capacity(n_spikes);
@@ -7769,25 +8464,45 @@ impl NhsAmberFusedEngine {
         let mut net_dz = vec![0.0f32; nr];
         let mut sum_m = vec![0.0f32; nr];
 
-        self.stream.memcpy_dtoh(&self.d_kcc_temporal_corr, &mut temporal_corr)?;
-        self.stream.memcpy_dtoh(&self.d_kcc_direction_score, &mut direction_score)?;
-        self.stream.memcpy_dtoh(&self.d_kcc_motion_efficiency, &mut motion_efficiency)?;
-        self.stream.memcpy_dtoh(&self.d_kcc_burst_motion, &mut burst_motion)?;
-        self.stream.memcpy_dtoh(&self.d_kcc_phase_shift, &mut phase_shift)?;
-        self.stream.memcpy_dtoh(&self.d_kcc_causal_lag, &mut causal_lag)?;
-        self.stream.memcpy_dtoh(&self.d_kcc_lag_corr_peak, &mut lag_corr_peak)?;
-        self.stream.memcpy_dtoh(&self.d_kcc_local_cov, &mut local_cov)?;
-        self.stream.memcpy_dtoh(&self.d_residue_count, &mut residue_count)?;
-        self.stream.memcpy_dtoh(&self.d_residue_active_causal, &mut active_causal)?;
-        self.stream.memcpy_dtoh(&self.d_residue_net_dx, &mut net_dx)?;
-        self.stream.memcpy_dtoh(&self.d_residue_net_dy, &mut net_dy)?;
-        self.stream.memcpy_dtoh(&self.d_residue_net_dz, &mut net_dz)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_temporal_corr, &mut temporal_corr)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_direction_score, &mut direction_score)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_motion_efficiency, &mut motion_efficiency)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_burst_motion, &mut burst_motion)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_phase_shift, &mut phase_shift)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_causal_lag, &mut causal_lag)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_lag_corr_peak, &mut lag_corr_peak)?;
+        self.stream
+            .memcpy_dtoh(&self.d_kcc_local_cov, &mut local_cov)?;
+        self.stream
+            .memcpy_dtoh(&self.d_residue_count, &mut residue_count)?;
+        self.stream
+            .memcpy_dtoh(&self.d_residue_active_causal, &mut active_causal)?;
+        self.stream
+            .memcpy_dtoh(&self.d_residue_net_dx, &mut net_dx)?;
+        self.stream
+            .memcpy_dtoh(&self.d_residue_net_dy, &mut net_dy)?;
+        self.stream
+            .memcpy_dtoh(&self.d_residue_net_dz, &mut net_dz)?;
         self.stream.memcpy_dtoh(&self.d_residue_sum_m, &mut sum_m)?;
 
         let n_with_causal = active_causal.iter().filter(|&&v| v > 0).count();
-        let max_corr = temporal_corr.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        log::info!("KCC: {} residues tracked, {} with causal activity, max_temporal_corr={:.4}",
-            nr, n_with_causal, max_corr);
+        let max_corr = temporal_corr
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        log::info!(
+            "KCC: {} residues tracked, {} with causal activity, max_temporal_corr={:.4}",
+            nr,
+            n_with_causal,
+            max_corr
+        );
 
         Ok(KccData {
             temporal_corr,
@@ -7800,7 +8515,10 @@ impl NhsAmberFusedEngine {
             local_cov,
             residue_count,
             active_causal,
-            net_dx, net_dy, net_dz, sum_m,
+            net_dx,
+            net_dy,
+            net_dz,
+            sum_m,
             n_residues: nr,
         })
     }
@@ -7809,7 +8527,8 @@ impl NhsAmberFusedEngine {
     pub fn get_spike_grid(&self) -> Result<Vec<i32>> {
         let total_voxels = self.grid_dim * self.grid_dim * self.grid_dim;
         let mut spike_grid = vec![0i32; total_voxels];
-        self.stream.memcpy_dtoh(&self.d_spike_grid, &mut spike_grid)?;
+        self.stream
+            .memcpy_dtoh(&self.d_spike_grid, &mut spike_grid)?;
         Ok(spike_grid)
     }
 
@@ -7828,10 +8547,14 @@ impl NhsAmberFusedEngine {
         let mut primary_residue_id = vec![0i32; total_voxels];
         let mut primary_residue_count = vec![0i32; total_voxels];
 
-        self.stream.memcpy_dtoh(&self.d_voxel_hit_grid, &mut voxel_hit_grid)?;
-        self.stream.memcpy_dtoh(&self.d_coupled_spike_grid, &mut coupled_spike_grid)?;
-        self.stream.memcpy_dtoh(&self.d_primary_residue_id, &mut primary_residue_id)?;
-        self.stream.memcpy_dtoh(&self.d_primary_residue_count, &mut primary_residue_count)?;
+        self.stream
+            .memcpy_dtoh(&self.d_voxel_hit_grid, &mut voxel_hit_grid)?;
+        self.stream
+            .memcpy_dtoh(&self.d_coupled_spike_grid, &mut coupled_spike_grid)?;
+        self.stream
+            .memcpy_dtoh(&self.d_primary_residue_id, &mut primary_residue_id)?;
+        self.stream
+            .memcpy_dtoh(&self.d_primary_residue_count, &mut primary_residue_count)?;
 
         let n_recurrent = voxel_hit_grid.iter().filter(|&&v| v > 0).count();
         let max_recurrence = voxel_hit_grid.iter().copied().max().unwrap_or(0);
@@ -7866,54 +8589,160 @@ impl NhsAmberFusedEngine {
     /// Use `get_accumulated_spikes()` to retrieve and `clear_accumulated_spikes()` to reset.
     pub fn set_spike_accumulation(&mut self, enabled: bool) {
         self.accumulate_spikes = enabled;
-        log::info!("Spike accumulation: {}", if enabled { "ENABLED" } else { "disabled" });
+        log::info!(
+            "Spike accumulation: {}",
+            if enabled { "ENABLED" } else { "disabled" }
+        );
     }
 
     /// Force-sync spike data from GPU to CPU accumulated buffer.
     /// Call this after short run chunks to ensure spikes are captured even when
     /// the chunk size (e.g. 500 steps) is smaller than the sync interval (1000 steps).
     pub fn force_spike_sync(&mut self) -> Result<usize> {
-        if !self.accumulate_spikes { return Ok(0); }
+        if !self.accumulate_spikes {
+            return Ok(0);
+        }
         let mut spike_count_host = [0i32];
-        self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
+        self.stream
+            .memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
         let spikes = spike_count_host[0] as usize;
-        if spikes == 0 { return Ok(0); }
+        if spikes == 0 {
+            return Ok(0);
+        }
 
         let n_to_download = spikes.min(crate::fused_engine::MAX_SPIKES_PER_STEP);
-        let mut full_buffer = vec![0u8; crate::fused_engine::MAX_SPIKES_PER_STEP * self.spike_event_size];
-        self.stream.memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
+        let mut full_buffer =
+            vec![0u8; crate::fused_engine::MAX_SPIKES_PER_STEP * self.spike_event_size];
+        self.stream
+            .memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
 
         let pre_len = self.accumulated_spikes.len();
         for i in 0..n_to_download {
             let offset = i * self.spike_event_size;
-            let timestep = i32::from_le_bytes([full_buffer[offset], full_buffer[offset+1], full_buffer[offset+2], full_buffer[offset+3]]);
-            let voxel_idx = i32::from_le_bytes([full_buffer[offset+4], full_buffer[offset+5], full_buffer[offset+6], full_buffer[offset+7]]);
-            let pos_x = f32::from_le_bytes([full_buffer[offset+8], full_buffer[offset+9], full_buffer[offset+10], full_buffer[offset+11]]);
-            let pos_y = f32::from_le_bytes([full_buffer[offset+12], full_buffer[offset+13], full_buffer[offset+14], full_buffer[offset+15]]);
-            let pos_z = f32::from_le_bytes([full_buffer[offset+16], full_buffer[offset+17], full_buffer[offset+18], full_buffer[offset+19]]);
-            let intensity = f32::from_le_bytes([full_buffer[offset+20], full_buffer[offset+21], full_buffer[offset+22], full_buffer[offset+23]]);
+            let timestep = i32::from_le_bytes([
+                full_buffer[offset],
+                full_buffer[offset + 1],
+                full_buffer[offset + 2],
+                full_buffer[offset + 3],
+            ]);
+            let voxel_idx = i32::from_le_bytes([
+                full_buffer[offset + 4],
+                full_buffer[offset + 5],
+                full_buffer[offset + 6],
+                full_buffer[offset + 7],
+            ]);
+            let pos_x = f32::from_le_bytes([
+                full_buffer[offset + 8],
+                full_buffer[offset + 9],
+                full_buffer[offset + 10],
+                full_buffer[offset + 11],
+            ]);
+            let pos_y = f32::from_le_bytes([
+                full_buffer[offset + 12],
+                full_buffer[offset + 13],
+                full_buffer[offset + 14],
+                full_buffer[offset + 15],
+            ]);
+            let pos_z = f32::from_le_bytes([
+                full_buffer[offset + 16],
+                full_buffer[offset + 17],
+                full_buffer[offset + 18],
+                full_buffer[offset + 19],
+            ]);
+            let intensity = f32::from_le_bytes([
+                full_buffer[offset + 20],
+                full_buffer[offset + 21],
+                full_buffer[offset + 22],
+                full_buffer[offset + 23],
+            ]);
             // Nearby residues (8 × i32 = offsets 24-55)
             let mut nearby_residues = [0i32; 8];
             for j in 0..8 {
                 let ro = offset + 24 + j * 4;
-                nearby_residues[j] = i32::from_le_bytes([full_buffer[ro], full_buffer[ro+1], full_buffer[ro+2], full_buffer[ro+3]]);
+                nearby_residues[j] = i32::from_le_bytes([
+                    full_buffer[ro],
+                    full_buffer[ro + 1],
+                    full_buffer[ro + 2],
+                    full_buffer[ro + 3],
+                ]);
             }
-            let n_residues = i32::from_le_bytes([full_buffer[offset+56], full_buffer[offset+57], full_buffer[offset+58], full_buffer[offset+59]]);
-            let spike_source = i32::from_le_bytes([full_buffer[offset+60], full_buffer[offset+61], full_buffer[offset+62], full_buffer[offset+63]]);
-            let wavelength_nm = f32::from_le_bytes([full_buffer[offset+64], full_buffer[offset+65], full_buffer[offset+66], full_buffer[offset+67]]);
-            let aromatic_type = i32::from_le_bytes([full_buffer[offset+68], full_buffer[offset+69], full_buffer[offset+70], full_buffer[offset+71]]);
-            let aromatic_residue_id = i32::from_le_bytes([full_buffer[offset+72], full_buffer[offset+73], full_buffer[offset+74], full_buffer[offset+75]]);
-            let water_density = f32::from_le_bytes([full_buffer[offset+76], full_buffer[offset+77], full_buffer[offset+78], full_buffer[offset+79]]);
-            let vibrational_energy = f32::from_le_bytes([full_buffer[offset+80], full_buffer[offset+81], full_buffer[offset+82], full_buffer[offset+83]]);
-            let n_nearby_excited = i32::from_le_bytes([full_buffer[offset+84], full_buffer[offset+85], full_buffer[offset+86], full_buffer[offset+87]]);
-            let wd_change = f32::from_le_bytes([full_buffer[offset+88], full_buffer[offset+89], full_buffer[offset+90], full_buffer[offset+91]]);
-            let phase_bits = u32::from_le_bytes([full_buffer[offset+92], full_buffer[offset+93], full_buffer[offset+94], full_buffer[offset+95]]);
+            let n_residues = i32::from_le_bytes([
+                full_buffer[offset + 56],
+                full_buffer[offset + 57],
+                full_buffer[offset + 58],
+                full_buffer[offset + 59],
+            ]);
+            let spike_source = i32::from_le_bytes([
+                full_buffer[offset + 60],
+                full_buffer[offset + 61],
+                full_buffer[offset + 62],
+                full_buffer[offset + 63],
+            ]);
+            let wavelength_nm = f32::from_le_bytes([
+                full_buffer[offset + 64],
+                full_buffer[offset + 65],
+                full_buffer[offset + 66],
+                full_buffer[offset + 67],
+            ]);
+            let aromatic_type = i32::from_le_bytes([
+                full_buffer[offset + 68],
+                full_buffer[offset + 69],
+                full_buffer[offset + 70],
+                full_buffer[offset + 71],
+            ]);
+            let aromatic_residue_id = i32::from_le_bytes([
+                full_buffer[offset + 72],
+                full_buffer[offset + 73],
+                full_buffer[offset + 74],
+                full_buffer[offset + 75],
+            ]);
+            let water_density = f32::from_le_bytes([
+                full_buffer[offset + 76],
+                full_buffer[offset + 77],
+                full_buffer[offset + 78],
+                full_buffer[offset + 79],
+            ]);
+            let vibrational_energy = f32::from_le_bytes([
+                full_buffer[offset + 80],
+                full_buffer[offset + 81],
+                full_buffer[offset + 82],
+                full_buffer[offset + 83],
+            ]);
+            let n_nearby_excited = i32::from_le_bytes([
+                full_buffer[offset + 84],
+                full_buffer[offset + 85],
+                full_buffer[offset + 86],
+                full_buffer[offset + 87],
+            ]);
+            let wd_change = f32::from_le_bytes([
+                full_buffer[offset + 88],
+                full_buffer[offset + 89],
+                full_buffer[offset + 90],
+                full_buffer[offset + 91],
+            ]);
+            let phase_bits = u32::from_le_bytes([
+                full_buffer[offset + 92],
+                full_buffer[offset + 93],
+                full_buffer[offset + 94],
+                full_buffer[offset + 95],
+            ]);
 
             self.accumulated_spikes.push(GpuSpikeEvent {
-                timestep, voxel_idx, position: [pos_x, pos_y, pos_z], intensity,
-                nearby_residues, n_residues, spike_source, wavelength_nm,
-                aromatic_type, aromatic_residue_id, water_density, vibrational_energy,
-                n_nearby_excited, wd_change, phase_bits,
+                timestep,
+                voxel_idx,
+                position: [pos_x, pos_y, pos_z],
+                intensity,
+                nearby_residues,
+                n_residues,
+                spike_source,
+                wavelength_nm,
+                aromatic_type,
+                aromatic_residue_id,
+                water_density,
+                vibrational_energy,
+                n_nearby_excited,
+                wd_change,
+                phase_bits,
             });
         }
 
@@ -7966,13 +8795,17 @@ impl NhsAmberFusedEngine {
 
         // Compute activity threshold at the configured percentile
         let threshold = {
-            let mut sorted: Vec<f32> = self.spike_activity_map.iter()
+            let mut sorted: Vec<f32> = self
+                .spike_activity_map
+                .iter()
                 .copied()
                 .filter(|&v| v > 0.0)
                 .collect();
             if sorted.is_empty() {
                 // No activity at all — reset multipliers to 1.0
-                self.adaptive_bias_multipliers.iter_mut().for_each(|v| *v = 1.0);
+                self.adaptive_bias_multipliers
+                    .iter_mut()
+                    .for_each(|v| *v = 1.0);
                 return Ok(());
             }
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -7984,7 +8817,8 @@ impl NhsAmberFusedEngine {
         // Download current aromatic centroid positions from GPU
         let mut centroids_host = vec![0.0f32; self.n_aromatics * 3];
         self.stream.synchronize()?;
-        self.stream.memcpy_dtoh(&self.d_aromatic_centroids, &mut centroids_host)?;
+        self.stream
+            .memcpy_dtoh(&self.d_aromatic_centroids, &mut centroids_host)?;
 
         let grid_dim = self.grid_dim;
         let grid_spacing = self.grid_spacing;
@@ -8010,9 +8844,12 @@ impl NhsAmberFusedEngine {
                         let nx = vx + dx;
                         let ny = vy + dy;
                         let nz = vz + dz;
-                        if nx >= 0 && nx < grid_dim as i32
-                            && ny >= 0 && ny < grid_dim as i32
-                            && nz >= 0 && nz < grid_dim as i32
+                        if nx >= 0
+                            && nx < grid_dim as i32
+                            && ny >= 0
+                            && ny < grid_dim as i32
+                            && nz >= 0
+                            && nz < grid_dim as i32
                         {
                             let vidx = (nz as usize) * grid_dim * grid_dim
                                 + (ny as usize) * grid_dim
@@ -8046,8 +8883,11 @@ impl NhsAmberFusedEngine {
                 self.timestep, n_boosted, self.n_aromatics, threshold,
                 self.adaptive_bias_total_boosts);
         } else {
-            log::debug!("[ADAPTIVE-BIAS] step={}: no aromatics above threshold {:.3} (map decayed)",
-                self.timestep, threshold);
+            log::debug!(
+                "[ADAPTIVE-BIAS] step={}: no aromatics above threshold {:.3} (map decayed)",
+                self.timestep,
+                threshold
+            );
         }
 
         Ok(())
@@ -8112,7 +8952,11 @@ impl NhsAmberFusedEngine {
                 let old_uv = self.uv_config.burst_energy;
                 self.uv_config.burst_energy = old_uv * 1.5;
 
-                log::info!("  Adaptive protocol: spike_rate={:.2}/step -> {:?} class", spike_rate, flexibility);
+                log::info!(
+                    "  Adaptive protocol: spike_rate={:.2}/step -> {:?} class",
+                    spike_rate,
+                    flexibility
+                );
                 log::info!("  Adjusted (STIFF): ramp {} -> {}, warm_hold {} -> {}, uv_energy {:.1} -> {:.1}",
                     old_ramp, self.temp_protocol.ramp_steps,
                     old_hold, self.temp_protocol.hold_steps,
@@ -8120,7 +8964,11 @@ impl NhsAmberFusedEngine {
             }
             FlexibilityClass::Normal => {
                 // Normal protein: keep standard parameters, just log
-                log::info!("  Adaptive protocol: spike_rate={:.2}/step -> {:?} class (no adjustment)", spike_rate, flexibility);
+                log::info!(
+                    "  Adaptive protocol: spike_rate={:.2}/step -> {:?} class (no adjustment)",
+                    spike_rate,
+                    flexibility
+                );
             }
             FlexibilityClass::Flexible => {
                 // Flexible protein: faster cooling to trap open states
@@ -8132,7 +8980,11 @@ impl NhsAmberFusedEngine {
                 // NOTE: ramp_down is stored on CryoUvProtocol, not on TemperatureProtocol.
                 // The engine doesn't directly track ramp_down_steps internally,
                 // so we log the recommendation for the caller.
-                log::info!("  Adaptive protocol: spike_rate={:.2}/step -> {:?} class", spike_rate, flexibility);
+                log::info!(
+                    "  Adaptive protocol: spike_rate={:.2}/step -> {:?} class",
+                    spike_rate,
+                    flexibility
+                );
                 log::info!("  Adjusted (FLEXIBLE): warm_hold {} -> {} (recommend ramp_down *= 0.7 externally)",
                     old_hold, self.temp_protocol.hold_steps);
             }
@@ -8173,13 +9025,14 @@ impl NhsAmberFusedEngine {
         }
 
         // Check if GPU kernels are available
-        let (kde_kernel, centroid_kernel) = match (&self.kde_density_peak_kernel, &self.burial_centroid_kernel) {
-            (Some(kde), Some(cent)) => (kde, cent),
-            _ => {
-                // Fallback: CPU computation (already done in persistent_engine.rs)
-                return Ok(initial_centroid);
-            }
-        };
+        let (kde_kernel, centroid_kernel) =
+            match (&self.kde_density_peak_kernel, &self.burial_centroid_kernel) {
+                (Some(kde), Some(cent)) => (kde, cent),
+                _ => {
+                    // Fallback: CPU computation (already done in persistent_engine.rs)
+                    return Ok(initial_centroid);
+                }
+            };
 
         // Upload spike data to GPU
         let spike_x: Vec<f32> = spike_positions.iter().map(|p| p[0]).collect();
@@ -8197,7 +9050,8 @@ impl NhsAmberFusedEngine {
         self.stream.memcpy_htod(&spike_y, &mut d_spike_y)?;
         self.stream.memcpy_htod(&spike_z, &mut d_spike_z)?;
         self.stream.memcpy_htod(spike_n_residues, &mut d_spike_nr)?;
-        self.stream.memcpy_htod(&initial_centroid, &mut d_centroid)?;
+        self.stream
+            .memcpy_htod(&initial_centroid, &mut d_centroid)?;
 
         // Step 1: Burial-weighted centroid on GPU
         let cfg_centroid = LaunchConfig {
@@ -8222,7 +9076,8 @@ impl NhsAmberFusedEngine {
 
         // Read burial centroid back
         let mut centroid_result = [0.0f32; 4];
-        self.stream.memcpy_dtoh(&d_centroid_out, &mut centroid_result)?;
+        self.stream
+            .memcpy_dtoh(&d_centroid_out, &mut centroid_result)?;
 
         // Use burial centroid as input to KDE
         let burial_centroid = [centroid_result[0], centroid_result[1], centroid_result[2]];
@@ -8270,7 +9125,9 @@ impl NhsAmberFusedEngine {
         // Reset adaptive bias state for new replica
         if self.adaptive_bias_enabled {
             self.spike_activity_map.iter_mut().for_each(|v| *v = 0.0);
-            self.adaptive_bias_multipliers.iter_mut().for_each(|v| *v = 1.0);
+            self.adaptive_bias_multipliers
+                .iter_mut()
+                .for_each(|v| *v = 1.0);
             self.adaptive_bias_total_boosts = 0;
         }
 
@@ -8296,7 +9153,9 @@ impl NhsAmberFusedEngine {
             self.stream.memcpy_dtoh(&self.d_masses, &mut masses)?;
             for i in 0..self.n_atoms {
                 let mass = masses[i];
-                if mass <= 0.0 { continue; }
+                if mass <= 0.0 {
+                    continue;
+                }
                 let sigma = (KB * temp / mass).sqrt();
                 let normal = Normal::new(0.0f64, sigma as f64).unwrap();
                 velocities[i * 3] = normal.sample(&mut rng) as f32;
@@ -8320,18 +9179,21 @@ impl NhsAmberFusedEngine {
                     velocities[i * 3 + 2] -= com_vel[2] / total_mass;
                 }
             }
-            self.stream.memcpy_htod(&velocities, &mut self.d_velocities)?;
+            self.stream
+                .memcpy_htod(&velocities, &mut self.d_velocities)?;
             // Apply thermally-scaled position perturbations per atom.
             // σ = sqrt(kT / (m * ω²)) where ω² ≈ k_bond/m ≈ 500 kcal/(mol·Å²·amu)
             // At 50K: σ(C) ≈ 0.14Å, σ(H) ≈ 0.32Å — matches cryo B-factors.
             // This creates genuinely different microstates that force field cannot erase.
-            const KB_JITTER: f64 = 0.001987204;  // kcal/(mol·K)
-            const OMEGA_SQ: f64 = 500.0;  // effective spring constant / mass
+            const KB_JITTER: f64 = 0.001987204; // kcal/(mol·K)
+            const OMEGA_SQ: f64 = 500.0; // effective spring constant / mass
             let mut positions = vec![0.0f32; self.n_atoms * 3];
             self.stream.memcpy_dtoh(&self.d_positions, &mut positions)?;
             for i in 0..self.n_atoms {
                 let mass = masses[i] as f64;
-                if mass <= 0.0 { continue; }
+                if mass <= 0.0 {
+                    continue;
+                }
                 // Thermal displacement: sqrt(kT / (m * omega^2))
                 let sigma = (KB_JITTER * temp as f64 / (mass * OMEGA_SQ)).sqrt();
                 let jitter = Normal::new(0.0f64, sigma).unwrap();
@@ -8345,20 +9207,29 @@ impl NhsAmberFusedEngine {
         // Reset temperature protocol
         self.temp_protocol.current_step = 0;
 
-        log::debug!("Reset for replica with seed {} (seeded MB velocities + GPU RNG)", seed);
+        log::debug!(
+            "Reset for replica with seed {} (seeded MB velocities + GPU RNG)",
+            seed
+        );
         Ok(())
     }
 
     /// Enable or disable cryogenic physics
     pub fn set_cryogenic_mode(&mut self, enabled: bool) {
         self.cryo_enabled = enabled;
-        log::info!("Cryogenic physics: {}", if enabled { "ENABLED" } else { "disabled" });
+        log::info!(
+            "Cryogenic physics: {}",
+            if enabled { "ENABLED" } else { "disabled" }
+        );
     }
 
     /// Enable or disable dielectric scaling
     pub fn set_dielectric_scaling(&mut self, enabled: bool) {
         self.dielectric_scaling = enabled;
-        log::info!("Dielectric scaling: {}", if enabled { "ENABLED" } else { "disabled" });
+        log::info!(
+            "Dielectric scaling: {}",
+            if enabled { "ENABLED" } else { "disabled" }
+        );
     }
 
     /// Run multiple steps with adaptive early termination.
@@ -8382,10 +9253,10 @@ impl NhsAmberFusedEngine {
         }
 
         // Adaptive early termination parameters
-        let convergence_window = 2000i32 / inner;  // adjusted for fused steps
+        let convergence_window = 2000i32 / inner; // adjusted for fused steps
         let min_steps = 3000i32 / inner;
-        let convergence_rate = 0.005;      // < 0.5% new spikes = stalled
-        let max_stalls = 2u32;             // 2 consecutive stalls = converged
+        let convergence_rate = 0.005; // < 0.5% new spikes = stalled
+        let max_stalls = 2u32; // 2 consecutive stalls = converged
 
         let mut last_checkpoint_spikes = 0usize;
         let mut stall_count = 0u32;
@@ -8399,7 +9270,8 @@ impl NhsAmberFusedEngine {
             // Convergence check at window boundaries (after minimum runtime)
             if actual_steps >= min_steps
                 && actual_steps % convergence_window == 0
-                && total_spikes > 100  // need meaningful spike count
+                && total_spikes > 100
+            // need meaningful spike count
             {
                 let new_spikes = total_spikes.saturating_sub(last_checkpoint_spikes);
                 let rate = new_spikes as f64 / total_spikes as f64;
@@ -8408,7 +9280,11 @@ impl NhsAmberFusedEngine {
                     stall_count += 1;
                     log::info!(
                         "Convergence check step {}/{}: {:.2}% new spikes (stall {}/{})",
-                        actual_steps, n_steps, rate * 100.0, stall_count, max_stalls
+                        actual_steps,
+                        n_steps,
+                        rate * 100.0,
+                        stall_count,
+                        max_stalls
                     );
                     if stall_count >= max_stalls {
                         log::info!(
@@ -8426,16 +9302,26 @@ impl NhsAmberFusedEngine {
 
             if self.timestep % 10000 == 0 {
                 // Count spike sources for diagnostic
-                let recent_spikes = &self.accumulated_spikes[self.accumulated_spikes.len().saturating_sub(result.spike_count as usize)..];
+                let recent_spikes = &self.accumulated_spikes[self
+                    .accumulated_spikes
+                    .len()
+                    .saturating_sub(result.spike_count as usize)..];
                 let src1 = recent_spikes.iter().filter(|s| s.spike_source == 1).count();
                 let src2 = recent_spikes.iter().filter(|s| s.spike_source == 2).count();
                 let src3 = recent_spikes.iter().filter(|s| s.spike_source == 3).count();
                 let src4 = recent_spikes.iter().filter(|s| s.spike_source == 4).count();
                 let src5 = recent_spikes.iter().filter(|s| s.spike_source == 5).count();
-                log::info!("Step {}: T={:.1}K, spikes={} (UV={} RAF={} EFP={} LADD={} COFIRE={})",
+                log::info!(
+                    "Step {}: T={:.1}K, spikes={} (UV={} RAF={} EFP={} LADD={} COFIRE={})",
                     self.timestep,
                     self.temp_protocol.current_temperature(),
-                    result.spike_count, src1, src2, src3, src4, src5);
+                    result.spike_count,
+                    src1,
+                    src2,
+                    src3,
+                    src4,
+                    src5
+                );
             }
         }
 
@@ -8444,8 +9330,13 @@ impl NhsAmberFusedEngine {
         // Report actual AMBER steps (outer_steps * inner)
         let total_amber_steps = actual_steps * inner;
         if actual_steps < outer_steps {
-            log::info!("Simulation completed: {}/{} outer steps ({} AMBER steps, {} spikes)",
-                actual_steps, outer_steps, total_amber_steps, total_spikes);
+            log::info!(
+                "Simulation completed: {}/{} outer steps ({} AMBER steps, {} spikes)",
+                actual_steps,
+                outer_steps,
+                total_amber_steps,
+                total_spikes
+            );
         }
 
         Ok(RunSummary {
@@ -8468,7 +9359,8 @@ impl NhsAmberFusedEngine {
     /// Returns [n_aromatics] array of energy in kcal/mol
     pub fn get_vibrational_energy(&self) -> Result<Vec<f32>> {
         let mut energy = vec![0.0f32; self.n_aromatics.max(1)];
-        self.stream.memcpy_dtoh(&self.d_vibrational_energy, &mut energy)?;
+        self.stream
+            .memcpy_dtoh(&self.d_vibrational_energy, &mut energy)?;
         Ok(energy)
     }
 
@@ -8518,7 +9410,7 @@ impl NhsAmberFusedEngine {
     pub fn connect_live_monitor(&mut self, address: &str) -> Result<()> {
         match TcpStream::connect_timeout(
             &address.parse().context("Invalid monitor address")?,
-            Duration::from_secs(2)
+            Duration::from_secs(2),
         ) {
             Ok(stream) => {
                 stream.set_nodelay(true)?;
@@ -8551,7 +9443,8 @@ impl NhsAmberFusedEngine {
 
         let grid_size = self.grid_dim * self.grid_dim * self.grid_dim;
         let mut exclusion = vec![0.0f32; grid_size];
-        self.stream.memcpy_dtoh(&self.d_exclusion_field, &mut exclusion)?;
+        self.stream
+            .memcpy_dtoh(&self.d_exclusion_field, &mut exclusion)?;
 
         // Subsample exclusion field (every 2nd voxel for efficiency)
         let sub_dim = self.grid_dim / 2;
@@ -8559,20 +9452,23 @@ impl NhsAmberFusedEngine {
         for z in 0..sub_dim {
             for y in 0..sub_dim {
                 for x in 0..sub_dim {
-                    let src = (z*2)*self.grid_dim*self.grid_dim + (y*2)*self.grid_dim + (x*2);
-                    let dst = z*sub_dim*sub_dim + y*sub_dim + x;
+                    let src =
+                        (z * 2) * self.grid_dim * self.grid_dim + (y * 2) * self.grid_dim + (x * 2);
+                    let dst = z * sub_dim * sub_dim + y * sub_dim + x;
                     sub_excl[dst] = exclusion[src];
                 }
             }
         }
 
         let mut spike_count = vec![0i32];
-        self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count)?;
+        self.stream
+            .memcpy_dtoh(&self.d_spike_count, &mut spike_count)?;
 
         // Get aromatic excitation if available
         let aromatic_excitation = if self.n_aromatics > 0 {
             let mut exc = vec![0.0f32; self.n_aromatics];
-            self.stream.memcpy_dtoh(&self.d_electronic_population, &mut exc)?;
+            self.stream
+                .memcpy_dtoh(&self.d_electronic_population, &mut exc)?;
             exc
         } else {
             vec![]
@@ -8591,8 +9487,7 @@ impl NhsAmberFusedEngine {
         // Send (ignore errors - just disconnect if monitor goes away)
         let len = frame.len() as u32;
         let send_failed = if let Some(stream) = &mut self.live_monitor {
-            stream.write_all(&len.to_le_bytes()).is_err()
-                || stream.write_all(&frame).is_err()
+            stream.write_all(&len.to_le_bytes()).is_err() || stream.write_all(&frame).is_err()
         } else {
             false
         };
@@ -8619,17 +9514,17 @@ impl NhsAmberFusedEngine {
         let mut buf = Vec::with_capacity(1024 + positions.len() * 4 + exclusion.len() * 4);
 
         // Header: Q=u64, f=f32, I=u32, i=i32 (matches Python struct format)
-        buf.extend_from_slice(&self.live_monitor_frame_id.to_le_bytes());  // Q: frame_id
-        buf.extend_from_slice(&(self.timestep as f32 * self.dt).to_le_bytes());  // f: time_ps
-        buf.extend_from_slice(&temperature.to_le_bytes());  // f: temperature
-        buf.extend_from_slice(&0.0f32.to_le_bytes());  // f: PE placeholder
-        buf.extend_from_slice(&0.0f32.to_le_bytes());  // f: KE placeholder
-        buf.extend_from_slice(&(self.n_atoms as u32).to_le_bytes());  // I: n_atoms
-        buf.extend_from_slice(&(spike_count as u32).to_le_bytes());  // I: spike_count
-        buf.extend_from_slice(&(grid_dim as u32).to_le_bytes());  // I: grid_dim
-        buf.extend_from_slice(&(self.uv_config.get_target_idx().unwrap_or(0) as i32).to_le_bytes());  // i: probe_id
-        buf.extend_from_slice(&0.0f32.to_le_bytes());  // f: sequence_score placeholder
-        buf.extend_from_slice(&[0u8; 16]);  // 16 bytes padding
+        buf.extend_from_slice(&self.live_monitor_frame_id.to_le_bytes()); // Q: frame_id
+        buf.extend_from_slice(&(self.timestep as f32 * self.dt).to_le_bytes()); // f: time_ps
+        buf.extend_from_slice(&temperature.to_le_bytes()); // f: temperature
+        buf.extend_from_slice(&0.0f32.to_le_bytes()); // f: PE placeholder
+        buf.extend_from_slice(&0.0f32.to_le_bytes()); // f: KE placeholder
+        buf.extend_from_slice(&(self.n_atoms as u32).to_le_bytes()); // I: n_atoms
+        buf.extend_from_slice(&(spike_count as u32).to_le_bytes()); // I: spike_count
+        buf.extend_from_slice(&(grid_dim as u32).to_le_bytes()); // I: grid_dim
+        buf.extend_from_slice(&(self.uv_config.get_target_idx().unwrap_or(0) as i32).to_le_bytes()); // i: probe_id
+        buf.extend_from_slice(&0.0f32.to_le_bytes()); // f: sequence_score placeholder
+        buf.extend_from_slice(&[0u8; 16]); // 16 bytes padding
 
         // Positions
         buf.extend_from_slice(&(positions.len() as u32).to_le_bytes());

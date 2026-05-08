@@ -64,7 +64,11 @@ fn write_stats_json(
     ));
     buf.push_str("  \"distinct_seeds\": [");
     for (i, s) in stats.distinct_seeds.iter().enumerate() {
-        let comma = if i + 1 == stats.distinct_seeds.len() { "" } else { ", " };
+        let comma = if i + 1 == stats.distinct_seeds.len() {
+            ""
+        } else {
+            ", "
+        };
         buf.push_str(&format!("{}{}", s, comma));
     }
     buf.push_str("],\n");
@@ -104,7 +108,11 @@ fn main() -> ExitCode {
     };
 
     if let Err(e) = write_stats_json(&stats_path, &stats, &args.inputs, &args.output) {
-        eprintln!("warn: failed to write stats JSON {}: {}", stats_path.display(), e);
+        eprintln!(
+            "warn: failed to write stats JSON {}: {}",
+            stats_path.display(),
+            e
+        );
         // Not a fatal error — the merged Arrow file was produced.
     }
 

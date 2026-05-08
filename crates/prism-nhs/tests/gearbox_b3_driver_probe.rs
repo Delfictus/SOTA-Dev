@@ -28,9 +28,7 @@
 
 use cudarc::driver::sys::*;
 use cudarc::driver::{CudaContext, DevicePtr};
-use prism_nhs::gearbox::{
-    default_gearbox_table, ChronometricStateTensor, ffi::*,
-};
+use prism_nhs::gearbox::{default_gearbox_table, ffi::*, ChronometricStateTensor};
 use std::ffi::c_void;
 use std::ptr;
 
@@ -40,11 +38,11 @@ use std::ptr;
 // node downstream of `predicate_node` in `graph`.
 extern "C" {
     fn prism_wire_g26_gearbox_ffi(
-        graph:                CUgraph,
-        predicate_node:       CUgraphNode,
-        predicate_dev_ptr:    *const u32,
+        graph: CUgraph,
+        predicate_node: CUgraphNode,
+        predicate_dev_ptr: *const u32,
         out_conditional_node: *mut CUgraphNode,
-        out_body_subgraphs:   *mut CUgraph,    // [4]
+        out_body_subgraphs: *mut CUgraph, // [4]
     ) -> i32;
 }
 
@@ -63,8 +61,11 @@ fn b3_blackwell_driver_probe_phgraph_out_validity() {
     let mut graph: CUgraph = ptr::null_mut();
     unsafe {
         let rc = cuGraphCreate(&mut graph as *mut _, 0);
-        assert!(matches!(rc, CUresult::CUDA_SUCCESS),
-            "cuGraphCreate failed: rc={:?}", rc);
+        assert!(
+            matches!(rc, CUresult::CUDA_SUCCESS),
+            "cuGraphCreate failed: rc={:?}",
+            rc
+        );
     }
     assert!(!graph.is_null(), "cuGraphCreate returned null graph");
 
@@ -89,12 +90,16 @@ fn b3_blackwell_driver_probe_phgraph_out_validity() {
         let rc = cuGraphAddMemsetNode(
             &mut predicate_node as *mut _,
             graph,
-            ptr::null(), 0,
+            ptr::null(),
+            0,
             &memset_params as *const _,
             ctx.cu_ctx() as CUcontext,
         );
-        assert!(matches!(rc, CUresult::CUDA_SUCCESS),
-            "cuGraphAddMemsetNode failed: rc={:?}", rc);
+        assert!(
+            matches!(rc, CUresult::CUDA_SUCCESS),
+            "cuGraphAddMemsetNode failed: rc={:?}",
+            rc
+        );
     }
     assert!(!predicate_node.is_null(), "predicate_node is null");
 
@@ -119,16 +124,23 @@ fn b3_blackwell_driver_probe_phgraph_out_validity() {
     for i in 0..4 {
         eprintln!(
             "[B.3 PROBE] phGraph_out[{}] = {:p}  ({})",
-            i, body_subgraphs[i],
-            if body_subgraphs[i].is_null() { "NULL — Smoking Gun" } else { "valid" }
+            i,
+            body_subgraphs[i],
+            if body_subgraphs[i].is_null() {
+                "NULL — Smoking Gun"
+            } else {
+                "valid"
+            }
         );
     }
 
     // The operator-mandated assertion.
-    assert_eq!(rc, 0,
+    assert_eq!(
+        rc, 0,
         "prism_wire_g26_gearbox_ffi failed: rc={} \
          (cudaError_t cast — see CUDA Programming Guide § E)",
-        rc);
+        rc
+    );
     assert!(!cond_node.is_null(), "conditional node handle is null");
 
     let mut all_valid = true;
@@ -182,28 +194,38 @@ fn b3_blackwell_driver_probe_phgraph_out_validity() {
     // on some toolkits).
     let stream = ctx.new_stream().expect("stream2");
     let n_floats: u32 = 12;
-    let mut d_v: cudarc::driver::CudaSlice<f32> =
-        stream.alloc_zeros::<f32>(n_floats as usize).expect("alloc v");
+    let mut d_v: cudarc::driver::CudaSlice<f32> = stream
+        .alloc_zeros::<f32>(n_floats as usize)
+        .expect("alloc v");
     let mut d_cruise: cudarc::driver::CudaSlice<u8> =
         stream.alloc_zeros::<u8>(32).expect("alloc cruise");
     let mut d_adj: cudarc::driver::CudaSlice<u8> =
         stream.alloc_zeros::<u8>(128).expect("alloc adj");
 
-    let d_v_ptr:      u64 = { let (a, _g) = d_v.device_ptr(&stream);      a as u64 };
-    let d_cruise_ptr: u64 = { let (a, _g) = d_cruise.device_ptr(&stream); a as u64 };
-    let d_adj_ptr:    u64 = { let (a, _g) = d_adj.device_ptr(&stream);    a as u64 };
+    let d_v_ptr: u64 = {
+        let (a, _g) = d_v.device_ptr(&stream);
+        a as u64
+    };
+    let d_cruise_ptr: u64 = {
+        let (a, _g) = d_cruise.device_ptr(&stream);
+        a as u64
+    };
+    let d_adj_ptr: u64 = {
+        let (a, _g) = d_adj.device_ptr(&stream);
+        a as u64
+    };
 
     extern "C" {
         fn prism_gearbox_populate_switch_bodies_ffi(
             body_subgraphs: *mut *mut c_void,
-            adj:            *const std::ffi::c_void,
-            d_velocities:   *mut f32,
-            n_floats:       u32,
-            cruise:         *const std::ffi::c_void,
+            adj: *const std::ffi::c_void,
+            d_velocities: *mut f32,
+            n_floats: u32,
+            cruise: *const std::ffi::c_void,
             d_current_temp: *const f32,
-            d_dt:           *const f32,
-            target_temp_K:  f32,
-            tau_ps:         f32,
+            d_dt: *const f32,
+            target_temp_K: f32,
+            tau_ps: f32,
         ) -> i32;
     }
 
@@ -218,12 +240,14 @@ fn b3_blackwell_driver_probe_phgraph_out_validity() {
     let rc = unsafe {
         prism_gearbox_populate_switch_bodies_ffi(
             body_v.as_mut_ptr(),
-            d_adj_ptr    as *const c_void,
-            d_v_ptr      as *mut f32,
+            d_adj_ptr as *const c_void,
+            d_v_ptr as *mut f32,
             n_floats,
             d_cruise_ptr as *const c_void,
-            ptr::null(), ptr::null(),    // skip Berendsen for the Probe
-            300.0, 0.5,
+            ptr::null(),
+            ptr::null(), // skip Berendsen for the Probe
+            300.0,
+            0.5,
         )
     };
     eprintln!("[B.3 PROBE] populate_switch_bodies_ffi rc = {}", rc);
@@ -268,12 +292,13 @@ fn b3_rescale_kernel_latency_10k_atoms() {
         v_prev: 0.0,
         _pad_v_prev: 0,
     };
-    let cruise_bytes: [u8; 32] = unsafe {
-        std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed)
-    };
+    let cruise_bytes: [u8; 32] =
+        unsafe { std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed) };
     let mut d_cruise: cudarc::driver::CudaSlice<u8> =
         stream.alloc_zeros::<u8>(32).expect("alloc cruise");
-    stream.memcpy_htod(&cruise_bytes, &mut d_cruise).expect("htod cruise");
+    stream
+        .memcpy_htod(&cruise_bytes, &mut d_cruise)
+        .expect("htod cruise");
 
     // Pre-populate the gearbox table (the rescale kernel reads
     // d_rescale_ratios, but init for symmetry).
@@ -284,21 +309,27 @@ fn b3_rescale_kernel_latency_10k_atoms() {
     }
     stream.synchronize().expect("post-init sync");
 
-    let d_v_ptr:      u64 = { let (a, _g) = d_v.device_ptr(&stream);      a as u64 };
-    let d_cruise_ptr: u64 = { let (a, _g) = d_cruise.device_ptr(&stream); a as u64 };
+    let d_v_ptr: u64 = {
+        let (a, _g) = d_v.device_ptr(&stream);
+        a as u64
+    };
+    let d_cruise_ptr: u64 = {
+        let (a, _g) = d_cruise.device_ptr(&stream);
+        a as u64
+    };
 
     // ── cudaEvent timing — record before / after the kernel launch. ──
     let mut start_ev: CUevent = ptr::null_mut();
-    let mut stop_ev:  CUevent = ptr::null_mut();
+    let mut stop_ev: CUevent = ptr::null_mut();
     unsafe {
         cuEventCreate(&mut start_ev as *mut _, 0u32);
-        cuEventCreate(&mut stop_ev  as *mut _, 0u32);
+        cuEventCreate(&mut stop_ev as *mut _, 0u32);
     }
 
     // Warm-up launch (excluded from timing).
     let rc = unsafe {
         prism_gearbox_launch_rescale(
-            d_v_ptr      as *mut f32,
+            d_v_ptr as *mut f32,
             n_floats,
             d_cruise_ptr as *const ChronometricStateTensor,
             0,
@@ -315,7 +346,7 @@ fn b3_rescale_kernel_latency_10k_atoms() {
     unsafe {
         cuEventRecord(start_ev, stream.cu_stream());
         let rc = prism_gearbox_launch_rescale(
-            d_v_ptr      as *mut f32,
+            d_v_ptr as *mut f32,
             n_floats,
             d_cruise_ptr as *const ChronometricStateTensor,
             0,
@@ -336,17 +367,27 @@ fn b3_rescale_kernel_latency_10k_atoms() {
         "\n[B.3 LATENCY] rescale_kernel ({} atoms, {} floats, ratio=0.125):\n\
          ➜  elapsed = {:.3} ms = {:.3} µs\n\
          ➜  per-atom = {:.3} ns",
-        N_ATOMS, n_floats, elapsed_ms, elapsed_us, elapsed_us * 1000.0 / (N_ATOMS as f32)
+        N_ATOMS,
+        n_floats,
+        elapsed_ms,
+        elapsed_us,
+        elapsed_us * 1000.0 / (N_ATOMS as f32)
     );
 
     // Sanity check the rescale actually fired (sample a few elements).
     let mut readback = vec![0.0f32; host_v.len()];
     stream.memcpy_dtoh(&d_v, &mut readback).expect("dtoh v");
-    let drift: f32 = readback.iter().zip(host_v.iter())
+    let drift: f32 = readback
+        .iter()
+        .zip(host_v.iter())
         .map(|(&out, &inp)| (out - inp * 0.125).abs())
-        .sum::<f32>() / (host_v.len() as f32);
-    assert!(drift < 1.0e-6,
-        "rescale didn't apply ratio 0.125 correctly; mean drift = {}", drift);
+        .sum::<f32>()
+        / (host_v.len() as f32);
+    assert!(
+        drift < 1.0e-6,
+        "rescale didn't apply ratio 0.125 correctly; mean drift = {}",
+        drift
+    );
 
     // Operator gate: < 10 µs latency budget for the rescale step.
     // Don't make this a hard assertion — Blackwell variance + first-launch

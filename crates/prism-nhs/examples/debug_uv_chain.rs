@@ -13,10 +13,10 @@ use anyhow::Result;
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<()> {
@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     if !topology_path.exists() {
@@ -43,8 +43,8 @@ fn main() -> Result<()> {
     let uv_config = UvProbeConfig {
         enabled: true,
         burst_energy: 30.0,
-        burst_interval: 50,   // Short interval for rapid testing
-        burst_duration: 10,   // 10-step bursts
+        burst_interval: 50, // Short interval for rapid testing
+        burst_duration: 10, // 10-step bursts
         frequency_hopping_enabled: false,
         scan_wavelengths: vec![280.0],
         dwell_steps: 100,
@@ -52,7 +52,10 @@ fn main() -> Result<()> {
     };
 
     println!("\nUV Config:");
-    println!("  Burst interval: {} steps (burst at 0-9, 50-59, 100-109, ...)", uv_config.burst_interval);
+    println!(
+        "  Burst interval: {} steps (burst at 0-9, 50-59, 100-109, ...)",
+        uv_config.burst_interval
+    );
     println!("  Burst duration: {} steps", uv_config.burst_duration);
     println!("  Burst energy: {} kcal/mol\n", uv_config.burst_energy);
 
@@ -80,8 +83,10 @@ fn main() -> Result<()> {
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("STEP-BY-STEP UV CHAIN TRACE");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>5} {:>8} {:>10} {:>10} {:>10} {:>8}",
-             "Step", "Phase", "UV Active", "Excited", "VibEnergy", "Spikes");
+    println!(
+        "{:>5} {:>8} {:>10} {:>10} {:>10} {:>8}",
+        "Step", "Phase", "UV Active", "Excited", "VibEnergy", "Spikes"
+    );
     println!("{}", "-".repeat(65));
 
     let mut total_spikes_during_uv = 0;
@@ -128,17 +133,23 @@ fn main() -> Result<()> {
         // Print every step for first 20, then every 10
         if step < 20 || step % 10 == 0 || result.spike_count > 0 {
             let uv_marker = if is_uv_burst { "YES ←" } else { "" };
-            println!("{:>5} {:>8} {:>10} {:>5}/{:>5} {:>10.4} {:>8}",
-                     step, phase, uv_marker,
-                     n_excited_before, n_excited_after,
-                     sum_vib_after,
-                     result.spike_count);
+            println!(
+                "{:>5} {:>8} {:>10} {:>5}/{:>5} {:>10.4} {:>8}",
+                step,
+                phase,
+                uv_marker,
+                n_excited_before,
+                n_excited_after,
+                sum_vib_after,
+                result.spike_count
+            );
 
             // Detailed debug for UV burst transitions
             if phase == 0 || phase == 10 {
-                println!("      [Excitation: {} → {}, VibEnergy: {:.4} → {:.4}]",
-                         n_excited_before, n_excited_after,
-                         sum_vib_before, sum_vib_after);
+                println!(
+                    "      [Excitation: {} → {}, VibEnergy: {:.4} → {:.4}]",
+                    n_excited_before, n_excited_after, sum_vib_before, sum_vib_after
+                );
             }
         }
     }
@@ -152,8 +163,14 @@ fn main() -> Result<()> {
     println!("  Max vibrational energy: {:.4} kcal/mol", max_vib_energy);
 
     println!("\nSpike Timing:");
-    println!("  During UV burst (phase 0-9):   {}", total_spikes_during_uv);
-    println!("  Shortly after UV (phase 10-29): {}", total_spikes_after_uv);
+    println!(
+        "  During UV burst (phase 0-9):   {}",
+        total_spikes_during_uv
+    );
+    println!(
+        "  Shortly after UV (phase 10-29): {}",
+        total_spikes_after_uv
+    );
     println!("  Between bursts (phase 30-49):   {}", total_spikes_between);
 
     // Diagnose
@@ -165,22 +182,35 @@ fn main() -> Result<()> {
         println!("✗ BUG: Aromatics are NEVER excited!");
         println!("  → Check: Is d_is_excited array being set on GPU?");
         println!("  → Check: Is excite_aromatic_wavelength() being called?");
-    } else if steps_with_excitation < 40 {  // Should be ~40 steps with burst
-        println!("✗ BUG: Aromatics excited less than expected ({} steps)", steps_with_excitation);
+    } else if steps_with_excitation < 40 {
+        // Should be ~40 steps with burst
+        println!(
+            "✗ BUG: Aromatics excited less than expected ({} steps)",
+            steps_with_excitation
+        );
         println!("  → Check: Is excitation decaying too fast?");
     } else {
         println!("✓ Excitation is working ({} steps)", steps_with_excitation);
     }
 
     if max_vib_energy < 0.01 {
-        println!("✗ BUG: No vibrational energy deposited (max={:.6})", max_vib_energy);
+        println!(
+            "✗ BUG: No vibrational energy deposited (max={:.6})",
+            max_vib_energy
+        );
         println!("  → Check: compute_deposited_energy_wavelength() return value");
         println!("  → Check: vibrational_energy array initialization");
     } else if max_vib_energy < 0.1 {
-        println!("~ WARNING: Vibrational energy is low ({:.4} kcal/mol)", max_vib_energy);
+        println!(
+            "~ WARNING: Vibrational energy is low ({:.4} kcal/mol)",
+            max_vib_energy
+        );
         println!("  → May need to increase burst_energy");
     } else {
-        println!("✓ Vibrational energy is being deposited (max={:.4})", max_vib_energy);
+        println!(
+            "✓ Vibrational energy is being deposited (max={:.4})",
+            max_vib_energy
+        );
     }
 
     let total_spikes = total_spikes_during_uv + total_spikes_after_uv + total_spikes_between;
@@ -189,11 +219,19 @@ fn main() -> Result<()> {
         println!("  → LIF neurons not detecting anything");
     } else if total_spikes_during_uv + total_spikes_after_uv < total_spikes_between {
         println!("✗ BUG: Spikes NOT correlated with UV");
-        println!("  → UV: {} vs Non-UV: {} spikes", total_spikes_during_uv + total_spikes_after_uv, total_spikes_between);
+        println!(
+            "  → UV: {} vs Non-UV: {} spikes",
+            total_spikes_during_uv + total_spikes_after_uv,
+            total_spikes_between
+        );
         println!("  → Spikes are thermal noise, not UV-induced");
     } else {
         println!("✓ Spikes ARE correlated with UV");
-        println!("  → UV: {} vs Non-UV: {} spikes", total_spikes_during_uv + total_spikes_after_uv, total_spikes_between);
+        println!(
+            "  → UV: {} vs Non-UV: {} spikes",
+            total_spikes_during_uv + total_spikes_after_uv,
+            total_spikes_between
+        );
     }
 
     Ok(())

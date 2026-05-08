@@ -362,13 +362,33 @@ pub struct InterferometricAdjudicatorFfi {
     /// captured-graph replay via cuMemsetD8Async at offset 144.
     pub momentum_violation_flag: u32,
 
+    /// **M1.2.26.RECOUPLE Part 2 — KL-Native Noise Floor (mean).**
+    /// Offset 148..152, 4 B (`f32`).  Run-locked μ of `total_kl`
+    /// computed during the Phase-2 segment of the Split T7 epoch
+    /// (steps 51-100, KL(P_frozen || Q_current) per cluster). Read by
+    /// the F1 SWITCH predicate as the dimensionally-synchronized
+    /// baseline:  threshold = total_kl_mu + 12.0f * total_kl_sigma.
+    /// Sentinel `0.0f` ⇒ Phase 2 has not converged; threshold falls
+    /// back to the legacy `noise_floor_mu[0] + 12σ` path for
+    /// compatibility with non-KL-calibrated targets.
+    pub total_kl_mu: f32,
+
+    /// **M1.2.26.RECOUPLE Part 2 — KL-Native Noise Floor (stddev).**
+    /// Offset 152..156, 4 B (`f32`).  Run-locked σ of `total_kl`
+    /// computed during Phase 2 (steps 51-100). Pairs with
+    /// `total_kl_mu` to form the KL-native discovery threshold.
+    /// Sentinel `0.0f` ⇒ legacy fallback (see total_kl_mu doc).
+    pub total_kl_sigma: f32,
+
     /// **M1.2.20.C-G / T24 — Adjudication Reason Flags.**  Offset
-    /// 148..152, 4 B (`u32`).  Bit-mapped self-auditing field set by
+    /// 156..160, 4 B (`u32`).  Bit-mapped self-auditing field set by
     /// the gasp kernel + Adjudicator step kernel + Momentum Guard +
     /// SISR; read by host at teardown via cuMemcpyDtoH and stamped
     /// into `v2_ignition_summary.json`.  Replaces the M1.2.20.C-C
-    /// `lqi_flags` (same offset; semantic generalization per operator
-    /// Amendment §4 "self-auditing summary").
+    /// `lqi_flags` (same semantic; relocated from offset 148 in
+    /// M1.2.26.RECOUPLE to make room for total_kl_mu/sigma at
+    /// 148/152). Bit-by-offset readers in `so3_project.cu` use the
+    /// new offset 156.
     ///
     /// Bit-mapping (operator §4.1):
     ///   • Bit 0 (`0x1`)        — `NaN_POTENTIAL`  : non-finite operand
@@ -380,14 +400,12 @@ pub struct InterferometricAdjudicatorFfi {
     ///                              Protection — kept from M1.2.20.C-C)
     pub adjudication_reason_flags: u32,
 
-    /// **M1.2.20.C — Reserved padding.**  Offset 152..256, 104 B.
+    /// **M1.2.26.RECOUPLE — Reserved padding.**  Offset 160..256, 96 B.
     /// Pads `InterferometricAdjudicatorFfi` to an explicit 256-byte
-    /// dual-sector total (two Blackwell L1 sectors back-to-back); the
-    /// `align(128)` attribute would have produced this implicitly, but
-    /// making it explicit pins the size assertion to a stable
-    /// 256 == size_of::<Self>() invariant for the FFI mirror in
-    /// `cuda/adjudicator.cuh`.
-    pub _reserved_m1_2_20: [u8; 104],
+    /// dual-sector total. Renamed from `_reserved_m1_2_20` to
+    /// `_reserved_m1_2_26` after total_kl_mu/sigma carved 8 B out
+    /// of the prior 104-B reservation.
+    pub _reserved_m1_2_26: [u8; 96],
 }
 
 impl InterferometricAdjudicatorFfi {
@@ -422,20 +440,26 @@ impl InterferometricAdjudicatorFfi {
             gasp_gain_eta: 1.0,
             force_burst_step: Self::FORCE_BURST_DISABLED,
             momentum_violation_flag: 0,
+            // M1.2.26.RECOUPLE Part 2 — KL-native μ/σ start zero.
+            // Phase 2 of the Split T7 Epoch (steps 51-100) writes
+            // these. Until then the F1 SWITCH falls back to the
+            // legacy noise_floor_mu[0] threshold.
+            total_kl_mu: 0.0,
+            total_kl_sigma: 0.0,
             adjudication_reason_flags: 0,
-            _reserved_m1_2_20: [0u8; 104],
+            _reserved_m1_2_26: [0u8; 96],
         }
     }
 
     /// **M1.2.20.C-G / T24** — bit-map for `adjudication_reason_flags`.
-    pub const REASON_NAN_POTENTIAL:      u32 = 0x0000_0001;
+    pub const REASON_NAN_POTENTIAL: u32 = 0x0000_0001;
     pub const REASON_MOMENTUM_VIOLATION: u32 = 0x0000_0002;
-    pub const REASON_SYMMETRY_VETO:      u32 = 0x0000_0004;
-    pub const REASON_GAIN_SATURATION:    u32 = 0x0000_0008;
+    pub const REASON_SYMMETRY_VETO: u32 = 0x0000_0004;
+    pub const REASON_GAIN_SATURATION: u32 = 0x0000_0008;
     /// Lineage Protection bit retained from M1.2.20.C-C.  Bit-31 of
     /// `adjudication_reason_flags` indicates the T7 reduce kernel
     /// found σ² <= 0 after 100 cold-hold samples.
-    pub const LQI_T7_VARIANCE_ZERO:      u32 = 0x8000_0000;
+    pub const LQI_T7_VARIANCE_ZERO: u32 = 0x8000_0000;
 
     /// **M1.2.20.C** — sentinel value for `force_burst_step` meaning
     /// "no burst scheduled" (gasp runs at baseline gain every replay).
@@ -511,11 +535,15 @@ const _: () = {
     // M1.2.20.C-A — gasp handles + reserved tail.  Pinning these keeps
     // the FFI struct at exactly 256 B (two L1 sectors), and the C++
     // mirror in adjudicator.cuh has matching static_asserts.
-    assert!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta)            == 136);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step)         == 140);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag)     == 144);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, adjudication_reason_flags)   == 148);
-    assert!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20)           == 152);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta) == 136);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step) == 140);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag) == 144);
+    // M1.2.26.RECOUPLE Part 2 — KL-native μ/σ at offsets 148/152.
+    assert!(offset_of!(InterferometricAdjudicatorFfi, total_kl_mu) == 148);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, total_kl_sigma) == 152);
+    // M1.2.26.RECOUPLE — adjudication_reason_flags relocated to 156.
+    assert!(offset_of!(InterferometricAdjudicatorFfi, adjudication_reason_flags) == 156);
+    assert!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_26) == 160);
     assert!(size_of::<InterferometricAdjudicatorFfi>() == 256);
 };
 
@@ -664,7 +692,7 @@ pub(crate) mod ffi {
         /// Returns `cudaErrorNotSupported` (= 801) if the toolkit is
         /// pre-CUDA-12.4; in production (CUDA 13.x) this is always live.
         pub fn prism_adj_set_conditional(
-            handle: u64,                                /* cudaGraphConditionalHandle */
+            handle: u64, /* cudaGraphConditionalHandle */
             adj: *const InterferometricAdjudicatorFfi,
             stream: *mut c_void,
         ) -> CudaError;
@@ -911,7 +939,11 @@ pub fn cpu_asc_reference(
         "atom_positions and in_cluster_mask must be parallel arrays",
     );
 
-    let zero = AscForceContribution { fx: 0.0, fy: 0.0, fz: 0.0 };
+    let zero = AscForceContribution {
+        fx: 0.0,
+        fy: 0.0,
+        fz: 0.0,
+    };
 
     // Only Construct triggers the force apply (matches kernel's
     // `if (code != PRISM_ADJ_CONSTRUCT) return;` guard).
@@ -1005,12 +1037,12 @@ pub fn pipeline_elapsed(adj: &InterferometricAdjudicatorFfi) -> (u64, f64) {
 /// `l = 0..5`. Operator-published, locked 2026-04-30. See module
 /// header for full provenance.
 pub const T7_CALIBRATED_MU: [f32; 6] = [
-    0.8052561253,  // l=0
-    0.0040383553,  // l=1
-    0.0703344136,  // l=2
-    0.0538048399,  // l=3
-    0.0396647932,  // l=4
-    0.0269014686,  // l=5
+    0.8052561253, // l=0
+    0.0040383553, // l=1
+    0.0703344136, // l=2
+    0.0538048399, // l=3
+    0.0396647932, // l=4
+    0.0269014686, // l=5
 ];
 
 /// Per-SH-band running stddev of the thermal noise-floor's Σ KL
@@ -1018,12 +1050,12 @@ pub const T7_CALIBRATED_MU: [f32; 6] = [
 /// 3-σ Adjudicator threshold `μ + 3σ` per band. Operator-published,
 /// locked 2026-04-30.
 pub const T7_CALIBRATED_SIGMA: [f32; 6] = [
-    0.1482125481,  // l=0
-    0.0090773341,  // l=1
-    0.0805278777,  // l=2
-    0.0222988033,  // l=3
-    0.0565869628,  // l=4
-    0.0099504697,  // l=5
+    0.1482125481, // l=0
+    0.0090773341, // l=1
+    0.0805278777, // l=2
+    0.0222988033, // l=3
+    0.0565869628, // l=4
+    0.0099504697, // l=5
 ];
 
 /// Convenience helper: write the locked T7 constants into the
@@ -1109,9 +1141,7 @@ pub unsafe fn apply_t7_calibration(
 /// Per-band (only index 0 is read by the step kernel).  All bands
 /// share the same value here; per-band differentiation is a future
 /// enhancement once Dynamic T7 captures per-band KL samples.
-pub const T7_KL_BOOTSTRAP_MU: [f32; 6] = [
-    0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32,
-];
+pub const T7_KL_BOOTSTRAP_MU: [f32; 6] = [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32];
 
 /// **Wave 0 / Task #68** — KL-units σ bootstrap for `noise_floor_sigma`.
 ///
@@ -1192,12 +1222,7 @@ pub unsafe fn set_noise_floor_constants(
     sigma: &[f32; 6],
     stream: *mut std::ffi::c_void,
 ) -> CudaError {
-    ffi::prism_adj_set_noise_floor_constants(
-        adj,
-        mu.as_ptr(),
-        sigma.as_ptr(),
-        stream,
-    )
+    ffi::prism_adj_set_noise_floor_constants(adj, mu.as_ptr(), sigma.as_ptr(), stream)
 }
 
 // ============================================================================
@@ -1239,9 +1264,7 @@ pub const ADJUDICATION_CODE_OFFSET: usize = 52;
 /// // OR launch prism_adj_set_conditional to forward via cudaGraphSetConditional.
 /// ```
 #[inline]
-pub unsafe fn adjudication_code_devptr(
-    adj: *const InterferometricAdjudicatorFfi,
-) -> *const u32 {
+pub unsafe fn adjudication_code_devptr(adj: *const InterferometricAdjudicatorFfi) -> *const u32 {
     // Use addr_of! to compute the field address without dereferencing
     // (place expression). The cast back via byte_offset is equivalent
     // and confirms the offset matches the CSR-C invariant.
@@ -1294,8 +1317,8 @@ mod tests {
             // taken.
             let base: *const $t = std::ptr::null();
             unsafe {
-                (std::ptr::addr_of!((*base).$f) as *const u8)
-                    .offset_from(base as *const u8) as usize
+                (std::ptr::addr_of!((*base).$f) as *const u8).offset_from(base as *const u8)
+                    as usize
             }
         }};
     }
@@ -1338,31 +1361,86 @@ mod tests {
         // (pointer) @ 128, total size 256.
         // values).
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_mu), 0);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma), 24);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, current_divergence), 48);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, adjudication_code), 52);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, relaxed_manifold_ptr), 56);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, perturbed_manifold_ptr), 64);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma),
+            24
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, current_divergence),
+            48
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, adjudication_code),
+            52
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, relaxed_manifold_ptr),
+            56
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, perturbed_manifold_ptr),
+            64
+        );
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, start_clock), 72);
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, stop_clock), 80);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, legacy_centroid_fallback), 88);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, legacy_centroid_fallback),
+            88
+        );
         // Emergency Rectification — gear_override @ 100 (B.3.2 home).
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gear_override),       100);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, gear_override),
+            100
+        );
         // Renamed: force_prune_mask → force_prune_mask_ptr (G28 SISR).
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_prune_mask_ptr), 104);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, force_prune_mask_ptr),
+            104
+        );
         // Renamed: d_potential_energy → potential_energy (f64 VALUE).
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, potential_energy),    112);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt),                120);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_external_work),     128);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, potential_energy),
+            112
+        );
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, d_dt), 120);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, d_external_work),
+            128
+        );
         // M1.2.20.C-A — gasp handles + 256-B explicit total.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta),            136);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, force_burst_step),         140);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, gasp_gain_eta),
+            136
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, force_burst_step),
+            140
+        );
         // M1.2.20.C-B — Momentum Guard flag carved from _reserved.
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag),  144);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, momentum_violation_flag),
+            144
+        );
         // M1.2.20.C-G / T24 — adjudication_reason_flags (replaces lqi_flags).
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, adjudication_reason_flags),148);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_20),        152);
-        assert_eq!(std::mem::size_of::<InterferometricAdjudicatorFfi>(),                256);
+        // M1.2.26.RECOUPLE — KL-native μ/σ at 148/152;
+        // adjudication_reason_flags relocated to 156; _reserved tail at 160.
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, total_kl_mu),
+            148
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, total_kl_sigma),
+            152
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, adjudication_reason_flags),
+            156
+        );
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, _reserved_m1_2_26),
+            160
+        );
+        assert_eq!(std::mem::size_of::<InterferometricAdjudicatorFfi>(), 256);
     }
 
     #[test]
@@ -1377,7 +1455,10 @@ mod tests {
         assert_eq!(z.start_clock, 0);
         assert_eq!(z.stop_clock, 0);
         assert_eq!(z.legacy_centroid_fallback, [0.0; 3]);
-        assert_eq!(z.gear_override, InterferometricAdjudicatorFfi::GEAR_OVERRIDE_AUTO);
+        assert_eq!(
+            z.gear_override,
+            InterferometricAdjudicatorFfi::GEAR_OVERRIDE_AUTO
+        );
         assert!(z.force_prune_mask_ptr.is_null());
         // potential_energy is an f64 value (not a ptr); zero by default.
         assert_eq!(z.potential_energy, 0.0_f64);
@@ -1430,8 +1511,8 @@ mod tests {
         // Bit pattern: top 2 bits = uv_code, lower 30 = intensity bits.
         // Encode intensity 1.0 (f32 bits 0x3F800000) with uv_code=2 (305 nm).
         let intensity_1_bits = 1.0_f32.to_bits(); // 0x3F80_0000
-        // intensity 1.0 fits in lower 30 bits because its IEEE-754 bits
-        // 0x3F800000 already have bits 30-31 == 00 (sign=0, exp top=0).
+                                                  // intensity 1.0 fits in lower 30 bits because its IEEE-754 bits
+                                                  // 0x3F800000 already have bits 30-31 == 00 (sign=0, exp top=0).
         let packed = (2_u32 << QI_SHIFT) | (intensity_1_bits & INTENSITY_PAYLOAD_MASK);
         assert_eq!(extract_uv_code(packed), 2);
         assert_eq!(extract_intensity(packed), 1.0);
@@ -1459,8 +1540,11 @@ mod tests {
         let w_260 = compute_quantum_weight(packed_260);
         let w_305 = compute_quantum_weight(packed_305);
         assert!(weight_280 > w_305, "TRP λ_max should outweigh tail");
-        assert!(w_305 > w_260,      "TRP tail at 305 should outweigh PHE at 260");
-        assert!(w_260 > weight_320, "PHE at 260 should outweigh control at 320");
+        assert!(w_305 > w_260, "TRP tail at 305 should outweigh PHE at 260");
+        assert!(
+            w_260 > weight_320,
+            "PHE at 260 should outweigh control at 320"
+        );
     }
 
     // ─── T2 dirty-tile 64-combination Total Function proof ──────────────
@@ -1496,15 +1580,15 @@ mod tests {
                 let p_spec = [p_val; 6];
                 let q_spec = [q_val; 6];
 
-                let out = cpu_adjudicator_reference(
-                    &p_spec, &q_spec, 0.0, 1.0,
-                );
+                let out = cpu_adjudicator_reference(&p_spec, &q_spec, 0.0, 1.0);
 
                 // Total Function: code MUST be in {0, 1, 2}.
                 assert!(
                     out.adjudication_code <= 2,
                     "Total-Function violation: P={:?} Q={:?} → code={}",
-                    p_val, q_val, out.adjudication_code,
+                    p_val,
+                    q_val,
+                    out.adjudication_code,
                 );
 
                 match out.adjudication_code {
@@ -1523,10 +1607,12 @@ mod tests {
         // Clean ∩ small or equal pairs go to Prune.
         // Clean ∩ large-asymmetry pairs go to Construct.
         assert_eq!(prune_combos + construct_combos + violation_count_combos, 64);
-        assert!(violation_count_combos >= 39,
-                "expected ≥ 39 Violation combos (any NaN/Inf/-Inf touch); got {}",
-                violation_count_combos);
-        assert!(prune_combos > 0,    "expected ≥ 1 Prune combo");
+        assert!(
+            violation_count_combos >= 39,
+            "expected ≥ 39 Violation combos (any NaN/Inf/-Inf touch); got {}",
+            violation_count_combos
+        );
+        assert!(prune_combos > 0, "expected ≥ 1 Prune combo");
         assert!(construct_combos > 0, "expected ≥ 1 Construct combo");
     }
 
@@ -1535,14 +1621,14 @@ mod tests {
         // CSR-section D.2 Table — operator-mandated explicit cases.
         // Each row: (description, p_val, q_val, expected_code).
         let cases: &[(&str, f32, f32, u32)] = &[
-            ("P=Inf  Q=NaN  → Violation",       f32::INFINITY,     f32::NAN,           2),
-            ("P=NaN  Q=Inf  → Violation",       f32::NAN,          f32::INFINITY,      2),
-            ("P=-Inf Q=1.0  → Violation",       f32::NEG_INFINITY, 1.0,                2),
-            ("P=NaN  Q=NaN  → Violation",       f32::NAN,          f32::NAN,           2),
-            ("P=0.0  Q=0.0  → Prune (clean)",   0.0,               0.0,                0),
-            ("P=1.0  Q=1.0  → Prune (equal)",   1.0,               1.0,                0),
-            ("P=-1.0 Q=1.0  → Prune (clamped)", -1.0,              1.0,                0),
-            ("P=1e+30 Q=1.0 → Construct",       1.0e+30,           1.0,                1),
+            ("P=Inf  Q=NaN  → Violation", f32::INFINITY, f32::NAN, 2),
+            ("P=NaN  Q=Inf  → Violation", f32::NAN, f32::INFINITY, 2),
+            ("P=-Inf Q=1.0  → Violation", f32::NEG_INFINITY, 1.0, 2),
+            ("P=NaN  Q=NaN  → Violation", f32::NAN, f32::NAN, 2),
+            ("P=0.0  Q=0.0  → Prune (clean)", 0.0, 0.0, 0),
+            ("P=1.0  Q=1.0  → Prune (equal)", 1.0, 1.0, 0),
+            ("P=-1.0 Q=1.0  → Prune (clamped)", -1.0, 1.0, 0),
+            ("P=1e+30 Q=1.0 → Construct", 1.0e+30, 1.0, 1),
         ];
         for &(desc, p, q, expected_code) in cases {
             let out = cpu_adjudicator_reference(&[p; 6], &[q; 6], 0.0, 1.0);
@@ -1564,18 +1650,13 @@ mod tests {
             for &q_val in EDGE_CASES.iter() {
                 let p_spec = [p_val; 6];
                 let q_spec = [q_val; 6];
-                let first = cpu_adjudicator_reference(
-                    &p_spec, &q_spec, 0.0, 1.0,
-                );
+                let first = cpu_adjudicator_reference(&p_spec, &q_spec, 0.0, 1.0);
                 for replay in 0..100 {
-                    let again = cpu_adjudicator_reference(
-                        &p_spec, &q_spec, 0.0, 1.0,
-                    );
+                    let again = cpu_adjudicator_reference(&p_spec, &q_spec, 0.0, 1.0);
                     assert_eq!(
                         first.adjudication_code, again.adjudication_code,
                         "P={:?} Q={:?} replay {} drifted code: {} vs {}",
-                        p_val, q_val, replay,
-                        first.adjudication_code, again.adjudication_code,
+                        p_val, q_val, replay, first.adjudication_code, again.adjudication_code,
                     );
                     // Divergence: NaN ≠ NaN per IEEE-754, so compare
                     // bit patterns when either is non-finite.
@@ -1587,9 +1668,12 @@ mod tests {
                         );
                     } else {
                         assert_eq!(
-                            first.divergence.to_bits(), again.divergence.to_bits(),
+                            first.divergence.to_bits(),
+                            again.divergence.to_bits(),
                             "P={:?} Q={:?} replay {} non-finite divergence drift",
-                            p_val, q_val, replay,
+                            p_val,
+                            q_val,
+                            replay,
                         );
                     }
                 }
@@ -1617,8 +1701,11 @@ mod tests {
         let p_spec = [10.0_f32; 6];
         let q_spec = [0.001_f32; 6];
         let out = cpu_adjudicator_reference(&p_spec, &q_spec, 0.0, 1.0);
-        assert!(out.divergence > 3.0,
-            "expected KL > threshold (3.0), got {}", out.divergence);
+        assert!(
+            out.divergence > 3.0,
+            "expected KL > threshold (3.0), got {}",
+            out.divergence
+        );
         assert_eq!(out.violation_count, 0);
         assert_eq!(out.adjudication_code, 1); // Construct
     }
@@ -1634,23 +1721,21 @@ mod tests {
     #[test]
     fn asc_section_k1_eight_octant_outward_forces() {
         let aabb_min = [-1.0_f32, -1.0, -1.0];
-        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let aabb_max = [1.0_f32, 1.0, 1.0];
         let atoms: Vec<[f32; 3]> = vec![
-            [ 1.0,  1.0,  1.0],  // octant +++
-            [-1.0,  1.0,  1.0],  // octant -++
-            [ 1.0, -1.0,  1.0],  // octant +-+
-            [-1.0, -1.0,  1.0],  // octant --+
-            [ 1.0,  1.0, -1.0],  // octant ++-
-            [-1.0,  1.0, -1.0],  // octant -+-
-            [ 1.0, -1.0, -1.0],  // octant +--
-            [-1.0, -1.0, -1.0],  // octant ---
+            [1.0, 1.0, 1.0],    // octant +++
+            [-1.0, 1.0, 1.0],   // octant -++
+            [1.0, -1.0, 1.0],   // octant +-+
+            [-1.0, -1.0, 1.0],  // octant --+
+            [1.0, 1.0, -1.0],   // octant ++-
+            [-1.0, 1.0, -1.0],  // octant -+-
+            [1.0, -1.0, -1.0],  // octant +--
+            [-1.0, -1.0, -1.0], // octant ---
         ];
         let mask = vec![true; 8];
         let kl = 1.0_f32;
         let alpha = 1.0_f32;
-        let forces = cpu_asc_reference(
-            aabb_min, aabb_max, &atoms, &mask, kl, alpha, 1,
-        );
+        let forces = cpu_asc_reference(aabb_min, aabb_max, &atoms, &mask, kl, alpha, 1);
 
         // Coordinate list — every (atom, force) pair has positive
         // outward-direction dot product. Print on failure for the
@@ -1660,7 +1745,12 @@ mod tests {
             assert!(
                 outward_dot > 0.0,
                 "octant {} NOT outward: atom={:?} force=({:.3},{:.3},{:.3}) dot={:.3}",
-                i, atom, f.fx, f.fy, f.fz, outward_dot,
+                i,
+                atom,
+                f.fx,
+                f.fy,
+                f.fz,
+                outward_dot,
             );
             // Stronger: for this symmetric setup, force vector should
             // be exactly proportional to the atom vector.
@@ -1677,7 +1767,7 @@ mod tests {
     #[test]
     fn asc_section_k2_force_magnitude_linear_in_kl_divergence() {
         let aabb_min = [-1.0_f32, -1.0, -1.0];
-        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let aabb_max = [1.0_f32, 1.0, 1.0];
         let atom = [1.0_f32, 0.0, 0.0]; // single atom on +x axis
         let alpha = 1.0_f32;
 
@@ -1688,14 +1778,13 @@ mod tests {
         let mut prev_kl: Option<f32> = None;
         let mut prev_mag: Option<f32> = None;
         for &kl in kl_values.iter() {
-            let forces = cpu_asc_reference(
-                aabb_min, aabb_max, &[atom], &[true], kl, alpha, 1,
-            );
+            let forces = cpu_asc_reference(aabb_min, aabb_max, &[atom], &[true], kl, alpha, 1);
             let mag = forces[0].magnitude();
             assert!(
                 (mag - kl).abs() < 1e-5,
                 "expected |F| = Δ_AB ({}) for unit-distance atom, got {}",
-                kl, mag,
+                kl,
+                mag,
             );
             if let (Some(p_kl), Some(p_mag)) = (prev_kl, prev_mag) {
                 let kl_ratio = kl / p_kl;
@@ -1703,7 +1792,8 @@ mod tests {
                 assert!(
                     (kl_ratio - mag_ratio).abs() < 1e-4,
                     "non-linear scaling: kl_ratio={}, mag_ratio={}",
-                    kl_ratio, mag_ratio,
+                    kl_ratio,
+                    mag_ratio,
                 );
             }
             prev_kl = Some(kl);
@@ -1717,12 +1807,10 @@ mod tests {
     #[test]
     fn asc_section_k3_inactive_for_prune_and_violation() {
         let aabb_min = [-1.0_f32, -1.0, -1.0];
-        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let aabb_max = [1.0_f32, 1.0, 1.0];
         let atom = [1.0_f32, 0.0, 0.0];
         for &code in &[0_u32, 2_u32] {
-            let forces = cpu_asc_reference(
-                aabb_min, aabb_max, &[atom], &[true], 1.0, 1.0, code,
-            );
+            let forces = cpu_asc_reference(aabb_min, aabb_max, &[atom], &[true], 1.0, 1.0, code);
             assert_eq!(forces[0].fx, 0.0, "code {} fx", code);
             assert_eq!(forces[0].fy, 0.0, "code {} fy", code);
             assert_eq!(forces[0].fz, 0.0, "code {} fz", code);
@@ -1735,15 +1823,13 @@ mod tests {
     #[test]
     fn asc_section_k4_mask_excludes_non_cluster_atoms() {
         let aabb_min = [-1.0_f32, -1.0, -1.0];
-        let aabb_max = [ 1.0_f32,  1.0,  1.0];
+        let aabb_max = [1.0_f32, 1.0, 1.0];
         let atoms: Vec<[f32; 3]> = vec![
             [1.0, 0.0, 0.0], // in cluster
             [0.0, 1.0, 0.0], // NOT in cluster
         ];
         let mask = [true, false];
-        let forces = cpu_asc_reference(
-            aabb_min, aabb_max, &atoms, &mask, 1.0, 1.0, 1,
-        );
+        let forces = cpu_asc_reference(aabb_min, aabb_max, &atoms, &mask, 1.0, 1.0, 1);
         assert!(forces[0].fx > 0.0, "in-cluster atom must get nonzero force");
         assert_eq!(forces[1].fx, 0.0);
         assert_eq!(forces[1].fy, 0.0);
@@ -1756,8 +1842,11 @@ mod tests {
     fn cycles_to_ns_at_blackwell_boost() {
         // 2977 cycles at 2.977 GHz ≈ 1000 ns. Tolerance: 1 ns.
         let ns = cycles_to_ns(2977);
-        assert!((ns - 1000.0).abs() < 1.0,
-            "2977 cycles → {} ns (expected ≈1000)", ns);
+        assert!(
+            (ns - 1000.0).abs() < 1.0,
+            "2977 cycles → {} ns (expected ≈1000)",
+            ns
+        );
 
         // Round-trip via pipeline_elapsed.
         let mut adj = InterferometricAdjudicatorFfi::zero();
@@ -1766,8 +1855,11 @@ mod tests {
         let (cycles, ns) = pipeline_elapsed(&adj);
         assert_eq!(cycles, 29_770);
         // 29770 / 2.977 ≈ 9_999.66 ns — just under the 10 μs gate.
-        assert!((ns - 9_999.66).abs() < 1.0,
-            "29770 cycles → {} ns (expected ≈9999.66)", ns);
+        assert!(
+            (ns - 9_999.66).abs() < 1.0,
+            "29770 cycles → {} ns (expected ≈9999.66)",
+            ns
+        );
     }
 
     #[test]
@@ -1799,22 +1891,28 @@ mod tests {
         // T7_CALIBRATED_MU / SIGMA fires here. Re-calibration must
         // introduce NEW const names rather than mutating these.
         // Operator-published values, locked 2026-04-30.
-        assert_eq!(T7_CALIBRATED_MU, [
-            0.8052561253_f32,
-            0.0040383553_f32,
-            0.0703344136_f32,
-            0.0538048399_f32,
-            0.0396647932_f32,
-            0.0269014686_f32,
-        ]);
-        assert_eq!(T7_CALIBRATED_SIGMA, [
-            0.1482125481_f32,
-            0.0090773341_f32,
-            0.0805278777_f32,
-            0.0222988033_f32,
-            0.0565869628_f32,
-            0.0099504697_f32,
-        ]);
+        assert_eq!(
+            T7_CALIBRATED_MU,
+            [
+                0.8052561253_f32,
+                0.0040383553_f32,
+                0.0703344136_f32,
+                0.0538048399_f32,
+                0.0396647932_f32,
+                0.0269014686_f32,
+            ]
+        );
+        assert_eq!(
+            T7_CALIBRATED_SIGMA,
+            [
+                0.1482125481_f32,
+                0.0090773341_f32,
+                0.0805278777_f32,
+                0.0222988033_f32,
+                0.0565869628_f32,
+                0.0099504697_f32,
+            ]
+        );
     }
 
     #[test]
@@ -1827,7 +1925,12 @@ mod tests {
             let sigma = T7_CALIBRATED_SIGMA[l];
             assert!(mu.is_finite(), "μ_l={} non-finite at band {}", mu, l);
             assert!(sigma.is_finite(), "σ_l={} non-finite at band {}", sigma, l);
-            assert!(sigma > 0.0, "σ_l={} non-positive at band {} (would degenerate threshold)", sigma, l);
+            assert!(
+                sigma > 0.0,
+                "σ_l={} non-positive at band {} (would degenerate threshold)",
+                sigma,
+                l
+            );
             let threshold = mu + 3.0 * sigma;
             assert!(threshold.is_finite(), "threshold non-finite at band {}", l);
             assert!(threshold > 0.0, "threshold non-positive at band {}", l);
@@ -1851,7 +1954,10 @@ mod tests {
 
         // Cross-check the field offsets the FFI memcpy will hit.
         assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_mu), 0);
-        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma), 24);
+        assert_eq!(
+            offset_of!(InterferometricAdjudicatorFfi, noise_floor_sigma),
+            24
+        );
     }
 
     #[test]
@@ -1867,7 +1973,10 @@ mod tests {
             assert!(
                 mu_l0 > mu_l * 8.0,
                 "expected l=0 μ to dominate l={} by ≥ 8×; got μ_0={} μ_{}={}",
-                l, mu_l0, l, mu_l,
+                l,
+                mu_l0,
+                l,
+                mu_l,
             );
         }
     }
@@ -1912,9 +2021,7 @@ mod tests {
         // adjudication_code_devptr(&adj) must return adj_base + 52.
         let mut adj = InterferometricAdjudicatorFfi::zero();
         let base = &adj as *const _ as usize;
-        let field_addr = unsafe {
-            adjudication_code_devptr(&adj as *const _) as usize
-        };
+        let field_addr = unsafe { adjudication_code_devptr(&adj as *const _) as usize };
         assert_eq!(
             field_addr - base,
             ADJUDICATION_CODE_OFFSET,
@@ -1924,9 +2031,7 @@ mod tests {
         );
         // The devptr lets the caller actually read the value.
         adj.adjudication_code = 1; // Construct
-        let read_back = unsafe {
-            *adjudication_code_devptr(&adj as *const _)
-        };
+        let read_back = unsafe { *adjudication_code_devptr(&adj as *const _) };
         assert_eq!(read_back, 1);
     }
 

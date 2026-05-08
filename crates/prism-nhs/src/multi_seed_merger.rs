@@ -164,11 +164,12 @@ pub fn merge_arrow_files(
     // Locate the `replica_seed: u64` column index. Fail loudly if
     // missing — the merger's provenance preservation assumption is
     // broken without it.
-    let replica_seed_col = schema
-        .index_of("replica_seed")
-        .map_err(|_| MergeError::MissingReplicaSeedColumn {
-            path: first_path.to_path_buf(),
-        })?;
+    let replica_seed_col =
+        schema
+            .index_of("replica_seed")
+            .map_err(|_| MergeError::MissingReplicaSeedColumn {
+                path: first_path.to_path_buf(),
+            })?;
 
     // Open the writer with the schema we just fixed.
     let out_file = File::create(output.as_ref())?;
@@ -238,11 +239,7 @@ mod tests {
         ]))
     }
 
-    fn write_test_file(
-        path: &Path,
-        seed: u64,
-        intensities: &[f32],
-    ) -> Result<(), MergeError> {
+    fn write_test_file(path: &Path, seed: u64, intensities: &[f32]) -> Result<(), MergeError> {
         let schema = test_schema();
         let seeds: Vec<u64> = (0..intensities.len()).map(|_| seed).collect();
         let batch = ArrowBatch::try_new(

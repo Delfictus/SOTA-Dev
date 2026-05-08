@@ -1349,6 +1349,34 @@ fn main() -> Result<()> {
     // ─── Output: ghost_tile_evidence.json ──────────────────────────────────
     let n_ghost_events = all_ghost_events.len();
     let any_ghost_files = n_ghost > 0;
+    // M1.2.25 — data-driven plane-1/2/3 status (was a static limitation string).
+    // Per-plane nonzero counts so the report can distinguish unwired from no-signal.
+    let mut plane_nonzero_counts: [u64; 4] = [0; 4];
+    for ev in all_ghost_events.iter() {
+        for plane in 0..4 {
+            let off = plane * 6;
+            if ev.power_spectrum[off..off + 6].iter().any(|x| *x != 0.0) {
+                plane_nonzero_counts[plane] += 1;
+            }
+        }
+    }
+    let planes_1_3_any_populated = plane_nonzero_counts[1] > 0
+        || plane_nonzero_counts[2] > 0
+        || plane_nonzero_counts[3] > 0;
+    let planes_status_string: String = if planes_1_3_any_populated {
+        format!(
+            "wired_per_M1_2_25_nonzero_counts_geo_{}_caus_{}_therm_{}_chem_{}",
+            plane_nonzero_counts[0],
+            plane_nonzero_counts[1],
+            plane_nonzero_counts[2],
+            plane_nonzero_counts[3],
+        )
+    } else {
+        format!(
+            "zero_in_this_scan_geo_{}_caus_0_therm_0_chem_0_kernel_writes_or_signal_below_floor",
+            plane_nonzero_counts[0]
+        )
+    };
     let ghost_status: &str = if !any_ghost_files {
         "missing"
     } else if n_ghost_events > 0 {
@@ -1379,7 +1407,7 @@ fn main() -> Result<()> {
             "adjudication_code":                  "u8_at_offset_13",
             "kl_divergence":                      "f32_at_offset_16",
             "power_spectrum_geo_plane_0":         "f32x6_at_offset_20",
-            "power_spectrum_planes_1_3":          "kernel_does_not_yet_populate_per_ghost_tile_rs_128_132",
+            "power_spectrum_planes_1_3":          planes_status_string.clone(),
             "thermo_flux_wd_change_vib_energy":   "f32x2_at_offset_116_NaN_until_upstream_wires_them_per_ghost_tile_rs_136_141",
             "causal_lead_residue":                "u32_at_offset_124_sentinel_uMAX_means_unresolved",
             "intensity_packed":                   "absent_in_ghost_tile_schema",
@@ -1421,6 +1449,15 @@ fn main() -> Result<()> {
     eprintln!("✓ wrote {}", zs_path.display());
 
     // ─── Output: ranked_tile_events.json ───────────────────────────────────
+    let mut ranked_limitations: Vec<&'static str> = vec![
+        "ghost_tile_schema_has_no_perturbation_channel",
+        "ghost_tile_schema_has_no_gear_id",
+        "asc_work_integral_not_computed_format_unverified",
+        "thermo_flux_NaN_until_upstream_wires_them_per_producer_note",
+    ];
+    if !planes_1_3_any_populated {
+        ranked_limitations.push("power_spectrum_planes_1_3_zero_in_this_scan_M1_2_25_kernel_writes_them_so_zero_implies_signal_below_floor_or_kernel_disabled");
+    }
     let ranked_json = serde_json::json!({
         "schema_version":     1,
         "schema_kind":        "pathb_ranked_tile_events",
@@ -1431,17 +1468,108 @@ fn main() -> Result<()> {
         "emit_all_events":    args.emit_all_events,
         "ranking_methodology":"product_of_factors_unverified_components_neutral_1_0",
         "ranked_events":      ranked_to_emit,
-        "limitations": [
-            "ghost_tile_schema_has_no_perturbation_channel",
-            "ghost_tile_schema_has_no_gear_id",
-            "asc_work_integral_not_computed_format_unverified",
-            "thermo_flux_NaN_until_upstream_wires_them_per_producer_note",
-            "power_spectrum_planes_1_3_zero_until_kernel_populates_them",
-        ],
+        "limitations":        ranked_limitations,
     });
     let r_path = out_dir.join("ranked_tile_events.json");
     write_json(&r_path, &ranked_json)?;
     eprintln!("✓ wrote {}", r_path.display());
+
+    // ─── Output: mar_plane_completeness.json (M1.2.25 Invariant 2) ─────────
+    // Per-plane statistics (mean/max/p95/nonzero count) so downstream audit
+    // can verify Pillar 2 (causality plane nonzero when geometry plane nonzero).
+    let plane_names = ["geometry", "causality", "thermodynamics", "chemistry"];
+    let producer_sources = [
+        "so3_project.cu:518_geo_power_spectrum",
+        "so3_project.cu:522_caus_power_spectrum",
+        "so3_project.cu:526_therm_power_spectrum",
+        "so3_project.cu:530_chem_power_spectrum",
+    ];
+    let total_events = all_ghost_events.len() as u64;
+    let mut plane_records = Vec::with_capacity(4);
+    for plane in 0..4usize {
+        let mut sums: f64 = 0.0;
+        let mut maxv: f32 = 0.0;
+        let mut all_vals: Vec<f32> = Vec::with_capacity(all_ghost_events.len() * 6);
+        for ev in all_ghost_events.iter() {
+            for l in 0..6 {
+                let v = ev.power_spectrum[plane * 6 + l];
+                if v.is_finite() {
+                    sums += v as f64;
+                    if v > maxv { maxv = v; }
+                    all_vals.push(v);
+                }
+            }
+        }
+        let n_total = all_vals.len();
+        let mean = if n_total > 0 { sums / (n_total as f64) } else { 0.0 };
+        all_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let p95 = if n_total > 0 {
+            let idx = ((n_total as f64) * 0.95) as usize;
+            all_vals[idx.min(n_total - 1)]
+        } else { 0.0 };
+        let nonzero_count = plane_nonzero_counts[plane];
+        let status = if total_events == 0 {
+            "no_events"
+        } else if nonzero_count == 0 {
+            "zero_in_this_scan"
+        } else if (nonzero_count as f64) / (total_events as f64) >= 0.5 {
+            "wired_majority_nonzero"
+        } else {
+            "wired_minority_nonzero"
+        };
+        plane_records.push(serde_json::json!({
+            "plane_id":         plane,
+            "plane_name":       plane_names[plane],
+            "nonzero_count":    nonzero_count,
+            "total_count":      total_events,
+            "mean":             mean,
+            "max":              maxv,
+            "p95":              p95,
+            "status":           status,
+            "producer_source":  producer_sources[plane],
+            "scanner_source":   "prism_ghost_evidence_scan.rs::mar_plane_completeness_emit_M1_2_25",
+            "missing_reason":   if nonzero_count == 0 && total_events > 0 {
+                "kernel_writes_this_plane_post_M1_2_25_so_zero_in_scan_implies_input_data_below_floor_or_so3_projection_disabled"
+            } else { "none" },
+            "used_in_interferometric_contrast": plane > 0,
+        }));
+    }
+    let geo_nz = plane_nonzero_counts[0];
+    let caus_nz = plane_nonzero_counts[1];
+    let therm_nz = plane_nonzero_counts[2];
+    let chem_nz = plane_nonzero_counts[3];
+    let pillar_2_violation = geo_nz > 0 && caus_nz == 0;
+    let full_4plane = geo_nz > 0 && caus_nz > 0 && (therm_nz > 0 || chem_nz > 0);
+    let c_total_status = if full_4plane {
+        "computable_4plane"
+    } else if geo_nz > 0 && caus_nz > 0 {
+        "computable_2plane_geo_plus_causality"
+    } else if geo_nz > 0 {
+        "partial_geometry_only"
+    } else {
+        "no_signal"
+    };
+    let mar_plane_completeness = serde_json::json!({
+        "schema_version":           1,
+        "schema_kind":              "pathb_mar_plane_completeness",
+        "run_id":                   manifest.run_id,
+        "target":                   stem,
+        "n_events_total":           total_events,
+        "geometry_nonzero":         geo_nz,
+        "causality_nonzero":        caus_nz,
+        "thermodynamics_nonzero":   therm_nz,
+        "chemistry_nonzero":        chem_nz,
+        "full_4plane_available":    full_4plane,
+        "c_total_status":           c_total_status,
+        "pillar_2_driver_violation": pillar_2_violation,
+        "pillar_2_violation_reason": if pillar_2_violation {
+            "geometry_present_but_kcc_causality_plane_zero"
+        } else { "none" },
+        "planes":                   plane_records,
+    });
+    let mpc_path = out_dir.join("mar_plane_completeness.json");
+    write_json(&mpc_path, &mar_plane_completeness)?;
+    eprintln!("✓ wrote {}", mpc_path.display());
 
     if args.emit_ndjson {
         let nd_path = out_dir.join("ghost_tile_events.ndjson");

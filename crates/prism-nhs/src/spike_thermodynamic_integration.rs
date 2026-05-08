@@ -10,8 +10,8 @@
 //! 4. Arrhenius barrier estimation from temperature-dependent spike rates
 //! 5. Combined binding free energy with kinetic accessibility
 
-use std::collections::HashMap;
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[cfg(feature = "gpu")]
 use crate::fused_engine::GpuSpikeEvent;
@@ -36,11 +36,11 @@ const WARSHEL_DIELECTRIC: f64 = 20.0;
 const COULOMB_CONST: f64 = 332.0636;
 
 // UV extinction coefficients (M⁻¹ cm⁻¹) at peak wavelengths
-const EPS_280: f64 = 5600.0;  // TRP
-const EPS_274: f64 = 1490.0;  // TYR
-const EPS_258: f64 = 197.0;   // PHE
-const EPS_254: f64 = 200.0;   // BNZ/aliphatic
-const EPS_211: f64 = 300.0;   // HIS/disulfide
+const EPS_280: f64 = 5600.0; // TRP
+const EPS_274: f64 = 1490.0; // TYR
+const EPS_258: f64 = 197.0; // PHE
+const EPS_254: f64 = 200.0; // BNZ/aliphatic
+const EPS_211: f64 = 300.0; // HIS/disulfide
 /// UV quantum yield for protein photodamage coupling
 /// Typical Trp fluorescence QY ~0.13; here we use a coupling efficiency
 /// scaled to produce work values comparable to LIF/hydration energy (~2 kcal/mol).
@@ -116,7 +116,12 @@ pub struct HysteresisBinData {
 ///
 /// For non-hysteresis protocols (no phases 4/5), all timesteps beyond
 /// cold_hold+ramp fall into phase 3 (warm_hold).
-fn derive_ramp_phase(timestep: i32, cold_hold_steps: i32, ramp_steps: i32, warm_hold_steps: i32) -> i32 {
+fn derive_ramp_phase(
+    timestep: i32,
+    cold_hold_steps: i32,
+    ramp_steps: i32,
+    warm_hold_steps: i32,
+) -> i32 {
     if timestep < cold_hold_steps {
         1 // cold_hold
     } else if timestep < cold_hold_steps + ramp_steps {
@@ -152,8 +157,7 @@ fn infer_spike_source(spike: &GpuSpikeEvent) -> i32 {
         return 3;
     }
     // UV channel: aromatic fluorescence metadata present
-    if spike.spike_source == 1
-        || (spike.wavelength_nm > 200.0 && spike.aromatic_type >= 0) {
+    if spike.spike_source == 1 || (spike.wavelength_nm > 200.0 && spike.aromatic_type >= 0) {
         return 1;
     }
     // EFP reclassification: GPU sometimes sets source=2 for what should be EFP.
@@ -161,7 +165,8 @@ fn infer_spike_source(spike: &GpuSpikeEvent) -> i32 {
     //   - vibrational_energy > 0 (energy deposition from charged interactions)
     //   - aromatic_type < 0 (not aromatic origin)
     //   - OR n_nearby_excited >= 2 with no aromatic origin (collective charged excitation)
-    if spike.aromatic_type < 0 && (spike.vibrational_energy > 0.001 || spike.n_nearby_excited >= 2) {
+    if spike.aromatic_type < 0 && (spike.vibrational_energy > 0.001 || spike.n_nearby_excited >= 2)
+    {
         return 3;
     }
     // LIF/dewetting channel: default for density-based spikes
@@ -182,11 +187,11 @@ fn spike_to_work(intensity: f32, source: i32, wavelength_nm: f32) -> f64 {
             // UV_QUANTUM_YIELD scales to produce work comparable to LIF hydration energy
             let e_photon = H_PLANCK * C_LIGHT / (wavelength_nm as f64).max(200.0);
             let relative_extinction = match wavelength_nm as i32 {
-                278..=282 => EPS_280 / EPS_280,  // 1.0 (reference)
-                272..=276 => EPS_274 / EPS_280,  // 0.27
-                256..=260 => EPS_258 / EPS_280,  // 0.035
-                252..=255 => EPS_254 / EPS_280,  // 0.036
-                209..=213 => EPS_211 / EPS_280,  // 0.054
+                278..=282 => EPS_280 / EPS_280, // 1.0 (reference)
+                272..=276 => EPS_274 / EPS_280, // 0.27
+                256..=260 => EPS_258 / EPS_280, // 0.035
+                252..=255 => EPS_254 / EPS_280, // 0.036
+                209..=213 => EPS_211 / EPS_280, // 0.054
                 _ => EPS_258 / EPS_280,
             };
             e_photon * UV_QUANTUM_YIELD * relative_extinction * (intensity as f64)
@@ -229,7 +234,11 @@ fn jarzynski_estimator(work_values: &[f64], temperature: f64) -> (f64, f64, bool
 
     // Cumulant expansion (always computed, robust at any W/kT)
     let mean_w: f64 = work_values.iter().sum::<f64>() / n;
-    let var_w: f64 = work_values.iter().map(|w| (w - mean_w).powi(2)).sum::<f64>() / n;
+    let var_w: f64 = work_values
+        .iter()
+        .map(|w| (w - mean_w).powi(2))
+        .sum::<f64>()
+        / n;
     let delta_g_cumulant = mean_w - var_w / (2.0 * kt);
 
     // Validity: cumulant is exact when σ²/(kT)² < 1
@@ -237,7 +246,10 @@ fn jarzynski_estimator(work_values: &[f64], temperature: f64) -> (f64, f64, bool
 
     // Exact Jarzynski (log-sum-exp trick for numerical stability)
     let neg_w_over_kt: Vec<f64> = work_values.iter().map(|w| -w / kt).collect();
-    let max_val = neg_w_over_kt.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let max_val = neg_w_over_kt
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
     let sum_exp: f64 = neg_w_over_kt.iter().map(|&x| (x - max_val).exp()).sum();
     let delta_g_exact = -kt * (sum_exp.ln() - n.ln() + max_val);
 
@@ -245,8 +257,15 @@ fn jarzynski_estimator(work_values: &[f64], temperature: f64) -> (f64, f64, bool
     // dominated by the single smallest W value (all other exp(-W/kT) terms
     // vanish). Detect this: if only ~1 term contributes to the sum, switch
     // to cumulant. Effective sample size: (Σ exp)² / Σ exp² after shift.
-    let sum_exp_sq: f64 = neg_w_over_kt.iter().map(|&x| (2.0 * (x - max_val)).exp()).sum();
-    let n_eff = if sum_exp_sq > 0.0 { (sum_exp * sum_exp) / sum_exp_sq } else { 1.0 };
+    let sum_exp_sq: f64 = neg_w_over_kt
+        .iter()
+        .map(|&x| (2.0 * (x - max_val)).exp())
+        .sum();
+    let n_eff = if sum_exp_sq > 0.0 {
+        (sum_exp * sum_exp) / sum_exp_sq
+    } else {
+        1.0
+    };
 
     // Use cumulant when effective sample size is < 10% of actual samples
     // (exact Jarzynski is degenerate in this regime)
@@ -277,22 +296,27 @@ pub fn jarzynski_per_voxel(
 
     for spike in spikes {
         let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
-        if !matches!(phase, 1 | 2 | 3) { continue; } // forward process only
+        if !matches!(phase, 1 | 2 | 3) {
+            continue;
+        } // forward process only
         let source = infer_spike_source(spike);
         let work = spike_to_work(spike.intensity, source, spike.wavelength_nm);
         voxel_work.entry(spike.voxel_idx).or_default().push(work);
     }
 
-    voxel_work.into_iter().map(|(voxel_idx, works)| {
-        let (dg, dg_cum, valid) = jarzynski_estimator(&works, temperature);
-        VoxelFreeEnergy {
-            voxel_idx,
-            delta_g: dg,
-            delta_g_cumulant: dg_cum,
-            n_samples: works.len(),
-            cumulant_valid: valid,
-        }
-    }).collect()
+    voxel_work
+        .into_iter()
+        .map(|(voxel_idx, works)| {
+            let (dg, dg_cum, valid) = jarzynski_estimator(&works, temperature);
+            VoxelFreeEnergy {
+                voxel_idx,
+                delta_g: dg,
+                delta_g_cumulant: dg_cum,
+                n_samples: works.len(),
+                cumulant_valid: valid,
+            }
+        })
+        .collect()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -304,12 +328,16 @@ pub fn jarzynski_per_voxel(
 /// Uses hysteresis profile (heating vs cooling counts per temperature bin).
 /// log-ratio ln(P_F/P_R) crosses zero at W = ΔG.
 pub fn crooks_intersection(bins: &[HysteresisBinData]) -> Option<f64> {
-    if bins.len() < 3 { return None; }
+    if bins.len() < 3 {
+        return None;
+    }
 
     // Compute total counts for normalization
     let total_heat: f64 = bins.iter().map(|b| b.heating_count as f64).sum();
     let total_cool: f64 = bins.iter().map(|b| b.cooling_count as f64).sum();
-    if total_heat < 1.0 || total_cool < 1.0 { return None; }
+    if total_heat < 1.0 || total_cool < 1.0 {
+        return None;
+    }
 
     // Compute log-ratio at each temperature bin
     // Use temperature as work proxy (W ~ kT)
@@ -332,7 +360,9 @@ pub fn crooks_intersection(bins: &[HysteresisBinData]) -> Option<f64> {
 
         if (lr0 <= 0.0 && lr1 >= 0.0) || (lr0 >= 0.0 && lr1 <= 0.0) {
             // Linear interpolation to find zero crossing
-            if (lr1 - lr0).abs() < 1e-15 { continue; }
+            if (lr1 - lr0).abs() < 1e-15 {
+                continue;
+            }
             let w_cross = w0 + (w1 - w0) * (-lr0) / (lr1 - lr0);
             return Some(w_cross);
         }
@@ -345,14 +375,12 @@ pub fn crooks_intersection(bins: &[HysteresisBinData]) -> Option<f64> {
 ///
 /// Iteratively solves: Σ f(W_F - C) = Σ f(-W_R + C)
 /// where f(x) = 1/(1 + exp(x/kT)) is the Fermi function.
-pub fn bar_estimator(
-    forward_work: &[f64],
-    reverse_work: &[f64],
-    temperature: f64,
-) -> Option<f64> {
+pub fn bar_estimator(forward_work: &[f64], reverse_work: &[f64], temperature: f64) -> Option<f64> {
     let n_f = forward_work.len();
     let n_r = reverse_work.len();
-    if n_f < 3 || n_r < 3 { return None; }
+    if n_f < 3 || n_r < 3 {
+        return None;
+    }
 
     let kt = KB * temperature;
     let ln_ratio = (n_f as f64 / n_r as f64).ln();
@@ -367,13 +395,23 @@ pub fn bar_estimator(
 
     // Iterative BAR
     for _ in 0..100 {
-        let sum_f: f64 = forward_work.iter().map(|w| fermi(w - c + kt * ln_ratio)).sum();
-        let sum_r: f64 = reverse_work.iter().map(|w| fermi(-w + c - kt * ln_ratio)).sum();
+        let sum_f: f64 = forward_work
+            .iter()
+            .map(|w| fermi(w - c + kt * ln_ratio))
+            .sum();
+        let sum_r: f64 = reverse_work
+            .iter()
+            .map(|w| fermi(-w + c - kt * ln_ratio))
+            .sum();
 
-        if sum_f.abs() < 1e-15 { break; }
+        if sum_f.abs() < 1e-15 {
+            break;
+        }
         let c_new = kt * (sum_r / sum_f).ln() + kt * ln_ratio;
 
-        if (c_new - c).abs() < 1e-6 { break; }
+        if (c_new - c).abs() < 1e-6 {
+            break;
+        }
         c = c_new;
     }
 
@@ -412,9 +450,13 @@ fn channel_decomposition(
     let mut src_counts = [0usize; 4]; // [unknown, UV, LIF, EFP]
     for spike in spikes {
         let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
-        if !matches!(phase, 1 | 2 | 3) { continue; } // forward process only
+        if !matches!(phase, 1 | 2 | 3) {
+            continue;
+        } // forward process only
         let source = infer_spike_source(spike);
-        if (source as usize) < 4 { src_counts[source as usize] += 1; }
+        if (source as usize) < 4 {
+            src_counts[source as usize] += 1;
+        }
         let work = spike_to_work(spike.intensity, source, spike.wavelength_nm);
         all_work.push(work);
         match source {
@@ -430,10 +472,16 @@ fn channel_decomposition(
     let mut n_nne_ge2 = 0usize;
     let mut n_src3 = 0usize;
     for spike in spikes {
-        if spike.spike_source == 3 { n_src3 += 1; }
+        if spike.spike_source == 3 {
+            n_src3 += 1;
+        }
         if spike.spike_source != 1 {
-            if spike.vibrational_energy > 0.001 { n_ve_nonzero += 1; }
-            if spike.n_nearby_excited >= 2 { n_nne_ge2 += 1; }
+            if spike.vibrational_energy > 0.001 {
+                n_ve_nonzero += 1;
+            }
+            if spike.n_nearby_excited >= 2 {
+                n_nne_ge2 += 1;
+            }
         }
     }
     log::info!("  STI channel decomposition: UV={} LIF={} EFP={} (raw_src3={} non-UV:ve>0={} nne>=2={}) total={}",
@@ -469,7 +517,8 @@ fn arrhenius_barrier(
     total_steps_per_bin: usize,
 ) -> Option<f64> {
     // Filter bins with nonzero counts
-    let valid_bins: Vec<(f64, f64)> = temp_bins.iter()
+    let valid_bins: Vec<(f64, f64)> = temp_bins
+        .iter()
         .filter(|(t, count)| *t > 10.0 && *count > 0 && total_steps_per_bin > 0)
         .map(|(t, count)| {
             let rate = *count as f64 / total_steps_per_bin as f64;
@@ -477,7 +526,9 @@ fn arrhenius_barrier(
         })
         .collect();
 
-    if valid_bins.len() < 3 { return None; }
+    if valid_bins.len() < 3 {
+        return None;
+    }
 
     // Linear regression: ln(rate) = -E_a/k_B * (1/T) + intercept
     let n = valid_bins.len() as f64;
@@ -487,12 +538,18 @@ fn arrhenius_barrier(
     let sum_x2: f64 = valid_bins.iter().map(|(x, _)| x * x).sum();
 
     let denom = n * sum_x2 - sum_x * sum_x;
-    if denom.abs() < 1e-30 { return None; }
+    if denom.abs() < 1e-30 {
+        return None;
+    }
 
     let slope = (n * sum_xy - sum_x * sum_y) / denom;
     let e_a = -slope * KB; // slope = -E_a/k_B, so E_a = -slope * k_B
 
-    if e_a.is_finite() && e_a > 0.0 { Some(e_a) } else { None }
+    if e_a.is_finite() && e_a > 0.0 {
+        Some(e_a)
+    } else {
+        None
+    }
 }
 
 /// Compute Arrhenius barriers per wavelength from spike events during heating.
@@ -531,18 +588,25 @@ fn arrhenius_by_wavelength(
         }
 
         for spike in spikes {
-            let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
-            if !matches!(phase, 1 | 2 | 3) { continue; }
+            let phase =
+                derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
+            if !matches!(phase, 1 | 2 | 3) {
+                continue;
+            }
             let source = infer_spike_source(spike);
-            if source != 1 { continue; }
-            if (spike.wavelength_nm - wl).abs() > wl_tolerance { continue; }
+            if source != 1 {
+                continue;
+            }
+            if (spike.wavelength_nm - wl).abs() > wl_tolerance {
+                continue;
+            }
 
             let temp = if phase == 3 {
                 protocol_end_temp
             } else {
                 let ramp_start_step = cold_hold_steps as f64;
-                let progress = ((spike.timestep as f64) - ramp_start_step)
-                    / (ramp_steps as f64).max(1.0);
+                let progress =
+                    ((spike.timestep as f64) - ramp_start_step) / (ramp_steps as f64).max(1.0);
                 protocol_start_temp + progress.clamp(0.0, 1.0) * temp_range
             };
 
@@ -567,15 +631,18 @@ fn arrhenius_by_wavelength(
         }
 
         for spike in spikes {
-            let phase = derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
-            if !matches!(phase, 1 | 2 | 3) { continue; }
+            let phase =
+                derive_ramp_phase(spike.timestep, cold_hold_steps, ramp_steps, warm_hold_steps);
+            if !matches!(phase, 1 | 2 | 3) {
+                continue;
+            }
 
             let temp = if phase == 3 {
                 protocol_end_temp
             } else {
                 let ramp_start_step = cold_hold_steps as f64;
-                let progress = ((spike.timestep as f64) - ramp_start_step)
-                    / (ramp_steps as f64).max(1.0);
+                let progress =
+                    ((spike.timestep as f64) - ramp_start_step) / (ramp_steps as f64).max(1.0);
                 protocol_start_temp + progress.clamp(0.0, 1.0) * temp_range
             };
 
@@ -637,16 +704,22 @@ pub fn compute_binding_free_energy(
 
     // Layer 1: Jarzynski per-voxel
     let voxel_energies = jarzynski_per_voxel(
-        pocket_spikes, temperature,
-        config.cold_hold_steps, config.ramp_steps, config.warm_hold_steps,
+        pocket_spikes,
+        temperature,
+        config.cold_hold_steps,
+        config.ramp_steps,
+        config.warm_hold_steps,
     );
     let n_voxels = voxel_energies.len();
     let cumulant_valid = voxel_energies.iter().any(|v| v.cumulant_valid);
 
     // Layer 3: Channel decomposition
     let decomp = channel_decomposition(
-        pocket_spikes, temperature,
-        config.cold_hold_steps, config.ramp_steps, config.warm_hold_steps,
+        pocket_spikes,
+        temperature,
+        config.cold_hold_steps,
+        config.ramp_steps,
+        config.warm_hold_steps,
     );
 
     // Layer 2: Crooks intersection (if hysteresis data available)
@@ -655,11 +728,13 @@ pub fn compute_binding_free_energy(
     // Layer 2b: BAR estimator
     let delta_g_bar = if let Some(bins) = hysteresis_bins {
         // Convert heating/cooling counts to work distributions
-        let forward: Vec<f64> = bins.iter()
+        let forward: Vec<f64> = bins
+            .iter()
             .filter(|b| b.heating_count > 0)
             .map(|b| KB * b.temp_k as f64 * (b.heating_count as f64).ln())
             .collect();
-        let reverse: Vec<f64> = bins.iter()
+        let reverse: Vec<f64> = bins
+            .iter()
             .filter(|b| b.cooling_count > 0)
             .map(|b| KB * b.temp_k as f64 * (b.cooling_count as f64).ln())
             .collect();
@@ -787,26 +862,30 @@ pub fn generate_pharmacophore_features(
     for spike in pocket_spikes {
         let source = infer_spike_source(spike);
         let wl_bucket = (spike.wavelength_nm / 10.0).round() as i32 * 10; // 10nm buckets
-        feature_groups.entry((source, wl_bucket))
+        feature_groups
+            .entry((source, wl_bucket))
             .or_default()
             .push(spike);
     }
 
     // Normalize intensities globally
-    let max_intensity = pocket_spikes.iter()
+    let max_intensity = pocket_spikes
+        .iter()
         .map(|s| s.intensity)
         .fold(0.0f32, f32::max)
         .max(1e-6);
 
     // Sort groups by earliest timestep (for TTFS ranking)
-    let mut group_entries: Vec<((i32, i32), Vec<&GpuSpikeEvent>)> = feature_groups.into_iter().collect();
-    group_entries.sort_by_key(|(_, spikes)| {
-        spikes.iter().map(|s| s.timestep).min().unwrap_or(i32::MAX)
-    });
+    let mut group_entries: Vec<((i32, i32), Vec<&GpuSpikeEvent>)> =
+        feature_groups.into_iter().collect();
+    group_entries
+        .sort_by_key(|(_, spikes)| spikes.iter().map(|s| s.timestep).min().unwrap_or(i32::MAX));
 
     let mut features = Vec::new();
     for (rank, ((source, _wl_bucket), spikes)) in group_entries.iter().enumerate() {
-        if spikes.is_empty() { continue; }
+        if spikes.is_empty() {
+            continue;
+        }
 
         // Compute centroid of this feature group
         let n = spikes.len() as f32;
@@ -827,7 +906,11 @@ pub fn generate_pharmacophore_features(
             ttfs_rank: (rank + 1) as u32,
             synchrony_group: cluster_id,
             channel_source: *source as u8,
-            wavelength_nm: if *source == 1 && mean_wavelength > 200.0 { Some(mean_wavelength) } else { None },
+            wavelength_nm: if *source == 1 && mean_wavelength > 200.0 {
+                Some(mean_wavelength)
+            } else {
+                None
+            },
         });
     }
 
@@ -839,26 +922,29 @@ pub fn generate_pharmacophore_features(
 /// PGMG (Pharmacophore-Guided Molecular Generation) expects:
 /// { "pharmacophore": [ { "type": "...", "center": [x,y,z], "radius": r }, ... ] }
 #[cfg(feature = "gpu")]
-pub fn generate_pgmg_pharmacophore(
-    features: &[PharmacophoreFeature],
-) -> serde_json::Value {
-    let pgmg_features: Vec<serde_json::Value> = features.iter().map(|f| {
-        // Map our types to PGMG types
-        let pgmg_type = match f.feature_type.as_str() {
-            "aromatic_pi_stacking" => "Aromatic",
-            "hydrophobic_aromatic" | "aliphatic_hydrophobic" | "hydrophobic_exclusion_volume" => "Hydrophobic",
-            "hbond_donor_positive" => "HBondDonor",
-            "hbond_acceptor_negative" => "HBondAcceptor",
-            _ => "Hydrophobic",
-        };
+pub fn generate_pgmg_pharmacophore(features: &[PharmacophoreFeature]) -> serde_json::Value {
+    let pgmg_features: Vec<serde_json::Value> = features
+        .iter()
+        .map(|f| {
+            // Map our types to PGMG types
+            let pgmg_type = match f.feature_type.as_str() {
+                "aromatic_pi_stacking" => "Aromatic",
+                "hydrophobic_aromatic"
+                | "aliphatic_hydrophobic"
+                | "hydrophobic_exclusion_volume" => "Hydrophobic",
+                "hbond_donor_positive" => "HBondDonor",
+                "hbond_acceptor_negative" => "HBondAcceptor",
+                _ => "Hydrophobic",
+            };
 
-        serde_json::json!({
-            "type": pgmg_type,
-            "center": f.position,
-            "radius": 1.5, // default tolerance radius in Å
-            "weight": f.strength,
+            serde_json::json!({
+                "type": pgmg_type,
+                "center": f.position,
+                "radius": 1.5, // default tolerance radius in Å
+                "weight": f.strength,
+            })
         })
-    }).collect();
+        .collect();
 
     serde_json::json!({
         "pharmacophore": pgmg_features,
@@ -904,7 +990,8 @@ pub fn analyze_perturbation_response(
     }
 
     // Filter out zero rates (can't take log)
-    let valid: Vec<(f64, f64)> = spike_rates_after_perturbation.iter()
+    let valid: Vec<(f64, f64)> = spike_rates_after_perturbation
+        .iter()
         .enumerate()
         .filter(|(_, &r)| r > 0.0)
         .map(|(t, &r)| ((t + 1) as f64, r))
@@ -924,7 +1011,11 @@ pub fn analyze_perturbation_response(
     let exp_x: Vec<f64> = valid.iter().map(|(t, _)| *t).collect();
     let exp_y: Vec<f64> = valid.iter().map(|(_, r)| r.ln()).collect();
     let (exp_slope, _exp_intercept, exp_r2) = linear_regression_f64(&exp_x, &exp_y);
-    let tau_decay = if exp_slope.abs() > 1e-15 { Some(-1.0 / exp_slope) } else { None };
+    let tau_decay = if exp_slope.abs() > 1e-15 {
+        Some(-1.0 / exp_slope)
+    } else {
+        None
+    };
 
     // Power-law fit: ln(r) = ln(A) - α·ln(t) → linear in ln(t) vs ln(r)
     let pl_x: Vec<f64> = valid.iter().map(|(t, _)| t.ln()).collect();
@@ -951,7 +1042,9 @@ pub fn analyze_perturbation_response(
 /// Linear regression for f64 slices. Returns (slope, intercept, R²).
 fn linear_regression_f64(x: &[f64], y: &[f64]) -> (f64, f64, f64) {
     let n = x.len() as f64;
-    if n < 2.0 { return (0.0, 0.0, 0.0); }
+    if n < 2.0 {
+        return (0.0, 0.0, 0.0);
+    }
 
     let sum_x: f64 = x.iter().sum();
     let sum_y: f64 = y.iter().sum();
@@ -959,18 +1052,28 @@ fn linear_regression_f64(x: &[f64], y: &[f64]) -> (f64, f64, f64) {
     let sum_x2: f64 = x.iter().map(|&xi| xi * xi).sum();
 
     let denom = n * sum_x2 - sum_x * sum_x;
-    if denom.abs() < 1e-30 { return (0.0, 0.0, 0.0); }
+    if denom.abs() < 1e-30 {
+        return (0.0, 0.0, 0.0);
+    }
 
     let slope = (n * sum_xy - sum_x * sum_y) / denom;
     let intercept = (sum_y - slope * sum_x) / n;
 
     let mean_y = sum_y / n;
     let ss_tot: f64 = y.iter().map(|&yi| (yi - mean_y).powi(2)).sum();
-    let ss_res: f64 = x.iter().zip(y.iter()).map(|(&xi, &yi)| {
-        let pred = slope * xi + intercept;
-        (yi - pred).powi(2)
-    }).sum();
-    let r_sq = if ss_tot > 1e-30 { 1.0 - ss_res / ss_tot } else { 0.0 };
+    let ss_res: f64 = x
+        .iter()
+        .zip(y.iter())
+        .map(|(&xi, &yi)| {
+            let pred = slope * xi + intercept;
+            (yi - pred).powi(2)
+        })
+        .sum();
+    let r_sq = if ss_tot > 1e-30 {
+        1.0 - ss_res / ss_tot
+    } else {
+        0.0
+    };
 
     (slope, intercept, r_sq)
 }
@@ -988,7 +1091,11 @@ mod tests {
         // Zero work → ΔG = 0
         let works = vec![0.0; 10];
         let (dg, dg_cum, valid) = jarzynski_estimator(&works, 300.0);
-        assert!((dg).abs() < 1e-10, "ΔG should be ~0 for zero work, got {}", dg);
+        assert!(
+            (dg).abs() < 1e-10,
+            "ΔG should be ~0 for zero work, got {}",
+            dg
+        );
         assert!((dg_cum).abs() < 1e-10);
         assert!(valid);
     }
@@ -999,7 +1106,12 @@ mod tests {
         let w = 2.0;
         let works = vec![w; 100];
         let (dg, dg_cum, _) = jarzynski_estimator(&works, 300.0);
-        assert!((dg - w).abs() < 1e-10, "ΔG should equal W={}, got {}", w, dg);
+        assert!(
+            (dg - w).abs() < 1e-10,
+            "ΔG should equal W={}, got {}",
+            w,
+            dg
+        );
         assert!((dg_cum - w).abs() < 1e-10);
     }
 
@@ -1017,13 +1129,13 @@ mod tests {
     #[test]
     fn test_crooks_symmetric() {
         // Symmetric distribution → ΔG should be near zero
-        let bins: Vec<HysteresisBinData> = (0..10).map(|i| {
-            HysteresisBinData {
+        let bins: Vec<HysteresisBinData> = (0..10)
+            .map(|i| HysteresisBinData {
                 temp_k: 100.0 + i as f32 * 20.0,
                 heating_count: 100,
                 cooling_count: 100,
-            }
-        }).collect();
+            })
+            .collect();
         let dg = crooks_intersection(&bins);
         // Symmetric → log-ratio is 0 everywhere → intersection at first bin
         // With pseudocounts, should still be very close to symmetric
@@ -1041,9 +1153,7 @@ mod tests {
     #[test]
     fn test_arrhenius_constant_rate() {
         // Constant rate → slope = 0 → E_a = 0
-        let bins: Vec<(f64, usize)> = (0..10).map(|i| {
-            (200.0 + i as f64 * 10.0, 100)
-        }).collect();
+        let bins: Vec<(f64, usize)> = (0..10).map(|i| (200.0 + i as f64 * 10.0, 100)).collect();
         let e_a = arrhenius_barrier(&bins, 1000);
         // With constant rate, ln(rate) is constant, slope ≈ 0, E_a ≈ 0
         // May return None if E_a <= 0 (depending on numerical noise)

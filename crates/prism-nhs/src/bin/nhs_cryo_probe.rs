@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use prism_nhs::input::PrismPrepTopology;
-use prism_nhs::trajectory::{TrajectoryConfig, TrajectoryWriter, TrajectoryFrame};
+use prism_nhs::trajectory::{TrajectoryConfig, TrajectoryFrame, TrajectoryWriter};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::CudaContext;
@@ -121,7 +121,6 @@ struct Args {
     // =========================================================================
     // Trajectory Output Options
     // =========================================================================
-
     /// Save ensemble trajectory for later analysis
     #[arg(long)]
     save_trajectory: bool,
@@ -141,7 +140,6 @@ struct Args {
     // =========================================================================
     // UV Spectroscopy Options
     // =========================================================================
-
     /// Enable publication-quality UV spectroscopy with frequency hopping
     /// Scans wavelengths: 250nm (S-S), 258nm (PHE), 265nm, 274nm (TYR), 280nm (TRP), 290nm
     /// Provides chromophore-specific excitation for higher signal/noise
@@ -174,8 +172,12 @@ fn main() -> Result<()> {
     }
 
     // Create output directory
-    std::fs::create_dir_all(&args.output)
-        .with_context(|| format!("Failed to create output directory: {}", args.output.display()))?;
+    std::fs::create_dir_all(&args.output).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            args.output.display()
+        )
+    })?;
 
     log::info!("Loading PRISM-PREP topology: {}", args.input.display());
     let topology = PrismPrepTopology::load(&args.input)?;
@@ -201,7 +203,9 @@ fn main() -> Result<()> {
     let aromatics = topology.aromatic_residues();
     println!("UV Probe Targets ({} aromatic residues):", aromatics.len());
     for (i, res_id) in aromatics.iter().take(5).enumerate() {
-        let res_name = topology.residue_ids.iter()
+        let res_name = topology
+            .residue_ids
+            .iter()
             .position(|&r| r == *res_id)
             .map(|atom_idx| topology.residue_names[atom_idx].as_str())
             .unwrap_or("???");
@@ -288,9 +292,11 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
     };
 
     let total_steps = temp_protocol.total_steps();
-    println!("  Total:  {} steps ({:.1} ns at 2fs timestep)",
+    println!(
+        "  Total:  {} steps ({:.1} ns at 2fs timestep)",
         total_steps,
-        total_steps as f64 * 0.002 / 1000.0);
+        total_steps as f64 * 0.002 / 1000.0
+    );
     println!();
 
     // UV probe configuration
@@ -331,12 +337,7 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
 
     // Create fused engine
     log::info!("Creating NHS-AMBER Fused Engine...");
-    let mut engine = NhsAmberFusedEngine::new(
-        context,
-        topology,
-        grid_dim,
-        args.spacing,
-    )?;
+    let mut engine = NhsAmberFusedEngine::new(context, topology, grid_dim, args.spacing)?;
 
     // Connect live monitor if specified
     if let Some(addr) = &args.live_monitor {
@@ -358,7 +359,9 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
 
     // Setup trajectory writer if enabled
     let mut trajectory_writer = if args.save_trajectory || args.save_on_spike {
-        let base_name = args.input.file_stem()
+        let base_name = args
+            .input
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "trajectory".to_string());
 
@@ -370,10 +373,23 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
             base_name,
         };
         println!("Trajectory Output:");
-        println!("  Interval:     every {} steps ({:.2} ps)", args.trajectory_interval,
-            args.trajectory_interval as f32 * 0.002);
-        println!("  Save on spike: {}", if args.save_on_spike { "YES" } else { "NO" });
-        println!("  Max frames:   {}", if args.max_frames == 0 { "unlimited".to_string() } else { args.max_frames.to_string() });
+        println!(
+            "  Interval:     every {} steps ({:.2} ps)",
+            args.trajectory_interval,
+            args.trajectory_interval as f32 * 0.002
+        );
+        println!(
+            "  Save on spike: {}",
+            if args.save_on_spike { "YES" } else { "NO" }
+        );
+        println!(
+            "  Max frames:   {}",
+            if args.max_frames == 0 {
+                "unlimited".to_string()
+            } else {
+                args.max_frames.to_string()
+            }
+        );
         println!();
         Some(TrajectoryWriter::new(config)?)
     } else {
@@ -386,11 +402,11 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
     println!();
 
     let start_time = Instant::now();
-    let report_interval = total_steps / 20;  // Report 20 times
+    let report_interval = total_steps / 20; // Report 20 times
 
     // Run simulation
     let mut total_spikes = 0usize;
-    let mut phase_spikes = [0usize; 3];  // Cold, Ramp, Warm phases
+    let mut phase_spikes = [0usize; 3]; // Cold, Ramp, Warm phases
 
     let mut frames_saved = 0usize;
 
@@ -400,11 +416,11 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
 
         // Track spikes by phase
         let phase = if step < temp_protocol.cold_hold_steps {
-            0  // Cold hold phase
+            0 // Cold hold phase
         } else if step < temp_protocol.cold_hold_steps + temp_protocol.ramp_steps {
-            1  // Ramp phase
+            1 // Ramp phase
         } else {
-            2  // Warm hold phase
+            2 // Warm hold phase
         };
         phase_spikes[phase] += result.spike_count;
 
@@ -423,7 +439,11 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
                     time_ps: step as f32 * 0.002,
                     positions,
                     spike_triggered: should_save_spike,
-                    spike_count: if should_save_spike { Some(result.spike_count) } else { None },
+                    spike_count: if should_save_spike {
+                        Some(result.spike_count)
+                    } else {
+                        None
+                    },
                     spike_voxels: None,
                     wavelength_nm: result.current_wavelength_nm,
                 };
@@ -479,9 +499,18 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
 
     println!("Spike Detection:");
     println!("  Total spikes:   {}", total_spikes);
-    println!("  Cold phase:     {} (primary hydrophobic mapping)", phase_spikes[0]);
-    println!("  Ramp phase:     {} (cryptic site emergence)", phase_spikes[1]);
-    println!("  Warm phase:     {} (physiological validation)", phase_spikes[2]);
+    println!(
+        "  Cold phase:     {} (primary hydrophobic mapping)",
+        phase_spikes[0]
+    );
+    println!(
+        "  Ramp phase:     {} (cryptic site emergence)",
+        phase_spikes[1]
+    );
+    println!(
+        "  Warm phase:     {} (physiological validation)",
+        phase_spikes[2]
+    );
     println!();
 
     // Interpretation
@@ -503,8 +532,14 @@ fn run_fused_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()> {
         let stats = writer.finalize(&topology)?;
         println!("  Ensemble PDB:   {}", stats.ensemble_pdb);
         println!("  Spike frames:   {}", stats.spike_triggered_frames);
-        println!("  Time range:     {:.2} - {:.2} ps", stats.time_range_ps.0, stats.time_range_ps.1);
-        println!("  Temp range:     {:.1} - {:.1} K", stats.temperature_range.0, stats.temperature_range.1);
+        println!(
+            "  Time range:     {:.2} - {:.2} ps",
+            stats.time_range_ps.0, stats.time_range_ps.1
+        );
+        println!(
+            "  Temp range:     {:.1} - {:.1} K",
+            stats.temperature_range.0, stats.temperature_range.1
+        );
         Some(stats)
     } else {
         None

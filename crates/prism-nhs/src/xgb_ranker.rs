@@ -80,9 +80,9 @@ pub struct SiteFeatures {
     pub n_streams: u32,
     pub unsat_frac: f32,
     pub persistence: f32,
-    pub spread: f32,             // volume^(1/3)
+    pub spread: f32, // volume^(1/3)
     pub burial_score: f32,
-    pub spike_density: f32,      // spike_count / volume
+    pub spike_density: f32, // spike_count / volume
     pub druggability: f32,
     pub aromatic_score: f32,
     pub n_lining_residues: u32,
@@ -100,8 +100,8 @@ impl SiteFeatures {
             inter,
             self.unsat_frac,
             self.persistence,
-            (sc + 1.0).ln(),            // log1p(sc)
-            (inter + 1.0).ln(),         // log1p(inter)
+            (sc + 1.0).ln(),    // log1p(sc)
+            (inter + 1.0).ln(), // log1p(inter)
             self.spread,
             self.burial_score,
             self.spike_density,
@@ -128,9 +128,11 @@ pub fn score_batch(rows: &[[f32; N_FEATURES]]) -> Result<Vec<f32>> {
     let input = Value::from_array(([n, N_FEATURES], flat))
         .map_err(|e| anyhow!("from_array failed: {}", e))?;
 
-    let mut sess_guard = sess.lock()
+    let mut sess_guard = sess
+        .lock()
         .map_err(|e| anyhow!("session mutex poisoned: {}", e))?;
-    let outputs = sess_guard.run(ort::inputs![input])
+    let outputs = sess_guard
+        .run(ort::inputs![input])
         .map_err(|e| anyhow!("ort run failed: {}", e))?;
 
     // The XGBoost-derived ONNX has a single output named "variable" with
@@ -139,7 +141,11 @@ pub fn score_batch(rows: &[[f32; N_FEATURES]]) -> Result<Vec<f32>> {
         .try_extract_tensor::<f32>()
         .map_err(|e| anyhow!("tensor extract failed: {}", e))?;
     if shape.is_empty() || (shape[0] as usize) != n {
-        return Err(anyhow!("unexpected output shape: {:?} (expected N={})", shape, n));
+        return Err(anyhow!(
+            "unexpected output shape: {:?} (expected N={})",
+            shape,
+            n
+        ));
     }
     // Copy the slice — the ort::TensorView has lifetime tied to `outputs`.
     Ok(data.to_vec())
@@ -169,10 +175,16 @@ pub fn apply_rerank(sites_json: &mut [serde_json::Value]) -> Result<usize> {
     // Collect feature rows from the JSON.
     let mut rows = Vec::with_capacity(sites_json.len());
     for site in sites_json.iter() {
-        let spike_count = site.get("spike_count").and_then(|v| v.as_u64()).unwrap_or(0);
+        let spike_count = site
+            .get("spike_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         // Non-TWIN baseline always uses 4 streams; if the field is present, trust it.
         let n_streams = site.get("n_streams").and_then(|v| v.as_u64()).unwrap_or(4) as u32;
-        let unsat_frac = site.get("unsat_frac").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let unsat_frac = site
+            .get("unsat_frac")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
         // persistence is produced in TWIN output; default 0.
         let persistence = site
             .get("signal_preservation")
@@ -185,10 +197,23 @@ pub fn apply_rerank(sites_json: &mut [serde_json::Value]) -> Result<usize> {
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0) as f32;
         let spread = if volume > 0.0 { volume.cbrt() } else { 0.0 };
-        let burial_score = site.get("burial_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-        let spike_density = if volume > 0.0 { (spike_count as f32) / volume } else { 0.0 };
-        let druggability = site.get("druggability").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-        let aromatic_score = site.get("aromatic_score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+        let burial_score = site
+            .get("burial_score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
+        let spike_density = if volume > 0.0 {
+            (spike_count as f32) / volume
+        } else {
+            0.0
+        };
+        let druggability = site
+            .get("druggability")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
+        let aromatic_score = site
+            .get("aromatic_score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) as f32;
         let n_lining_residues = site
             .get("lining_residues")
             .and_then(|v| v.as_array())
@@ -222,8 +247,14 @@ pub fn apply_rerank(sites_json: &mut [serde_json::Value]) -> Result<usize> {
 
     // Sort descending by xgb_score, tiebreak on spike_count descending.
     sites_json.sort_by(|a, b| {
-        let sa = a.get("xgb_score").and_then(|v| v.as_f64()).unwrap_or(f64::MIN);
-        let sb = b.get("xgb_score").and_then(|v| v.as_f64()).unwrap_or(f64::MIN);
+        let sa = a
+            .get("xgb_score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(f64::MIN);
+        let sb = b
+            .get("xgb_score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(f64::MIN);
         let primary = sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal);
         if primary != std::cmp::Ordering::Equal {
             return primary;
@@ -272,8 +303,24 @@ mod tests {
     #[test]
     fn score_batch_produces_one_score_per_row() {
         let rows = vec![
-            [100000.0f32, 4.0, 400000.0, 0.3, 0.5, 11.51, 12.90, 5.0, 0.5, 0.1, 0.5, 0.3, 50.0],
-            [500.0f32,    4.0,   2000.0, 0.01, 0.1, 6.22, 7.60, 1.0, 0.1, 0.02, 0.1, 0.05, 5.0],
+            [
+                100000.0f32,
+                4.0,
+                400000.0,
+                0.3,
+                0.5,
+                11.51,
+                12.90,
+                5.0,
+                0.5,
+                0.1,
+                0.5,
+                0.3,
+                50.0,
+            ],
+            [
+                500.0f32, 4.0, 2000.0, 0.01, 0.1, 6.22, 7.60, 1.0, 0.1, 0.02, 0.1, 0.05, 5.0,
+            ],
         ];
         let scores = score_batch(&rows).expect("scoring must succeed");
         assert_eq!(scores.len(), 2);
@@ -299,7 +346,10 @@ mod tests {
         for s in &sites {
             assert!(s.get("xgb_score").is_some());
             assert!(s.get("rank").is_some());
-            assert_eq!(s.get("ranker_version").and_then(|v| v.as_str()), Some("xgb_v3"));
+            assert_eq!(
+                s.get("ranker_version").and_then(|v| v.as_str()),
+                Some("xgb_v3")
+            );
         }
     }
 }

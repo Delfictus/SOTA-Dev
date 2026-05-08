@@ -34,9 +34,9 @@ impl Default for RtProbeConfig {
             bvh_refit_threshold: 0.5,
             track_solvation: false,
             track_aromatic_lif: true,
-            max_ray_distance: 20.0,    // 20 Å max ray travel
-            void_threshold: 0.3,       // 30% miss rate = void
-            aromatic_lif_radius: 8.0,  // 8 Å LIF interaction radius
+            max_ray_distance: 20.0,   // 20 Å max ray travel
+            void_threshold: 0.3,      // 30% miss rate = void
+            aromatic_lif_radius: 8.0, // 8 Å LIF interaction radius
         }
     }
 }
@@ -118,8 +118,11 @@ pub struct RtProbeEngine {
 impl RtProbeEngine {
     /// Create new RT probe engine
     pub fn new(optix_ctx: OptixContext, config: RtProbeConfig) -> Result<Self> {
-        log::info!("Creating RT Probe Engine: {} rays/point × {} attention points",
-            config.rays_per_point, config.attention_points);
+        log::info!(
+            "Creating RT Probe Engine: {} rays/point × {} attention points",
+            config.rays_per_point,
+            config.attention_points
+        );
 
         Ok(Self {
             optix_ctx,
@@ -200,11 +203,7 @@ impl RtProbeEngine {
     ///
     /// Much faster than full rebuild (~10-100x). Use when positions change
     /// but atom count remains the same.
-    pub fn refit_bvh(
-        &mut self,
-        positions_gpu: CUdeviceptr,
-        radii_gpu: CUdeviceptr,
-    ) -> Result<()> {
+    pub fn refit_bvh(&mut self, positions_gpu: CUdeviceptr, radii_gpu: CUdeviceptr) -> Result<()> {
         let bvh = self
             .bvh_protein
             .as_mut()
@@ -220,17 +219,21 @@ impl RtProbeEngine {
     /// Initialize GPU buffers and OptiX pipeline for ray tracing
     pub fn initialize_buffers(&mut self, stream: &Arc<CudaStream>) -> Result<()> {
         use prism_optix::{
-            Module, ModuleCompileOptions, PipelineCompileOptions,
-            Pipeline, PipelineLinkOptions, ProgramGroup, ShaderBindingTable,
-            SBT_RECORD_HEADER_SIZE, aligned_sbt_record_size,
+            aligned_sbt_record_size, Module, ModuleCompileOptions, Pipeline,
+            PipelineCompileOptions, PipelineLinkOptions, ProgramGroup, ShaderBindingTable,
+            SBT_RECORD_HEADER_SIZE,
         };
 
         let num_probes = self.config.attention_points;
         let rays_per_probe = self.config.rays_per_point;
         let total_rays = num_probes * rays_per_probe;
 
-        log::info!("Initializing RT probe pipeline: {} probes × {} rays = {} total",
-            num_probes, rays_per_probe, total_rays);
+        log::info!(
+            "Initializing RT probe pipeline: {} probes × {} rays = {} total",
+            num_probes,
+            rays_per_probe,
+            total_rays
+        );
 
         // ═══ Load OptiX pipeline from rt_probe.optixir ═══
         let optixir_path = std::path::Path::new("crates/prism-gpu/src/kernels/rt_probe.optixir");
@@ -239,35 +242,34 @@ impl RtProbeEngine {
 
             let module_options = ModuleCompileOptions::default();
             let mut pipeline_options = PipelineCompileOptions::default();
-            pipeline_options.num_payload_values = 2;   // hit_distance, hit_atom_id
-            pipeline_options.num_attribute_values = 3;  // sphere normal (x, y, z)
+            pipeline_options.num_payload_values = 2; // hit_distance, hit_atom_id
+            pipeline_options.num_attribute_values = 3; // sphere normal (x, y, z)
 
             let module = Module::from_optix_ir(
                 &self.optix_ctx,
                 optixir_path,
                 &module_options,
                 &pipeline_options,
-            ).context("Failed to load RT probe OptiX IR module")?;
+            )
+            .context("Failed to load RT probe OptiX IR module")?;
 
-            let raygen_pg = ProgramGroup::create_raygen(
-                &self.optix_ctx,
-                &module,
-                "__raygen__rt_probe",
-            ).context("Failed to create RT probe raygen program group")?;
+            let raygen_pg =
+                ProgramGroup::create_raygen(&self.optix_ctx, &module, "__raygen__rt_probe")
+                    .context("Failed to create RT probe raygen program group")?;
 
-            let miss_pg = ProgramGroup::create_miss(
-                &self.optix_ctx,
-                &module,
-                "__miss__rt_probe",
-            ).context("Failed to create RT probe miss program group")?;
+            let miss_pg = ProgramGroup::create_miss(&self.optix_ctx, &module, "__miss__rt_probe")
+                .context("Failed to create RT probe miss program group")?;
 
             let hitgroup_pg = ProgramGroup::create_hitgroup(
                 &self.optix_ctx,
                 Some(&module),
                 Some("__closesthit__rt_probe"),
-                None, None,  // No any-hit
-                None, None,  // No intersection (built-in spheres)
-            ).context("Failed to create RT probe hitgroup program group")?;
+                None,
+                None, // No any-hit
+                None,
+                None, // No intersection (built-in spheres)
+            )
+            .context("Failed to create RT probe hitgroup program group")?;
 
             let link_options = PipelineLinkOptions::default();
             let pipeline = Pipeline::create(
@@ -275,26 +277,31 @@ impl RtProbeEngine {
                 &pipeline_options,
                 &link_options,
                 &[&raygen_pg, &miss_pg, &hitgroup_pg],
-            ).context("Failed to create RT probe pipeline")?;
+            )
+            .context("Failed to create RT probe pipeline")?;
 
-            pipeline.set_stack_size(0, 0, 1, 1)
+            pipeline
+                .set_stack_size(0, 0, 1, 1)
                 .context("Failed to set RT probe pipeline stack size")?;
 
             // ═══ Build SBT records ═══
             let record_size = aligned_sbt_record_size(0);
 
             let mut raygen_record = vec![0u8; record_size];
-            raygen_pg.pack_header(&mut raygen_record)
+            raygen_pg
+                .pack_header(&mut raygen_record)
                 .map_err(|e| anyhow::anyhow!("Failed to pack raygen header: {}", e))?;
             self.d_raygen_record = Some(stream.clone_htod(&raygen_record)?);
 
             let mut miss_record = vec![0u8; record_size];
-            miss_pg.pack_header(&mut miss_record)
+            miss_pg
+                .pack_header(&mut miss_record)
                 .map_err(|e| anyhow::anyhow!("Failed to pack miss header: {}", e))?;
             self.d_miss_record = Some(stream.clone_htod(&miss_record)?);
 
             let mut hitgroup_record = vec![0u8; record_size];
-            hitgroup_pg.pack_header(&mut hitgroup_record)
+            hitgroup_pg
+                .pack_header(&mut hitgroup_record)
                 .map_err(|e| anyhow::anyhow!("Failed to pack hitgroup header: {}", e))?;
             self.d_hitgroup_record = Some(stream.clone_htod(&hitgroup_record)?);
 
@@ -306,8 +313,10 @@ impl RtProbeEngine {
 
             log::info!("✅ RT probe OptiX pipeline loaded");
         } else {
-            log::warn!("RT probe OptiX IR not found at {}, ray casting will use CPU fallback",
-                optixir_path.display());
+            log::warn!(
+                "RT probe OptiX IR not found at {}, ray casting will use CPU fallback",
+                optixir_path.display()
+            );
         }
 
         // ═══ Allocate GPU buffers ═══
@@ -328,7 +337,10 @@ impl RtProbeEngine {
         self.d_avg_distances = Some(stream.clone_htod(&probe_f32_zeros)?);
 
         self.pipeline_ready = true;
-        log::info!("✅ RT probe buffers initialized ({} total rays)", total_rays);
+        log::info!(
+            "✅ RT probe buffers initialized ({} total rays)",
+            total_rays
+        );
         Ok(())
     }
 
@@ -352,7 +364,10 @@ impl RtProbeEngine {
             .collect();
 
         self.d_aromatic_centers = Some(stream.clone_htod(&flat)?);
-        log::debug!("Set {} aromatic centers for LIF tracking", self.num_aromatics);
+        log::debug!(
+            "Set {} aromatic centers for LIF tracking",
+            self.num_aromatics
+        );
         Ok(())
     }
 
@@ -369,10 +384,12 @@ impl RtProbeEngine {
         timestep: i32,
         stream: &Arc<CudaStream>,
     ) -> Result<Vec<RtProbeSnapshot>> {
-        use prism_optix::{ShaderBindingTable, aligned_sbt_record_size};
         use optix_sys::CUstream as OptixCUstream;
+        use prism_optix::{aligned_sbt_record_size, ShaderBindingTable};
 
-        let bvh = self.bvh_protein.as_ref()
+        let bvh = self
+            .bvh_protein
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("BVH not built - call build_protein_bvh first"))?;
 
         let traversable = bvh.handle();
@@ -380,7 +397,12 @@ impl RtProbeEngine {
         let rays_per_probe = self.config.rays_per_point;
         let total_rays = num_probes * rays_per_probe;
 
-        log::debug!("Casting {} rays ({} probes × {} rays/probe)", total_rays, num_probes, rays_per_probe);
+        log::debug!(
+            "Casting {} rays ({} probes × {} rays/probe)",
+            total_rays,
+            num_probes,
+            rays_per_probe
+        );
 
         // Upload probe positions (flat: [x0,y0,z0, x1,y1,z1, ...])
         let flat_positions: Vec<f32> = probe_positions
@@ -400,7 +422,11 @@ impl RtProbeEngine {
             let (hit_dist_ptr, _g2) = self.d_hit_distances.as_ref().unwrap().device_ptr(stream);
             let (hit_ids_ptr, _g3) = self.d_hit_atom_ids.as_ref().unwrap().device_ptr(stream);
             let (void_ptr, _g4) = self.d_void_flags.as_ref().unwrap().device_ptr(stream);
-            let (solv_ptr, _g5) = self.d_solvation_variance.as_ref().unwrap().device_ptr(stream);
+            let (solv_ptr, _g5) = self
+                .d_solvation_variance
+                .as_ref()
+                .unwrap()
+                .device_ptr(stream);
             let (arom_count_ptr, _g6) = self.d_aromatic_counts.as_ref().unwrap().device_ptr(stream);
 
             let aromatic_ptr = if let Some(ref d_ac) = self.d_aromatic_centers {
@@ -461,15 +487,17 @@ impl RtProbeEngine {
 
             // Launch: dim.x = rays_per_probe, dim.y = num_probes
             let cu_stream = stream.cu_stream() as OptixCUstream;
-            pipeline.launch(
-                cu_stream,
-                params_ptr,
-                std::mem::size_of::<RtProbeLaunchParams>(),
-                &sbt,
-                rays_per_probe as u32,
-                num_probes as u32,
-                1,
-            ).map_err(|e| anyhow::anyhow!("RT probe pipeline launch failed: {}", e))?;
+            pipeline
+                .launch(
+                    cu_stream,
+                    params_ptr,
+                    std::mem::size_of::<RtProbeLaunchParams>(),
+                    &sbt,
+                    rays_per_probe as u32,
+                    num_probes as u32,
+                    1,
+                )
+                .map_err(|e| anyhow::anyhow!("RT probe pipeline launch failed: {}", e))?;
 
             stream.synchronize()?;
 
@@ -487,9 +515,11 @@ impl RtProbeEngine {
 
         self.snapshots.extend(snapshots.clone());
 
-        log::debug!("RT probe complete: {} snapshots, {} voids detected",
+        log::debug!(
+            "RT probe complete: {} snapshots, {} voids detected",
             snapshots.len(),
-            snapshots.iter().filter(|s| s.void_detected).count());
+            snapshots.iter().filter(|s| s.void_detected).count()
+        );
 
         Ok(snapshots)
     }
@@ -525,7 +555,11 @@ impl RtProbeEngine {
         for i in 0..num_probes {
             let pos_idx = i * 3;
             let probe_pos = if pos_idx + 2 < probe_positions.len() {
-                [probe_positions[pos_idx], probe_positions[pos_idx + 1], probe_positions[pos_idx + 2]]
+                [
+                    probe_positions[pos_idx],
+                    probe_positions[pos_idx + 1],
+                    probe_positions[pos_idx + 2],
+                ]
             } else {
                 [0.0, 0.0, 0.0]
             };
@@ -549,7 +583,11 @@ impl RtProbeEngine {
                 }
             }
 
-            let mean_distance = if hit_count > 0 { sum_distance / hit_count as f32 } else { 0.0 };
+            let mean_distance = if hit_count > 0 {
+                sum_distance / hit_count as f32
+            } else {
+                0.0
+            };
 
             // Void detection: high fraction of misses indicates void/pocket
             let miss_fraction = miss_count as f32 / rays_per_probe as f32;
@@ -557,7 +595,8 @@ impl RtProbeEngine {
 
             // Solvation variance: high variance = anisotropic environment = pocket
             let solvation_variance = if self.config.track_solvation && hit_count > 1 {
-                let sum_sq_diff: f32 = valid_distances.iter()
+                let sum_sq_diff: f32 = valid_distances
+                    .iter()
                     .map(|d| (d - mean_distance).powi(2))
                     .sum();
                 Some(sum_sq_diff / (hit_count - 1) as f32)
@@ -652,7 +691,10 @@ impl RtProbeEngine {
 
         // Near protein surface
         for i in 0..surface_probes {
-            let hash = ((i + aromatic_probes) as u32).wrapping_mul(1664525).wrapping_add(1013904223) ^ seed;
+            let hash = ((i + aromatic_probes) as u32)
+                .wrapping_mul(1664525)
+                .wrapping_add(1013904223)
+                ^ seed;
             let atom_idx = (hash as usize) % num_atoms;
             let base = atom_idx * 3;
 

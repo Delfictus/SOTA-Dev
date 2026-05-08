@@ -45,10 +45,10 @@ pub enum ResidueRole {
 impl std::fmt::Display for ResidueRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ResidueRole::Trigger    => write!(f, "TRIGGER"),
+            ResidueRole::Trigger => write!(f, "TRIGGER"),
             ResidueRole::Stabilizer => write!(f, "STABIL."),
-            ResidueRole::Gateway    => write!(f, "GATEWAY"),
-            ResidueRole::Spectator  => write!(f, "SPECTAT"),
+            ResidueRole::Gateway => write!(f, "GATEWAY"),
+            ResidueRole::Spectator => write!(f, "SPECTAT"),
         }
     }
 }
@@ -127,18 +127,21 @@ pub fn build_report(
     analysis: &PrismThermAnalysis,
     topology: &PrismPrepTopology,
     structure_name: &str,
-    site_centroids: &[([f32; 3], i32)],  // (centroid, site_id) pairs
+    site_centroids: &[([f32; 3], i32)], // (centroid, site_id) pairs
 ) -> PrismThermReport {
     let mut pockets: Vec<PocketReport> = Vec::new();
 
     for site in &analysis.sites {
         // Find centroid for this site
-        let centroid = site_centroids.iter()
+        let centroid = site_centroids
+            .iter()
             .find(|(_, id)| *id == site.site_id)
             .map(|(c, _)| *c)
             .unwrap_or([0.0, 0.0, 0.0]);
 
-        let top_residues: Vec<ResidueContribution> = site.tide_decomposition.iter()
+        let top_residues: Vec<ResidueContribution> = site
+            .tide_decomposition
+            .iter()
             .map(|r| {
                 let role = classify_residue(r);
                 let res_name = residue_label(topology, r.residue_id);
@@ -160,7 +163,11 @@ pub fn build_report(
             centroid,
             ccns_tau: site.tau,
             ccns_class: site.ccns_classification.clone(),
-            druggability_score: if site.druggability.is_finite() { site.druggability } else { 0.0 },
+            druggability_score: if site.druggability.is_finite() {
+                site.druggability
+            } else {
+                0.0
+            },
             hysteresis_asymmetry: site.asymmetry_score,
             is_cryptic: site.therm_class == crate::sdst_bridge::ThermClass::Cryptic,
             therm_class: site.therm_class.to_string(),
@@ -170,8 +177,11 @@ pub fn build_report(
     }
 
     // Sort by druggability descending
-    pockets.sort_by(|a, b| b.druggability_score.partial_cmp(&a.druggability_score)
-        .unwrap_or(std::cmp::Ordering::Equal));
+    pockets.sort_by(|a, b| {
+        b.druggability_score
+            .partial_cmp(&a.druggability_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let cryptic_count = pockets.iter().filter(|p| p.is_cryptic).count();
 
@@ -186,7 +196,11 @@ pub fn build_report(
 }
 
 /// Write the standalone `.prism_therm.json` file.
-pub fn write_json(report: &PrismThermReport, output_dir: &Path, base_name: &str) -> std::io::Result<()> {
+pub fn write_json(
+    report: &PrismThermReport,
+    output_dir: &Path,
+    base_name: &str,
+) -> std::io::Result<()> {
     let path = output_dir.join(format!("{}.prism_therm.json", base_name));
     let json = serde_json::to_string_pretty(report)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -229,15 +243,25 @@ pub fn write_druggability_pdb(
     let mut f = std::fs::File::create(&path)?;
 
     writeln!(f, "REMARK   PRISM-Therm druggability PDB")?;
-    writeln!(f, "REMARK   B-factor = Transfer Entropy × 100 (per-residue max across pockets)")?;
-    writeln!(f, "REMARK   Visualize: spectrum b, blue_white_red, minimum=0, maximum=50")?;
+    writeln!(
+        f,
+        "REMARK   B-factor = Transfer Entropy × 100 (per-residue max across pockets)"
+    )?;
+    writeln!(
+        f,
+        "REMARK   Visualize: spectrum b, blue_white_red, minimum=0, maximum=50"
+    )?;
 
     for i in 0..topology.n_atoms {
         let x = topology.positions[i * 3];
         let y = topology.positions[i * 3 + 1];
         let z = topology.positions[i * 3 + 2];
         let res_id = topology.residue_ids[i];
-        let b_factor = if res_id < n_residues { res_score[res_id] } else { 0.0 };
+        let b_factor = if res_id < n_residues {
+            res_score[res_id]
+        } else {
+            0.0
+        };
 
         let atom_name = &topology.atom_names[i];
         let res_name = if i < topology.residue_names.len() {
@@ -252,14 +276,18 @@ pub fn write_druggability_pdb(
         };
 
         // PDB ATOM record format (fixed-width columns)
-        write!(f, "ATOM  {:>5} {:>4} {:>3} {}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}\n",
+        write!(
+            f,
+            "ATOM  {:>5} {:>4} {:>3} {}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}\n",
             (i + 1) % 100000,
             format_atom_name(atom_name),
             res_name,
             chain_id,
             (res_id + 1) % 10000,
-            x, y, z,
-            1.00,  // occupancy
+            x,
+            y,
+            z,
+            1.00, // occupancy
             b_factor.min(99.99),
         )?;
     }
@@ -278,16 +306,18 @@ pub fn print_summary_table(report: &PrismThermReport) {
 
     for (i, p) in report.pockets.iter().enumerate() {
         let ptype = match p.therm_class.as_str() {
-            "CRYPTIC"    => "CRYPTIC ",
-            "DYNAMIC"    => "DYNAMIC ",
+            "CRYPTIC" => "CRYPTIC ",
+            "DYNAMIC" => "DYNAMIC ",
             "RESPONSIVE" => "RESPOND.",
-            "INERT"      => "INERT   ",
-            _            => "?       ",
+            "INERT" => "INERT   ",
+            _ => "?       ",
         };
         log::info!(
             "║ {:>3} ║ ({:>5.1},{:>5.1},{:>5.1}) ║ {:>5.2} ║ {:>5.2}  ║ {:>7.3}  ║ {} ║",
             i + 1,
-            p.centroid[0], p.centroid[1], p.centroid[2],
+            p.centroid[0],
+            p.centroid[1],
+            p.centroid[2],
             p.ccns_tau,
             p.druggability_score,
             p.hysteresis_asymmetry,
@@ -299,17 +329,32 @@ pub fn print_summary_table(report: &PrismThermReport) {
 
     // Print top causal residues for CRYPTIC pockets
     for p in &report.pockets {
-        if !p.is_cryptic || p.top_residues.is_empty() { continue; }
+        if !p.is_cryptic || p.top_residues.is_empty() {
+            continue;
+        }
 
         log::info!("");
-        log::info!("  TIDE — Pocket {} (CRYPTIC, tau={:.2}, drug={:.2}):",
-            p.pocket_id, p.ccns_tau, p.druggability_score);
-        log::info!("    {:>4}  {:>6}  {:>8}  {:>8}  {:>8}  {:>7}  {:>5}",
-            "Res", "Name", "TE", "dG", "Fisher", "KL", "Role");
-        log::info!("    {}",  "─".repeat(60));
+        log::info!(
+            "  TIDE — Pocket {} (CRYPTIC, tau={:.2}, drug={:.2}):",
+            p.pocket_id,
+            p.ccns_tau,
+            p.druggability_score
+        );
+        log::info!(
+            "    {:>4}  {:>6}  {:>8}  {:>8}  {:>8}  {:>7}  {:>5}",
+            "Res",
+            "Name",
+            "TE",
+            "dG",
+            "Fisher",
+            "KL",
+            "Role"
+        );
+        log::info!("    {}", "─".repeat(60));
 
         for r in p.top_residues.iter().take(10) {
-            log::info!("    {:>4}  {:>6}  {:>8.5}  {:>8.5}  {:>8.5}  {:>7.4}  {:>7}",
+            log::info!(
+                "    {:>4}  {:>6}  {:>8.5}  {:>8.5}  {:>8.5}  {:>7.4}  {:>7}",
                 r.residue_id,
                 r.residue_name,
                 r.transfer_entropy,

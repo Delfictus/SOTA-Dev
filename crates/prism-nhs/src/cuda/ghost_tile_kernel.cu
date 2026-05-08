@@ -174,21 +174,26 @@ __global__ void prism_ghost_pipe_stage_kernel(
         *reinterpret_cast<const float*>(adj + PRISM_ADJ_CURRENT_DIVERGENCE_OFF);
     // 4-plane SO(3) C_l[0..6] expansion (Amendment 3.14):
     //   plane 0 (geo)        -> power_spectrum[ 0.. 6]   wired
-    //   plane 1 (causal)     -> power_spectrum[ 6..12]   zero (follow-up)
-    //   plane 2 (thermo)     -> power_spectrum[12..18]   zero (follow-up)
-    //   plane 3 (chemistry)  -> power_spectrum[18..24]   zero (follow-up)
-    // Only the geometry plane is currently surfaced from the ContactShellTile
-    // (geo_power_spectrum[0..6] at tile offset 272).  Planes 1..3 are zeroed
-    // here — kernel follow-up will read therm_/caus_/chem_power_spectrum
-    // and replace the zero-fill once those upstream tiles are validated.
+    //   plane 1 (causal)     -> power_spectrum[ 6..12]   wired (M1.2.25 plane-fan-out)
+    //   plane 2 (thermo)     -> power_spectrum[12..18]   wired (M1.2.25 plane-fan-out)
+    //   plane 3 (chemistry)  -> power_spectrum[18..24]   wired (M1.2.25 plane-fan-out)
+    // All four planes are populated by so3_project.cu:518-530 into the
+    // ContactShellTile; the ghost kernel now copies all four 6-band stripes
+    // into the GhostTileFrame.power_spectrum[24] array. NaN/Inf inputs are
+    // substituted with 0.0 and CLASS_TAINTED is set if any input is non-finite.
     const ContactShellTile& tile_i = tiles[i];
+    bool plane_tainted = false;
     #pragma unroll
     for (int l = 0; l < 6; ++l) {
-        hdr->power_spectrum[l] = tile_i.geo_power_spectrum[l];
-    }
-    #pragma unroll
-    for (int l = 6; l < 24; ++l) {
-        hdr->power_spectrum[l] = 0.0f;
+        const float g = tile_i.geo_power_spectrum[l];
+        const float c = tile_i.caus_power_spectrum[l];
+        const float t = tile_i.therm_power_spectrum[l];
+        const float h = tile_i.chem_power_spectrum[l];
+        hdr->power_spectrum[ 0 + l] = isfinite(g) ? g : 0.0f;
+        hdr->power_spectrum[ 6 + l] = isfinite(c) ? c : 0.0f;
+        hdr->power_spectrum[12 + l] = isfinite(t) ? t : 0.0f;
+        hdr->power_spectrum[18 + l] = isfinite(h) ? h : 0.0f;
+        plane_tainted |= !(isfinite(g) && isfinite(c) && isfinite(t) && isfinite(h));
     }
     // Wave 1 / P4 — thermo_flux populated from the relaxed manifold:
     //   thermo_flux[0] = therm_power_spectrum[0]   (water-density l=0)
@@ -197,7 +202,7 @@ __global__ void prism_ghost_pipe_stage_kernel(
     // η = ΔV_wd / ΔV_vib integrators can exclude tainted records.
     const float therm_l0 = tile_i.therm_power_spectrum[0];
     const float caus_l0  = tile_i.caus_power_spectrum[0];
-    const bool  tainted  = !isfinite(therm_l0) || !isfinite(caus_l0);
+    const bool  tainted  = plane_tainted || !isfinite(therm_l0) || !isfinite(caus_l0);
     hdr->thermo_flux[0] = isfinite(therm_l0) ? therm_l0 : 0.0f;
     hdr->thermo_flux[1] = isfinite(caus_l0)  ? caus_l0  : 0.0f;
     hdr->telemetry_flags = tainted ? GHOST_TELEMETRY_CLASS_TAINTED : uint16_t{0};
@@ -448,15 +453,29 @@ void prism_ghost_pipe_stage_kernel_v2(
     hdr->adjudication_code = adj_code;
     hdr->kl_divergence     = kl;
 
+    // M1.2.25 plane-fan-out: copy all four SO(3) planes (geo/caus/therm/chem)
+    // from the ContactShellTile into the GhostTileFrame.power_spectrum[24]
+    // array. so3_project.cu:518-530 already populates all four planes via
+    // WMMA Tensor Core reduction; this kernel was previously dropping planes
+    // 1-3 to zero. NaN/Inf substituted with 0.0 + CLASS_TAINTED on any miss.
     const ContactShellTile& tile_i = tiles[i];
+    bool plane_tainted = false;
     #pragma unroll
-    for (int l = 0; l < 6; ++l)  hdr->power_spectrum[l]      = tile_i.geo_power_spectrum[l];
-    #pragma unroll
-    for (int l = 6; l < 24; ++l) hdr->power_spectrum[l]      = 0.0f;
+    for (int l = 0; l < 6; ++l) {
+        const float g = tile_i.geo_power_spectrum[l];
+        const float c = tile_i.caus_power_spectrum[l];
+        const float t = tile_i.therm_power_spectrum[l];
+        const float h = tile_i.chem_power_spectrum[l];
+        hdr->power_spectrum[ 0 + l] = isfinite(g) ? g : 0.0f;
+        hdr->power_spectrum[ 6 + l] = isfinite(c) ? c : 0.0f;
+        hdr->power_spectrum[12 + l] = isfinite(t) ? t : 0.0f;
+        hdr->power_spectrum[18 + l] = isfinite(h) ? h : 0.0f;
+        plane_tainted |= !(isfinite(g) && isfinite(c) && isfinite(t) && isfinite(h));
+    }
 
     const float therm_l0 = tile_i.therm_power_spectrum[0];
     const float caus_l0  = tile_i.caus_power_spectrum[0];
-    const bool  tainted  = !isfinite(therm_l0) || !isfinite(caus_l0);
+    const bool  tainted  = plane_tainted || !isfinite(therm_l0) || !isfinite(caus_l0);
     hdr->thermo_flux[0]    = isfinite(therm_l0) ? therm_l0 : 0.0f;
     hdr->thermo_flux[1]    = isfinite(caus_l0)  ? caus_l0  : 0.0f;
     hdr->telemetry_flags   = tainted ? GHOST_TELEMETRY_CLASS_TAINTED : uint16_t{0};
@@ -484,11 +503,58 @@ void prism_ghost_pipe_stage_kernel_v2(
     *reinterpret_cast<uint32_t*>(record_base + GHOST_V2_OFFSET_GEAR_ID) = gear_id;
     *reinterpret_cast<float*>(record_base + GHOST_V2_OFFSET_DT_FS) = dt_fs;
     *reinterpret_cast<uint64_t*>(record_base + GHOST_V2_OFFSET_STEP_IDX) = step_idx;
-    // AABB / centroid: kernel does not compute spatial extent here. Honest
-    // sentinel: leave zeros (the deterministic _reserved_payload zero-init
-    // above) and let the host-side ghost_site_map.json sidecar carry the
-    // spatial mapping. Per directive §6 this is the auditability path.
-    // _v2_reserved [u32; 15] @ 196: zero from the loop above.
+
+    // ─── GHOST_NATIVE_SPATIAL_MAPPING_WIRE — native AABB + centroid ───
+    //
+    // ContactShellTile.aabb_min[4] / aabb_max[4] (xyz + 1 pad) are populated
+    // by so3_project.cu:454+ from RichSpike positions in the protein topology
+    // coordinate frame (Å). tile_i is already in scope from the plane-fan-out
+    // block above (line 456). The same `i` indexes both this Ghost record
+    // (site_id = i) and the source tile, so the spatial mapping is exact at
+    // write time — no host-side derivation needed.
+    //
+    // The selected centroid view is the AABB midpoint, an honest scalar
+    // proxy of the cluster's spatial extent. It is NOT the full
+    // phase-manifold centroid family (spike_density / kcc_driver /
+    // phasor_coherent / thermo_weighted / ghost_zstr_event_weighted views);
+    // those richer views are computed offline by the SiteManifest
+    // materializer when the per-residue evidence sources are joined. The
+    // record's compatibility centroid_xyz field carries the alias label
+    // "aabb_midpoint_native_contact_shell_tile" via the
+    // field_completeness_flags Bit 4 = SPATIAL_NATIVE_AABB_MIDPOINT.
+    //
+    // Order matters: this write lands AFTER the _reserved_payload[k]=0
+    // blanket clear above so the zero loop does not erase the spatial
+    // payload. If either bound is non-finite (NaN/Inf from upstream
+    // SO(3) projection), substitute 0.0 and leave Bit 4 unset — the
+    // host audit treats Bit 4 == 0 as "spatial fields not native-populated."
+    {
+        const float* aabb_min_src = tile_i.aabb_min;
+        const float* aabb_max_src = tile_i.aabb_max;
+        float* aabb_min_dst = reinterpret_cast<float*>(record_base + GHOST_V2_OFFSET_AABB_MIN);
+        float* aabb_max_dst = reinterpret_cast<float*>(record_base + GHOST_V2_OFFSET_AABB_MAX);
+        float* centroid_dst = reinterpret_cast<float*>(record_base + GHOST_V2_OFFSET_CENTROID);
+        bool spatial_native_finite = true;
+        #pragma unroll
+        for (int k = 0; k < 3; ++k) {
+            const float lo_raw = aabb_min_src[k];
+            const float hi_raw = aabb_max_src[k];
+            const bool  ok = isfinite(lo_raw) && isfinite(hi_raw);
+            const float lo = ok ? lo_raw : 0.0f;
+            const float hi = ok ? hi_raw : 0.0f;
+            aabb_min_dst[k] = lo;
+            aabb_max_dst[k] = hi;
+            centroid_dst[k] = 0.5f * (lo + hi); // AABB midpoint — labeled alias
+            spatial_native_finite = spatial_native_finite && ok;
+        }
+        // Field completeness Bit 4 = SPATIAL_NATIVE_AABB_MIDPOINT populated.
+        // OR-merge with prior bits set above so we don't clobber Bits 0..3.
+        if (spatial_native_finite) {
+            uint16_t* fcf = reinterpret_cast<uint16_t*>(record_base + GHOST_V2_OFFSET_FIELD_COMPLETE_FLAGS);
+            *fcf = static_cast<uint16_t>(*fcf | 0x0010u);
+        }
+    }
+    // _v2_reserved [u32; 15] @ 196: zero from the loop above (still zero).
 }
 
 extern "C"

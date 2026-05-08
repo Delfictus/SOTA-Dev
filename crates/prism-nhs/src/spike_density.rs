@@ -14,8 +14,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 
 use cudarc::driver::{
-    CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 
@@ -99,8 +98,12 @@ impl SpikeDensityGrid {
         for i in 0..n_atoms {
             for d in 0..3 {
                 let v = protein_positions[i * 3 + d];
-                if v < bbox_min[d] { bbox_min[d] = v; }
-                if v > bbox_max[d] { bbox_max[d] = v; }
+                if v < bbox_min[d] {
+                    bbox_min[d] = v;
+                }
+                if v > bbox_max[d] {
+                    bbox_max[d] = v;
+                }
             }
         }
 
@@ -120,7 +123,13 @@ impl SpikeDensityGrid {
 
         log::info!(
             "  SpikeDensityGrid: {}x{}x{} = {} voxels (spacing={:.1}Å, σ={:.1}Å, {} spikes)",
-            dims[0], dims[1], dims[2], grid_size, spacing, sigma, spikes.len()
+            dims[0],
+            dims[1],
+            dims[2],
+            grid_size,
+            spacing,
+            sigma,
+            spikes.len()
         );
 
         // ── Allocate density grid (zeroed) ─────────────────────────────
@@ -235,7 +244,13 @@ impl SpikeDensityGrid {
             self.h_density = Some(density);
         }
         let density = self.h_density.as_ref().unwrap();
-        Ok(trilinear_sample(density, self.dims, self.origin, self.spacing, point))
+        Ok(trilinear_sample(
+            density,
+            self.dims,
+            self.origin,
+            self.spacing,
+            point,
+        ))
     }
 
     /// Total number of voxels in the grid.
@@ -418,7 +433,11 @@ mod tests {
         let bbox_min = [5.0f32, 5.0, 5.0];
         let bbox_max = [25.0f32, 20.0, 15.0];
 
-        let origin = [bbox_min[0] - margin, bbox_min[1] - margin, bbox_min[2] - margin];
+        let origin = [
+            bbox_min[0] - margin,
+            bbox_min[1] - margin,
+            bbox_min[2] - margin,
+        ];
         let dims: [u32; 3] = [
             ((bbox_max[0] + margin - origin[0]) / spacing).ceil() as u32 + 1,
             ((bbox_max[1] + margin - origin[1]) / spacing).ceil() as u32 + 1,
@@ -523,7 +542,9 @@ mod tests {
         assert!(d < 1.0, "Expected ~0 at empty point, got {:.1}", d);
 
         // ── Verify peak positions are near cluster centers ─────────────
-        let peak_positions = grid.get_peak_positions().expect("get_peak_positions failed");
+        let peak_positions = grid
+            .get_peak_positions()
+            .expect("get_peak_positions failed");
         for (label, center) in [("A", cluster_a), ("B", cluster_b), ("C", cluster_c)] {
             let nearest = peak_positions
                 .iter()

@@ -3,8 +3,8 @@
 //! Compile with: cargo run --release --features gpu --example test_ultimate_kernel
 
 use anyhow::Result;
-use prism_nhs::{UltimateEngine, UltimateEngineConfig, PrismPrepTopology};
 use cudarc::driver::CudaContext;
+use prism_nhs::{PrismPrepTopology, UltimateEngine, UltimateEngineConfig};
 use std::time::Instant;
 
 fn create_test_topology(n_atoms: usize) -> PrismPrepTopology {
@@ -39,10 +39,13 @@ fn create_test_topology(n_atoms: usize) -> PrismPrepTopology {
         bonds: vec![],
         angles: vec![],
         dihedrals: vec![],
-        lj_params: vec![prism_nhs::input::LjParam {
-            sigma: 3.4, // ~C atom
-            epsilon: 0.086,
-        }; n_atoms],
+        lj_params: vec![
+            prism_nhs::input::LjParam {
+                sigma: 3.4, // ~C atom
+                epsilon: 0.086,
+            };
+            n_atoms
+        ],
         exclusions: vec![vec![]; n_atoms],
         h_clusters: vec![],
         water_oxygens: vec![],
@@ -71,7 +74,10 @@ fn main() -> Result<()> {
 
         for i in 1..=5 {
             let result = engine.step()?;
-            println!("   Step {}: PE={:.2e}, KE={:.2e}", i, result.potential_energy, result.kinetic_energy);
+            println!(
+                "   Step {}: PE={:.2e}, KE={:.2e}",
+                i, result.potential_energy, result.kinetic_energy
+            );
         }
     }
     println!("   ✓ Small system test PASSED\n");
@@ -92,7 +98,10 @@ fn main() -> Result<()> {
         println!("   Steps: {}", n_steps);
         println!("   Time: {:.2}s", elapsed.as_secs_f64());
         println!("   Throughput: {:.0} steps/sec", steps_per_sec);
-        println!("   Final PE: {:.2e}, KE: {:.2e}", result.potential_energy, result.kinetic_energy);
+        println!(
+            "   Final PE: {:.2e}, KE: {:.2e}",
+            result.potential_energy, result.kinetic_energy
+        );
     }
     println!("   ✓ Medium system benchmark PASSED\n");
 
@@ -112,7 +121,10 @@ fn main() -> Result<()> {
         println!("   Steps: {}", n_steps);
         println!("   Time: {:.2}s", elapsed.as_secs_f64());
         println!("   Throughput: {:.0} steps/sec", steps_per_sec);
-        println!("   Final PE: {:.2e}, KE: {:.2e}", result.potential_energy, result.kinetic_energy);
+        println!(
+            "   Final PE: {:.2e}, KE: {:.2e}",
+            result.potential_energy, result.kinetic_energy
+        );
     }
     println!("   ✓ Baseline test PASSED\n");
 
@@ -135,7 +147,10 @@ fn main() -> Result<()> {
         println!("   Time: {:.2}s", elapsed.as_secs_f64());
         println!("   Throughput: {:.0} steps/sec", steps_per_sec);
         println!("   Atom-steps/sec: {:.2e}", atoms_steps_per_sec);
-        println!("   Final PE: {:.2e}, KE: {:.2e}", result.potential_energy, result.kinetic_energy);
+        println!(
+            "   Final PE: {:.2e}, KE: {:.2e}",
+            result.potential_energy, result.kinetic_energy
+        );
     }
     println!("   ✓ 10K atoms test PASSED\n");
 
@@ -157,7 +172,10 @@ fn main() -> Result<()> {
         println!("   Time: {:.2}s", elapsed.as_secs_f64());
         println!("   Throughput: {:.0} steps/sec", steps_per_sec);
         println!("   Atom-steps/sec: {:.2e}", atoms_steps_per_sec);
-        println!("   Final PE: {:.2e}, KE: {:.2e}", result.potential_energy, result.kinetic_energy);
+        println!(
+            "   Final PE: {:.2e}, KE: {:.2e}",
+            result.potential_energy, result.kinetic_energy
+        );
     }
     println!("   ✓ 20K atoms test PASSED\n");
 
@@ -179,7 +197,10 @@ fn main() -> Result<()> {
         println!("   Time: {:.2}s", elapsed.as_secs_f64());
         println!("   Throughput: {:.0} steps/sec", steps_per_sec);
         println!("   Atom-steps/sec: {:.2e}", atoms_steps_per_sec);
-        println!("   Final PE: {:.2e}, KE: {:.2e}", result.potential_energy, result.kinetic_energy);
+        println!(
+            "   Final PE: {:.2e}, KE: {:.2e}",
+            result.potential_energy, result.kinetic_energy
+        );
         (steps_per_sec, elapsed.as_secs_f64() / n_steps as f64)
     };
     println!("   ✓ 50K atoms test PASSED\n");
@@ -204,7 +225,10 @@ fn main() -> Result<()> {
         println!("   Throughput: {:.0} steps/sec", steps_per_sec);
         println!("   Atom-steps/sec: {:.2e}", atoms_steps_per_sec);
         println!("   Pair evaluations/sec: {:.2e}", pair_evals_per_sec);
-        println!("   Final PE: {:.2e}, KE: {:.2e}", result.potential_energy, result.kinetic_energy);
+        println!(
+            "   Final PE: {:.2e}, KE: {:.2e}",
+            result.potential_energy, result.kinetic_energy
+        );
         (steps_per_sec, elapsed.as_secs_f64() / n_steps as f64)
     };
     println!("   ✓ 100K atoms test PASSED\n");
@@ -216,18 +240,29 @@ fn main() -> Result<()> {
     println!("  Current kernel: O(N²) non-bonded (no neighbor lists)");
     println!();
     println!("  50K → 100K scaling:");
-    println!("    Expected O(N²): {:.1}x slowdown", (100_000.0/50_000.0_f64).powi(2));
-    println!("    Actual: {:.1}x slowdown", t50k_steps_sec / t100k_steps_sec);
+    println!(
+        "    Expected O(N²): {:.1}x slowdown",
+        (100_000.0 / 50_000.0_f64).powi(2)
+    );
+    println!(
+        "    Actual: {:.1}x slowdown",
+        t50k_steps_sec / t100k_steps_sec
+    );
     println!();
     println!("  Time per step:");
     println!("    50K atoms:  {:.1}ms/step", t50k_time * 1000.0);
     println!("    100K atoms: {:.1}ms/step", t100k_time * 1000.0);
     println!();
     println!("  For production NHS (1M steps on 50K atoms):");
-    println!("    Current: {:.1} hours", 1_000_000.0 / t50k_steps_sec / 3600.0);
-    println!("    With neighbor lists (est 10-20x): {:.1}-{:.1} hours",
-             1_000_000.0 / (t50k_steps_sec * 20.0) / 3600.0,
-             1_000_000.0 / (t50k_steps_sec * 10.0) / 3600.0);
+    println!(
+        "    Current: {:.1} hours",
+        1_000_000.0 / t50k_steps_sec / 3600.0
+    );
+    println!(
+        "    With neighbor lists (est 10-20x): {:.1}-{:.1} hours",
+        1_000_000.0 / (t50k_steps_sec * 20.0) / 3600.0,
+        1_000_000.0 / (t50k_steps_sec * 10.0) / 3600.0
+    );
     println!();
 
     println!("═══════════════════════════════════════════════════════════════");

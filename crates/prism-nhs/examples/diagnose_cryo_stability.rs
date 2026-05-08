@@ -6,10 +6,10 @@ use anyhow::Result;
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 fn compute_stats(positions: &[f32]) -> (f32, f32, bool) {
     let mut max_abs = 0.0f32;
@@ -26,19 +26,25 @@ fn compute_stats(positions: &[f32]) -> (f32, f32, bool) {
         sum_abs += abs_p;
     }
 
-    let mean_abs = if positions.len() > 0 { sum_abs / positions.len() as f32 } else { 0.0 };
+    let mean_abs = if positions.len() > 0 {
+        sum_abs / positions.len() as f32
+    } else {
+        0.0
+    };
     (max_abs, mean_abs, has_nan)
 }
 
 fn compute_rmsd(pos1: &[f32], pos2: &[f32]) -> f32 {
-    if pos1.len() != pos2.len() || pos1.is_empty() { return 0.0; }
+    if pos1.len() != pos2.len() || pos1.is_empty() {
+        return 0.0;
+    }
     let n = pos1.len() / 3;
     let mut sum = 0.0;
     for i in 0..n {
-        let dx = pos1[i*3] - pos2[i*3];
-        let dy = pos1[i*3+1] - pos2[i*3+1];
-        let dz = pos1[i*3+2] - pos2[i*3+2];
-        sum += dx*dx + dy*dy + dz*dz;
+        let dx = pos1[i * 3] - pos2[i * 3];
+        let dy = pos1[i * 3 + 1] - pos2[i * 3 + 1];
+        let dz = pos1[i * 3 + 2] - pos2[i * 3 + 2];
+        sum += dx * dx + dy * dy + dz * dz;
     }
     (sum / n as f32).sqrt()
 }
@@ -48,7 +54,7 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     println!("======================================================================");
@@ -75,8 +81,10 @@ fn main() -> Result<()> {
     })?;
 
     let reference_pos = engine.get_positions()?;
-    println!("{:>6} {:>10} {:>10} {:>10} {:>8}",
-             "Step", "MaxPos", "MeanPos", "RMSD", "Status");
+    println!(
+        "{:>6} {:>10} {:>10} {:>10} {:>8}",
+        "Step", "MaxPos", "MeanPos", "RMSD", "Status"
+    );
     println!("{}", "-".repeat(50));
 
     let mut stable = true;
@@ -86,13 +94,23 @@ fn main() -> Result<()> {
         let (max_pos, mean_pos, has_nan) = compute_stats(&current_pos);
         let rmsd = compute_rmsd(&reference_pos, &current_pos);
 
-        let status = if has_nan || max_pos > 500.0 { "EXPLODED" }
-            else if rmsd > 20.0 { "DRIFTED" }
-            else { "OK" };
+        let status = if has_nan || max_pos > 500.0 {
+            "EXPLODED"
+        } else if rmsd > 20.0 {
+            "DRIFTED"
+        } else {
+            "OK"
+        };
 
         if batch % 10 == 9 {
-            println!("{:>6} {:>10.2} {:>10.2} {:>10.2} {:>8}",
-                     (batch + 1) * 100, max_pos, mean_pos, rmsd, status);
+            println!(
+                "{:>6} {:>10.2} {:>10.2} {:>10.2} {:>8}",
+                (batch + 1) * 100,
+                max_pos,
+                mean_pos,
+                rmsd,
+                status
+            );
         }
 
         if has_nan || max_pos > 500.0 || rmsd > 50.0 {
@@ -100,7 +118,10 @@ fn main() -> Result<()> {
             break;
         }
     }
-    println!("Result: {}", if stable { "STABLE at 100K" } else { "UNSTABLE" });
+    println!(
+        "Result: {}",
+        if stable { "STABLE at 100K" } else { "UNSTABLE" }
+    );
 
     // Reset engine for next test
     let context = CudaContext::new(0)?;
@@ -118,8 +139,10 @@ fn main() -> Result<()> {
     })?;
 
     let reference_pos = engine.get_positions()?;
-    println!("{:>6} {:>6} {:>10} {:>10} {:>8}",
-             "Step", "Temp", "MaxPos", "RMSD", "Status");
+    println!(
+        "{:>6} {:>6} {:>10} {:>10} {:>8}",
+        "Step", "Temp", "MaxPos", "RMSD", "Status"
+    );
     println!("{}", "-".repeat(50));
 
     let mut stable = true;
@@ -130,13 +153,23 @@ fn main() -> Result<()> {
         let rmsd = compute_rmsd(&reference_pos, &current_pos);
         let temp = 100.0 + (batch as f32 + 1.0) * 2.0; // Approximate temp
 
-        let status = if has_nan || max_pos > 500.0 { "EXPLODED" }
-            else if rmsd > 20.0 { "DRIFTED" }
-            else { "OK" };
+        let status = if has_nan || max_pos > 500.0 {
+            "EXPLODED"
+        } else if rmsd > 20.0 {
+            "DRIFTED"
+        } else {
+            "OK"
+        };
 
         if batch % 10 == 9 {
-            println!("{:>6} {:>6.0} {:>10.2} {:>10.2} {:>8}",
-                     (batch + 1) * 100, temp, max_pos, rmsd, status);
+            println!(
+                "{:>6} {:>6.0} {:>10.2} {:>10.2} {:>8}",
+                (batch + 1) * 100,
+                temp,
+                max_pos,
+                rmsd,
+                status
+            );
         }
 
         if has_nan || max_pos > 500.0 || rmsd > 50.0 {
@@ -144,7 +177,14 @@ fn main() -> Result<()> {
             break;
         }
     }
-    println!("Result: {}", if stable { "STABLE during ramp" } else { "UNSTABLE" });
+    println!(
+        "Result: {}",
+        if stable {
+            "STABLE during ramp"
+        } else {
+            "UNSTABLE"
+        }
+    );
 
     // === TEST 3: Very cold (50K constant) ===
     let context = CudaContext::new(0)?;
@@ -161,8 +201,10 @@ fn main() -> Result<()> {
     })?;
 
     let reference_pos = engine.get_positions()?;
-    println!("{:>6} {:>10} {:>10} {:>8}",
-             "Step", "MaxPos", "RMSD", "Status");
+    println!(
+        "{:>6} {:>10} {:>10} {:>8}",
+        "Step", "MaxPos", "RMSD", "Status"
+    );
     println!("{}", "-".repeat(38));
 
     let mut stable = true;
@@ -172,13 +214,22 @@ fn main() -> Result<()> {
         let (max_pos, _, has_nan) = compute_stats(&current_pos);
         let rmsd = compute_rmsd(&reference_pos, &current_pos);
 
-        let status = if has_nan || max_pos > 500.0 { "EXPLODED" }
-            else if rmsd > 10.0 { "DRIFTED" }
-            else { "OK" };
+        let status = if has_nan || max_pos > 500.0 {
+            "EXPLODED"
+        } else if rmsd > 10.0 {
+            "DRIFTED"
+        } else {
+            "OK"
+        };
 
         if batch % 10 == 9 {
-            println!("{:>6} {:>10.2} {:>10.2} {:>8}",
-                     (batch + 1) * 100, max_pos, rmsd, status);
+            println!(
+                "{:>6} {:>10.2} {:>10.2} {:>8}",
+                (batch + 1) * 100,
+                max_pos,
+                rmsd,
+                status
+            );
         }
 
         if has_nan || max_pos > 500.0 {
@@ -186,7 +237,10 @@ fn main() -> Result<()> {
             break;
         }
     }
-    println!("Result: {}", if stable { "STABLE at 50K" } else { "UNSTABLE" });
+    println!(
+        "Result: {}",
+        if stable { "STABLE at 50K" } else { "UNSTABLE" }
+    );
 
     println!("\n======================================================================");
     println!("                           SUMMARY");

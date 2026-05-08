@@ -59,8 +59,7 @@ use crate::spatial_view::SpatialView;
 pub const TRANSFORM_CLUSTERING_TO_CLUSTERED_SITES: TransformId =
     TransformId("clustering_to_clustered_sites");
 
-pub const LAW_L1_GVM_POPULATED: LawId =
-    LawId::new("l1_gvm_populated", LawFamily::Algebraic);
+pub const LAW_L1_GVM_POPULATED: LawId = LawId::new("l1_gvm_populated", LawFamily::Algebraic);
 pub const LAW_L2_EMISSION_COMPAT_MATCHES_GVM: LawId =
     LawId::new("l2_emission_compat_matches_gvm", LawFamily::Algebraic);
 
@@ -262,16 +261,29 @@ mod tests {
         const LAW: LawId = LawId::new("mock_law", LawFamily::Algebraic);
         const LAWS: &'static [LawId] = &[Self::LAW];
         fn with_violations(violations: Vec<TransformViolation>) -> Self {
-            MockTransform { violations_to_emit: violations }
+            MockTransform {
+                violations_to_emit: violations,
+            }
         }
     }
     impl AuditedTransform for MockTransform {
-        type Input<'a> = () where Self: 'a;
+        type Input<'a>
+            = ()
+        where
+            Self: 'a;
         type Output = u8;
-        fn identity(&self) -> TransformId { Self::ID }
-        fn determinism(&self) -> DeterminismClass { DeterminismClass::BitExact }
-        fn tolerance(&self) -> TolerancePolicy { TolerancePolicy::BitExact }
-        fn laws(&self) -> &'static [LawId] { Self::LAWS }
+        fn identity(&self) -> TransformId {
+            Self::ID
+        }
+        fn determinism(&self) -> DeterminismClass {
+            DeterminismClass::BitExact
+        }
+        fn tolerance(&self) -> TolerancePolicy {
+            TolerancePolicy::BitExact
+        }
+        fn laws(&self) -> &'static [LawId] {
+            Self::LAWS
+        }
         fn verify(&self, _output: &Self::Output) -> Vec<TransformViolation> {
             self.violations_to_emit.clone()
         }
@@ -299,7 +311,10 @@ mod tests {
         assert_eq!(t.determinism(), DeterminismClass::AtomicsAffected);
         assert_eq!(t.tolerance(), TolerancePolicy::BitExact);
         assert_eq!(t.laws(), DECLARED_LAWS);
-        assert_eq!(t.laws(), &[LAW_L1_GVM_POPULATED, LAW_L2_EMISSION_COMPAT_MATCHES_GVM]);
+        assert_eq!(
+            t.laws(),
+            &[LAW_L1_GVM_POPULATED, LAW_L2_EMISSION_COMPAT_MATCHES_GVM]
+        );
     }
 
     #[test]
@@ -310,12 +325,17 @@ mod tests {
             make_site(2, [-7.5, 0.25, 12.0]),
         ];
         for s in &sites {
-            let gvm = s.view(SpatialView::GeometricVoxelMass)
+            let gvm = s
+                .view(SpatialView::GeometricVoxelMass)
                 .expect("fixture invariant: GVM populated");
             assert_eq!(s.emission_compat_centroid(), gvm);
         }
         let violations = ClusteringToClusteredSites::new().verify(&sites);
-        assert!(violations.is_empty(), "happy-path produced violations: {:?}", violations);
+        assert!(
+            violations.is_empty(),
+            "happy-path produced violations: {:?}",
+            violations
+        );
     }
 
     #[test]
@@ -372,7 +392,11 @@ mod tests {
         let v = mock_violation(AuditRouting::Quarantine, "quarantine_only");
         let mock = MockTransform::with_violations(vec![v.clone()]);
         match mock.apply(()) {
-            AuditOutcome::Quarantined { output, record, violations } => {
+            AuditOutcome::Quarantined {
+                output,
+                record,
+                violations,
+            } => {
                 assert_eq!(output, 42, "quarantine must retain the output");
                 assert_eq!(record.transform, MockTransform::ID);
                 assert_eq!(violations, vec![v]);
@@ -392,7 +416,8 @@ mod tests {
         match mock.apply(()) {
             AuditOutcome::Aborted { violations, .. } => {
                 assert_eq!(violations.len(), 3);
-                let abort_count = violations.iter()
+                let abort_count = violations
+                    .iter()
                     .filter(|v| v.routing == AuditRouting::Abort)
                     .count();
                 assert_eq!(abort_count, 1);
@@ -410,10 +435,15 @@ mod tests {
             Ok(_) => panic!("expected Err from Aborted outcome"),
         };
         let rendered = format!("{err}");
-        assert!(rendered.contains(MockTransform::ID.0), "missing transform id: {rendered}");
+        assert!(
+            rendered.contains(MockTransform::ID.0),
+            "missing transform id: {rendered}"
+        );
         assert!(rendered.contains("abort"), "missing routing: {rendered}");
-        assert!(rendered.contains("display_roundtrip"), "missing evidence tag: {rendered}");
+        assert!(
+            rendered.contains("display_roundtrip"),
+            "missing evidence tag: {rendered}"
+        );
         let _: &dyn std::error::Error = &err;
     }
 }
-

@@ -8,23 +8,25 @@ use std::path::Path;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 const STEPS_PER_RUN: i32 = 2000;
 const N_RUNS: usize = 5;
 
 fn compute_rmsd(pos1: &[f32], pos2: &[f32]) -> f32 {
-    if pos1.len() != pos2.len() || pos1.is_empty() { return 0.0; }
+    if pos1.len() != pos2.len() || pos1.is_empty() {
+        return 0.0;
+    }
     let n = pos1.len() / 3;
     let mut sum = 0.0;
     for i in 0..n {
-        let dx = pos1[i*3] - pos2[i*3];
-        let dy = pos1[i*3+1] - pos2[i*3+1];
-        let dz = pos1[i*3+2] - pos2[i*3+2];
-        sum += dx*dx + dy*dy + dz*dz;
+        let dx = pos1[i * 3] - pos2[i * 3];
+        let dy = pos1[i * 3 + 1] - pos2[i * 3 + 1];
+        let dz = pos1[i * 3 + 2] - pos2[i * 3 + 2];
+        sum += dx * dx + dy * dy + dz * dz;
     }
     (sum / n as f32).sqrt()
 }
@@ -38,7 +40,9 @@ fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f3
     let recall = tp / truth.len() as f32;
     let f1 = if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -93,15 +97,16 @@ fn main() -> Result<()> {
 
     // Test Case: 6LU7 (SARS-CoV-2 Mpro)
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let truth: HashSet<i32> = [
-        25, 26, 27, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-        140, 141, 142, 143, 144, 145,
-        163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
-        187, 188, 189, 190, 191, 192,
-    ].iter().cloned().collect();
+        25, 26, 27, 41, 42, 43, 44, 45, 46, 47, 48, 49, 140, 141, 142, 143, 144, 145, 163, 164,
+        165, 166, 167, 168, 169, 170, 171, 172, 187, 188, 189, 190, 191, 192,
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     println!("Structure: 6LU7 (SARS-CoV-2 Main Protease)");
     println!("Truth residues: {} residues in active site\n", truth.len());
@@ -117,7 +122,11 @@ fn main() -> Result<()> {
     println!("{}", "-".repeat(24));
 
     for (i, (res_id, count)) in ranked.iter().take(20).enumerate() {
-        let in_truth = if truth.contains(res_id) { " ← TRUTH" } else { "" };
+        let in_truth = if truth.contains(res_id) {
+            " ← TRUTH"
+        } else {
+            ""
+        };
         println!("{:>4} {:>8} {:>8}{}", i + 1, res_id, count, in_truth);
     }
 
@@ -125,7 +134,10 @@ fn main() -> Result<()> {
     println!("\n{}", "═".repeat(60));
     println!("PRECISION-RECALL AT DIFFERENT CUTOFFS");
     println!("{}", "═".repeat(60));
-    println!("{:>8} {:>10} {:>10} {:>10} {:>10}", "Top-N", "Precision", "Recall", "F1", "Status");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>10}",
+        "Top-N", "Precision", "Recall", "F1", "Status"
+    );
     println!("{}", "-".repeat(60));
 
     let cutoffs = [20, 30, 40, 50, 60, 80, 100];
@@ -133,16 +145,15 @@ fn main() -> Result<()> {
     let mut best_cutoff = 0;
 
     for &n in &cutoffs {
-        let predicted: HashSet<i32> = ranked.iter()
-            .take(n)
-            .map(|(res_id, _)| *res_id)
-            .collect();
+        let predicted: HashSet<i32> = ranked.iter().take(n).map(|(res_id, _)| *res_id).collect();
 
         let (precision, recall, f1) = calculate_metrics(&predicted, &truth);
         let status = if f1 > 0.3 { "HIT" } else { "miss" };
 
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>10}",
-                 n, precision, recall, f1, status);
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>10}",
+            n, precision, recall, f1, status
+        );
 
         if f1 > best_f1 {
             best_f1 = f1;
@@ -168,7 +179,10 @@ fn main() -> Result<()> {
     if best_f1 > 0.3 {
         println!("║  RESULT: PASSED - F1 > 0.3 at optimal cutoff                        ║");
     } else {
-        println!("║  RESULT: NEEDS IMPROVEMENT - Best F1 = {:.3}                        ║", best_f1);
+        println!(
+            "║  RESULT: NEEDS IMPROVEMENT - Best F1 = {:.3}                        ║",
+            best_f1
+        );
     }
     println!("╚══════════════════════════════════════════════════════════════════════╝");
 

@@ -11,24 +11,30 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
 const STEPS_PER_RUN: i32 = 2000;
 const N_RUNS: usize = 5;
 
 // Temperature thresholds for differential analysis
-const CRYO_TEMP_MAX: f32 = 150.0;  // Cold phase: 100-150K
-const WARM_TEMP_MIN: f32 = 250.0;  // Warm phase: 250-300K
+const CRYO_TEMP_MAX: f32 = 150.0; // Cold phase: 100-150K
+const WARM_TEMP_MIN: f32 = 250.0; // Warm phase: 250-300K
 
 fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f32, f32) {
-    if predicted.is_empty() || truth.is_empty() { return (0.0, 0.0, 0.0); }
+    if predicted.is_empty() || truth.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
     let tp = predicted.intersection(truth).count() as f32;
     let precision = tp / predicted.len() as f32;
     let recall = tp / truth.len() as f32;
-    let f1 = if precision + recall > 0.0 { 2.0 * precision * recall / (precision + recall) } else { 0.0 };
+    let f1 = if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -36,9 +42,9 @@ fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f3
 #[derive(Default, Clone)]
 struct ResidueScore {
     total_count: usize,
-    cryo_count: usize,      // Spikes during cold phase (100-150K)
-    warm_count: usize,      // Spikes during warm phase (250-300K)
-    uv_correlated_count: usize,  // Spikes during active UV burst
+    cryo_count: usize,          // Spikes during cold phase (100-150K)
+    warm_count: usize,          // Spikes during warm phase (250-300K)
+    uv_correlated_count: usize, // Spikes during active UV burst
     aromatic_proximity_sum: f32,
     total_intensity: f32,
 }
@@ -49,20 +55,22 @@ impl ResidueScore {
     /// 2. UV correlation
     /// 3. High intensity
     fn weighted_score(&self) -> f32 {
-        if self.total_count == 0 { return 0.0; }
+        if self.total_count == 0 {
+            return 0.0;
+        }
 
         // Differential: warm-only spikes indicate cryptic site opening
         let differential = if self.cryo_count == 0 && self.warm_count > 0 {
-            2.0  // Strong signal: only appears when warm
+            2.0 // Strong signal: only appears when warm
         } else if self.warm_count > self.cryo_count * 2 {
-            1.5  // Good signal: much stronger when warm
+            1.5 // Good signal: much stronger when warm
         } else {
             1.0
         };
 
         // UV correlation boost
         let uv_ratio = self.uv_correlated_count as f32 / self.total_count as f32;
-        let uv_boost = 1.0 + uv_ratio;  // 1.0 to 2.0x
+        let uv_boost = 1.0 + uv_ratio; // 1.0 to 2.0x
 
         // Aromatic proximity boost
         let aromatic_boost = 1.0 + (self.aromatic_proximity_sum / self.total_count as f32).min(1.0);
@@ -83,7 +91,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -94,26 +102,31 @@ fn main() -> Result<()> {
     let mut aromatic_residues: HashSet<i32> = HashSet::new();
     for (i, name) in topology.residue_names.iter().enumerate() {
         if matches!(name.as_str(), "TRP" | "TYR" | "PHE") {
-            aromatic_residues.insert(i as i32);  // 0-indexed
+            aromatic_residues.insert(i as i32); // 0-indexed
         }
     }
-    println!("Aromatic residues (UV targets): {} found", aromatic_residues.len());
+    println!(
+        "Aromatic residues (UV targets): {} found",
+        aromatic_residues.len()
+    );
 
     // Truth set (0-indexed to match topology)
     let truth: HashSet<i32> = [
         // S1' subsite
-        23, 24, 25, 26,
-        // Catalytic His41 region
-        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-        // Catalytic Cys145 region
-        139, 140, 141, 142, 143, 144, 145,
-        // S1 subsite
-        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
-        // S2 subsite
+        23, 24, 25, 26, // Catalytic His41 region
+        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // Catalytic Cys145 region
+        139, 140, 141, 142, 143, 144, 145, // S1 subsite
+        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, // S2 subsite
         186, 187, 188, 189, 190, 191, 192,
-    ].iter().cloned().collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
-    println!("Truth (active site): {} residues (0-indexed)\n", truth.len());
+    println!(
+        "Truth (active site): {} residues (0-indexed)\n",
+        truth.len()
+    );
 
     // Enhanced UV configuration
     println!("═══════════════════════════════════════════════════════════════════════");
@@ -145,11 +158,11 @@ fn main() -> Result<()> {
         // Configure enhanced UV probing
         let uv_config = UvProbeConfig {
             enabled: true,
-            burst_energy: 15.0,       // 3x default (was 5.0)
-            burst_interval: 500,      // 2x frequency (was 1000)
-            burst_duration: 20,       // 2x duration (was 10)
+            burst_energy: 15.0,  // 3x default (was 5.0)
+            burst_interval: 500, // 2x frequency (was 1000)
+            burst_duration: 20,  // 2x duration (was 10)
             frequency_hopping_enabled: true,
-            scan_wavelengths: vec![258.0, 274.0, 280.0],  // Phe, Tyr, Trp
+            scan_wavelengths: vec![258.0, 274.0, 280.0], // Phe, Tyr, Trp
             dwell_steps: 500,
             ..Default::default()
         };
@@ -185,14 +198,21 @@ fn main() -> Result<()> {
                         score.total_count += 1;
                         score.total_intensity += spike.intensity;
 
-                        if is_cryo { score.cryo_count += 1; }
-                        if is_warm { score.warm_count += 1; }
-                        if uv_active { score.uv_correlated_count += 1; }
+                        if is_cryo {
+                            score.cryo_count += 1;
+                        }
+                        if is_warm {
+                            score.warm_count += 1;
+                        }
+                        if uv_active {
+                            score.uv_correlated_count += 1;
+                        }
 
                         // Check aromatic proximity
                         for &ar in &aromatic_residues {
                             if (ar - res_id).abs() <= 5 {
-                                score.aromatic_proximity_sum += 1.0 / ((ar - res_id).abs() as f32 + 1.0);
+                                score.aromatic_proximity_sum +=
+                                    1.0 / ((ar - res_id).abs() as f32 + 1.0);
                             }
                         }
                     }
@@ -205,7 +225,8 @@ fn main() -> Result<()> {
     println!(" Done\n");
 
     // Rank by weighted score
-    let mut ranked: Vec<_> = residue_scores.iter()
+    let mut ranked: Vec<_> = residue_scores
+        .iter()
         .map(|(&res_id, score)| (res_id, score.weighted_score(), score.clone()))
         .collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
@@ -214,30 +235,47 @@ fn main() -> Result<()> {
     println!("═══════════════════════════════════════════════════════════════════════");
     println!("TOP 40 WEIGHTED SPIKE RESIDUES");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>4} {:>6} {:>8} {:>6} {:>6} {:>6} {:>10}",
-             "Rank", "ResID", "Score", "Cryo", "Warm", "UV%", "Truth?");
+    println!(
+        "{:>4} {:>6} {:>8} {:>6} {:>6} {:>6} {:>10}",
+        "Rank", "ResID", "Score", "Cryo", "Warm", "UV%", "Truth?"
+    );
     println!("{}", "-".repeat(60));
 
     let mut hits_in_top_40 = 0;
     for (i, (res_id, score, data)) in ranked.iter().take(40).enumerate() {
         let uv_pct = if data.total_count > 0 {
             (data.uv_correlated_count as f32 / data.total_count as f32) * 100.0
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         let in_truth = if truth.contains(res_id) {
             hits_in_top_40 += 1;
             "YES ←"
-        } else { "" };
+        } else {
+            ""
+        };
 
-        println!("{:>4} {:>6} {:>8.1} {:>6} {:>6} {:>5.1}% {:>10}",
-                 i + 1, res_id, score, data.cryo_count, data.warm_count, uv_pct, in_truth);
+        println!(
+            "{:>4} {:>6} {:>8.1} {:>6} {:>6} {:>5.1}% {:>10}",
+            i + 1,
+            res_id,
+            score,
+            data.cryo_count,
+            data.warm_count,
+            uv_pct,
+            in_truth
+        );
     }
 
     // Metrics at cutoffs
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("PRECISION-RECALL AT CUTOFFS (Weighted Scoring)");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>8} {:>10} {:>10} {:>10} {:>8}", "Top-N", "Precision", "Recall", "F1", "Status");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>8}",
+        "Top-N", "Precision", "Recall", "F1", "Status"
+    );
     println!("{}", "-".repeat(50));
 
     let cutoffs = [20, 30, 40, 50, 60, 80, 100];
@@ -245,7 +283,8 @@ fn main() -> Result<()> {
     let mut best_n = 0;
 
     for &n in &cutoffs {
-        let predicted: HashSet<i32> = ranked.iter()
+        let predicted: HashSet<i32> = ranked
+            .iter()
             .take(n)
             .map(|(res_id, _, _)| *res_id)
             .collect();
@@ -253,7 +292,10 @@ fn main() -> Result<()> {
         let (p, r, f1) = calculate_metrics(&predicted, &truth);
         let status = if f1 > 0.3 { "HIT ✓" } else { "miss" };
 
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>8}", n, p, r, f1, status);
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>8}",
+            n, p, r, f1, status
+        );
 
         if f1 > best_f1 {
             best_f1 = f1;
@@ -267,9 +309,15 @@ fn main() -> Result<()> {
     println!("═══════════════════════════════════════════════════════════════════════");
 
     // Find residues that appear mainly in warm phase (cryptic site opening)
-    let mut warm_differential: Vec<_> = residue_scores.iter()
+    let mut warm_differential: Vec<_> = residue_scores
+        .iter()
         .filter(|(_, s)| s.warm_count > s.cryo_count * 2 && s.total_count >= 5)
-        .map(|(&res_id, score)| (res_id, score.warm_count as f32 / (score.cryo_count as f32 + 1.0)))
+        .map(|(&res_id, score)| {
+            (
+                res_id,
+                score.warm_count as f32 / (score.cryo_count as f32 + 1.0),
+            )
+        })
         .collect();
     warm_differential.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
@@ -278,7 +326,11 @@ fn main() -> Result<()> {
     println!("{}", "-".repeat(30));
 
     for (res_id, ratio) in warm_differential.iter().take(20) {
-        let in_truth = if truth.contains(res_id) { "YES ←" } else { "" };
+        let in_truth = if truth.contains(res_id) {
+            "YES ←"
+        } else {
+            ""
+        };
         println!("{:>6} {:>12.1}x {:>10}", res_id, ratio, in_truth);
     }
 
@@ -287,7 +339,8 @@ fn main() -> Result<()> {
     println!("UV CORRELATION ANALYSIS");
     println!("═══════════════════════════════════════════════════════════════════════");
 
-    let mut high_uv_corr: Vec<_> = residue_scores.iter()
+    let mut high_uv_corr: Vec<_> = residue_scores
+        .iter()
         .filter(|(_, s)| s.total_count >= 5)
         .map(|(&res_id, score)| {
             let uv_ratio = score.uv_correlated_count as f32 / score.total_count as f32;
@@ -297,22 +350,40 @@ fn main() -> Result<()> {
     high_uv_corr.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
     println!("Residues with highest UV correlation (spikes during UV bursts):");
-    println!("{:>6} {:>12} {:>10} {:>10}", "ResID", "UV%", "UV Count", "Truth?");
+    println!(
+        "{:>6} {:>12} {:>10} {:>10}",
+        "ResID", "UV%", "UV Count", "Truth?"
+    );
     println!("{}", "-".repeat(42));
 
     for (res_id, uv_ratio, uv_count) in high_uv_corr.iter().take(20) {
-        let in_truth = if truth.contains(res_id) { "YES ←" } else { "" };
-        println!("{:>6} {:>11.1}% {:>10} {:>10}", res_id, uv_ratio * 100.0, uv_count, in_truth);
+        let in_truth = if truth.contains(res_id) {
+            "YES ←"
+        } else {
+            ""
+        };
+        println!(
+            "{:>6} {:>11.1}% {:>10} {:>10}",
+            res_id,
+            uv_ratio * 100.0,
+            uv_count,
+            in_truth
+        );
     }
 
     // Summary
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");
     println!("║                            SUMMARY                                    ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
-    println!("║  Truth residues in top 40: {}/{}                                      ║",
-             hits_in_top_40, truth.len());
-    println!("║  Best F1: {:.3} at Top-{}                                             ║",
-             best_f1, best_n);
+    println!(
+        "║  Truth residues in top 40: {}/{}                                      ║",
+        hits_in_top_40,
+        truth.len()
+    );
+    println!(
+        "║  Best F1: {:.3} at Top-{}                                             ║",
+        best_f1, best_n
+    );
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     if best_f1 > 0.3 {
         println!("║  RESULT: ✓ PASSED - Enhanced UV detection working!                  ║");

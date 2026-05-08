@@ -9,8 +9,7 @@
 
 use anyhow::{Context, Result};
 use cudarc::driver::{
-    CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::Ptx;
 use std::sync::Arc;
@@ -56,27 +55,27 @@ pub const STEERING_FOCUS_MAX: usize = 64;
 #[derive(Clone, Copy, Debug)]
 pub struct ProtocolState {
     // ── Step tracking ──
-    pub current_step: u32,           // DYNAMIC: incremented by Director
-    pub total_steps: u32,            // Immutable
+    pub current_step: u32, // DYNAMIC: incremented by Director
+    pub total_steps: u32,  // Immutable
 
     // ── Temperature (CCNS 5-phase) ──
-    pub current_temperature: f32,    // DYNAMIC: computed by Director
-    pub start_temp: f32,             // Immutable
-    pub end_temp: f32,               // Immutable
+    pub current_temperature: f32, // DYNAMIC: computed by Director
+    pub start_temp: f32,          // Immutable
+    pub end_temp: f32,            // Immutable
 
     // ── Phase boundaries (set once at init) ──
-    pub cold_hold_end: i32,          // Immutable
-    pub ramp_end: i32,               // Immutable
-    pub warm_hold_end: i32,          // Immutable
-    pub ramp_down_end: i32,          // Immutable
+    pub cold_hold_end: i32, // Immutable
+    pub ramp_end: i32,      // Immutable
+    pub warm_hold_end: i32, // Immutable
+    pub ramp_down_end: i32, // Immutable
 
     // ── UV burst state ──
-    pub uv_burst_active: i32,        // DYNAMIC: 0 or 1
-    pub uv_burst_energy: f32,        // Immutable (base energy)
-    pub uv_wavelength_nm: f32,       // DYNAMIC: current wavelength
-    pub uv_burst_interval: i32,      // Immutable
-    pub uv_burst_duration: i32,      // Immutable
-    pub uv_target_idx: i32,          // DYNAMIC: current aromatic target
+    pub uv_burst_active: i32,   // DYNAMIC: 0 or 1
+    pub uv_burst_energy: f32,   // Immutable (base energy)
+    pub uv_wavelength_nm: f32,  // DYNAMIC: current wavelength
+    pub uv_burst_interval: i32, // Immutable
+    pub uv_burst_duration: i32, // Immutable
+    pub uv_target_idx: i32,     // DYNAMIC: current aromatic target
 
     // ── Wavelength scan table ──
     pub scan_wavelengths: [f32; 4],  // Immutable
@@ -84,44 +83,42 @@ pub struct ProtocolState {
     pub wavelength_dwell_steps: i32, // Immutable
 
     // ── Langevin parameters ──
-    pub dt: f32,                     // DYNAMIC if adaptive_dt enabled
-    pub gamma: f32,                  // Immutable (base value, kept for compat)
-    pub cutoff: f32,                 // Immutable
+    pub dt: f32,     // DYNAMIC if adaptive_dt enabled
+    pub gamma: f32,  // Immutable (base value, kept for compat)
+    pub cutoff: f32, // Immutable
 
     // ── Fused step tracking ──
-    pub fused_inner_steps: i32,      // Immutable
-    pub fused_step_counter: i32,     // DYNAMIC
+    pub fused_inner_steps: i32,  // Immutable
+    pub fused_step_counter: i32, // DYNAMIC
 
     // ════════════════════════════════════════════════════════════════════════
     // Gate 1 expansion: dynamic thermodynamic state (+32 bytes)
     // ════════════════════════════════════════════════════════════════════════
 
     // ── Friction computation ──
-    pub gamma_base: f32,             // Immutable: base friction coefficient
-    pub cryo_enabled: i32,           // Immutable: 0 or 1
-    pub equilibration_steps: i32,    // Immutable: steps for high-friction warmup
-    pub equilibration_gamma: f32,    // Immutable: extreme friction value (1000.0)
-    pub effective_gamma: f32,        // DYNAMIC: computed by Director each step
+    pub gamma_base: f32,          // Immutable: base friction coefficient
+    pub cryo_enabled: i32,        // Immutable: 0 or 1
+    pub equilibration_steps: i32, // Immutable: steps for high-friction warmup
+    pub equilibration_gamma: f32, // Immutable: extreme friction value (1000.0)
+    pub effective_gamma: f32,     // DYNAMIC: computed by Director each step
 
     // ── Adaptive timestep ──
-    pub adaptive_dt_enabled: i32,    // Immutable: 0 or 1
-    pub base_dt: f32,                // Immutable: timestep before adaptive scaling
+    pub adaptive_dt_enabled: i32, // Immutable: 0 or 1
+    pub base_dt: f32,             // Immutable: timestep before adaptive scaling
 
     // ── Multi-LIF coupling double-buffer phase ──
-    pub coupling_phase: i32,         // DYNAMIC: 0 or 1, toggled by Director
+    pub coupling_phase: i32, // DYNAMIC: 0 or 1, toggled by Director
 
     // ════════════════════════════════════════════════════════════════════════
     // Gate 2 expansion: autonomous housekeeping + heartbeat (+12 bytes)
     // ════════════════════════════════════════════════════════════════════════
-
-    pub nl_rebuild_interval: i32,    // Immutable: steps between NL rebuilds (default 20)
-    pub com_removal_interval: i32,   // Immutable: steps between COM removal (default 100)
-    pub status_code: i32,            // DYNAMIC: 0=OK, 1=NaN, 2=diverged (written by heartbeat)
+    pub nl_rebuild_interval: i32, // Immutable: steps between NL rebuilds (default 20)
+    pub com_removal_interval: i32, // Immutable: steps between COM removal (default 100)
+    pub status_code: i32,         // DYNAMIC: 0=OK, 1=NaN, 2=diverged (written by heartbeat)
 
     // ════════════════════════════════════════════════════════════════════════
     // ASC Fusion Controller hooks (+16 bytes)
     // ════════════════════════════════════════════════════════════════════════
-
     /// Multiplicative UV energy adjustment (1.0 = neutral). Written by coupling kernel.
     pub steering_uv_boost: f32,
     /// Additive temperature offset in K (0.0 = neutral). Written by coupling kernel.
@@ -134,7 +131,6 @@ pub struct ProtocolState {
     // ════════════════════════════════════════════════════════════════════════
     // Phase-coherence metrology (4 bytes)
     // ════════════════════════════════════════════════════════════════════════
-
     /// 10-bit CCNS phase angle (0-1023), updated by Director each step
     pub current_phase_bits: u32,
 
@@ -164,7 +160,6 @@ pub struct ProtocolState {
     // points). Steering toward coordination points produces real
     // cross-group divergence; steering toward already-agreed-upon
     // pocket residues does nothing.
-
     /// Number of active entries in `steering_focus_residues` (0..64).
     pub steering_focus_count: i32,
 
@@ -292,7 +287,10 @@ impl ProtocolState {
             // The ASC controller will populate this each chunk via
             // cuMemcpyHtoDAsync once --closed-loop-steering is enabled.
             steering_focus_count: 0,
-            steering_focus_residues: [SteerEntry { residue_id: -1, weight: 0.0 }; STEERING_FOCUS_MAX],
+            steering_focus_residues: [SteerEntry {
+                residue_id: -1,
+                weight: 0.0,
+            }; STEERING_FOCUS_MAX],
             focus_match_count: 0,
             processed_spike_count: 0,
             last_seen_focus_id: -2,
@@ -368,14 +366,18 @@ impl ProtocolDirector {
         stream: &Arc<CudaStream>,
     ) -> Result<(Self, Arc<CudaModule>)> {
         let ptx_path = find_twin_ptx("protocol_director.ptx")?;
-        let module = context.load_module(Ptx::from_file(&ptx_path))
+        let module = context
+            .load_module(Ptx::from_file(&ptx_path))
             .with_context(|| format!("Failed to load protocol_director.ptx from {}", ptx_path))?;
 
-        let director_fn = module.load_function("protocol_director")
+        let director_fn = module
+            .load_function("protocol_director")
             .context("protocol_director function not found in PTX")?;
-        let init_fn = module.load_function("init_protocol_state")
+        let init_fn = module
+            .load_function("init_protocol_state")
             .context("init_protocol_state function not found in PTX")?;
-        let read_fn = module.load_function("read_protocol_state")
+        let read_fn = module
+            .load_function("read_protocol_state")
             .context("read_protocol_state function not found in PTX")?;
 
         let state_size = std::mem::size_of::<ProtocolState>();
@@ -383,16 +385,21 @@ impl ProtocolDirector {
 
         let host_state = unsafe { std::mem::zeroed::<ProtocolState>() };
 
-        Ok((Self { d_state, host_state, director_fn, init_fn, read_fn }, module))
+        Ok((
+            Self {
+                d_state,
+                host_state,
+                director_fn,
+                init_fn,
+                read_fn,
+            },
+            module,
+        ))
     }
 
     /// Initialize ProtocolState on GPU via direct memcpy.
     /// The struct is #[repr(C)] so byte layout matches the CUDA struct exactly.
-    pub fn initialize(
-        &mut self,
-        stream: &Arc<CudaStream>,
-        state: &ProtocolState,
-    ) -> Result<()> {
+    pub fn initialize(&mut self, stream: &Arc<CudaStream>, state: &ProtocolState) -> Result<()> {
         self.host_state = *state;
         let bytes: &[u8] = unsafe {
             std::slice::from_raw_parts(
@@ -402,13 +409,31 @@ impl ProtocolDirector {
         };
         stream.memcpy_htod(bytes, &mut self.d_state)?;
 
-        log::info!("ProtocolDirector initialized: {}K -> {}K, {} total steps",
-            state.start_temp, state.end_temp, state.total_steps);
-        log::info!("  Phase boundaries: cold_hold={}, ramp={}, warm_hold={}, ramp_down={}",
-            state.cold_hold_end, state.ramp_end, state.warm_hold_end, state.ramp_down_end);
-        log::info!("  Gamma: base={:.1}, cryo={}, equilibration={} steps @ {:.0}",
-            state.gamma_base, state.cryo_enabled != 0, state.equilibration_steps, state.equilibration_gamma);
-        log::info!("  Adaptive dt: {} (base={:.4} ps)", state.adaptive_dt_enabled != 0, state.base_dt);
+        log::info!(
+            "ProtocolDirector initialized: {}K -> {}K, {} total steps",
+            state.start_temp,
+            state.end_temp,
+            state.total_steps
+        );
+        log::info!(
+            "  Phase boundaries: cold_hold={}, ramp={}, warm_hold={}, ramp_down={}",
+            state.cold_hold_end,
+            state.ramp_end,
+            state.warm_hold_end,
+            state.ramp_down_end
+        );
+        log::info!(
+            "  Gamma: base={:.1}, cryo={}, equilibration={} steps @ {:.0}",
+            state.gamma_base,
+            state.cryo_enabled != 0,
+            state.equilibration_steps,
+            state.equilibration_gamma
+        );
+        log::info!(
+            "  Adaptive dt: {} (base={:.4} ps)",
+            state.adaptive_dt_enabled != 0,
+            state.base_dt
+        );
 
         Ok(())
     }
@@ -419,9 +444,14 @@ impl ProtocolDirector {
     /// CUDA stream ordering guarantees Director writes are visible to subsequent
     /// kernel launches on the same stream — no cudaDeviceSynchronize needed.
     pub fn step(&mut self, stream: &Arc<CudaStream>) -> Result<()> {
-        let cfg = LaunchConfig { grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0 };
+        let cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
         unsafe {
-            stream.launch_builder(&self.director_fn)
+            stream
+                .launch_builder(&self.director_fn)
                 .arg(&mut self.d_state)
                 .launch(cfg)?;
         }
@@ -436,9 +466,14 @@ impl ProtocolDirector {
         let mut out_uv = stream.alloc_zeros::<i32>(1)?;
         let mut out_wl = stream.alloc_zeros::<f32>(1)?;
 
-        let cfg = LaunchConfig { grid_dim: (1, 1, 1), block_dim: (1, 1, 1), shared_mem_bytes: 0 };
+        let cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
         unsafe {
-            stream.launch_builder(&self.read_fn)
+            stream
+                .launch_builder(&self.read_fn)
                 .arg(&self.d_state)
                 .arg(&mut out_step)
                 .arg(&mut out_temp)
@@ -491,9 +526,7 @@ mod tests {
     #[test]
     fn test_steering_defaults_are_neutral() {
         let protocol = CryoUvProtocol::fast_35k();
-        let state = ProtocolState::from_cryo_uv(
-            &protocol, 45000, 0.002, 1.0, 9.0, 4, true, true,
-        );
+        let state = ProtocolState::from_cryo_uv(&protocol, 45000, 0.002, 1.0, 9.0, 4, true, true);
         // Default-initialized steering should not affect the kernel's behavior.
         assert_eq!(state.steering_focus_count, 0);
         for entry in state.steering_focus_residues.iter() {
@@ -510,9 +543,7 @@ mod tests {
     #[test]
     fn test_from_cryo_uv_fast_35k() {
         let protocol = CryoUvProtocol::fast_35k();
-        let state = ProtocolState::from_cryo_uv(
-            &protocol, 45000, 0.002, 1.0, 9.0, 4, true, true,
-        );
+        let state = ProtocolState::from_cryo_uv(&protocol, 45000, 0.002, 1.0, 9.0, 4, true, true);
 
         assert_eq!(state.current_step, 0);
         assert_eq!(state.total_steps, 45000);
@@ -540,9 +571,7 @@ mod tests {
     #[test]
     fn test_expected_temperature_phases() {
         let protocol = CryoUvProtocol::fast_35k();
-        let state = ProtocolState::from_cryo_uv(
-            &protocol, 45000, 0.002, 1.0, 9.0, 4, true, false,
-        );
+        let state = ProtocolState::from_cryo_uv(&protocol, 45000, 0.002, 1.0, 9.0, 4, true, false);
 
         // Phase 1: Cold hold → 50K
         assert_eq!(state.expected_temperature_at_step(0), 50.0);
@@ -562,9 +591,7 @@ mod tests {
     #[test]
     fn test_expected_gamma_equilibration() {
         let protocol = CryoUvProtocol::fast_35k();
-        let state = ProtocolState::from_cryo_uv(
-            &protocol, 45000, 0.002, 1.0, 9.0, 4, true, false,
-        );
+        let state = ProtocolState::from_cryo_uv(&protocol, 45000, 0.002, 1.0, 9.0, 4, true, false);
 
         // Step 0: full equilibration gamma (1000) with cryo scaling at 50K
         // base = 1000 * exp(0) + 1.0 * (1-1) = 1000
@@ -592,28 +619,29 @@ mod tests {
         let context = CudaContext::new(0).expect("CUDA not available");
         let stream = context.default_stream();
 
-        let (mut director, _module) = ProtocolDirector::new(&context, &stream)
-            .expect("Failed to create ProtocolDirector");
+        let (mut director, _module) =
+            ProtocolDirector::new(&context, &stream).expect("Failed to create ProtocolDirector");
 
         let protocol = CryoUvProtocol::fast_35k();
         let total_steps = 45000u32;
-        let state = ProtocolState::from_cryo_uv(
-            &protocol, total_steps, 0.002, 1.0, 9.0, 4, true, true,
-        );
-        director.initialize(&stream, &state).expect("Failed to initialize");
+        let state =
+            ProtocolState::from_cryo_uv(&protocol, total_steps, 0.002, 1.0, 9.0, 4, true, true);
+        director
+            .initialize(&stream, &state)
+            .expect("Failed to initialize");
 
         // Phase boundary checkpoints
         let checkpoints: Vec<(u32, u32, f32, f32, &str)> = vec![
-            (1,     1,     50.0,    0.01,  "step 1 cold hold"),
-            (13999, 14000, 50.0,    0.01,  "cold hold end"),
-            (3000,  17000, 175.0,   0.5,   "mid ramp up"),
-            (3000,  20000, 300.0,   0.5,   "ramp end"),
-            (7500,  27500, 300.0,   0.01,  "mid warm hold"),
-            (7500,  35000, 300.0,   0.01,  "warm hold end"),
-            (3000,  38000, 175.0,   0.5,   "mid ramp down"),
-            (3000,  41000, 50.0,    0.5,   "ramp down end"),
-            (2000,  43000, 50.0,    0.01,  "cold return"),
-            (2000,  45000, 50.0,    0.01,  "final step"),
+            (1, 1, 50.0, 0.01, "step 1 cold hold"),
+            (13999, 14000, 50.0, 0.01, "cold hold end"),
+            (3000, 17000, 175.0, 0.5, "mid ramp up"),
+            (3000, 20000, 300.0, 0.5, "ramp end"),
+            (7500, 27500, 300.0, 0.01, "mid warm hold"),
+            (7500, 35000, 300.0, 0.01, "warm hold end"),
+            (3000, 38000, 175.0, 0.5, "mid ramp down"),
+            (3000, 41000, 50.0, 0.5, "ramp down end"),
+            (2000, 43000, 50.0, 0.01, "cold return"),
+            (2000, 45000, 50.0, 0.01, "final step"),
         ];
 
         for (run_steps, expected_step, expected_temp, tol, label) in &checkpoints {
@@ -623,23 +651,40 @@ mod tests {
 
             let (step, temp, _uv, _wl) = director.read_state(&stream).expect("read failed");
             assert_eq!(step, *expected_step, "Step mismatch at '{}'", label);
-            assert!((temp - expected_temp).abs() < *tol,
+            assert!(
+                (temp - expected_temp).abs() < *tol,
                 "Temp mismatch at '{}' (step {}): GPU={:.2}K, expected={:.2}K",
-                label, step, temp, expected_temp);
+                label,
+                step,
+                temp,
+                expected_temp
+            );
         }
 
         // Verify gamma + dt via full state download at final step
-        let final_state = director.download_full_state(&stream).expect("download failed");
+        let final_state = director
+            .download_full_state(&stream)
+            .expect("download failed");
         // At step 45000 (cold return at 50K), past equilibration:
         // effective_gamma = gamma_base * sqrt(300/50) = 1.0 * 2.449
         let expected_gamma = state.expected_gamma_at_step(45000);
-        assert!((final_state.effective_gamma - expected_gamma).abs() < 0.1,
-            "Gamma mismatch: GPU={:.3}, CPU={:.3}", final_state.effective_gamma, expected_gamma);
+        assert!(
+            (final_state.effective_gamma - expected_gamma).abs() < 0.1,
+            "Gamma mismatch: GPU={:.3}, CPU={:.3}",
+            final_state.effective_gamma,
+            expected_gamma
+        );
         // Cold return is a hold phase → adaptive dt = base * 1.5
-        assert!((final_state.dt - 0.003).abs() < 0.0001,
-            "Adaptive dt should be 0.003 in hold phase, got {}", final_state.dt);
+        assert!(
+            (final_state.dt - 0.003).abs() < 0.0001,
+            "Adaptive dt should be 0.003 in hold phase, got {}",
+            final_state.dt
+        );
         // Coupling phase should have toggled 45000 times → 45000 % 2 = 0
-        assert_eq!(final_state.coupling_phase, 0, "Coupling phase should be 0 after even steps");
+        assert_eq!(
+            final_state.coupling_phase, 0,
+            "Coupling phase should be 0 after even steps"
+        );
 
         println!("Director kernel Gate 1: ALL CHECKPOINTS PASSED (temp + gamma + dt + coupling)");
     }
@@ -653,13 +698,11 @@ mod tests {
         let context = CudaContext::new(0).expect("CUDA not available");
         let stream = context.default_stream();
 
-        let (mut director, _module) = ProtocolDirector::new(&context, &stream)
-            .expect("Failed to create ProtocolDirector");
+        let (mut director, _module) =
+            ProtocolDirector::new(&context, &stream).expect("Failed to create ProtocolDirector");
 
         let protocol = CryoUvProtocol::fast_35k();
-        let state = ProtocolState::from_cryo_uv(
-            &protocol, 1000, 0.002, 1.0, 9.0, 4, true, false,
-        );
+        let state = ProtocolState::from_cryo_uv(&protocol, 1000, 0.002, 1.0, 9.0, 4, true, false);
         director.initialize(&stream, &state).expect("init failed");
 
         let mut burst_count = 0;
@@ -668,8 +711,8 @@ mod tests {
         for i in 0..500 {
             director.step(&stream).expect("step failed");
             if i % 50 == 0 {
-                let (_step, _temp, uv_active, wl) = director.read_state(&stream)
-                    .expect("read failed");
+                let (_step, _temp, uv_active, wl) =
+                    director.read_state(&stream).expect("read failed");
                 if uv_active != 0 {
                     burst_count += 1;
                     seen_wavelengths.insert((wl * 10.0) as i32);
@@ -677,8 +720,15 @@ mod tests {
             }
         }
 
-        assert!(burst_count >= 1, "Expected at least 1 UV burst in 500 steps, got {}", burst_count);
-        println!("UV scheduling: {} bursts detected, {} distinct wavelengths",
-            burst_count, seen_wavelengths.len());
+        assert!(
+            burst_count >= 1,
+            "Expected at least 1 UV burst in 500 steps, got {}",
+            burst_count
+        );
+        println!(
+            "UV scheduling: {} bursts detected, {} distinct wavelengths",
+            burst_count,
+            seen_wavelengths.len()
+        );
     }
 }

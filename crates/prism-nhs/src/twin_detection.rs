@@ -54,7 +54,7 @@
 #![cfg(feature = "gpu")]
 
 use anyhow::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -95,13 +95,13 @@ const PHASE_BOUNDS_FAST_HYSTERESIS: [(f32, f32, &str); 5] = [
 
 /// TWIN rank score weights. Base components sum to 1.0.
 /// The interferometric multiplier is applied AFTER the base score.
-const RANK_W_CONSENSUS:      f32 = 0.25;
-const RANK_W_DIFFERENTIAL:   f32 = 0.15;
-const RANK_W_ALLOSTERIC:     f32 = 0.15;
-const RANK_W_DRUGGABILITY:   f32 = 0.15;
-const RANK_W_HYSTERESIS:     f32 = 0.10;
-const RANK_W_SPIKE_DENSITY:  f32 = 0.10;
-const RANK_W_PHASE_QUALITY:  f32 = 0.10;  // warm_hold spike enrichment
+const RANK_W_CONSENSUS: f32 = 0.25;
+const RANK_W_DIFFERENTIAL: f32 = 0.15;
+const RANK_W_ALLOSTERIC: f32 = 0.15;
+const RANK_W_DRUGGABILITY: f32 = 0.15;
+const RANK_W_HYSTERESIS: f32 = 0.10;
+const RANK_W_SPIKE_DENSITY: f32 = 0.10;
+const RANK_W_PHASE_QUALITY: f32 = 0.10; // warm_hold spike enrichment
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -154,36 +154,56 @@ pub fn detect_and_write_twin_sites(
     let n_res = ca_xyz.len();
     log::info!("  Structure: {} CA atoms", n_res);
     log::info!("  Stream A: {} spikes (scout)", spikes_a.len());
-    log::info!("  Stream B: {} spikes (observer, thermal+NMA)", spikes_b.len());
+    log::info!(
+        "  Stream B: {} spikes (observer, thermal+NMA)",
+        spikes_b.len()
+    );
 
     // ── Step 1: per-residue per-phase spike counts ──
     let counts_a = assign_spikes_to_residues(spikes_a, &ca_xyz);
     let counts_b = assign_spikes_to_residues(spikes_b, &ca_xyz);
 
-    let max_ts = spikes_a.iter().chain(spikes_b.iter())
-        .map(|s| s.timestep).max().unwrap_or(1) as f32;
+    let max_ts = spikes_a
+        .iter()
+        .chain(spikes_b.iter())
+        .map(|s| s.timestep)
+        .max()
+        .unwrap_or(1) as f32;
     let phase_counts_a = per_phase_spike_counts(spikes_a, &ca_xyz, max_ts, n_res);
     let phase_counts_b = per_phase_spike_counts(spikes_b, &ca_xyz, max_ts, n_res);
 
     // ── Step 2: consensus vector ──
     let consensus = compute_consensus_vector(&counts_a, &counts_b);
     let n_consensus = consensus.iter().filter(|&&c| c > 0.0).count();
-    log::info!("  Consensus residues (both streams active): {}/{}", n_consensus, n_res);
+    log::info!(
+        "  Consensus residues (both streams active): {}/{}",
+        n_consensus,
+        n_res
+    );
 
     // ── Step 3: differential vector ──
     let differential = compute_differential_vector(&counts_a, &counts_b);
     let n_differential = differential.iter().filter(|&&d| d > 0.0).count();
-    log::info!("  Differential residues (B-only, NMA-exclusive): {}/{}", n_differential, n_res);
+    log::info!(
+        "  Differential residues (B-only, NMA-exclusive): {}/{}",
+        n_differential,
+        n_res
+    );
 
     // ── Step 4: mean-centered CCF matrix ──
     let (ccf, ccf_stats) = compute_ccf_matrix(spikes_a, spikes_b, &ca_xyz, n_res);
-    log::info!("  CCF: distant-pair mean={:.4} max_offdiag={:.4} (< 0.15 ok)",
-        ccf_stats.distant_pair_mean, ccf_stats.max_offdiag);
+    log::info!(
+        "  CCF: distant-pair mean={:.4} max_offdiag={:.4} (< 0.15 ok)",
+        ccf_stats.distant_pair_mean,
+        ccf_stats.max_offdiag
+    );
 
     // ── Step 5: candidate residues (union) ──
     let candidate_residues = build_candidate_residues(&consensus, &differential, &ccf);
-    log::info!("  Candidate residues (union top-consensus / top-differential / top-CCF-centrality): {}",
-        candidate_residues.len());
+    log::info!(
+        "  Candidate residues (union top-consensus / top-differential / top-CCF-centrality): {}",
+        candidate_residues.len()
+    );
 
     // ── Step 6: spatial cluster → raw sites ──
     let raw_sites = cluster_candidates(&candidate_residues, &ca_xyz);
@@ -191,10 +211,15 @@ pub fn detect_and_write_twin_sites(
 
     // ── Step 7: per-site aggregate + classify + rank ──
     let mut sites = build_twin_sites(
-        &raw_sites, &ca_xyz, topology,
-        &counts_a, &counts_b,
-        &phase_counts_a, &phase_counts_b,
-        &consensus, &differential,
+        &raw_sites,
+        &ca_xyz,
+        topology,
+        &counts_a,
+        &counts_b,
+        &phase_counts_a,
+        &phase_counts_b,
+        &consensus,
+        &differential,
         &ccf,
     );
 
@@ -204,7 +229,9 @@ pub fn detect_and_write_twin_sites(
     }
     compute_twin_ranks(&mut sites);
     sites.sort_by(|a, b| {
-        b.twin_rank_score.partial_cmp(&a.twin_rank_score).unwrap_or(std::cmp::Ordering::Equal)
+        b.twin_rank_score
+            .partial_cmp(&a.twin_rank_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     for (rank, site) in sites.iter_mut().enumerate() {
         site.rank = (rank + 1) as u32;
@@ -212,20 +239,36 @@ pub fn detect_and_write_twin_sites(
 
     let class_counts = tally_classifications(&sites);
     log::info!("  Sites detected: {} total", sites.len());
-    log::info!("    CONSENSUS_CRYPTIC:    {}", class_counts.consensus_cryptic);
+    log::info!(
+        "    CONSENSUS_CRYPTIC:    {}",
+        class_counts.consensus_cryptic
+    );
     log::info!("    BARRIER_GATED:        {}", class_counts.barrier_gated);
     log::info!("    ALLOSTERIC_HUB:       {}", class_counts.allosteric_hub);
-    log::info!("    COOPERATIVE_NETWORK:  {}", class_counts.cooperative_network);
+    log::info!(
+        "    COOPERATIVE_NETWORK:  {}",
+        class_counts.cooperative_network
+    );
     log::info!("    NMA_RESPONSIVE:       {}", class_counts.nma_responsive);
-    log::info!("    THERMAL_TRANSIENT:    {}", class_counts.thermal_transient);
-    log::info!("    PREFORMED_STABLE:     {}", class_counts.preformed_stable);
+    log::info!(
+        "    THERMAL_TRANSIENT:    {}",
+        class_counts.thermal_transient
+    );
+    log::info!(
+        "    PREFORMED_STABLE:     {}",
+        class_counts.preformed_stable
+    );
 
     // ── Step 8: Build per-residue twin features ──
     let per_residue = build_per_residue_twin_features(
-        &ca_xyz, topology,
-        &counts_a, &counts_b,
-        &phase_counts_a, &phase_counts_b,
-        &consensus, &differential,
+        &ca_xyz,
+        topology,
+        &counts_a,
+        &counts_b,
+        &phase_counts_a,
+        &phase_counts_b,
+        &consensus,
+        &differential,
         &ccf,
     );
 
@@ -249,7 +292,10 @@ pub fn detect_and_write_twin_sites(
 
     // 4. ensemble_trajectory.json (stub — empty list, twin doesn't track per-replica ensemble)
     let ens_path = output_dir.join(format!("{prefix}.ensemble_trajectory.json"));
-    std::fs::write(&ens_path, r#"{"replicas": [], "note": "TWIN mode: ensemble trajectory is captured in coupled_spikes.json"}"#)?;
+    std::fs::write(
+        &ens_path,
+        r#"{"replicas": [], "note": "TWIN mode: ensemble trajectory is captured in coupled_spikes.json"}"#,
+    )?;
     files_written.push(ens_path.display().to_string());
 
     // 5. Per-residue twin features
@@ -287,15 +333,24 @@ pub fn detect_and_write_twin_sites(
         n_candidate_residues: candidate_residues.len(),
         n_ca_atoms: n_res,
         elapsed_seconds: t0.elapsed().as_secs_f64(),
-        files_written: files_written.iter().map(|p| {
-            Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
-        }).collect(),
+        files_written: files_written
+            .iter()
+            .map(|p| {
+                Path::new(p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            })
+            .collect(),
     };
 
-    log::info!("  Twin detection: {} sites in {:.1}s",
-        sites.len(), summary.elapsed_seconds);
+    log::info!(
+        "  Twin detection: {} sites in {:.1}s",
+        sites.len(),
+        summary.elapsed_seconds
+    );
 
-    let _ = nma_modes_path;  // Reserved for future per-mode attribution (Gate 4)
+    let _ = nma_modes_path; // Reserved for future per-mode attribution (Gate 4)
 
     Ok(summary)
 }
@@ -318,13 +373,13 @@ pub enum TwinSiteClass {
 impl TwinSiteClass {
     fn as_str(self) -> &'static str {
         match self {
-            Self::ConsensusCryptic    => "CONSENSUS_CRYPTIC",
-            Self::BarrierGated        => "BARRIER_GATED",
-            Self::AllostericHub       => "ALLOSTERIC_HUB",
-            Self::CooperativeNetwork  => "COOPERATIVE_NETWORK",
-            Self::NmaResponsive       => "NMA_RESPONSIVE",
-            Self::ThermalTransient    => "THERMAL_TRANSIENT",
-            Self::PreformedStable     => "PREFORMED_STABLE",
+            Self::ConsensusCryptic => "CONSENSUS_CRYPTIC",
+            Self::BarrierGated => "BARRIER_GATED",
+            Self::AllostericHub => "ALLOSTERIC_HUB",
+            Self::CooperativeNetwork => "COOPERATIVE_NETWORK",
+            Self::NmaResponsive => "NMA_RESPONSIVE",
+            Self::ThermalTransient => "THERMAL_TRANSIENT",
+            Self::PreformedStable => "PREFORMED_STABLE",
         }
     }
 }
@@ -333,12 +388,12 @@ impl TwinSiteClass {
 pub struct TwinSite {
     pub id: u32,
     pub rank: u32,
-    pub classification: String,      // stringified TwinSiteClass
-    pub twin_site_class: String,     // same, redundant for compat
+    pub classification: String,  // stringified TwinSiteClass
+    pub twin_site_class: String, // same, redundant for compat
     pub centroid: [f32; 3],
-    pub volume_angstrom3: f32,       // convex hull estimate
+    pub volume_angstrom3: f32, // convex hull estimate
     pub n_lining_residues: usize,
-    pub residue_ids: Vec<i32>,       // topology resids (0-based in topology space)
+    pub residue_ids: Vec<i32>, // topology resids (0-based in topology space)
     pub lining_residues: Vec<LiningResidue>,
 
     // Raw totals (over both streams)
@@ -347,13 +402,13 @@ pub struct TwinSite {
     pub spikes_b: u64,
 
     // Twin signals (in [0,1] unless noted)
-    pub consensus_fraction: f32,     // fraction of lining residues active in BOTH streams
-    pub differential_signal: f32,    // fraction of lining residues active ONLY in B (NMA-exclusive)
-    pub ccf_centrality: f32,         // mean CCF to residues outside the site
-    pub ccf_allosteric_score: f32,   // normalized count of strong distant CCF pairs
-    pub hysteresis_asymmetry: f32,   // |warm_hold_frac - cold_hold_frac|
-    pub druggability: f32,           // heuristic from lining residue chemistry
-    pub spike_density: f32,          // spikes per lining residue per 1000 steps, normalized
+    pub consensus_fraction: f32, // fraction of lining residues active in BOTH streams
+    pub differential_signal: f32, // fraction of lining residues active ONLY in B (NMA-exclusive)
+    pub ccf_centrality: f32,     // mean CCF to residues outside the site
+    pub ccf_allosteric_score: f32, // normalized count of strong distant CCF pairs
+    pub hysteresis_asymmetry: f32, // |warm_hold_frac - cold_hold_frac|
+    pub druggability: f32,       // heuristic from lining residue chemistry
+    pub spike_density: f32,      // spikes per lining residue per 1000 steps, normalized
 
     // Phase structure
     pub warm_hold_fraction: f32,
@@ -363,10 +418,10 @@ pub struct TwinSite {
     pub cold_return_fraction: f32,
 
     // Engine compat fields (read by postprocess_twin.py)
-    pub quality_score: f32,          // alias for twin_rank_score, for compat
-    pub druggability_score: f32,     // duplicate of druggability for compat
-    pub classification_engine: String,  // LIGSITE-like label: "Cryptic", "Druggable", etc
-    pub therm_class: String,         // "CRYPTIC", "RESPONSIVE", "DYNAMIC", "INERT"
+    pub quality_score: f32,            // alias for twin_rank_score, for compat
+    pub druggability_score: f32,       // duplicate of druggability for compat
+    pub classification_engine: String, // LIGSITE-like label: "Cryptic", "Druggable", etc
+    pub therm_class: String,           // "CRYPTIC", "RESPONSIVE", "DYNAMIC", "INERT"
     pub aromatic_score: f32,
 
     // Twin ranking output
@@ -428,7 +483,7 @@ pub struct TwinPerResidue {
     pub warm_hold_fraction: f32,
 
     // Barrier
-    pub barrier_class: String,   // LOW / MEDIUM / HIGH / UNKNOWN
+    pub barrier_class: String, // LOW / MEDIUM / HIGH / UNKNOWN
 }
 
 struct CcfStats {
@@ -451,29 +506,35 @@ struct ClassTally {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn extract_ca_positions(topo: &PrismPrepTopology) -> Vec<[f32; 3]> {
-    topo.ca_indices.iter().map(|&ai| {
-        let base = ai * 3;
-        [topo.positions[base], topo.positions[base + 1], topo.positions[base + 2]]
-    }).collect()
+    topo.ca_indices
+        .iter()
+        .map(|&ai| {
+            let base = ai * 3;
+            [
+                topo.positions[base],
+                topo.positions[base + 1],
+                topo.positions[base + 2],
+            ]
+        })
+        .collect()
 }
 
-fn assign_spikes_to_residues(
-    spikes: &[GpuSpikeEvent],
-    ca_xyz: &[[f32; 3]],
-) -> Vec<u32> {
+fn assign_spikes_to_residues(spikes: &[GpuSpikeEvent], ca_xyz: &[[f32; 3]]) -> Vec<u32> {
     let n = ca_xyz.len();
     let mut counts = vec![0u32; n];
-    if n == 0 { return counts; }
+    if n == 0 {
+        return counts;
+    }
     let cutoff2 = SPIKE_TO_CA_CUTOFF * SPIKE_TO_CA_CUTOFF;
     for s in spikes {
-        let pos = s.position;  // Packed struct copy
+        let pos = s.position; // Packed struct copy
         let mut best_idx = usize::MAX;
         let mut best_d2 = cutoff2;
         for (i, ca) in ca_xyz.iter().enumerate() {
             let dx = pos[0] - ca[0];
             let dy = pos[1] - ca[1];
             let dz = pos[2] - ca[2];
-            let d2 = dx*dx + dy*dy + dz*dz;
+            let d2 = dx * dx + dy * dy + dz * dz;
             if d2 < best_d2 {
                 best_d2 = d2;
                 best_idx = i;
@@ -493,18 +554,24 @@ fn per_phase_spike_counts(
     n_res: usize,
 ) -> [Vec<u32>; 5] {
     let mut phase_counts: [Vec<u32>; 5] = [
-        vec![0; n_res], vec![0; n_res], vec![0; n_res],
-        vec![0; n_res], vec![0; n_res],
+        vec![0; n_res],
+        vec![0; n_res],
+        vec![0; n_res],
+        vec![0; n_res],
+        vec![0; n_res],
     ];
-    if n_res == 0 || max_ts <= 0.0 { return phase_counts; }
+    if n_res == 0 || max_ts <= 0.0 {
+        return phase_counts;
+    }
     let cutoff2 = SPIKE_TO_CA_CUTOFF * SPIKE_TO_CA_CUTOFF;
     for s in spikes {
         let pos = s.position;
         let ts_f = s.timestep as f32;
         let frac = ts_f / max_ts;
-        let phase_idx = PHASE_BOUNDS_FAST_HYSTERESIS.iter().position(|&(lo, hi, _)| {
-            frac >= lo && frac < hi
-        }).unwrap_or(4);
+        let phase_idx = PHASE_BOUNDS_FAST_HYSTERESIS
+            .iter()
+            .position(|&(lo, hi, _)| frac >= lo && frac < hi)
+            .unwrap_or(4);
         // nearest CA
         let mut best_idx = usize::MAX;
         let mut best_d2 = cutoff2;
@@ -512,7 +579,7 @@ fn per_phase_spike_counts(
             let dx = pos[0] - ca[0];
             let dy = pos[1] - ca[1];
             let dz = pos[2] - ca[2];
-            let d2 = dx*dx + dy*dy + dz*dz;
+            let d2 = dx * dx + dy * dy + dz * dz;
             if d2 < best_d2 {
                 best_d2 = d2;
                 best_idx = i;
@@ -556,7 +623,7 @@ fn compute_differential_vector(counts_a: &[u32], counts_b: &[u32]) -> Vec<f32> {
             // A small a with large b → large differential.
             // A large a with slightly larger b → small differential.
             let excess = b - a;
-            let normalization = 1.0 + a;   // penalize sites that are already active in A
+            let normalization = 1.0 + a; // penalize sites that are already active in A
             out[i] = excess / normalization;
         }
     }
@@ -577,11 +644,22 @@ fn compute_ccf_matrix(
 
     if n_res == 0 {
         let empty = vec![vec![0.0f32; 0]; 0];
-        return (empty, CcfStats { distant_pair_mean: 0.0, max_offdiag: 0.0 });
+        return (
+            empty,
+            CcfStats {
+                distant_pair_mean: 0.0,
+                max_offdiag: 0.0,
+            },
+        );
     }
 
-    let max_ts = spikes_a.iter().chain(spikes_b.iter())
-        .map(|s| s.timestep).max().unwrap_or(1).max(1) as f32;
+    let max_ts = spikes_a
+        .iter()
+        .chain(spikes_b.iter())
+        .map(|s| s.timestep)
+        .max()
+        .unwrap_or(1)
+        .max(1) as f32;
     let bin_size = (max_ts / CCF_TIME_BINS as f32).max(1.0);
 
     // Downsample if needed
@@ -591,7 +669,9 @@ fn compute_ccf_matrix(
     let cutoff2 = SPIKE_TO_CA_CUTOFF * SPIKE_TO_CA_CUTOFF;
     let mut accumulate = |spikes: &[GpuSpikeEvent], stride: usize, mat: &mut [Vec<f32>]| {
         for (k, s) in spikes.iter().enumerate() {
-            if k % stride != 0 { continue; }
+            if k % stride != 0 {
+                continue;
+            }
             let pos = s.position;
             let mut best_idx = usize::MAX;
             let mut best_d2 = cutoff2;
@@ -599,13 +679,15 @@ fn compute_ccf_matrix(
                 let dx = pos[0] - ca[0];
                 let dy = pos[1] - ca[1];
                 let dz = pos[2] - ca[2];
-                let d2 = dx*dx + dy*dy + dz*dz;
+                let d2 = dx * dx + dy * dy + dz * dz;
                 if d2 < best_d2 {
                     best_d2 = d2;
                     best_idx = i;
                 }
             }
-            if best_idx == usize::MAX { continue; }
+            if best_idx == usize::MAX {
+                continue;
+            }
             let bin = ((s.timestep as f32 / bin_size) as usize).min(CCF_TIME_BINS - 1);
             mat[best_idx][bin] += 1.0;
         }
@@ -654,7 +736,9 @@ fn compute_ccf_matrix(
     for i in 0..n_res {
         for j in (i + 1)..n_res {
             let v = ccf[i][j];
-            if v.abs() > max_offdiag.abs() { max_offdiag = v; }
+            if v.abs() > max_offdiag.abs() {
+                max_offdiag = v;
+            }
             if (j - i) > ALLOSTERIC_MIN_SEPARATION {
                 distant_sum += v as f64;
                 distant_n += 1;
@@ -663,16 +747,28 @@ fn compute_ccf_matrix(
     }
     let distant_pair_mean = if distant_n > 0 {
         (distant_sum / distant_n as f64) as f32
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
-    (ccf, CcfStats { distant_pair_mean, max_offdiag })
+    (
+        ccf,
+        CcfStats {
+            distant_pair_mean,
+            max_offdiag,
+        },
+    )
 }
 
 fn double_center(mat: &mut [Vec<f32>]) {
     let n_res = mat.len();
-    if n_res == 0 { return; }
+    if n_res == 0 {
+        return;
+    }
     let n_bins = mat[0].len();
-    if n_bins == 0 { return; }
+    if n_bins == 0 {
+        return;
+    }
     // Column mean (per time bin, across residues)
     let mut col_mean = vec![0.0f32; n_bins];
     for row in mat.iter() {
@@ -680,7 +776,9 @@ fn double_center(mat: &mut [Vec<f32>]) {
             col_mean[t] += *v;
         }
     }
-    for v in col_mean.iter_mut() { *v /= n_res as f32; }
+    for v in col_mean.iter_mut() {
+        *v /= n_res as f32;
+    }
     for row in mat.iter_mut() {
         for (t, v) in row.iter_mut().enumerate() {
             *v -= col_mean[t];
@@ -689,7 +787,9 @@ fn double_center(mat: &mut [Vec<f32>]) {
     // Row mean (per residue)
     for row in mat.iter_mut() {
         let m: f32 = row.iter().copied().sum::<f32>() / n_bins as f32;
-        for v in row.iter_mut() { *v -= m; }
+        for v in row.iter_mut() {
+            *v -= m;
+        }
     }
 }
 
@@ -698,7 +798,9 @@ fn unit_normalize_rows(mat: &mut [Vec<f32>]) {
         let norm_sq: f32 = row.iter().map(|v| v * v).sum();
         let norm = norm_sq.sqrt();
         if norm > 1e-12 {
-            for v in row.iter_mut() { *v /= norm; }
+            for v in row.iter_mut() {
+                *v /= norm;
+            }
         }
     }
 }
@@ -713,47 +815,70 @@ fn build_candidate_residues(
     ccf: &[Vec<f32>],
 ) -> Vec<usize> {
     let n = consensus.len();
-    if n == 0 { return Vec::new(); }
+    if n == 0 {
+        return Vec::new();
+    }
 
     // Top 20% consensus residues
-    let mut sorted_c: Vec<(usize, f32)> = consensus.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+    let mut sorted_c: Vec<(usize, f32)> =
+        consensus.iter().enumerate().map(|(i, &v)| (i, v)).collect();
     sorted_c.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let top_c: Vec<usize> = sorted_c.iter().take(n / 5 + 1)
+    let top_c: Vec<usize> = sorted_c
+        .iter()
+        .take(n / 5 + 1)
         .filter(|&(_, v)| *v > 0.0)
-        .map(|&(i, _)| i).collect();
+        .map(|&(i, _)| i)
+        .collect();
 
     // Top 20% differential residues
-    let mut sorted_d: Vec<(usize, f32)> = differential.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+    let mut sorted_d: Vec<(usize, f32)> = differential
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i, v))
+        .collect();
     sorted_d.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let top_d: Vec<usize> = sorted_d.iter().take(n / 5 + 1)
+    let top_d: Vec<usize> = sorted_d
+        .iter()
+        .take(n / 5 + 1)
         .filter(|&(_, v)| *v > 0.0)
-        .map(|&(i, _)| i).collect();
+        .map(|&(i, _)| i)
+        .collect();
 
     // Top 10% CCF centrality (mean off-diagonal CCF)
-    let mut centrality: Vec<(usize, f32)> = (0..n).map(|i| {
-        let mut s = 0.0f32;
-        for j in 0..n {
-            if i != j { s += ccf[i][j].abs(); }
-        }
-        let mean = if n > 1 { s / (n as f32 - 1.0) } else { 0.0 };
-        (i, mean)
-    }).collect();
+    let mut centrality: Vec<(usize, f32)> = (0..n)
+        .map(|i| {
+            let mut s = 0.0f32;
+            for j in 0..n {
+                if i != j {
+                    s += ccf[i][j].abs();
+                }
+            }
+            let mean = if n > 1 { s / (n as f32 - 1.0) } else { 0.0 };
+            (i, mean)
+        })
+        .collect();
     centrality.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let top_ccf: Vec<usize> = centrality.iter().take(n / 10 + 1)
+    let top_ccf: Vec<usize> = centrality
+        .iter()
+        .take(n / 10 + 1)
         .filter(|&(_, v)| *v > 0.05)
-        .map(|&(i, _)| i).collect();
+        .map(|&(i, _)| i)
+        .collect();
 
     let mut set: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-    for i in &top_c { set.insert(*i); }
-    for i in &top_d { set.insert(*i); }
-    for i in &top_ccf { set.insert(*i); }
+    for i in &top_c {
+        set.insert(*i);
+    }
+    for i in &top_d {
+        set.insert(*i);
+    }
+    for i in &top_ccf {
+        set.insert(*i);
+    }
     set.into_iter().collect()
 }
 
-fn cluster_candidates(
-    candidates: &[usize],
-    ca_xyz: &[[f32; 3]],
-) -> Vec<Vec<usize>> {
+fn cluster_candidates(candidates: &[usize], ca_xyz: &[[f32; 3]]) -> Vec<Vec<usize>> {
     // Simple DBSCAN over candidate CA positions
     let n = candidates.len();
     let eps2 = CLUSTER_EPS_ANGSTROM * CLUSTER_EPS_ANGSTROM;
@@ -765,12 +890,14 @@ fn cluster_candidates(
         let mut neigh = Vec::new();
         let p1 = ca_xyz[candidates[idx]];
         for j in 0..n {
-            if j == idx { continue; }
+            if j == idx {
+                continue;
+            }
             let p2 = ca_xyz[candidates[j]];
             let dx = p1[0] - p2[0];
             let dy = p1[1] - p2[1];
             let dz = p1[2] - p2[2];
-            if dx*dx + dy*dy + dz*dz <= eps2 {
+            if dx * dx + dy * dy + dz * dz <= eps2 {
                 neigh.push(j);
             }
         }
@@ -778,10 +905,14 @@ fn cluster_candidates(
     };
 
     for i in 0..n {
-        if visited[i] { continue; }
+        if visited[i] {
+            continue;
+        }
         visited[i] = true;
         let neigh = neighbors(i);
-        if neigh.len() + 1 < CLUSTER_MIN_PTS { continue; }
+        if neigh.len() + 1 < CLUSTER_MIN_PTS {
+            continue;
+        }
         let cid = next_cluster;
         next_cluster += 1;
         cluster_id[i] = cid;
@@ -791,7 +922,9 @@ fn cluster_candidates(
                 visited[j] = true;
                 let nj = neighbors(j);
                 if nj.len() + 1 >= CLUSTER_MIN_PTS {
-                    for k in nj { stack.push(k); }
+                    for k in nj {
+                        stack.push(k);
+                    }
                 }
             }
             if cluster_id[j] == -1 {
@@ -835,7 +968,9 @@ fn build_twin_sites(
     let differential_thresh = percentile_gt0(differential, 0.75);
 
     for (ci, cluster) in raw_clusters.iter().enumerate() {
-        if cluster.is_empty() { continue; }
+        if cluster.is_empty() {
+            continue;
+        }
         // Centroid
         let mut cx = 0.0f32;
         let mut cy = 0.0f32;
@@ -856,12 +991,15 @@ fn build_twin_sites(
             let dx = ca_xyz[i][0] - centroid[0];
             let dy = ca_xyz[i][1] - centroid[1];
             let dz = ca_xyz[i][2] - centroid[2];
-            let d2 = dx*dx + dy*dy + dz*dz;
+            let d2 = dx * dx + dy * dy + dz * dz;
             if d2 < lining_cutoff2 {
-                let resname = topology.residue_names.get(topology.ca_indices[i])
-                    .cloned().unwrap_or_else(|| "UNK".to_string());
+                let resname = topology
+                    .residue_names
+                    .get(topology.ca_indices[i])
+                    .cloned()
+                    .unwrap_or_else(|| "UNK".to_string());
                 let aa1 = aa3_to_aa1(&resname);
-                    lining.push(LiningResidue {
+                lining.push(LiningResidue {
                     resid: i as i32,
                     resname,
                     aa1,
@@ -885,27 +1023,45 @@ fn build_twin_sites(
         // Consensus / differential fractions over lining
         let n_consensus = lining.iter().filter(|r| r.in_consensus).count();
         let n_differential = lining.iter().filter(|r| r.in_differential).count();
-        let consensus_fraction = if lining.is_empty() { 0.0 } else { n_consensus as f32 / lining.len() as f32 };
-        let differential_signal = if lining.is_empty() { 0.0 } else { n_differential as f32 / lining.len() as f32 };
+        let consensus_fraction = if lining.is_empty() {
+            0.0
+        } else {
+            n_consensus as f32 / lining.len() as f32
+        };
+        let differential_signal = if lining.is_empty() {
+            0.0
+        } else {
+            n_differential as f32 / lining.len() as f32
+        };
 
         // CCF centrality: mean |CCF| from lining residues to residues OUTSIDE the site
-        let lining_set: std::collections::HashSet<usize> = lining.iter().map(|r| r.resid as usize).collect();
+        let lining_set: std::collections::HashSet<usize> =
+            lining.iter().map(|r| r.resid as usize).collect();
         let mut ccf_sum = 0.0f32;
         let mut ccf_n = 0u32;
         let mut strong_distant_pairs: u32 = 0;
         for &li in &lining_set {
             for j in 0..n_res {
-                if lining_set.contains(&j) { continue; }
+                if lining_set.contains(&j) {
+                    continue;
+                }
                 let v = ccf[li][j].abs();
                 ccf_sum += v;
                 ccf_n += 1;
-                if v > 0.5 && (j as i32 - li as i32).unsigned_abs() as usize > ALLOSTERIC_MIN_SEPARATION {
+                if v > 0.5
+                    && (j as i32 - li as i32).unsigned_abs() as usize > ALLOSTERIC_MIN_SEPARATION
+                {
                     strong_distant_pairs += 1;
                 }
             }
         }
-        let ccf_centrality = if ccf_n > 0 { ccf_sum / ccf_n as f32 } else { 0.0 };
-        let ccf_allosteric_score = (strong_distant_pairs as f32 / lining.len().max(1) as f32).min(1.0);
+        let ccf_centrality = if ccf_n > 0 {
+            ccf_sum / ccf_n as f32
+        } else {
+            0.0
+        };
+        let ccf_allosteric_score =
+            (strong_distant_pairs as f32 / lining.len().max(1) as f32).min(1.0);
 
         // Phase fractions over lining residues
         let mut p_sum = [0u64; 5];
@@ -916,10 +1072,10 @@ fn build_twin_sites(
             }
         }
         let phase_total = p_sum.iter().sum::<u64>().max(1) as f32;
-        let cold_hold_fraction   = p_sum[0] as f32 / phase_total;
-        let heating_fraction     = p_sum[1] as f32 / phase_total;
-        let warm_hold_fraction   = p_sum[2] as f32 / phase_total;
-        let cooling_fraction     = p_sum[3] as f32 / phase_total;
+        let cold_hold_fraction = p_sum[0] as f32 / phase_total;
+        let heating_fraction = p_sum[1] as f32 / phase_total;
+        let warm_hold_fraction = p_sum[2] as f32 / phase_total;
+        let cooling_fraction = p_sum[3] as f32 / phase_total;
         let cold_return_fraction = p_sum[4] as f32 / phase_total;
         let hysteresis_asymmetry = (warm_hold_fraction - cold_hold_fraction).abs();
 
@@ -941,16 +1097,18 @@ fn build_twin_sites(
             let dx = ca[0] - centroid[0];
             let dy = ca[1] - centroid[1];
             let dz = ca[2] - centroid[2];
-            let d2 = dx*dx + dy*dy + dz*dz;
-            if d2 > rmax { rmax = d2; }
+            let d2 = dx * dx + dy * dy + dz * dz;
+            if d2 > rmax {
+                rmax = d2;
+            }
         }
         let r = rmax.sqrt();
         let volume = (4.0 / 3.0) * std::f32::consts::PI * r * r * r * 0.5; // × 0.5 for pocket-like
 
         let site = TwinSite {
             id: ci as u32,
-            rank: 0,                  // filled after ranking
-            classification: String::new(),       // filled after classify
+            rank: 0,                       // filled after ranking
+            classification: String::new(), // filled after classify
             twin_site_class: String::new(),
             centroid,
             volume_angstrom3: volume,
@@ -972,7 +1130,7 @@ fn build_twin_sites(
             heating_fraction,
             cooling_fraction,
             cold_return_fraction,
-            quality_score: 0.0,                  // alias of twin_rank_score, filled later
+            quality_score: 0.0, // alias of twin_rank_score, filled later
             druggability_score: druggability,
             classification_engine: String::new(),
             therm_class: String::new(),
@@ -999,22 +1157,35 @@ fn build_twin_sites(
 /// Falls back to 0.0 if the vector has no positive values.
 fn percentile_gt0(values: &[f32], p: f32) -> f32 {
     let mut nonzero: Vec<f32> = values.iter().copied().filter(|&v| v > 0.0).collect();
-    if nonzero.is_empty() { return 0.0; }
+    if nonzero.is_empty() {
+        return 0.0;
+    }
     nonzero.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let idx = ((nonzero.len() as f32) * p).floor() as usize;
     nonzero[idx.min(nonzero.len() - 1)]
 }
 
 fn simple_druggability(lining: &[LiningResidue]) -> f32 {
-    if lining.is_empty() { return 0.0; }
+    if lining.is_empty() {
+        return 0.0;
+    }
     let n = lining.len() as f32;
-    let hydrophobic = lining.iter().filter(|r| {
-        matches!(r.aa1.as_str(), "A" | "V" | "L" | "I" | "M" | "F" | "W" | "Y" | "P" | "C")
-    }).count() as f32 / n;
+    let hydrophobic = lining
+        .iter()
+        .filter(|r| {
+            matches!(
+                r.aa1.as_str(),
+                "A" | "V" | "L" | "I" | "M" | "F" | "W" | "Y" | "P" | "C"
+            )
+        })
+        .count() as f32
+        / n;
     let aromatic = lining.iter().filter(|r| is_aromatic(&r.aa1)).count() as f32 / n;
-    let polar = lining.iter().filter(|r| {
-        matches!(r.aa1.as_str(), "S" | "T" | "N" | "Q" | "H")
-    }).count() as f32 / n;
+    let polar = lining
+        .iter()
+        .filter(|r| matches!(r.aa1.as_str(), "S" | "T" | "N" | "Q" | "H"))
+        .count() as f32
+        / n;
     // Simple heuristic: prefer hydrophobic + aromatic, modest polar
     (0.5 * hydrophobic + 0.3 * aromatic + 0.2 * polar).min(1.0)
 }
@@ -1025,14 +1196,29 @@ fn is_aromatic(aa1: &str) -> bool {
 
 fn aa3_to_aa1(resname: &str) -> String {
     match resname {
-        "ALA" => "A", "ARG" => "R", "ASN" => "N", "ASP" | "ASH" => "D",
-        "CYS" | "CYX" | "CYM" => "C", "GLN" => "Q", "GLU" | "GLH" => "E",
-        "GLY" => "G", "HIS" | "HID" | "HIE" | "HIP" => "H",
-        "ILE" => "I", "LEU" => "L", "LYS" | "LYN" => "K", "MET" => "M",
-        "PHE" => "F", "PRO" => "P", "SER" => "S", "THR" => "T",
-        "TRP" => "W", "TYR" => "Y", "VAL" => "V",
+        "ALA" => "A",
+        "ARG" => "R",
+        "ASN" => "N",
+        "ASP" | "ASH" => "D",
+        "CYS" | "CYX" | "CYM" => "C",
+        "GLN" => "Q",
+        "GLU" | "GLH" => "E",
+        "GLY" => "G",
+        "HIS" | "HID" | "HIE" | "HIP" => "H",
+        "ILE" => "I",
+        "LEU" => "L",
+        "LYS" | "LYN" => "K",
+        "MET" => "M",
+        "PHE" => "F",
+        "PRO" => "P",
+        "SER" => "S",
+        "THR" => "T",
+        "TRP" => "W",
+        "TYR" => "Y",
+        "VAL" => "V",
         _ => "X",
-    }.to_string()
+    }
+    .to_string()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1063,36 +1249,42 @@ fn classify_twin_site(site: &mut TwinSite) {
 
     // Compat fields for postprocess_twin.py (which expects LIGSITE-like labels)
     site.classification_engine = match class {
-        TwinSiteClass::ConsensusCryptic   => "Cryptic".to_string(),
-        TwinSiteClass::BarrierGated       => "Cryptic".to_string(),
-        TwinSiteClass::AllostericHub      => "Allosteric".to_string(),
+        TwinSiteClass::ConsensusCryptic => "Cryptic".to_string(),
+        TwinSiteClass::BarrierGated => "Cryptic".to_string(),
+        TwinSiteClass::AllostericHub => "Allosteric".to_string(),
         TwinSiteClass::CooperativeNetwork => "Allosteric".to_string(),
-        TwinSiteClass::NmaResponsive      => "Cryptic".to_string(),
-        TwinSiteClass::PreformedStable    => "Druggable".to_string(),
-        TwinSiteClass::ThermalTransient   => "Unknown".to_string(),
+        TwinSiteClass::NmaResponsive => "Cryptic".to_string(),
+        TwinSiteClass::PreformedStable => "Druggable".to_string(),
+        TwinSiteClass::ThermalTransient => "Unknown".to_string(),
     };
 
     site.therm_class = match class {
-        TwinSiteClass::ConsensusCryptic   => "CRYPTIC",
-        TwinSiteClass::BarrierGated       => "DYNAMIC",
-        TwinSiteClass::AllostericHub      => "RESPONSIVE",
+        TwinSiteClass::ConsensusCryptic => "CRYPTIC",
+        TwinSiteClass::BarrierGated => "DYNAMIC",
+        TwinSiteClass::AllostericHub => "RESPONSIVE",
         TwinSiteClass::CooperativeNetwork => "RESPONSIVE",
-        TwinSiteClass::NmaResponsive      => "DYNAMIC",
-        TwinSiteClass::PreformedStable    => "INERT",
-        TwinSiteClass::ThermalTransient   => "INERT",
-    }.to_string();
+        TwinSiteClass::NmaResponsive => "DYNAMIC",
+        TwinSiteClass::PreformedStable => "INERT",
+        TwinSiteClass::ThermalTransient => "INERT",
+    }
+    .to_string();
 }
 
 fn compute_twin_ranks(sites: &mut [TwinSite]) {
     // Compute max spike count across all sites for normalization
-    let max_spikes = sites.iter().map(|s| s.spike_count).max().unwrap_or(1).max(1) as f32;
+    let max_spikes = sites
+        .iter()
+        .map(|s| s.spike_count)
+        .max()
+        .unwrap_or(1)
+        .max(1) as f32;
 
     for site in sites.iter_mut() {
-        let c = RANK_W_CONSENSUS     * site.consensus_fraction;
-        let d = RANK_W_DIFFERENTIAL  * site.differential_signal;
-        let a = RANK_W_ALLOSTERIC    * site.ccf_allosteric_score;
+        let c = RANK_W_CONSENSUS * site.consensus_fraction;
+        let d = RANK_W_DIFFERENTIAL * site.differential_signal;
+        let a = RANK_W_ALLOSTERIC * site.ccf_allosteric_score;
         let dr = RANK_W_DRUGGABILITY * site.druggability;
-        let h = RANK_W_HYSTERESIS    * site.hysteresis_asymmetry.min(1.0);
+        let h = RANK_W_HYSTERESIS * site.hysteresis_asymmetry.min(1.0);
         let sd = RANK_W_SPIKE_DENSITY * site.spike_density;
 
         // Phase quality: reward sites enriched during warm_hold + heating
@@ -1143,19 +1335,23 @@ fn compute_twin_ranks(sites: &mut [TwinSite]) {
 
 fn tally_classifications(sites: &[TwinSite]) -> ClassTally {
     let mut t = ClassTally {
-        consensus_cryptic: 0, barrier_gated: 0, allosteric_hub: 0,
-        cooperative_network: 0, nma_responsive: 0, thermal_transient: 0,
+        consensus_cryptic: 0,
+        barrier_gated: 0,
+        allosteric_hub: 0,
+        cooperative_network: 0,
+        nma_responsive: 0,
+        thermal_transient: 0,
         preformed_stable: 0,
     };
     for s in sites {
         match s.classification.as_str() {
-            "CONSENSUS_CRYPTIC"    => t.consensus_cryptic += 1,
-            "BARRIER_GATED"        => t.barrier_gated += 1,
-            "ALLOSTERIC_HUB"       => t.allosteric_hub += 1,
-            "COOPERATIVE_NETWORK"  => t.cooperative_network += 1,
-            "NMA_RESPONSIVE"       => t.nma_responsive += 1,
-            "THERMAL_TRANSIENT"    => t.thermal_transient += 1,
-            "PREFORMED_STABLE"     => t.preformed_stable += 1,
+            "CONSENSUS_CRYPTIC" => t.consensus_cryptic += 1,
+            "BARRIER_GATED" => t.barrier_gated += 1,
+            "ALLOSTERIC_HUB" => t.allosteric_hub += 1,
+            "COOPERATIVE_NETWORK" => t.cooperative_network += 1,
+            "NMA_RESPONSIVE" => t.nma_responsive += 1,
+            "THERMAL_TRANSIENT" => t.thermal_transient += 1,
+            "PREFORMED_STABLE" => t.preformed_stable += 1,
             _ => {}
         }
     }
@@ -1183,7 +1379,13 @@ fn build_per_residue_twin_features(
         let sa = counts_a[i];
         let sb = counts_b[i];
         let total = sa + sb;
-        let b_over_a = if sa > 0 { sb as f32 / sa as f32 } else if sb > 0 { f32::INFINITY } else { 0.0 };
+        let b_over_a = if sa > 0 {
+            sb as f32 / sa as f32
+        } else if sb > 0 {
+            f32::INFINITY
+        } else {
+            0.0
+        };
 
         let p_cold_hold = phase_counts_a[0][i] + phase_counts_b[0][i];
         let p_heating = phase_counts_a[1][i] + phase_counts_b[1][i];
@@ -1192,19 +1394,27 @@ fn build_per_residue_twin_features(
         let p_cold_return = phase_counts_a[4][i] + phase_counts_b[4][i];
         let warm_hold_fraction = if total > 0 {
             p_warm_hold as f32 / total as f32
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         // CCF features
         let mut ccf_sum = 0.0f32;
         let mut ccf_max = 0.0f32;
         let mut n_distant_strong: u32 = 0;
         for j in 0..n {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let v = ccf[i][j];
             let abs_v = v.abs();
             ccf_sum += abs_v;
-            if abs_v > ccf_max { ccf_max = abs_v; }
-            if abs_v > 0.5 && (j as i32 - i as i32).unsigned_abs() as usize > ALLOSTERIC_MIN_SEPARATION {
+            if abs_v > ccf_max {
+                ccf_max = abs_v;
+            }
+            if abs_v > 0.5
+                && (j as i32 - i as i32).unsigned_abs() as usize > ALLOSTERIC_MIN_SEPARATION
+            {
                 n_distant_strong += 1;
             }
         }
@@ -1212,8 +1422,11 @@ fn build_per_residue_twin_features(
         let ccf_centrality = ccf_mean;
 
         let barrier_class = classify_barrier(sa, sb, warm_hold_fraction);
-        let resname = topology.residue_names.get(topology.ca_indices[i])
-            .cloned().unwrap_or_else(|| "UNK".to_string());
+        let resname = topology
+            .residue_names
+            .get(topology.ca_indices[i])
+            .cloned()
+            .unwrap_or_else(|| "UNK".to_string());
         let aa1 = aa3_to_aa1(&resname);
 
         out.push(TwinPerResidue {
@@ -1247,7 +1460,11 @@ fn classify_barrier(sa: u32, sb: u32, warm_hold_frac: f32) -> String {
     if sa == 0 && sb == 0 {
         return "UNKNOWN".to_string();
     }
-    let b_over_a = if sa > 0 { sb as f32 / sa as f32 } else { f32::INFINITY };
+    let b_over_a = if sa > 0 {
+        sb as f32 / sa as f32
+    } else {
+        f32::INFINITY
+    };
     if b_over_a > 1.5 && warm_hold_frac > 0.4 {
         "LOW".to_string()
     } else if b_over_a < 0.67 {
@@ -1268,64 +1485,75 @@ fn write_binding_sites_json(
 ) -> Result<()> {
     // Mirror the non-twin binding_sites.json schema that postprocess_twin.py consumes,
     // with additional twin_* fields appended to each site record.
-    let sites_json: Vec<serde_json::Value> = sites.iter().map(|s| {
-        let lining_resids: Vec<i32> = s.lining_residues.iter().map(|r| r.resid).collect();
-        let lining_for_json: Vec<serde_json::Value> = s.lining_residues.iter().map(|lr| {
-            serde_json::json!({
-                "resid": lr.resid,
-                "resname": lr.resname,
-                "chain": "A",
-                "is_catalytic": false,
-                "min_distance": lr.min_distance_angstrom,
-                "n_atoms": 8,  // placeholder; postprocess_twin.py doesn't need exact value
-            })
-        }).collect();
+    let sites_json: Vec<serde_json::Value> = sites
+        .iter()
+        .map(|s| {
+            let lining_resids: Vec<i32> = s.lining_residues.iter().map(|r| r.resid).collect();
+            let lining_for_json: Vec<serde_json::Value> = s
+                .lining_residues
+                .iter()
+                .map(|lr| {
+                    serde_json::json!({
+                        "resid": lr.resid,
+                        "resname": lr.resname,
+                        "chain": "A",
+                        "is_catalytic": false,
+                        "min_distance": lr.min_distance_angstrom,
+                        "n_atoms": 8,  // placeholder; postprocess_twin.py doesn't need exact value
+                    })
+                })
+                .collect();
 
-        serde_json::json!({
-            "id": s.id,
-            "rank": s.rank,
-            "rank_score": s.twin_rank_score,   // alias expected by prism-postflight.py
-            "centroid": s.centroid,
-            "volume": s.volume_angstrom3,
-            "classification": s.classification_engine,
-            "therm_class": s.therm_class,
-            "quality_score": s.quality_score,
-            "druggability": s.druggability_score,
-            "is_druggable": s.druggability_score > 0.4,
-            "aromatic_score": s.aromatic_score,
-            "spike_count": s.spike_count,
-            "residue_ids": lining_resids,
-            "lining_residues": lining_for_json,
-            "ccns_tau": 0.0,
-            "hysteresis_asymmetry": s.hysteresis_asymmetry,
-            "relative_asymmetry": s.cold_return_fraction - s.cold_hold_fraction,
-            "catalytic_residue_count": 0,
-            // TWIN-exclusive fields
-            "twin_site_class": s.twin_site_class,
-            "twin_rank_score": s.twin_rank_score,
-            "twin_consensus_fraction": s.consensus_fraction,
-            "twin_differential_signal": s.differential_signal,
-            "twin_ccf_centrality": s.ccf_centrality,
-            "twin_ccf_allosteric_score": s.ccf_allosteric_score,
-            "twin_spike_density": s.spike_density,
-            "twin_spikes_a": s.spikes_a,
-            "twin_spikes_b": s.spikes_b,
-            "twin_phase_warm_hold_fraction": s.warm_hold_fraction,
-            "twin_phase_cold_hold_fraction": s.cold_hold_fraction,
-            "twin_rank_components": s.rank_components,
+            serde_json::json!({
+                "id": s.id,
+                "rank": s.rank,
+                "rank_score": s.twin_rank_score,   // alias expected by prism-postflight.py
+                "centroid": s.centroid,
+                "volume": s.volume_angstrom3,
+                "classification": s.classification_engine,
+                "therm_class": s.therm_class,
+                "quality_score": s.quality_score,
+                "druggability": s.druggability_score,
+                "is_druggable": s.druggability_score > 0.4,
+                "aromatic_score": s.aromatic_score,
+                "spike_count": s.spike_count,
+                "residue_ids": lining_resids,
+                "lining_residues": lining_for_json,
+                "ccns_tau": 0.0,
+                "hysteresis_asymmetry": s.hysteresis_asymmetry,
+                "relative_asymmetry": s.cold_return_fraction - s.cold_hold_fraction,
+                "catalytic_residue_count": 0,
+                // TWIN-exclusive fields
+                "twin_site_class": s.twin_site_class,
+                "twin_rank_score": s.twin_rank_score,
+                "twin_consensus_fraction": s.consensus_fraction,
+                "twin_differential_signal": s.differential_signal,
+                "twin_ccf_centrality": s.ccf_centrality,
+                "twin_ccf_allosteric_score": s.ccf_allosteric_score,
+                "twin_spike_density": s.spike_density,
+                "twin_spikes_a": s.spikes_a,
+                "twin_spikes_b": s.spikes_b,
+                "twin_phase_warm_hold_fraction": s.warm_hold_fraction,
+                "twin_phase_cold_hold_fraction": s.cold_hold_fraction,
+                "twin_rank_components": s.rank_components,
+            })
         })
-    }).collect();
+        .collect();
 
     // cryptic_sites and all_pockets MUST be lists (not ints) — prism-postflight.py
     // iterates over them and takes len(), so emitting counts here crashes the wrapper.
-    let cryptic_sites_list: Vec<serde_json::Value> = sites.iter()
+    let cryptic_sites_list: Vec<serde_json::Value> = sites
+        .iter()
         .filter(|s| s.therm_class == "CRYPTIC" || s.therm_class == "DYNAMIC")
-        .map(|s| serde_json::json!({
-            "id": s.id,
-            "centroid": s.centroid,
-            "classification": s.classification_engine,
-            "twin_site_class": s.twin_site_class,
-        })).collect();
+        .map(|s| {
+            serde_json::json!({
+                "id": s.id,
+                "centroid": s.centroid,
+                "classification": s.classification_engine,
+                "twin_site_class": s.twin_site_class,
+            })
+        })
+        .collect();
 
     let root = serde_json::json!({
         "mode": "prism-twin",
@@ -1371,8 +1599,11 @@ fn write_kcc_json(
 
     let mut residue_rows: Vec<serde_json::Value> = Vec::with_capacity(n);
     for i in 0..n {
-        let resname = topology.residue_names.get(topology.ca_indices[i])
-            .cloned().unwrap_or_else(|| "UNK".to_string());
+        let resname = topology
+            .residue_names
+            .get(topology.ca_indices[i])
+            .cloned()
+            .unwrap_or_else(|| "UNK".to_string());
         let degree = edges.iter().filter(|(a, b, _)| *a == i || *b == i).count();
         residue_rows.push(serde_json::json!({
             "resid": i,
@@ -1383,20 +1614,23 @@ fn write_kcc_json(
         }));
     }
 
-    let sites_rows: Vec<serde_json::Value> = sites.iter().map(|s| {
-        serde_json::json!({
-            "id": s.id,
-            "centroid": s.centroid,
-            "gtck_rank": s.rank,
-            "rank_score": s.twin_rank_score,
-            "kcc_confidence": s.ccf_centrality,
-            "driver_residue_topo": s.residue_ids.first().copied().unwrap_or(-1),
-            "site_causal_lag_steps": 0.0,
-            "site_burst_motion": s.differential_signal,
-            "site_lag_corr_peak": s.ccf_centrality,
-            "site_local_cov": s.consensus_fraction,
+    let sites_rows: Vec<serde_json::Value> = sites
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "id": s.id,
+                "centroid": s.centroid,
+                "gtck_rank": s.rank,
+                "rank_score": s.twin_rank_score,
+                "kcc_confidence": s.ccf_centrality,
+                "driver_residue_topo": s.residue_ids.first().copied().unwrap_or(-1),
+                "site_causal_lag_steps": 0.0,
+                "site_burst_motion": s.differential_signal,
+                "site_lag_corr_peak": s.ccf_centrality,
+                "site_local_cov": s.consensus_fraction,
+            })
         })
-    }).collect();
+        .collect();
 
     let root = serde_json::json!({
         "mode": "prism-twin",
@@ -1425,23 +1659,29 @@ fn write_kcc_json(
 }
 
 fn write_prism_therm_json(path: &Path, sites: &[TwinSite]) -> Result<()> {
-    let sites_rows: Vec<serde_json::Value> = sites.iter().map(|s| {
-        serde_json::json!({
-            "centroid_angstrom": s.centroid,
-            "asymmetry_score": s.hysteresis_asymmetry,
-            "ccns_classification": s.therm_class,
-            "druggability": s.druggability,
-            "cooling_spike_count": 0,
-            "cooling_spike_rate": 0.0,
-            "heating_spike_count": 0,
-            "heating_spike_rate": 0.0,
-            "twin_site_class": s.twin_site_class,
-            "twin_rank_score": s.twin_rank_score,
-            "tide_trigger_residues": s.residue_ids.iter().take(5).copied().collect::<Vec<_>>(),
+    let sites_rows: Vec<serde_json::Value> = sites
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "centroid_angstrom": s.centroid,
+                "asymmetry_score": s.hysteresis_asymmetry,
+                "ccns_classification": s.therm_class,
+                "druggability": s.druggability,
+                "cooling_spike_count": 0,
+                "cooling_spike_rate": 0.0,
+                "heating_spike_count": 0,
+                "heating_spike_rate": 0.0,
+                "twin_site_class": s.twin_site_class,
+                "twin_rank_score": s.twin_rank_score,
+                "tide_trigger_residues": s.residue_ids.iter().take(5).copied().collect::<Vec<_>>(),
+            })
         })
-    }).collect();
+        .collect();
 
-    let hysteretic_sites = sites.iter().filter(|s| s.hysteresis_asymmetry > 0.15).count();
+    let hysteretic_sites = sites
+        .iter()
+        .filter(|s| s.hysteresis_asymmetry > 0.15)
+        .count();
 
     let root = serde_json::json!({
         "mode": "prism-twin",
@@ -1461,4 +1701,6 @@ fn write_prism_therm_json(path: &Path, sites: &[TwinSite]) -> Result<()> {
 
 // Silence unused imports helper
 #[allow(dead_code)]
-fn _silence() -> HashMap<String, String> { HashMap::new() }
+fn _silence() -> HashMap<String, String> {
+    HashMap::new()
+}

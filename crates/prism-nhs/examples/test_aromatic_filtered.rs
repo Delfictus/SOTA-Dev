@@ -13,21 +13,27 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
 const STEPS_PER_RUN: i32 = 2000;
 const N_RUNS: usize = 5;
-const AROMATIC_PROXIMITY_CUTOFF: i32 = 8;  // Must be within 8 residues of an aromatic
+const AROMATIC_PROXIMITY_CUTOFF: i32 = 8; // Must be within 8 residues of an aromatic
 
 fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f32, f32) {
-    if predicted.is_empty() || truth.is_empty() { return (0.0, 0.0, 0.0); }
+    if predicted.is_empty() || truth.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
     let tp = predicted.intersection(truth).count() as f32;
     let precision = tp / predicted.len() as f32;
     let recall = tp / truth.len() as f32;
-    let f1 = if precision + recall > 0.0 { 2.0 * precision * recall / (precision + recall) } else { 0.0 };
+    let f1 = if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -41,7 +47,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -51,7 +57,9 @@ fn main() -> Result<()> {
     println!("Atoms: {}, Residues: {}", topology.n_atoms, n_residues);
 
     // Find aromatic residues (UV chromophores)
-    let aromatic_residues: Vec<i32> = topology.residue_names.iter()
+    let aromatic_residues: Vec<i32> = topology
+        .residue_names
+        .iter()
         .enumerate()
         .filter_map(|(i, name)| {
             if matches!(name.as_str(), "TRP" | "TYR" | "PHE") {
@@ -62,22 +70,35 @@ fn main() -> Result<()> {
         })
         .collect();
 
-    println!("\nAromatic residues (UV targets): {} found", aromatic_residues.len());
-    println!("  {:?}", &aromatic_residues[..aromatic_residues.len().min(20)]);
+    println!(
+        "\nAromatic residues (UV targets): {} found",
+        aromatic_residues.len()
+    );
+    println!(
+        "  {:?}",
+        &aromatic_residues[..aromatic_residues.len().min(20)]
+    );
 
     // Check which truth residues are near aromatics
     let truth: HashSet<i32> = [
-        23, 24, 25, 26,  // S1'
-        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,  // His41
-        139, 140, 141, 142, 143, 144, 145,  // Cys145
-        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,  // S1
-        186, 187, 188, 189, 190, 191, 192,  // S2
-    ].iter().cloned().collect();
+        23, 24, 25, 26, // S1'
+        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // His41
+        139, 140, 141, 142, 143, 144, 145, // Cys145
+        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, // S1
+        186, 187, 188, 189, 190, 191, 192, // S2
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
-    println!("\nTruth residues near aromatics (within {} residues):", AROMATIC_PROXIMITY_CUTOFF);
+    println!(
+        "\nTruth residues near aromatics (within {} residues):",
+        AROMATIC_PROXIMITY_CUTOFF
+    );
     let mut truth_near_aromatic = 0;
     for &tr in &truth {
-        let nearest_aromatic = aromatic_residues.iter()
+        let nearest_aromatic = aromatic_residues
+            .iter()
             .map(|&ar| (ar - tr).abs())
             .min()
             .unwrap_or(999);
@@ -85,7 +106,11 @@ fn main() -> Result<()> {
             truth_near_aromatic += 1;
         }
     }
-    println!("  {}/{} truth residues are near aromatics", truth_near_aromatic, truth.len());
+    println!(
+        "  {}/{} truth residues are near aromatics",
+        truth_near_aromatic,
+        truth.len()
+    );
 
     // Terminal regions (first/last 12 residues)
     let terminal_start = 12;
@@ -140,7 +165,9 @@ fn main() -> Result<()> {
 
                 // Check if any spike residue is near an aromatic
                 let near_aromatic = spike_residues.iter().any(|&res| {
-                    aromatic_residues.iter().any(|&ar| (ar - res).abs() <= AROMATIC_PROXIMITY_CUTOFF)
+                    aromatic_residues
+                        .iter()
+                        .any(|&ar| (ar - res).abs() <= AROMATIC_PROXIMITY_CUTOFF)
                 });
 
                 // Only count spikes near aromatics
@@ -148,7 +175,8 @@ fn main() -> Result<()> {
                     aromatic_filtered_spikes += 1;
                     for &res_id in &spike_residues {
                         // Additional filter: only residues themselves near aromatics
-                        let res_near_aromatic = aromatic_residues.iter()
+                        let res_near_aromatic = aromatic_residues
+                            .iter()
                             .any(|&ar| (ar - res_id).abs() <= AROMATIC_PROXIMITY_CUTOFF);
 
                         if res_near_aromatic {
@@ -165,19 +193,23 @@ fn main() -> Result<()> {
     println!(" Done\n");
 
     println!("Total spikes: {}", total_spikes);
-    println!("Aromatic-filtered spikes: {} ({:.1}%)",
-             aromatic_filtered_spikes,
-             aromatic_filtered_spikes as f32 / total_spikes as f32 * 100.0);
+    println!(
+        "Aromatic-filtered spikes: {} ({:.1}%)",
+        aromatic_filtered_spikes,
+        aromatic_filtered_spikes as f32 / total_spikes as f32 * 100.0
+    );
     println!("Unique residues after filtering: {}", residue_counts.len());
 
     // Rank by count, penalizing terminals
-    let mut ranked: Vec<_> = residue_counts.iter()
+    let mut ranked: Vec<_> = residue_counts
+        .iter()
         .map(|(&res_id, &count)| {
             let is_terminal = res_id < terminal_start as i32 || res_id >= terminal_end as i32;
             let penalty = if is_terminal { 0.2 } else { 1.0 };
 
             // Distance to nearest aromatic (closer = better)
-            let nearest_aromatic_dist = aromatic_residues.iter()
+            let nearest_aromatic_dist = aromatic_residues
+                .iter()
                 .map(|&ar| (ar - res_id).abs())
                 .min()
                 .unwrap_or(100) as f32;
@@ -186,7 +218,13 @@ fn main() -> Result<()> {
             let intensity = residue_intensity.get(&res_id).unwrap_or(&0.0);
             let score = (count as f32).sqrt() * penalty * proximity_boost * (1.0 + intensity * 0.1);
 
-            (res_id, score, count, is_terminal, nearest_aromatic_dist as i32)
+            (
+                res_id,
+                score,
+                count,
+                is_terminal,
+                nearest_aromatic_dist as i32,
+            )
         })
         .collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
@@ -195,28 +233,50 @@ fn main() -> Result<()> {
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("TOP 50 AROMATIC-FILTERED RESIDUES");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>4} {:>6} {:>8} {:>6} {:>8} {:>10}",
-             "Rank", "ResID", "Score", "Count", "AromDist", "Truth?");
+    println!(
+        "{:>4} {:>6} {:>8} {:>6} {:>8} {:>10}",
+        "Rank", "ResID", "Score", "Count", "AromDist", "Truth?"
+    );
     println!("{}", "-".repeat(55));
 
-    let mut hits = [0usize; 6];  // hits at 10, 20, 30, 40, 50, 60
+    let mut hits = [0usize; 6]; // hits at 10, 20, 30, 40, 50, 60
     for (i, (res_id, score, count, is_term, arom_dist)) in ranked.iter().take(60).enumerate() {
         let term_mark = if *is_term { "T" } else { "" };
         let in_truth = truth.contains(res_id);
         let truth_mark = if in_truth { "YES ←" } else { "" };
 
         if in_truth {
-            if i < 10 { hits[0] += 1; }
-            if i < 20 { hits[1] += 1; }
-            if i < 30 { hits[2] += 1; }
-            if i < 40 { hits[3] += 1; }
-            if i < 50 { hits[4] += 1; }
-            if i < 60 { hits[5] += 1; }
+            if i < 10 {
+                hits[0] += 1;
+            }
+            if i < 20 {
+                hits[1] += 1;
+            }
+            if i < 30 {
+                hits[2] += 1;
+            }
+            if i < 40 {
+                hits[3] += 1;
+            }
+            if i < 50 {
+                hits[4] += 1;
+            }
+            if i < 60 {
+                hits[5] += 1;
+            }
         }
 
         if i < 50 {
-            println!("{:>4} {:>5}{:1} {:>8.2} {:>6} {:>8} {:>10}",
-                     i + 1, res_id, term_mark, score, count, arom_dist, truth_mark);
+            println!(
+                "{:>4} {:>5}{:1} {:>8.2} {:>6} {:>8} {:>10}",
+                i + 1,
+                res_id,
+                term_mark,
+                score,
+                count,
+                arom_dist,
+                truth_mark
+            );
         }
     }
 
@@ -224,8 +284,10 @@ fn main() -> Result<()> {
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("PRECISION-RECALL METRICS");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>8} {:>10} {:>10} {:>10} {:>6} {:>8}",
-             "Top-N", "Precision", "Recall", "F1", "Hits", "Status");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>6} {:>8}",
+        "Top-N", "Precision", "Recall", "F1", "Hits", "Status"
+    );
     println!("{}", "-".repeat(60));
 
     let cutoffs = [10, 20, 30, 40, 50, 60, 80, 100];
@@ -233,17 +295,26 @@ fn main() -> Result<()> {
     let mut best_n = 0;
 
     for (idx, &n) in cutoffs.iter().enumerate() {
-        let predicted: HashSet<i32> = ranked.iter()
+        let predicted: HashSet<i32> = ranked
+            .iter()
             .take(n)
             .map(|(res_id, _, _, _, _)| *res_id)
             .collect();
 
         let (p, r, f1) = calculate_metrics(&predicted, &truth);
         let n_hits = predicted.intersection(&truth).count();
-        let status = if f1 > 0.3 { "HIT ✓" } else if f1 > 0.2 { "near" } else { "miss" };
+        let status = if f1 > 0.3 {
+            "HIT ✓"
+        } else if f1 > 0.2 {
+            "near"
+        } else {
+            "miss"
+        };
 
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6} {:>8}",
-                 n, p, r, f1, n_hits, status);
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6} {:>8}",
+            n, p, r, f1, n_hits, status
+        );
 
         if f1 > best_f1 {
             best_f1 = f1;
@@ -256,14 +327,24 @@ fn main() -> Result<()> {
     println!("TRUTH RESIDUE RANKS");
     println!("═══════════════════════════════════════════════════════════════════════");
 
-    let mut truth_info: Vec<_> = truth.iter()
+    let mut truth_info: Vec<_> = truth
+        .iter()
         .map(|&tr| {
-            let rank = ranked.iter().position(|(r, _, _, _, _)| *r == tr).map(|p| p + 1);
-            let region = if tr <= 26 { "S1'" }
-                        else if tr <= 49 { "His41" }
-                        else if tr <= 145 { "Cys145" }
-                        else if tr <= 172 { "S1" }
-                        else { "S2" };
+            let rank = ranked
+                .iter()
+                .position(|(r, _, _, _, _)| *r == tr)
+                .map(|p| p + 1);
+            let region = if tr <= 26 {
+                "S1'"
+            } else if tr <= 49 {
+                "His41"
+            } else if tr <= 145 {
+                "Cys145"
+            } else if tr <= 172 {
+                "S1"
+            } else {
+                "S2"
+            };
             (tr, rank, region)
         })
         .collect();
@@ -277,17 +358,33 @@ fn main() -> Result<()> {
     }
 
     let found = truth_info.iter().filter(|(_, r, _)| r.is_some()).count();
-    let in_top_40 = truth_info.iter().filter(|(_, r, _)| r.map(|x| x <= 40).unwrap_or(false)).count();
+    let in_top_40 = truth_info
+        .iter()
+        .filter(|(_, r, _)| r.map(|x| x <= 40).unwrap_or(false))
+        .count();
 
     // Summary
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");
     println!("║                            SUMMARY                                    ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
-    println!("║  Aromatic filtering kept: {:.1}% of spikes                            ║",
-             aromatic_filtered_spikes as f32 / total_spikes as f32 * 100.0);
-    println!("║  Truth residues found: {}/{}                                          ║", found, truth.len());
-    println!("║  Truth residues in top 40: {}/{}                                      ║", in_top_40, truth.len());
-    println!("║  Best F1: {:.3} at Top-{}                                             ║", best_f1, best_n);
+    println!(
+        "║  Aromatic filtering kept: {:.1}% of spikes                            ║",
+        aromatic_filtered_spikes as f32 / total_spikes as f32 * 100.0
+    );
+    println!(
+        "║  Truth residues found: {}/{}                                          ║",
+        found,
+        truth.len()
+    );
+    println!(
+        "║  Truth residues in top 40: {}/{}                                      ║",
+        in_top_40,
+        truth.len()
+    );
+    println!(
+        "║  Best F1: {:.3} at Top-{}                                             ║",
+        best_f1, best_n
+    );
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     if best_f1 > 0.3 {
         println!("║  RESULT: ✓ PASSED - Cryptic site detection working!                 ║");

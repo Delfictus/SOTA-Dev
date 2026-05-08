@@ -26,7 +26,9 @@
 //! - Spike correlation by proximity
 //! - Publication-ready summary statistics
 
-use crate::uv_bias::{ChromophoreType, AromaticTarget, DisulfideTarget, WavelengthAwareSpike, SpikeCategory};
+use crate::uv_bias::{
+    AromaticTarget, ChromophoreType, DisulfideTarget, SpikeCategory, WavelengthAwareSpike,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -259,7 +261,9 @@ impl AromaticProximityAnalyzer {
             *sites_by_bin.entry(analysis.bin.clone()).or_insert(0) += 1;
 
             // Update chromophore counts
-            *sites_by_chromophore.entry(analysis.nearest_type.clone()).or_insert(0) += 1;
+            *sites_by_chromophore
+                .entry(analysis.nearest_type.clone())
+                .or_insert(0) += 1;
 
             // Update matrix
             bin_chromophore_matrix
@@ -280,7 +284,11 @@ impl AromaticProximityAnalyzer {
 
         let n = sites.len() as f32;
         let average_chromophore_distance = if n > 0.0 { total_distance / n } else { 0.0 };
-        let fraction_uv_influenced = if n > 0.0 { uv_influenced_count as f32 / n } else { 0.0 };
+        let fraction_uv_influenced = if n > 0.0 {
+            uv_influenced_count as f32 / n
+        } else {
+            0.0
+        };
 
         // Compute spike correlations
         let spike_correlation_by_bin = self.compute_spike_correlations(&site_analyses);
@@ -362,7 +370,7 @@ impl AromaticProximityAnalyzer {
             bin: bin.label().to_string(),
             nearby_chromophores,
             spike_count: site.spike_count,
-            uv_spike_fraction: 0.0,  // Updated later if spike data available
+            uv_spike_fraction: 0.0, // Updated later if spike data available
         }
     }
 
@@ -379,18 +387,15 @@ impl AromaticProximityAnalyzer {
         let mut correlations = HashMap::new();
 
         for bin in ProximityBin::all() {
-            let bin_sites: Vec<_> = analyses.iter()
-                .filter(|a| a.bin == bin.label())
-                .collect();
+            let bin_sites: Vec<_> = analyses.iter().filter(|a| a.bin == bin.label()).collect();
 
             if bin_sites.is_empty() {
                 correlations.insert(bin.label().to_string(), 0.0);
                 continue;
             }
 
-            let avg_spikes: f32 = bin_sites.iter()
-                .map(|a| a.spike_count as f32)
-                .sum::<f32>() / bin_sites.len() as f32;
+            let avg_spikes: f32 = bin_sites.iter().map(|a| a.spike_count as f32).sum::<f32>()
+                / bin_sites.len() as f32;
 
             correlations.insert(bin.label().to_string(), avg_spikes);
         }
@@ -428,9 +433,10 @@ impl AromaticProximityAnalyzer {
 
             // Also check aromatics directly for all-distances
             for aromatic in &self.aromatics {
-                let dist = ((analysis.nearest_distance - aromatic.ring_center[0]).powi(2) +
-                           (analysis.nearest_distance - aromatic.ring_center[1]).powi(2) +
-                           (analysis.nearest_distance - aromatic.ring_center[2]).powi(2)).sqrt();
+                let dist = ((analysis.nearest_distance - aromatic.ring_center[0]).powi(2)
+                    + (analysis.nearest_distance - aromatic.ring_center[1]).powi(2)
+                    + (analysis.nearest_distance - aromatic.ring_center[2]).powi(2))
+                .sqrt();
 
                 match aromatic.residue_type {
                     ChromophoreType::Tryptophan => min_trp = min_trp.min(dist),
@@ -440,14 +446,28 @@ impl AromaticProximityAnalyzer {
                 }
             }
 
-            if min_trp < f32::MAX { trp_distances.push(min_trp); }
-            if min_tyr < f32::MAX { tyr_distances.push(min_tyr); }
-            if min_phe < f32::MAX { phe_distances.push(min_phe); }
-            if min_ss < f32::MAX { ss_distances.push(min_ss); }
+            if min_trp < f32::MAX {
+                trp_distances.push(min_trp);
+            }
+            if min_tyr < f32::MAX {
+                tyr_distances.push(min_tyr);
+            }
+            if min_phe < f32::MAX {
+                phe_distances.push(min_phe);
+            }
+            if min_ss < f32::MAX {
+                ss_distances.push(min_ss);
+            }
 
-            if min_trp < 5.0 { trp_close += 1; }
-            if min_tyr < 5.0 { tyr_close += 1; }
-            if analysis.nearest_distance < 5.0 { any_close += 1; }
+            if min_trp < 5.0 {
+                trp_close += 1;
+            }
+            if min_tyr < 5.0 {
+                tyr_close += 1;
+            }
+            if analysis.nearest_distance < 5.0 {
+                any_close += 1;
+            }
         }
 
         let n = analyses.len() as f32;
@@ -476,9 +496,21 @@ impl AromaticProximityAnalyzer {
             Some(ss_distances.iter().sum::<f32>() / ss_distances.len() as f32)
         };
 
-        let pct_trp_close = if n > 0.0 { trp_close as f32 / n * 100.0 } else { 0.0 };
-        let pct_tyr_close = if n > 0.0 { tyr_close as f32 / n * 100.0 } else { 0.0 };
-        let pct_any_aromatic_close = if n > 0.0 { any_close as f32 / n * 100.0 } else { 0.0 };
+        let pct_trp_close = if n > 0.0 {
+            trp_close as f32 / n * 100.0
+        } else {
+            0.0
+        };
+        let pct_tyr_close = if n > 0.0 {
+            tyr_close as f32 / n * 100.0
+        } else {
+            0.0
+        };
+        let pct_any_aromatic_close = if n > 0.0 {
+            any_close as f32 / n * 100.0
+        } else {
+            0.0
+        };
 
         // Simple correlation: negative distance → spike count relationship
         let proximity_spike_correlation = self.compute_proximity_spike_correlation(analyses);
@@ -528,12 +560,18 @@ impl AromaticProximityAnalyzer {
     }
 
     /// Compute correlation between specific chromophore type distance and spikes
-    fn compute_type_spike_correlation(&self, analyses: &[SiteProximityResult], chromophore_type: &str) -> f32 {
+    fn compute_type_spike_correlation(
+        &self,
+        analyses: &[SiteProximityResult],
+        chromophore_type: &str,
+    ) -> f32 {
         let mut distances = Vec::new();
         let mut spikes = Vec::new();
 
         for analysis in analyses {
-            let type_dist = analysis.nearby_chromophores.iter()
+            let type_dist = analysis
+                .nearby_chromophores
+                .iter()
                 .filter(|c| c.chromophore_type == chromophore_type)
                 .map(|c| c.distance)
                 .min_by(|a, b| a.partial_cmp(b).unwrap());
@@ -568,17 +606,34 @@ impl AromaticProximityAnalyzer {
         report.push_str("# Aromatic Proximity Quantification Report\n\n");
 
         report.push_str("## Overview\n\n");
-        report.push_str(&format!("- Total sites analyzed: {}\n", results.total_sites));
-        report.push_str(&format!("- Average chromophore distance: {:.2} Å\n", results.average_chromophore_distance));
-        report.push_str(&format!("- Fraction UV-influenced (<8Å): {:.1}%\n\n", results.fraction_uv_influenced * 100.0));
+        report.push_str(&format!(
+            "- Total sites analyzed: {}\n",
+            results.total_sites
+        ));
+        report.push_str(&format!(
+            "- Average chromophore distance: {:.2} Å\n",
+            results.average_chromophore_distance
+        ));
+        report.push_str(&format!(
+            "- Fraction UV-influenced (<8Å): {:.1}%\n\n",
+            results.fraction_uv_influenced * 100.0
+        ));
 
         report.push_str("## Sites by Proximity Bin\n\n");
         report.push_str("| Bin | Count | Avg Spikes |\n");
         report.push_str("|-----|-------|------------|\n");
         for bin in ProximityBin::all() {
             let count = results.sites_by_bin.get(bin.label()).unwrap_or(&0);
-            let spikes = results.spike_correlation_by_bin.get(bin.label()).unwrap_or(&0.0);
-            report.push_str(&format!("| {} | {} | {:.1} |\n", bin.label(), count, spikes));
+            let spikes = results
+                .spike_correlation_by_bin
+                .get(bin.label())
+                .unwrap_or(&0.0);
+            report.push_str(&format!(
+                "| {} | {} | {:.1} |\n",
+                bin.label(),
+                count,
+                spikes
+            ));
         }
         report.push('\n');
 
@@ -593,17 +648,35 @@ impl AromaticProximityAnalyzer {
 
         report.push_str("## Summary Statistics\n\n");
         let s = &results.summary;
-        report.push_str(&format!("- Mean TRP distance: {:.2} Å\n", s.mean_trp_distance));
-        report.push_str(&format!("- Mean TYR distance: {:.2} Å\n", s.mean_tyr_distance));
-        report.push_str(&format!("- Mean PHE distance: {:.2} Å\n", s.mean_phe_distance));
+        report.push_str(&format!(
+            "- Mean TRP distance: {:.2} Å\n",
+            s.mean_trp_distance
+        ));
+        report.push_str(&format!(
+            "- Mean TYR distance: {:.2} Å\n",
+            s.mean_tyr_distance
+        ));
+        report.push_str(&format!(
+            "- Mean PHE distance: {:.2} Å\n",
+            s.mean_phe_distance
+        ));
         if let Some(ss_dist) = s.mean_disulfide_distance {
             report.push_str(&format!("- Mean S-S distance: {:.2} Å\n", ss_dist));
         }
         report.push_str(&format!("- % with TRP < 5Å: {:.1}%\n", s.pct_trp_close));
         report.push_str(&format!("- % with TYR < 5Å: {:.1}%\n", s.pct_tyr_close));
-        report.push_str(&format!("- % with any aromatic < 5Å: {:.1}%\n", s.pct_any_aromatic_close));
-        report.push_str(&format!("- Proximity-spike correlation: {:.3}\n", s.proximity_spike_correlation));
-        report.push_str(&format!("- Best predictor: {} (r = {:.3})\n", s.best_predictor, s.best_predictor_correlation));
+        report.push_str(&format!(
+            "- % with any aromatic < 5Å: {:.1}%\n",
+            s.pct_any_aromatic_close
+        ));
+        report.push_str(&format!(
+            "- Proximity-spike correlation: {:.3}\n",
+            s.proximity_spike_correlation
+        ));
+        report.push_str(&format!(
+            "- Best predictor: {} (r = {:.3})\n",
+            s.best_predictor, s.best_predictor_correlation
+        ));
 
         report
     }
@@ -642,8 +715,14 @@ mod tests {
 
     #[test]
     fn test_proximity_bins() {
-        assert_eq!(ProximityBin::from_distance(1.5), ProximityBin::DirectContact);
-        assert_eq!(ProximityBin::from_distance(4.0), ProximityBin::CloseProximity);
+        assert_eq!(
+            ProximityBin::from_distance(1.5),
+            ProximityBin::DirectContact
+        );
+        assert_eq!(
+            ProximityBin::from_distance(4.0),
+            ProximityBin::CloseProximity
+        );
         assert_eq!(ProximityBin::from_distance(6.5), ProximityBin::MediumRange);
         assert_eq!(ProximityBin::from_distance(10.0), ProximityBin::Distal);
     }
@@ -659,7 +738,11 @@ mod tests {
         // Perfect negative correlation
         let y_neg = vec![10.0, 8.0, 6.0, 4.0, 2.0];
         let r_neg = pearson_correlation(&x, &y_neg);
-        assert!((r_neg + 1.0).abs() < 0.001, "Expected r=-1.0, got {}", r_neg);
+        assert!(
+            (r_neg + 1.0).abs() < 0.001,
+            "Expected r=-1.0, got {}",
+            r_neg
+        );
 
         // No correlation (constant y)
         let y_const = vec![5.0, 5.0, 5.0, 5.0, 5.0];

@@ -132,16 +132,26 @@ impl ContactShellTile {
             stream_id: 0,
             cluster_id: 0,
             frame: 0,
-            geo_alm: [0.0; 64],   geo_power_spectrum:  [0.0; 8],
-            caus_alm: [0.0; 64],  caus_power_spectrum: [0.0; 8],
-            therm_alm: [0.0; 64], therm_power_spectrum:[0.0; 8],
-            chem_alm: [0.0; 64],  chem_power_spectrum: [0.0; 8],
-            aabb_min: [0.0; 4],   aabb_max: [0.0; 4],
-            agg_spike_source: 0,  agg_origin_phase: 0,
-            agg_chem_flags: 0,    agg_pad: 0,
-            sum_w_geo: 0.0,       sum_w_caus: 0.0,
-            sum_w_therm: 0.0,     sum_w_chem: 0.0,
-            spike_count: 0,       adjudication_code: 0,
+            geo_alm: [0.0; 64],
+            geo_power_spectrum: [0.0; 8],
+            caus_alm: [0.0; 64],
+            caus_power_spectrum: [0.0; 8],
+            therm_alm: [0.0; 64],
+            therm_power_spectrum: [0.0; 8],
+            chem_alm: [0.0; 64],
+            chem_power_spectrum: [0.0; 8],
+            aabb_min: [0.0; 4],
+            aabb_max: [0.0; 4],
+            agg_spike_source: 0,
+            agg_origin_phase: 0,
+            agg_chem_flags: 0,
+            agg_pad: 0,
+            sum_w_geo: 0.0,
+            sum_w_caus: 0.0,
+            sum_w_therm: 0.0,
+            sum_w_chem: 0.0,
+            spike_count: 0,
+            adjudication_code: 0,
             reserved: [0; 2],
             _pad: [0; 32],
         }
@@ -152,10 +162,10 @@ impl ContactShellTile {
     /// WMMA-pad and always zero on kernel output.
     pub fn alm(&self, plane: usize) -> &[f32] {
         match plane {
-            PLANE_GEO   => &self.geo_alm[..N_COEFFS],
-            PLANE_CAUS  => &self.caus_alm[..N_COEFFS],
+            PLANE_GEO => &self.geo_alm[..N_COEFFS],
+            PLANE_CAUS => &self.caus_alm[..N_COEFFS],
             PLANE_THERM => &self.therm_alm[..N_COEFFS],
-            PLANE_CHEM  => &self.chem_alm[..N_COEFFS],
+            PLANE_CHEM => &self.chem_alm[..N_COEFFS],
             _ => panic!("plane index {} out of range [0, {})", plane, N_PLANES),
         }
     }
@@ -164,10 +174,10 @@ impl ContactShellTile {
     /// floats) for a given plane index.
     pub fn cl(&self, plane: usize) -> &[f32] {
         match plane {
-            PLANE_GEO   => &self.geo_power_spectrum[..=LMAX],
-            PLANE_CAUS  => &self.caus_power_spectrum[..=LMAX],
+            PLANE_GEO => &self.geo_power_spectrum[..=LMAX],
+            PLANE_CAUS => &self.caus_power_spectrum[..=LMAX],
             PLANE_THERM => &self.therm_power_spectrum[..=LMAX],
-            PLANE_CHEM  => &self.chem_power_spectrum[..=LMAX],
+            PLANE_CHEM => &self.chem_power_spectrum[..=LMAX],
             _ => panic!("plane index {} out of range [0, {})", plane, N_PLANES),
         }
     }
@@ -216,18 +226,16 @@ pub(crate) mod ffi {
         /// displacement.
         pub fn prism_so3_set_residue_to_calpha(
             host_table: *const u32,
-            n:          u32,
-            stream:     *mut std::ffi::c_void,
+            n: u32,
+            stream: *mut std::ffi::c_void,
         ) -> CudaError;
 
         /// **M1.2.20.C-G / T21** — Update __constant__ d_current_md_step.
         /// Call this from the chunk loop BEFORE each captured-graph
         /// relaunch so the gasp kernel sees the live MD step number
         /// instead of the build-time frozen value.
-        pub fn prism_so3_set_current_md_step(
-            step:   u32,
-            stream: *mut std::ffi::c_void,
-        ) -> CudaError;
+        pub fn prism_so3_set_current_md_step(step: u32, stream: *mut std::ffi::c_void)
+            -> CudaError;
 
         /// Launch the prism_apply_gradient_gasp_kernel.  Reads FFI
         /// fields from `adj_base` (gasp_gain_eta @ 136, force_burst_step
@@ -238,17 +246,17 @@ pub(crate) mod ffi {
         /// for the post-pass Momentum Guard.  `d_com_shift` may be
         /// null (disables COM accumulation).
         pub fn prism_apply_gradient_gasp_launch(
-            d_spikes_in:  *const RichSpike,
-            d_spikes_out: *mut   RichSpike,
-            d_forces:     *const f32,
-            d_masses:     *const f32,
-            adj_base:     *const std::ffi::c_void,
-            d_com_shift:  *mut std::ffi::c_void,   // [3] f32 — Σ m·Δr, nullable
-            d_total_mass: *mut std::ffi::c_void,   // [1] f32 — Σ m (Path Ω Option A), nullable
+            d_spikes_in: *const RichSpike,
+            d_spikes_out: *mut RichSpike,
+            d_forces: *const f32,
+            d_masses: *const f32,
+            adj_base: *const std::ffi::c_void,
+            d_com_shift: *mut std::ffi::c_void, // [3] f32 — Σ m·Δr, nullable
+            d_total_mass: *mut std::ffi::c_void, // [1] f32 — Σ m (Path Ω Option A), nullable
             current_step: u32,
-            n_spikes:     u32,
-            n_atoms:      u32,
-            stream:       *mut std::ffi::c_void,
+            n_spikes: u32,
+            n_atoms: u32,
+            stream: *mut std::ffi::c_void,
         ) -> CudaError;
 
         /// **Path Ω Option A** — Post-pass that reads d_com_shift[3]
@@ -256,11 +264,11 @@ pub(crate) mod ffi {
         /// → d_com_correction[3], and sets adj.momentum_violation_flag
         /// only if the correction itself exceeds 1.0 Å.
         pub fn prism_momentum_guard_check_launch(
-            d_com_shift:      *const std::ffi::c_void,  // [3] f32
-            d_total_mass:     *const std::ffi::c_void,  // [1] f32
-            d_com_correction: *mut std::ffi::c_void,    // [3] f32 (output)
-            adj_base:         *mut std::ffi::c_void,
-            stream:           *mut std::ffi::c_void,
+            d_com_shift: *const std::ffi::c_void,    // [3] f32
+            d_total_mass: *const std::ffi::c_void,   // [1] f32
+            d_com_correction: *mut std::ffi::c_void, // [3] f32 (output)
+            adj_base: *mut std::ffi::c_void,
+            stream: *mut std::ffi::c_void,
         ) -> CudaError;
 
         /// **Path Ω Option A** — Per-spike COM correction kernel:
@@ -269,10 +277,10 @@ pub(crate) mod ffi {
         /// downstream SO(3) KL captures structural divergence and not
         /// rigid drift.
         pub fn prism_apply_com_correction_launch(
-            d_spikes_inout:   *mut std::ffi::c_void,    // [n_spikes] RichSpike
-            d_com_correction: *const std::ffi::c_void,  // [3] f32
-            n_spikes:         u32,
-            stream:           *mut std::ffi::c_void,
+            d_spikes_inout: *mut std::ffi::c_void, // [n_spikes] RichSpike
+            d_com_correction: *const std::ffi::c_void, // [3] f32
+            n_spikes: u32,
+            stream: *mut std::ffi::c_void,
         ) -> CudaError;
     }
 }
@@ -299,8 +307,8 @@ pub fn link_probe() -> u32 {
 #[cfg(feature = "gpu")]
 pub unsafe fn set_residue_to_calpha(
     host_table: *const u32,
-    n:          u32,
-    stream:     *mut std::ffi::c_void,
+    n: u32,
+    stream: *mut std::ffi::c_void,
 ) -> i32 {
     ffi::prism_so3_set_residue_to_calpha(host_table, n, stream)
 }
@@ -312,10 +320,7 @@ pub unsafe fn set_residue_to_calpha(
 /// # Safety
 /// `stream` must be a valid CUstream owned by the active context.
 #[cfg(feature = "gpu")]
-pub unsafe fn set_current_md_step(
-    step:   u32,
-    stream: *mut std::ffi::c_void,
-) -> i32 {
+pub unsafe fn set_current_md_step(step: u32, stream: *mut std::ffi::c_void) -> i32 {
     ffi::prism_so3_set_current_md_step(step, stream)
 }
 
@@ -462,7 +467,7 @@ const _: () = {
     assert!(align_of::<SiteManifestFfi>() == 16);
     // ContactShellTile invariants pinned at the FFI boundary.
     assert!(align_of::<ContactShellTile>() == 128);
-    assert!(size_of::<ContactShellTile>()  == 1280);
+    assert!(size_of::<ContactShellTile>() == 1280);
 };
 
 // ============================================================================
@@ -472,8 +477,7 @@ const _: () = {
 /// Stable identity for the SO(3) projection transform. Surfaces in
 /// every `AuditRecord` and every `TransformViolation` emitted by the
 /// transform's `verify` impl.
-pub const TRANSFORM_RECT_3_1_C_SO3_PROJECT: TransformId =
-    TransformId("rect_3_1_c_so3_project");
+pub const TRANSFORM_RECT_3_1_C_SO3_PROJECT: TransformId = TransformId("rect_3_1_c_so3_project");
 
 /// Algebraic invariant: `sizeof(ContactShellTile) == 1280` and
 /// `alignof(ContactShellTile) == 128`. Validated at compile time
@@ -493,10 +497,8 @@ pub const LAW_RECT_3_1_C_ENERGY_BUDGET: LawId =
     LawId::new("rect_3_1_c_energy_budget", LawFamily::Algebraic);
 
 /// Full declared law set for the SO(3) projection transform.
-pub const DECLARED_LAWS_RECT_3_1_C: &[LawId] = &[
-    LAW_RECT_3_1_C_TILE_LAYOUT,
-    LAW_RECT_3_1_C_ENERGY_BUDGET,
-];
+pub const DECLARED_LAWS_RECT_3_1_C: &[LawId] =
+    &[LAW_RECT_3_1_C_TILE_LAYOUT, LAW_RECT_3_1_C_ENERGY_BUDGET];
 
 /// Zero-sized transform singleton. Stateless — the F2-pool handles
 /// (pool, stream, k_lm) are passed per-call via the input shape.
@@ -514,8 +516,8 @@ impl So3ProjectTransform {
 mod transform_impl {
     use super::*;
     use crate::transform::{
-        AuditOutcome, AuditedTransform, DeterminismClass, TolerancePolicy,
-        TransformViolation, AuditRouting, ViolationEvidence, AuditRecord,
+        AuditOutcome, AuditRecord, AuditRouting, AuditedTransform, DeterminismClass,
+        TolerancePolicy, TransformViolation, ViolationEvidence,
     };
 
     /// Borrowed input shape for [`So3ProjectTransform::apply`].
@@ -584,8 +586,11 @@ mod transform_impl {
     }
 
     impl AuditedTransform for So3ProjectTransform {
-        type Input<'a> = So3ProjectInput<'a> where Self: 'a;
-        type Output    = So3ProjectOutput;
+        type Input<'a>
+            = So3ProjectInput<'a>
+        where
+            Self: 'a;
+        type Output = So3ProjectOutput;
 
         fn identity(&self) -> crate::transform::TransformId {
             TRANSFORM_RECT_3_1_C_SO3_PROJECT
@@ -849,7 +854,8 @@ mod stamp_impl {
         // ContactShellTile (matches the byte-allocation pattern used
         // throughout this crate's GPU tests).
         let tile_bytes = std::mem::size_of::<ContactShellTile>();
-        let total_bytes = tile_bytes.checked_mul(n)
+        let total_bytes = tile_bytes
+            .checked_mul(n)
             .expect("ContactShellTile array size overflow");
         let mut host_bytes = vec![0u8; total_bytes];
 
@@ -872,8 +878,7 @@ mod stamp_impl {
         for cluster_id in 0..n {
             let tile: ContactShellTile = unsafe {
                 std::ptr::read_unaligned(
-                    host_bytes.as_ptr().add(cluster_id * tile_bytes)
-                        as *const ContactShellTile,
+                    host_bytes.as_ptr().add(cluster_id * tile_bytes) as *const ContactShellTile
                 )
             };
 
@@ -939,41 +944,41 @@ mod tests {
             };
         }
         // Header
-        assert_eq!(ofs!(phase),      0);
-        assert_eq!(ofs!(stream_id),  4);
+        assert_eq!(ofs!(phase), 0);
+        assert_eq!(ofs!(stream_id), 4);
         assert_eq!(ofs!(cluster_id), 8);
-        assert_eq!(ofs!(frame),     12);
+        assert_eq!(ofs!(frame), 12);
         // Plane G
-        assert_eq!(ofs!(geo_alm),                16);
-        assert_eq!(ofs!(geo_power_spectrum),    272);
+        assert_eq!(ofs!(geo_alm), 16);
+        assert_eq!(ofs!(geo_power_spectrum), 272);
         // Plane C
-        assert_eq!(ofs!(caus_alm),              304);
-        assert_eq!(ofs!(caus_power_spectrum),   560);
+        assert_eq!(ofs!(caus_alm), 304);
+        assert_eq!(ofs!(caus_power_spectrum), 560);
         // Plane T
-        assert_eq!(ofs!(therm_alm),             592);
-        assert_eq!(ofs!(therm_power_spectrum),  848);
+        assert_eq!(ofs!(therm_alm), 592);
+        assert_eq!(ofs!(therm_power_spectrum), 848);
         // Plane H
-        assert_eq!(ofs!(chem_alm),              880);
-        assert_eq!(ofs!(chem_power_spectrum),  1136);
+        assert_eq!(ofs!(chem_alm), 880);
+        assert_eq!(ofs!(chem_power_spectrum), 1136);
         // AABB
-        assert_eq!(ofs!(aabb_min),             1168);
-        assert_eq!(ofs!(aabb_max),             1184);
+        assert_eq!(ofs!(aabb_min), 1168);
+        assert_eq!(ofs!(aabb_max), 1184);
         // Lossless aggregates
-        assert_eq!(ofs!(agg_spike_source),     1200);
-        assert_eq!(ofs!(agg_origin_phase),     1204);
-        assert_eq!(ofs!(agg_chem_flags),       1208);
-        assert_eq!(ofs!(agg_pad),              1212);
+        assert_eq!(ofs!(agg_spike_source), 1200);
+        assert_eq!(ofs!(agg_origin_phase), 1204);
+        assert_eq!(ofs!(agg_chem_flags), 1208);
+        assert_eq!(ofs!(agg_pad), 1212);
         // Per-plane sum_w
-        assert_eq!(ofs!(sum_w_geo),            1216);
-        assert_eq!(ofs!(sum_w_caus),           1220);
-        assert_eq!(ofs!(sum_w_therm),          1224);
-        assert_eq!(ofs!(sum_w_chem),           1228);
+        assert_eq!(ofs!(sum_w_geo), 1216);
+        assert_eq!(ofs!(sum_w_caus), 1220);
+        assert_eq!(ofs!(sum_w_therm), 1224);
+        assert_eq!(ofs!(sum_w_chem), 1228);
         // Counters
-        assert_eq!(ofs!(spike_count),          1232);
-        assert_eq!(ofs!(adjudication_code),    1236);
-        assert_eq!(ofs!(reserved),             1240);
+        assert_eq!(ofs!(spike_count), 1232);
+        assert_eq!(ofs!(adjudication_code), 1236);
+        assert_eq!(ofs!(reserved), 1240);
         // Padding
-        assert_eq!(ofs!(_pad),                 1248);
+        assert_eq!(ofs!(_pad), 1248);
     }
 
     #[test]
@@ -981,7 +986,7 @@ mod tests {
         let t = ContactShellTile::zero();
         for p in 0..N_PLANES {
             assert_eq!(t.alm(p).len(), 36);
-            assert_eq!(t.cl(p).len(),   6);
+            assert_eq!(t.cl(p).len(), 6);
         }
     }
 
@@ -1079,27 +1084,31 @@ mod tests {
 
         // Init K_LM on device.
         let rc = unsafe {
-            crate::sh_basis::ffi::prism_sh_basis_init(
-                raw_stream as *mut std::ffi::c_void,
-            )
+            crate::sh_basis::ffi::prism_sh_basis_init(raw_stream as *mut std::ffi::c_void)
         };
         assert_eq!(rc, crate::sh_basis::ffi::CUDA_SUCCESS, "sh init");
         stream.synchronize().expect("post-init sync");
         let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm ptr");
 
         // 64 random spikes inside a 6 Å sphere (rejection-sampled).
-        struct Lcg { s: u64 }
+        struct Lcg {
+            s: u64,
+        }
         impl Lcg {
             fn next_f32(&mut self) -> f32 {
-                self.s = self.s.wrapping_mul(6_364_136_223_846_793_005)
-                               .wrapping_add(1_442_695_040_888_963_407);
+                self.s = self
+                    .s
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
                 (self.s >> 32) as u32 as f32 / 4_294_967_296.0
             }
             fn next_uniform(&mut self, lo: f32, hi: f32) -> f32 {
                 lo + (hi - lo) * self.next_f32()
             }
         }
-        let mut rng = Lcg { s: 0x1234_5678_9abc_def0 };
+        let mut rng = Lcg {
+            s: 0x1234_5678_9abc_def0,
+        };
 
         const N_SPIKES: usize = 64;
         let mut base_pos: Vec<[f32; 3]> = Vec::with_capacity(N_SPIKES);
@@ -1113,13 +1122,17 @@ mod tests {
         }
 
         let build_spikes = |pos: &[[f32; 3]]| -> Vec<RichSpike> {
-            pos.iter().map(|&[x, y, z]| {
-                let mut s = RichSpike::zero();
-                s.x = x; s.y = y; s.z = z;
-                s.cluster_id = 0;
-                s.residue_id = 0;
-                s
-            }).collect()
+            pos.iter()
+                .map(|&[x, y, z]| {
+                    let mut s = RichSpike::zero();
+                    s.x = x;
+                    s.y = y;
+                    s.z = z;
+                    s.cluster_id = 0;
+                    s.residue_id = 0;
+                    s
+                })
+                .collect()
         };
 
         // Run kernel; return the geometry plane's C_l[0..6].
@@ -1133,14 +1146,20 @@ mod tests {
             let spikes_bytes: Vec<u8> = unsafe {
                 std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
             };
-            stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod spikes");
-            let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offsets");
-            stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offsets");
+            stream
+                .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+                .expect("htod spikes");
+            let mut d_offsets = stream
+                .alloc_zeros::<u32>(offsets.len())
+                .expect("alloc offsets");
+            stream
+                .memcpy_htod(&offsets, &mut d_offsets)
+                .expect("htod offsets");
             let tile_bytes = std::mem::size_of::<ContactShellTile>();
             let d_tiles_b = stream.alloc_zeros::<u8>(tile_bytes).expect("alloc tiles");
 
-            let (sp_dev, _g1)   = d_spikes_b.device_ptr(&stream);
-            let (off_dev, _g2)  = d_offsets.device_ptr(&stream);
+            let (sp_dev, _g1) = d_spikes_b.device_ptr(&stream);
+            let (off_dev, _g2) = d_offsets.device_ptr(&stream);
             let (tile_dev, _g3) = d_tiles_b.device_ptr(&stream);
             let rc = unsafe {
                 ffi::prism_so3_project_run(
@@ -1157,10 +1176,11 @@ mod tests {
             stream.synchronize().expect("kernel sync");
 
             let mut host_bytes = vec![0u8; tile_bytes];
-            stream.memcpy_dtoh(&d_tiles_b, &mut host_bytes).expect("dtoh tiles");
-            let host_tile: ContactShellTile = unsafe {
-                std::ptr::read_unaligned(host_bytes.as_ptr() as *const ContactShellTile)
-            };
+            stream
+                .memcpy_dtoh(&d_tiles_b, &mut host_bytes)
+                .expect("dtoh tiles");
+            let host_tile: ContactShellTile =
+                unsafe { std::ptr::read_unaligned(host_bytes.as_ptr() as *const ContactShellTile) };
             let cl = host_tile.cl(PLANE_GEO);
             let mut out = [0.0f32; LMAX + 1];
             out.copy_from_slice(cl);
@@ -1169,20 +1189,22 @@ mod tests {
 
         let cl_ref = run_kernel(&base_pos);
         let high_l_power: f32 = cl_ref[1..].iter().sum();
-        assert!(high_l_power > 1e-3,
+        assert!(
+            high_l_power > 1e-3,
             "test cloud has trivial angular structure (Σ C_l for l>0 = {:.2e})",
-            high_l_power);
+            high_l_power
+        );
 
         fn rodrigues(v: [f32; 3], k: [f32; 3], alpha: f32) -> [f32; 3] {
             let (s, c) = alpha.sin_cos();
-            let kx = k[0]; let ky = k[1]; let kz = k[2];
-            let vx = v[0]; let vy = v[1]; let vz = v[2];
+            let kx = k[0];
+            let ky = k[1];
+            let kz = k[2];
+            let vx = v[0];
+            let vy = v[1];
+            let vz = v[2];
             let dot = kx * vx + ky * vy + kz * vz;
-            let cross = [
-                ky * vz - kz * vy,
-                kz * vx - kx * vz,
-                kx * vy - ky * vx,
-            ];
+            let cross = [ky * vz - kz * vy, kz * vx - kx * vz, kx * vy - ky * vx];
             [
                 vx * c + cross[0] * s + kx * dot * (1.0 - c),
                 vy * c + cross[1] * s + ky * dot * (1.0 - c),
@@ -1190,19 +1212,26 @@ mod tests {
             ]
         }
 
-        const TOL: f32 = 5e-2;  // tf32 + L2-norm coupling bound; see test docs above.
+        const TOL: f32 = 5e-2; // tf32 + L2-norm coupling bound; see test docs above.
         let mut max_rel: f32 = 0.0;
         for trial in 0..10 {
             let mut ax = rng.next_uniform(-1.0, 1.0);
             let mut ay = rng.next_uniform(-1.0, 1.0);
             let mut az = rng.next_uniform(-1.0, 1.0);
             let mag = (ax * ax + ay * ay + az * az).sqrt();
-            if mag < 1e-6 { ax = 1.0; ay = 0.0; az = 0.0; } else {
-                ax /= mag; ay /= mag; az /= mag;
+            if mag < 1e-6 {
+                ax = 1.0;
+                ay = 0.0;
+                az = 0.0;
+            } else {
+                ax /= mag;
+                ay /= mag;
+                az /= mag;
             }
             let angle = rng.next_uniform(0.0, std::f32::consts::PI);
 
-            let rotated: Vec<[f32; 3]> = base_pos.iter()
+            let rotated: Vec<[f32; 3]> = base_pos
+                .iter()
                 .map(|&v| rodrigues(v, [ax, ay, az], angle))
                 .collect();
 
@@ -1214,16 +1243,28 @@ mod tests {
                 let diff = (r - q).abs();
                 let scale = r.abs().max(1e-3);
                 let rel = diff / scale;
-                if rel > max_rel { max_rel = rel; }
-                assert!(diff < TOL || rel < TOL,
+                if rel > max_rel {
+                    max_rel = rel;
+                }
+                assert!(
+                    diff < TOL || rel < TOL,
                     "trial {}: C_{} not invariant — ref={:.6}, rot={:.6}, \
                      diff={:.2e}, rel={:.2e}, tol={:.2e}",
-                    trial, l, r, q, diff, rel, TOL);
+                    trial,
+                    l,
+                    r,
+                    q,
+                    diff,
+                    rel,
+                    TOL
+                );
             }
         }
-        eprintln!("[g11/c] WMMA tf32 max relative C_l drift over 10 rotations × 6 l = {:.2e} \
+        eprintln!(
+            "[g11/c] WMMA tf32 max relative C_l drift over 10 rotations × 6 l = {:.2e} \
                   (bound ≤ {:.0e}; well within tf32 budget)",
-                  max_rel, TOL);
+            max_rel, TOL
+        );
     }
 
     // Lossless tag survival: every set bit in any input spike's
@@ -1247,9 +1288,7 @@ mod tests {
         let stream = ctx.new_stream().expect("stream");
         let raw_stream = stream.cu_stream() as usize;
         let rc = unsafe {
-            crate::sh_basis::ffi::prism_sh_basis_init(
-                raw_stream as *mut std::ffi::c_void,
-            )
+            crate::sh_basis::ffi::prism_sh_basis_init(raw_stream as *mut std::ffi::c_void)
         };
         assert_eq!(rc, crate::sh_basis::ffi::CUDA_SUCCESS);
         stream.synchronize().expect("sync");
@@ -1259,47 +1298,57 @@ mod tests {
         // tag fields. After aggregation, the bitwise OR must have all
         // eight bits set in each field. Position spread across the
         // sphere so they don't degenerate to centroid.
-        let mut spikes: Vec<RichSpike> = (0..8u32).map(|i| {
-            let theta = (i as f32) * 0.4;
-            let phi   = (i as f32) * 0.7;
-            let r = 3.0 + (i as f32) * 0.2;
-            let x = r * theta.sin() * phi.cos();
-            let y = r * theta.sin() * phi.sin();
-            let z = r * theta.cos();
-            let mut s = RichSpike::zero();
-            s.x = x; s.y = y; s.z = z;
-            s.cluster_id   = 0;
-            s.residue_id   = i as i32;
-            // Distinct single-bit-set masks in each tag field.
-            s.spike_source = 1u32 << i;
-            s.origin_phase = 1u32 << (8 + i);
-            s.chem_flags   = 1u32 << (16 + i);
-            // Non-trivial weight inputs so all 4 planes are exercised.
-            s.causal_lag    = 0.1 + 0.05 * (i as f32);
-            s.water_density = 1.0 + 0.1 * (i as f32);
-            s
-        }).collect();
+        let mut spikes: Vec<RichSpike> = (0..8u32)
+            .map(|i| {
+                let theta = (i as f32) * 0.4;
+                let phi = (i as f32) * 0.7;
+                let r = 3.0 + (i as f32) * 0.2;
+                let x = r * theta.sin() * phi.cos();
+                let y = r * theta.sin() * phi.sin();
+                let z = r * theta.cos();
+                let mut s = RichSpike::zero();
+                s.x = x;
+                s.y = y;
+                s.z = z;
+                s.cluster_id = 0;
+                s.residue_id = i as i32;
+                // Distinct single-bit-set masks in each tag field.
+                s.spike_source = 1u32 << i;
+                s.origin_phase = 1u32 << (8 + i);
+                s.chem_flags = 1u32 << (16 + i);
+                // Non-trivial weight inputs so all 4 planes are exercised.
+                s.causal_lag = 0.1 + 0.05 * (i as f32);
+                s.water_density = 1.0 + 0.1 * (i as f32);
+                s
+            })
+            .collect();
 
         let n = spikes.len() as u32;
         let offsets: Vec<u32> = vec![0u32, n];
 
-        let expected_src   = (0..8u32).map(|i| 1u32 << i).fold(0, |a, b| a | b);
+        let expected_src = (0..8u32).map(|i| 1u32 << i).fold(0, |a, b| a | b);
         let expected_phase = (0..8u32).map(|i| 1u32 << (8 + i)).fold(0, |a, b| a | b);
-        let expected_chem  = (0..8u32).map(|i| 1u32 << (16 + i)).fold(0, |a, b| a | b);
+        let expected_chem = (0..8u32).map(|i| 1u32 << (16 + i)).fold(0, |a, b| a | b);
 
         let spike_bytes = (spikes.len()) * std::mem::size_of::<RichSpike>();
         let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc spikes");
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod spikes");
-        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offsets");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offsets");
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod spikes");
+        let mut d_offsets = stream
+            .alloc_zeros::<u32>(offsets.len())
+            .expect("alloc offsets");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod offsets");
         let tile_bytes = std::mem::size_of::<ContactShellTile>();
         let d_tiles_b = stream.alloc_zeros::<u8>(tile_bytes).expect("alloc tiles");
 
-        let (sp_dev, _g1)   = d_spikes_b.device_ptr(&stream);
-        let (off_dev, _g2)  = d_offsets.device_ptr(&stream);
+        let (sp_dev, _g1) = d_spikes_b.device_ptr(&stream);
+        let (off_dev, _g2) = d_offsets.device_ptr(&stream);
         let (tile_dev, _g3) = d_tiles_b.device_ptr(&stream);
         let rc = unsafe {
             ffi::prism_so3_project_run(
@@ -1316,30 +1365,44 @@ mod tests {
         stream.synchronize().expect("sync");
 
         let mut host_bytes = vec![0u8; tile_bytes];
-        stream.memcpy_dtoh(&d_tiles_b, &mut host_bytes).expect("dtoh");
-        let tile: ContactShellTile = unsafe {
-            std::ptr::read_unaligned(host_bytes.as_ptr() as *const ContactShellTile)
-        };
+        stream
+            .memcpy_dtoh(&d_tiles_b, &mut host_bytes)
+            .expect("dtoh");
+        let tile: ContactShellTile =
+            unsafe { std::ptr::read_unaligned(host_bytes.as_ptr() as *const ContactShellTile) };
 
-        assert_eq!(tile.agg_spike_source, expected_src,
+        assert_eq!(
+            tile.agg_spike_source, expected_src,
             "spike_source bit shaved: expected 0x{:08X}, got 0x{:08X}",
-            expected_src, tile.agg_spike_source);
-        assert_eq!(tile.agg_origin_phase, expected_phase,
+            expected_src, tile.agg_spike_source
+        );
+        assert_eq!(
+            tile.agg_origin_phase, expected_phase,
             "origin_phase bit shaved: expected 0x{:08X}, got 0x{:08X}",
-            expected_phase, tile.agg_origin_phase);
-        assert_eq!(tile.agg_chem_flags, expected_chem,
+            expected_phase, tile.agg_origin_phase
+        );
+        assert_eq!(
+            tile.agg_chem_flags, expected_chem,
             "chem_flags bit shaved: expected 0x{:08X}, got 0x{:08X}",
-            expected_chem, tile.agg_chem_flags);
+            expected_chem, tile.agg_chem_flags
+        );
 
         // Spike count + per-plane sum_w sanity.
         assert_eq!(tile.spike_count, 8);
         // sum_w_geo == 8 (uniform weight) within fp tolerance.
-        assert!((tile.sum_w_geo - 8.0).abs() < 1e-5,
-            "sum_w_geo = {}", tile.sum_w_geo);
+        assert!(
+            (tile.sum_w_geo - 8.0).abs() < 1e-5,
+            "sum_w_geo = {}",
+            tile.sum_w_geo
+        );
         // sum_w_caus = sum |causal_lag| = 0.1*8 + 0.05*(0+1+...+7) = 0.8 + 0.05*28 = 2.2
         let expected_sum_w_caus: f32 = (0..8).map(|i| 0.1 + 0.05 * i as f32).sum();
-        assert!((tile.sum_w_caus - expected_sum_w_caus).abs() < 1e-4,
-            "sum_w_caus = {} (expected {})", tile.sum_w_caus, expected_sum_w_caus);
+        assert!(
+            (tile.sum_w_caus - expected_sum_w_caus).abs() < 1e-4,
+            "sum_w_caus = {} (expected {})",
+            tile.sum_w_caus,
+            expected_sum_w_caus
+        );
 
         // The four planes' C_0 should be NON-EQUAL since they are
         // weighted by independent quantities. (If they were equal the
@@ -1348,14 +1411,21 @@ mod tests {
         let cl_c = tile.cl(PLANE_CAUS);
         let cl_t = tile.cl(PLANE_THERM);
         let cl_h = tile.cl(PLANE_CHEM);
-        assert!(cl_g[0] > 0.0 && cl_t[0] > 0.0,
+        assert!(
+            cl_g[0] > 0.0 && cl_t[0] > 0.0,
             "geometry/thermo planes empty: cl_g[0]={}, cl_t[0]={}",
-            cl_g[0], cl_t[0]);
-        assert!((cl_g[0] - cl_t[0]).abs() > 1e-6,
+            cl_g[0],
+            cl_t[0]
+        );
+        assert!(
+            (cl_g[0] - cl_t[0]).abs() > 1e-6,
             "Geometry and Thermodynamics planes collapsed to the same C_0 \
-             (this violates the 2+2+2+2 plane separation mandate)");
-        assert!((cl_c[0] - cl_h[0]).abs() > 1e-6,
-            "Causality and Chemistry planes collapsed to the same C_0");
+             (this violates the 2+2+2+2 plane separation mandate)"
+        );
+        assert!(
+            (cl_c[0] - cl_h[0]).abs() > 1e-6,
+            "Causality and Chemistry planes collapsed to the same C_0"
+        );
 
         // suppress unused warnings on the silent variables
         let _ = (cl_c, cl_h);
@@ -1366,28 +1436,38 @@ mod tests {
         // Tolerance accounts for the per-l 1e-7 epsilon padding
         // (6 × 1e-7 ≈ 6e-7) plus tf32 accumulation noise.
         for (p, name) in [
-            (PLANE_GEO,   "geo"),
-            (PLANE_CAUS,  "caus"),
+            (PLANE_GEO, "geo"),
+            (PLANE_CAUS, "caus"),
             (PLANE_THERM, "therm"),
-            (PLANE_CHEM,  "chem"),
+            (PLANE_CHEM, "chem"),
         ] {
             let cl = tile.cl(p);
             let sum: f32 = cl.iter().sum();
-            assert!((sum - 1.0).abs() < 1e-2,
+            assert!(
+                (sum - 1.0).abs() < 1e-2,
                 "plane {} not L2-normalized: Σ C_l = {:.6} (want ~1.0)",
-                name, sum);
+                name,
+                sum
+            );
             // Every published C_l must be ≥ KL_EPS (no log(0) risk).
             for (l, &v) in cl.iter().enumerate() {
-                assert!(v >= 1e-7,
+                assert!(
+                    v >= 1e-7,
                     "plane {} C_{} = {:.3e} < epsilon — KL-divergence \
-                     would produce -Inf in the Adjudicator", name, l, v);
+                     would produce -Inf in the Adjudicator",
+                    name,
+                    l,
+                    v
+                );
             }
         }
 
-        eprintln!("[tag-survival] all 24 tag bits propagated bit-for-bit; \
+        eprintln!(
+            "[tag-survival] all 24 tag bits propagated bit-for-bit; \
                   sum_w_geo={:.4}, sum_w_caus={:.4}, sum_w_therm={:.4}, sum_w_chem={:.4}; \
                   Σ C_l ≈ 1.0 for all 4 planes (KL-ready)",
-                  tile.sum_w_geo, tile.sum_w_caus, tile.sum_w_therm, tile.sum_w_chem);
+            tile.sum_w_geo, tile.sum_w_caus, tile.sum_w_therm, tile.sum_w_chem
+        );
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -1411,18 +1491,18 @@ mod tests {
         // pre-allocation state).
         assert!(h.tile_alignment_ok());
         // Operator §3.1 layout invariants.
-        assert_eq!(std::mem::size_of::<SiteManifestFfi>(),  32);
+        assert_eq!(std::mem::size_of::<SiteManifestFfi>(), 32);
         assert_eq!(std::mem::align_of::<SiteManifestFfi>(), 16);
     }
 
     #[test]
     fn site_manifest_alloc_bytes_matches_tile_size() {
         // 1 cluster → 1280 B; 8 clusters → 10240 B; etc.
-        assert_eq!(SiteManifestFfi::alloc_bytes(1),  1280);
+        assert_eq!(SiteManifestFfi::alloc_bytes(1), 1280);
         assert_eq!(SiteManifestFfi::alloc_bytes(8), 10240);
         // Anti-Greenfield Audit Gate G14: never exceeds u32 max-extension
         // bound (n_clusters is u32; 4 GiB / 1280 B ≈ 3.4 M tiles fits).
-        assert_eq!(SiteManifestFfi::alloc_bytes(0),  0);
+        assert_eq!(SiteManifestFfi::alloc_bytes(0), 0);
     }
 
     #[test]
@@ -1433,9 +1513,8 @@ mod tests {
         // pulling the existing builders' default field values and
         // assert the manifest defaults to None.
         use crate::entangled_manifold::{
-            CausalDriverView, CausalSignal, EntangledManifold,
-            LiningContactView, LocalizedSubclusterView, SelectionPolicy,
-            TieBreakerPolicy, ViewProvenance,
+            CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
+            LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy, ViewProvenance,
         };
         use crate::spike_to_cluster_4d::{ConservationScalars, SpikeToCluster4DOutput};
         let coords = vec![[0.0_f32; 3]; 4];
@@ -1445,20 +1524,24 @@ mod tests {
             tie_breaker: TieBreakerPolicy::CausalThenResid,
             frame: 0,
         };
-        let driver    = CausalDriverView::new       (&coords, vec![0], vec![1.0], prov.clone()).unwrap();
-        let lining    = LiningContactView::new      (&coords, vec![1], vec![1.0], prov.clone()).unwrap();
+        let driver = CausalDriverView::new(&coords, vec![0], vec![1.0], prov.clone()).unwrap();
+        let lining = LiningContactView::new(&coords, vec![1], vec![1.0], prov.clone()).unwrap();
         let localized = LocalizedSubclusterView::new(&coords, vec![2], vec![1.0], prov).unwrap();
         let manifold = EntangledManifold::new(driver, lining, localized).unwrap();
         let conservation = ConservationScalars {
-            total_input_spikes: 0, total_attributed: 0, background_count: 0,
+            total_input_spikes: 0,
+            total_attributed: 0,
+            background_count: 0,
         };
         let out = SpikeToCluster4DOutput {
             manifold,
             conservation,
             site_manifest_ffi: None,
         };
-        assert!(out.site_manifest_ffi.is_none(),
-            "default site_manifest_ffi must be None for backward compatibility");
+        assert!(
+            out.site_manifest_ffi.is_none(),
+            "default site_manifest_ffi must be None for backward compatibility"
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -1481,9 +1564,7 @@ mod tests {
 
         // Init K_LM via the existing sh_basis FFI surface.
         let rc = unsafe {
-            crate::sh_basis::ffi::prism_sh_basis_init(
-                raw_stream as *mut std::ffi::c_void,
-            )
+            crate::sh_basis::ffi::prism_sh_basis_init(raw_stream as *mut std::ffi::c_void)
         };
         assert_eq!(rc, crate::sh_basis::ffi::CUDA_SUCCESS);
         stream.synchronize().expect("post-sh-init sync");
@@ -1499,19 +1580,21 @@ mod tests {
         };
 
         // Build a tiny single-cluster spike buffer.
-        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
-            let mut s = RichSpike::zero();
-            // 16 spikes evenly distributed on a unit sphere shell.
-            let theta = 0.3 + (i as f32) * 0.2;
-            let phi   = 0.4 + (i as f32) * 0.3;
-            let r = 4.0;
-            s.x = r * theta.sin() * phi.cos();
-            s.y = r * theta.sin() * phi.sin();
-            s.z = r * theta.cos();
-            s.cluster_id = 0;
-            s.residue_id = i as i32;
-            s
-        }).collect();
+        let spikes: Vec<RichSpike> = (0..16u32)
+            .map(|i| {
+                let mut s = RichSpike::zero();
+                // 16 spikes evenly distributed on a unit sphere shell.
+                let theta = 0.3 + (i as f32) * 0.2;
+                let phi = 0.4 + (i as f32) * 0.3;
+                let r = 4.0;
+                s.x = r * theta.sin() * phi.cos();
+                s.y = r * theta.sin() * phi.sin();
+                s.z = r * theta.cos();
+                s.cluster_id = 0;
+                s.residue_id = i as i32;
+                s
+            })
+            .collect();
         let offsets: Vec<u32> = vec![0u32, spikes.len() as u32];
         let n_clusters: u32 = 1;
         let frame_id: u32 = 42;
@@ -1532,9 +1615,11 @@ mod tests {
             adjudication_trigger_ptr: std::ptr::null_mut(),
         };
         // CSR §M: F2-pool allocation must be 128-byte aligned.
-        assert!(manifest.tile_alignment_ok(),
+        assert!(
+            manifest.tile_alignment_ok(),
             "F2 pool returned non-128-byte-aligned tiles_dev_ptr = {:p}",
-            manifest.tiles_dev_ptr);
+            manifest.tiles_dev_ptr
+        );
 
         // Stage the per-cluster inputs (spike buffer + CSR offsets) on
         // device. We use the byte-allocation pattern already used by
@@ -1544,11 +1629,17 @@ mod tests {
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod spikes");
-        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offsets");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offsets");
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod spikes");
+        let mut d_offsets = stream
+            .alloc_zeros::<u32>(offsets.len())
+            .expect("alloc offsets");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod offsets");
 
-        let (sp_dev,  _g1) = d_spikes_b.device_ptr(&stream);
+        let (sp_dev, _g1) = d_spikes_b.device_ptr(&stream);
         let (off_dev, _g2) = d_offsets.device_ptr(&stream);
 
         // Drive the kernel through the AuditedTransform spine.
@@ -1572,9 +1663,12 @@ mod tests {
                 assert_eq!(record.laws_declared.len(), 2);
                 output
             }
-            AuditOutcome::Quarantined { violations, .. } |
-            AuditOutcome::Aborted    { violations, .. } => {
-                panic!("AuditedTransform rejected the SO(3) output: {:?}", violations);
+            AuditOutcome::Quarantined { violations, .. }
+            | AuditOutcome::Aborted { violations, .. } => {
+                panic!(
+                    "AuditedTransform rejected the SO(3) output: {:?}",
+                    violations
+                );
             }
         };
         assert_eq!(output.cuda_error, 0);
@@ -1594,27 +1688,35 @@ mod tests {
             )
         };
         assert!(matches!(rc, cudarc::driver::sys::CUresult::CUDA_SUCCESS));
-        let tile: ContactShellTile = unsafe {
-            std::ptr::read_unaligned(host_bytes.as_ptr() as *const ContactShellTile)
-        };
+        let tile: ContactShellTile =
+            unsafe { std::ptr::read_unaligned(host_bytes.as_ptr() as *const ContactShellTile) };
 
         // The kernel stamped frame_id and spike_count into the tile;
         // the FFI handshake is verified end-to-end if both round-trip.
         assert_eq!(tile.frame, frame_id, "tile.frame round-trip");
-        assert_eq!(tile.spike_count, spikes.len() as u32, "tile.spike_count round-trip");
+        assert_eq!(
+            tile.spike_count,
+            spikes.len() as u32,
+            "tile.spike_count round-trip"
+        );
         // Geometry plane should be normalized to Σ C_l ≈ 1 (KL-ready).
         let cl_g_sum: f32 = tile.cl(PLANE_GEO).iter().sum();
-        assert!((cl_g_sum - 1.0).abs() < 1e-2,
-            "task-21: geometry plane Σ C_l = {} (want ~1.0)", cl_g_sum);
+        assert!(
+            (cl_g_sum - 1.0).abs() < 1e-2,
+            "task-21: geometry plane Σ C_l = {} (want ~1.0)",
+            cl_g_sum
+        );
 
         // Free the tile buffer back to the pool (stream-ordered free).
         pool.free_async(tiles_ptr_u, raw_stream).expect("F2 free");
         stream.synchronize().expect("post-free sync");
 
-        eprintln!("[task-21] FFI handshake verified end-to-end: \
+        eprintln!(
+            "[task-21] FFI handshake verified end-to-end: \
                   F2 alloc → AuditedTransform::apply → D2H tile read; \
                   tile.frame={}, tile.spike_count={}, Σ C_l (geo) = {:.6}",
-                  tile.frame, tile.spike_count, cl_g_sum);
+            tile.frame, tile.spike_count, cl_g_sum
+        );
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -1635,15 +1737,13 @@ mod tests {
     #[cfg(feature = "gpu")]
     #[test]
     fn rect4_lbvh3_end_to_end_morton_to_manifold_stamp() {
-        use crate::entangled_manifold::{
-            Aabb, CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField,
-            TieBreakerPolicy, ViewProvenance,
-        };
         use crate::entangled_manifold::CausalSortKey;
-        use crate::rich_spike::RichSpike;
-        use crate::site_manifest::{
-            ClusterId, EntangledManifoldId, SiteId, SiteManifest,
+        use crate::entangled_manifold::{
+            Aabb, CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField, TieBreakerPolicy,
+            ViewProvenance,
         };
+        use crate::rich_spike::RichSpike;
+        use crate::site_manifest::{ClusterId, EntangledManifoldId, SiteId, SiteManifest};
         use crate::transform::{AuditOutcome, AuditedTransform};
         use crate::vram_pool::VramPool;
         use cudarc::driver::{CudaContext, DevicePtr};
@@ -1659,9 +1759,7 @@ mod tests {
         let raw_stream = stream.cu_stream() as usize;
 
         let rc = unsafe {
-            crate::sh_basis::ffi::prism_sh_basis_init(
-                raw_stream as *mut std::ffi::c_void,
-            )
+            crate::sh_basis::ffi::prism_sh_basis_init(raw_stream as *mut std::ffi::c_void)
         };
         assert_eq!(rc, crate::sh_basis::ffi::CUDA_SUCCESS);
         stream.synchronize().expect("post-sh-init sync");
@@ -1693,20 +1791,26 @@ mod tests {
             let mut max = [f32::NEG_INFINITY; 3];
             for i in 0..PER_CLUSTER {
                 let theta = 0.3 + (i as f32) * 0.2;
-                let phi   = 0.4 + (i as f32) * 0.3;
+                let phi = 0.4 + (i as f32) * 0.3;
                 let pos = [
                     centers[c][0] + radii[c] * theta.sin() * phi.cos(),
                     centers[c][1] + radii[c] * theta.sin() * phi.sin(),
                     centers[c][2] + radii[c] * theta.cos(),
                 ];
                 let mut s = RichSpike::zero();
-                s.x = pos[0]; s.y = pos[1]; s.z = pos[2];
+                s.x = pos[0];
+                s.y = pos[1];
+                s.z = pos[2];
                 s.cluster_id = c as i32;
                 s.residue_id = (c * PER_CLUSTER + i) as i32;
                 spikes.push(s);
                 for d in 0..3 {
-                    if pos[d] < min[d] { min[d] = pos[d]; }
-                    if pos[d] > max[d] { max[d] = pos[d]; }
+                    if pos[d] < min[d] {
+                        min[d] = pos[d];
+                    }
+                    if pos[d] > max[d] {
+                        max[d] = pos[d];
+                    }
                 }
             }
             per_cluster_aabbs.push(Aabb { min, max });
@@ -1723,30 +1827,40 @@ mod tests {
             frame,
         };
         let sort_lineage = CausalSortKey::new(vec![SortField::SpikeAttributionCount]);
-        let mut sites: Vec<SiteManifest> = (0..N_CLUSTERS).map(|c| {
-            SiteManifest::from_lbvh_cluster_aabb(
-                SiteId(c as u32),
-                ClusterId(c as u32),
-                &per_cluster_aabbs[c],
-                EntangledManifoldId(frame),
-                provenance.clone(),
-                sort_lineage.clone(),
-                PER_CLUSTER as u64,
-                frame,
-            )
-        }).collect();
+        let mut sites: Vec<SiteManifest> = (0..N_CLUSTERS)
+            .map(|c| {
+                SiteManifest::from_lbvh_cluster_aabb(
+                    SiteId(c as u32),
+                    ClusterId(c as u32),
+                    &per_cluster_aabbs[c],
+                    EntangledManifoldId(frame),
+                    provenance.clone(),
+                    sort_lineage.clone(),
+                    PER_CLUSTER as u64,
+                    frame,
+                )
+            })
+            .collect();
 
         // Spatial provenance preserved: every site's geometric centroid
         // ≈ its LBVH AABB center (= cluster physical center within
         // the sampling discretization).
         for (c, site) in sites.iter().enumerate() {
-            assert_eq!(site.centroids.populated_count(), 3,
-                "LBVH-3: 3 of 8 slots honest at M1");
+            assert_eq!(
+                site.centroids.populated_count(),
+                3,
+                "LBVH-3: 3 of 8 slots honest at M1"
+            );
             let g = site.centroids.geometric().unwrap();
             for d in 0..3 {
-                assert!((g.pos[d] - centers[c][d]).abs() < radii[c],
+                assert!(
+                    (g.pos[d] - centers[c][d]).abs() < radii[c],
                     "LBVH-3 cluster {} geometric centroid drifted from physical \
-                     center: g={:?}, expected≈{:?}", c, g.pos, centers[c]);
+                     center: g={:?}, expected≈{:?}",
+                    c,
+                    g.pos,
+                    centers[c]
+                );
             }
             assert_eq!(site.source_manifold_id.0, frame);
             // Stamping fields start as None.
@@ -1771,11 +1885,17 @@ mod tests {
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod spikes");
-        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offsets");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offsets");
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod spikes");
+        let mut d_offsets = stream
+            .alloc_zeros::<u32>(offsets.len())
+            .expect("alloc offsets");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod offsets");
 
-        let (sp_dev,  _g1) = d_spikes_b.device_ptr(&stream);
+        let (sp_dev, _g1) = d_spikes_b.device_ptr(&stream);
         let (off_dev, _g2) = d_offsets.device_ptr(&stream);
 
         let xform = So3ProjectTransform::new();
@@ -1792,8 +1912,8 @@ mod tests {
         stream.synchronize().expect("post-apply sync");
         match outcome {
             AuditOutcome::Accepted { .. } => (),
-            AuditOutcome::Quarantined { violations, .. } |
-            AuditOutcome::Aborted    { violations, .. } => {
+            AuditOutcome::Quarantined { violations, .. }
+            | AuditOutcome::Aborted { violations, .. } => {
                 pool.free_async(tiles_ptr_u, raw_stream).ok();
                 panic!("AuditedTransform rejected SO(3): {:?}", violations);
             }
@@ -1805,24 +1925,30 @@ mod tests {
 
         assert_eq!(report.sites_stamped, N_CLUSTERS as u32);
         assert_eq!(report.clusters_skipped, 0);
-        assert!(report.max_norm_drift < 5e-2,
+        assert!(
+            report.max_norm_drift < 5e-2,
             "RECT-4: post-D2H L2-norm drift {} exceeds tolerance",
-            report.max_norm_drift);
+            report.max_norm_drift
+        );
 
         // Every site now has a populated power spectrum that is
         // (a) Some, (b) of length 6, (c) sums to ≈1, (d) has every
         // C_l ≥ KL_EPS so log() is finite for the Adjudicator.
         for (c, site) in sites.iter().enumerate() {
-            let cl = site.contact_shell_geo_power_spectrum
+            let cl = site
+                .contact_shell_geo_power_spectrum
                 .expect("RECT-4: stamping must populate contact_shell_geo_power_spectrum");
             assert_eq!(cl.len(), 6);
             let sum: f32 = cl.iter().sum();
-            assert!((sum - 1.0).abs() < 1e-2,
-                "site {}: Σ C_l = {:.6}", c, sum);
+            assert!((sum - 1.0).abs() < 1e-2, "site {}: Σ C_l = {:.6}", c, sum);
             for (l, &v) in cl.iter().enumerate() {
-                assert!(v >= 1e-7,
+                assert!(
+                    v >= 1e-7,
                     "site {}: C_{} = {:.3e} below KL_EPS — Adjudicator log would -Inf",
-                    c, l, v);
+                    c,
+                    l,
+                    v
+                );
             }
         }
 
@@ -1835,8 +1961,10 @@ mod tests {
         pool.free_async(tiles_ptr_u, raw_stream).expect("F2 free");
         stream.synchronize().expect("post-free sync");
 
-        eprintln!("[rect4/lbvh3] full pipeline OK: {} sites stamped, max norm drift = {:.2e}",
-                  report.sites_stamped, report.max_norm_drift);
+        eprintln!(
+            "[rect4/lbvh3] full pipeline OK: {} sites stamped, max norm drift = {:.2e}",
+            report.sites_stamped, report.max_norm_drift
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -1845,15 +1973,13 @@ mod tests {
         // RECT-4 partial-stamp behaviour: when the device-side manifest
         // has more clusters than the host-side site array, the extras
         // are reported in `clusters_skipped`, not aborted.
-        use crate::entangled_manifold::{
-            Aabb, CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField,
-            TieBreakerPolicy, ViewProvenance,
-        };
         use crate::entangled_manifold::CausalSortKey;
-        use crate::rich_spike::RichSpike;
-        use crate::site_manifest::{
-            ClusterId, EntangledManifoldId, SiteId, SiteManifest,
+        use crate::entangled_manifold::{
+            Aabb, CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField, TieBreakerPolicy,
+            ViewProvenance,
         };
+        use crate::rich_spike::RichSpike;
+        use crate::site_manifest::{ClusterId, EntangledManifoldId, SiteId, SiteManifest};
         use crate::transform::AuditedTransform;
         use crate::vram_pool::VramPool;
         use cudarc::driver::{CudaContext, DevicePtr};
@@ -1865,9 +1991,7 @@ mod tests {
         let stream = ctx.new_stream().expect("stream");
         let raw_stream = stream.cu_stream() as usize;
         unsafe {
-            let _ = crate::sh_basis::ffi::prism_sh_basis_init(
-                raw_stream as *mut std::ffi::c_void,
-            );
+            let _ = crate::sh_basis::ffi::prism_sh_basis_init(raw_stream as *mut std::ffi::c_void);
         }
         stream.synchronize().expect("sync");
         let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
@@ -1884,7 +2008,7 @@ mod tests {
             for i in 0..16 {
                 let mut s = RichSpike::zero();
                 let theta = 0.3 + (i as f32) * 0.2;
-                let phi   = 0.4 + (i as f32) * 0.3;
+                let phi = 0.4 + (i as f32) * 0.3;
                 s.x = (c as f32 * 10.0) + 4.0 * theta.sin() * phi.cos();
                 s.y = (c as f32 * 10.0) + 4.0 * theta.sin() * phi.sin();
                 s.z = 4.0 * theta.cos();
@@ -1910,10 +2034,16 @@ mod tests {
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
-        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offs");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offs");
-        let (sp_dev, _g1)  = d_spikes_b.device_ptr(&stream);
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod");
+        let mut d_offsets = stream
+            .alloc_zeros::<u32>(offsets.len())
+            .expect("alloc offs");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod offs");
+        let (sp_dev, _g1) = d_spikes_b.device_ptr(&stream);
         let (off_dev, _g2) = d_offsets.device_ptr(&stream);
 
         let _ = So3ProjectTransform::new().apply(So3ProjectInput {
@@ -1937,17 +2067,27 @@ mod tests {
             frame: 0,
         };
         let sort_lineage = CausalSortKey::new(vec![SortField::SpikeAttributionCount]);
-        let aabb = Aabb { min: [0.0; 3], max: [1.0; 3] };
+        let aabb = Aabb {
+            min: [0.0; 3],
+            max: [1.0; 3],
+        };
         let mut sites = vec![SiteManifest::from_lbvh_cluster_aabb(
-            SiteId(0), ClusterId(0), &aabb,
-            EntangledManifoldId(0), provenance, sort_lineage, 16, 0,
+            SiteId(0),
+            ClusterId(0),
+            &aabb,
+            EntangledManifoldId(0),
+            provenance,
+            sort_lineage,
+            16,
+            0,
         )];
 
-        let report = stamp_geo_power_spectrum_into_sites(&manifest, &mut sites)
-            .expect("stamp");
+        let report = stamp_geo_power_spectrum_into_sites(&manifest, &mut sites).expect("stamp");
         assert_eq!(report.sites_stamped, 1);
-        assert_eq!(report.clusters_skipped, 2,
-            "2 of 3 device clusters should be reported as skipped");
+        assert_eq!(
+            report.clusters_skipped, 2,
+            "2 of 3 device clusters should be reported as skipped"
+        );
 
         pool.free_async(tiles_ptr_u, raw_stream).ok();
         stream.synchronize().expect("sync");

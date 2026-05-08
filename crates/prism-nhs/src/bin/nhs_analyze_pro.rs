@@ -15,10 +15,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{
-    load_ensemble_pdb,
-    input::PrismPrepTopology,
-};
+use prism_nhs::{input::PrismPrepTopology, load_ensemble_pdb};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
@@ -110,7 +107,14 @@ fn classify_atom(residue_name: &str, atom_name: &str, element: &str, charge: f32
 
     // Charged residues
     match res.as_str() {
-        "ARG" | "LYS" if !atm.starts_with("C") || atm == "CZ" || atm == "NZ" || atm == "NH1" || atm == "NH2" || atm == "NE" => {
+        "ARG" | "LYS"
+            if !atm.starts_with("C")
+                || atm == "CZ"
+                || atm == "NZ"
+                || atm == "NH1"
+                || atm == "NH2"
+                || atm == "NE" =>
+        {
             return ATOM_CHARGED_POS;
         }
         "ASP" | "GLU" if atm == "OD1" || atm == "OD2" || atm == "OE1" || atm == "OE2" => {
@@ -131,8 +135,13 @@ fn classify_atom(residue_name: &str, atom_name: &str, element: &str, charge: f32
         "PHE" if atm.starts_with("C") && atm != "CA" && atm != "C" && atm != "CB" => {
             return ATOM_AROMATIC;
         }
-        "TYR" if (atm.starts_with("C") && atm != "CA" && atm != "C" && atm != "CB") || atm == "OH" => {
-            if atm == "OH" { return ATOM_POLAR; }
+        "TYR"
+            if (atm.starts_with("C") && atm != "CA" && atm != "C" && atm != "CB")
+                || atm == "OH" =>
+        {
+            if atm == "OH" {
+                return ATOM_POLAR;
+            }
             return ATOM_AROMATIC;
         }
         "TRP" if atm.starts_with("C") && atm != "CA" && atm != "C" && atm != "CB" => {
@@ -147,8 +156,16 @@ fn classify_atom(residue_name: &str, atom_name: &str, element: &str, charge: f32
             if element == "C" && !atm.starts_with("C") {
                 return ATOM_HYDROPHOBIC;
             }
-            if atm == "CB" || atm == "CG" || atm == "CG1" || atm == "CG2" ||
-               atm == "CD" || atm == "CD1" || atm == "CD2" || atm == "CE" || atm == "SD" {
+            if atm == "CB"
+                || atm == "CG"
+                || atm == "CG1"
+                || atm == "CG2"
+                || atm == "CD"
+                || atm == "CD1"
+                || atm == "CD2"
+                || atm == "CE"
+                || atm == "SD"
+            {
                 return ATOM_HYDROPHOBIC;
             }
         }
@@ -158,15 +175,20 @@ fn classify_atom(residue_name: &str, atom_name: &str, element: &str, charge: f32
     // Polar atoms by element/charge
     if element == "O" || element == "N" {
         if charge.abs() > 0.4 {
-            if charge > 0.0 { return ATOM_CHARGED_POS; }
-            else { return ATOM_CHARGED_NEG; }
+            if charge > 0.0 {
+                return ATOM_CHARGED_POS;
+            } else {
+                return ATOM_CHARGED_NEG;
+            }
         }
         return ATOM_POLAR;
     }
 
     if element == "S" {
         // Cysteine SG is somewhat polar, Met SD is hydrophobic
-        if res == "CYS" { return ATOM_POLAR; }
+        if res == "CYS" {
+            return ATOM_POLAR;
+        }
         return ATOM_HYDROPHOBIC;
     }
 
@@ -239,7 +261,8 @@ impl ProEngine {
         let compute_exclusion_field = exclusion_module.load_function("compute_exclusion_field")?;
         let infer_water_density = exclusion_module.load_function("infer_water_density")?;
         let lif_dewetting_step = neuromorphic_module.load_function("lif_dewetting_step")?;
-        let apply_lateral_inhibition = neuromorphic_module.load_function("apply_lateral_inhibition")?;
+        let apply_lateral_inhibition =
+            neuromorphic_module.load_function("apply_lateral_inhibition")?;
         let extract_spike_indices = neuromorphic_module.load_function("extract_spike_indices")?;
         let map_spikes_to_residues = neuromorphic_module.load_function("map_spikes_to_residues")?;
         let init_lif_state = neuromorphic_module.load_function("init_lif_state")?;
@@ -290,19 +313,37 @@ impl ProEngine {
         context.synchronize()?;
 
         Ok(Self {
-            context, stream,
+            context,
+            stream,
             _exclusion_module: exclusion_module,
             _neuromorphic_module: neuromorphic_module,
-            compute_exclusion_field, infer_water_density,
-            lif_dewetting_step, apply_lateral_inhibition,
-            extract_spike_indices, map_spikes_to_residues, init_lif_state,
-            exclusion_field, water_density, prev_water_density, water_gradient,
-            membrane_potential, refractory_counter, spike_output,
-            spike_indices, spike_positions, spike_count,
-            atom_types_gpu, atom_charges_gpu, atom_residues_gpu, atom_positions_gpu,
-            grid_dim, grid_spacing,
+            compute_exclusion_field,
+            infer_water_density,
+            lif_dewetting_step,
+            apply_lateral_inhibition,
+            extract_spike_indices,
+            map_spikes_to_residues,
+            init_lif_state,
+            exclusion_field,
+            water_density,
+            prev_water_density,
+            water_gradient,
+            membrane_potential,
+            refractory_counter,
+            spike_output,
+            spike_indices,
+            spike_positions,
+            spike_count,
+            atom_types_gpu,
+            atom_charges_gpu,
+            atom_residues_gpu,
+            atom_positions_gpu,
+            grid_dim,
+            grid_spacing,
             grid_origin: [0.0, 0.0, 0.0],
-            n_atoms, tau_mem: 8.0, sensitivity: 1.5,
+            n_atoms,
+            tau_mem: 8.0,
+            sensitivity: 1.5,
         })
     }
 
@@ -330,7 +371,8 @@ impl ProEngine {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.init_lif_state)
+            self.stream
+                .launch_builder(&self.init_lif_state)
                 .arg(&self.membrane_potential)
                 .arg(&self.refractory_counter)
                 .arg(&(self.grid_dim as i32))
@@ -346,18 +388,24 @@ impl ProEngine {
     }
 
     fn process_frame(&mut self, positions: &[f32]) -> Result<usize> {
-        self.stream.memcpy_htod(positions, &mut self.atom_positions_gpu)?;
+        self.stream
+            .memcpy_htod(positions, &mut self.atom_positions_gpu)?;
         std::mem::swap(&mut self.water_density, &mut self.prev_water_density);
 
         let blocks_3d = (self.grid_dim as u32).div_ceil(BLOCK_SIZE_3D as u32);
         let cfg_3d = LaunchConfig {
             grid_dim: (blocks_3d, blocks_3d, blocks_3d),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
         unsafe {
-            self.stream.launch_builder(&self.compute_exclusion_field)
+            self.stream
+                .launch_builder(&self.compute_exclusion_field)
                 .arg(&self.atom_positions_gpu)
                 .arg(&self.atom_types_gpu)
                 .arg(&self.atom_charges_gpu)
@@ -370,7 +418,8 @@ impl ProEngine {
                 .arg(&self.grid_spacing)
                 .launch(cfg_3d.clone())?;
 
-            self.stream.launch_builder(&self.infer_water_density)
+            self.stream
+                .launch_builder(&self.infer_water_density)
                 .arg(&self.exclusion_field)
                 .arg(&self.water_density)
                 .arg(&self.water_gradient)
@@ -383,7 +432,8 @@ impl ProEngine {
         self.stream.memcpy_htod(&zero, &mut self.spike_count)?;
 
         unsafe {
-            self.stream.launch_builder(&self.lif_dewetting_step)
+            self.stream
+                .launch_builder(&self.lif_dewetting_step)
                 .arg(&self.prev_water_density)
                 .arg(&self.water_density)
                 .arg(&self.membrane_potential)
@@ -395,7 +445,8 @@ impl ProEngine {
                 .arg(&self.sensitivity)
                 .launch(cfg_3d.clone())?;
 
-            self.stream.launch_builder(&self.apply_lateral_inhibition)
+            self.stream
+                .launch_builder(&self.apply_lateral_inhibition)
                 .arg(&self.spike_output)
                 .arg(&self.membrane_potential)
                 .arg(&(self.grid_dim as i32))
@@ -414,12 +465,17 @@ impl ProEngine {
         let blocks_3d = (self.grid_dim as u32).div_ceil(BLOCK_SIZE_3D as u32);
         let cfg_3d = LaunchConfig {
             grid_dim: (blocks_3d, blocks_3d, blocks_3d),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
         unsafe {
-            self.stream.launch_builder(&self.extract_spike_indices)
+            self.stream
+                .launch_builder(&self.extract_spike_indices)
                 .arg(&self.spike_output)
                 .arg(&self.spike_indices)
                 .arg(&self.spike_positions)
@@ -461,7 +517,8 @@ impl ProEngine {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.map_spikes_to_residues)
+            self.stream
+                .launch_builder(&self.map_spikes_to_residues)
                 .arg(&self.spike_positions)
                 .arg(&self.atom_positions_gpu)
                 .arg(&self.atom_residues_gpu)
@@ -581,9 +638,9 @@ struct ChromophoreCounts {
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct SelectivityDistribution {
-    high_selectivity: usize,    // entropy < 0.5
-    medium_selectivity: usize,  // entropy 0.5-0.8
-    low_selectivity: usize,     // entropy > 0.8
+    high_selectivity: usize,   // entropy < 0.5
+    medium_selectivity: usize, // entropy 0.5-0.8
+    low_selectivity: usize,    // entropy > 0.8
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -627,11 +684,11 @@ struct PerformanceQCReport {
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct DetectionQuality {
-    thermal_noise_ratio: f32,          // 290nm / total
-    aromatic_signal_ratio: f32,        // (250+258+274+280) / total
-    high_entropy_high_confidence: usize,  // Should be rare - potential FP
-    single_residue_sites: usize,       // Potentially suspicious
-    low_spike_high_confidence: usize,  // Potentially suspicious
+    thermal_noise_ratio: f32,            // 290nm / total
+    aromatic_signal_ratio: f32,          // (250+258+274+280) / total
+    high_entropy_high_confidence: usize, // Should be rare - potential FP
+    single_residue_sites: usize,         // Potentially suspicious
+    low_spike_high_confidence: usize,    // Potentially suspicious
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -654,7 +711,7 @@ struct ChromophoreInventory {
     trp_residues_total: usize,
     tyr_residues_total: usize,
     phe_residues_total: usize,
-    cys_residues_total: usize,  // Potential disulfides
+    cys_residues_total: usize, // Potential disulfides
     total_aromatic_residues: usize,
 }
 
@@ -757,11 +814,14 @@ fn cluster_spikes_pro(
     total_frames: usize,
     min_spikes: usize,
 ) -> Vec<CrypticSite> {
-    if spikes.is_empty() { return Vec::new(); }
+    if spikes.is_empty() {
+        return Vec::new();
+    }
 
     // Count cryo-phase frames (T < 250K) for proper persistence normalization
     let cold_threshold = 250.0;
-    let cold_frame_set: HashSet<usize> = spikes.iter()
+    let cold_frame_set: HashSet<usize> = spikes
+        .iter()
         .filter(|s| s.temperature < cold_threshold)
         .map(|s| s.frame_idx)
         .collect();
@@ -772,13 +832,15 @@ fn cluster_spikes_pro(
     let mut cluster_cold_frames: Vec<HashSet<usize>> = Vec::new();
     let mut cluster_temps: Vec<Vec<f32>> = Vec::new();
     let mut cluster_positions: Vec<Vec<[f32; 3]>> = Vec::new();
-    let mut cluster_wavelength_counts: Vec<HashMap<String, usize>> = Vec::new();  // Track spike counts per wavelength
+    let mut cluster_wavelength_counts: Vec<HashMap<String, usize>> = Vec::new(); // Track spike counts per wavelength
 
     // TIER 2: Per-frame and per-residue tracking for mechanistic analysis
     // Per-frame: (spike_count, temperature, wavelength_counts)
-    let mut cluster_frame_data: Vec<HashMap<usize, (usize, f32, HashMap<String, usize>)>> = Vec::new();
+    let mut cluster_frame_data: Vec<HashMap<usize, (usize, f32, HashMap<String, usize>)>> =
+        Vec::new();
     // Per-residue: (total_spikes, frames_active, wavelength_counts)
-    let mut cluster_residue_data: Vec<HashMap<i32, (usize, Vec<usize>, HashMap<String, usize>)>> = Vec::new();
+    let mut cluster_residue_data: Vec<HashMap<i32, (usize, Vec<usize>, HashMap<String, usize>)>> =
+        Vec::new();
 
     let r2 = radius * radius;
 
@@ -790,8 +852,11 @@ fn cluster_spikes_pro(
             let dx = spike.position[0] - c.centroid[0];
             let dy = spike.position[1] - c.centroid[1];
             let dz = spike.position[2] - c.centroid[2];
-            let d = dx*dx + dy*dy + dz*dz;
-            if d < closest_d { closest_d = d; closest = Some(i); }
+            let d = dx * dx + dy * dy + dz * dz;
+            if d < closest_d {
+                closest_d = d;
+                closest = Some(i);
+            }
         }
 
         let is_cold = spike.temperature < cold_threshold;
@@ -821,7 +886,11 @@ fn cluster_spikes_pro(
                 // Track wavelengths for spectroscopy mode - now with COUNTS
                 if let Some(w) = spike.wavelength_nm {
                     // Track unique wavelengths (for backwards compat)
-                    if !c.wavelengths_observed.iter().any(|&existing| (existing - w).abs() < 1.0) {
+                    if !c
+                        .wavelengths_observed
+                        .iter()
+                        .any(|&existing| (existing - w).abs() < 1.0)
+                    {
                         c.wavelengths_observed.push(w);
                     }
                     // INCREMENT spike count for this wavelength
@@ -833,7 +902,7 @@ fn cluster_spikes_pro(
                 let frame_entry = cluster_frame_data[i]
                     .entry(spike.frame_idx)
                     .or_insert_with(|| (0, spike.temperature, HashMap::new()));
-                frame_entry.0 += 1;  // increment spike count
+                frame_entry.0 += 1; // increment spike count
                 if let Some(wk) = &wkey {
                     *frame_entry.2.entry(wk.clone()).or_insert(0) += 1;
                 }
@@ -843,9 +912,9 @@ fn cluster_spikes_pro(
                     let res_entry = cluster_residue_data[i]
                         .entry(spike.residue)
                         .or_insert_with(|| (0, Vec::new(), HashMap::new()));
-                    res_entry.0 += 1;  // increment total spikes
+                    res_entry.0 += 1; // increment total spikes
                     if !res_entry.1.contains(&spike.frame_idx) {
-                        res_entry.1.push(spike.frame_idx);  // add to active frames
+                        res_entry.1.push(spike.frame_idx); // add to active frames
                     }
                     if let Some(wk) = &wkey {
                         *res_entry.2.entry(wk.clone()).or_insert(0) += 1;
@@ -869,7 +938,11 @@ fn cluster_spikes_pro(
             clusters.push(CrypticSite {
                 id: clusters.len(),
                 centroid: spike.position,
-                residues: if spike.residue >= 0 { vec![spike.residue] } else { vec![] },
+                residues: if spike.residue >= 0 {
+                    vec![spike.residue]
+                } else {
+                    vec![]
+                },
                 spike_count: 1,
                 frequency_score: 0.0,
                 persistence_score: 0.0,
@@ -879,7 +952,7 @@ fn cluster_spikes_pro(
                 chromophore_specificity: 0.0,
                 wavelength_diversity: 0.0,
                 wavelengths_observed: spike.wavelength_nm.map(|w| vec![w]).unwrap_or_default(),
-                spikes_per_wavelength: HashMap::new(),  // Will be populated later
+                spikes_per_wavelength: HashMap::new(), // Will be populated later
                 dominant_wavelength: None,
                 wavelength_entropy: 0.0,
                 category: String::new(),
@@ -888,9 +961,9 @@ fn cluster_spikes_pro(
                 volume_estimate: 0.0,
                 avg_distance_to_protein: 0.0,
                 unique_frames: 0,
-                max_single_frame_spikes: 0,  // Will be calculated from frame_data
+                max_single_frame_spikes: 0, // Will be calculated from frame_data
                 peak_frame: spike.frame_idx,
-                tier2: None,  // Will be populated after clustering
+                tier2: None, // Will be populated after clustering
             });
             cluster_frames.push(frames);
             cluster_cold_frames.push(cold_set);
@@ -900,16 +973,21 @@ fn cluster_spikes_pro(
 
             // TIER 2: Initialize per-frame and per-residue tracking for new cluster
             let mut init_frame_data = HashMap::new();
-            init_frame_data.insert(spike.frame_idx, (1, spike.temperature, init_wavelength_counts));
+            init_frame_data.insert(
+                spike.frame_idx,
+                (1, spike.temperature, init_wavelength_counts),
+            );
 
-            let mut init_residue_data: HashMap<i32, (usize, Vec<usize>, HashMap<String, usize>)> = HashMap::new();
+            let mut init_residue_data: HashMap<i32, (usize, Vec<usize>, HashMap<String, usize>)> =
+                HashMap::new();
             if spike.residue >= 0 {
                 let mut res_wavelengths = HashMap::new();
                 if let Some(w) = spike.wavelength_nm {
                     let wkey = format!("{:.0}", w);
                     res_wavelengths.insert(wkey, 1);
                 }
-                init_residue_data.insert(spike.residue, (1, vec![spike.frame_idx], res_wavelengths));
+                init_residue_data
+                    .insert(spike.residue, (1, vec![spike.frame_idx], res_wavelengths));
             }
 
             cluster_frame_data.push(init_frame_data);
@@ -920,13 +998,13 @@ fn cluster_spikes_pro(
     // Filter by minimum spikes - include Tier 2 tracking data
     type ClusterData = (
         CrypticSite,
-        HashSet<usize>,    // frames
-        HashSet<usize>,    // cold_frames
-        Vec<f32>,          // temps
-        Vec<[f32; 3]>,     // positions
-        HashMap<String, usize>,  // wavelength_counts
-        HashMap<usize, (usize, f32, HashMap<String, usize>)>,  // TIER 2: frame_data
-        HashMap<i32, (usize, Vec<usize>, HashMap<String, usize>)>,  // TIER 2: residue_data
+        HashSet<usize>,                                            // frames
+        HashSet<usize>,                                            // cold_frames
+        Vec<f32>,                                                  // temps
+        Vec<[f32; 3]>,                                             // positions
+        HashMap<String, usize>,                                    // wavelength_counts
+        HashMap<usize, (usize, f32, HashMap<String, usize>)>,      // TIER 2: frame_data
+        HashMap<i32, (usize, Vec<usize>, HashMap<String, usize>)>, // TIER 2: residue_data
     );
 
     let mut filtered: Vec<ClusterData> = clusters
@@ -942,11 +1020,27 @@ fn cluster_spikes_pro(
         .map(|(((((((c, f), cf), t), p), wc), fd), rd)| (c, f, cf, t, p, wc, fd, rd))
         .collect();
 
-    if filtered.is_empty() { return Vec::new(); }
+    if filtered.is_empty() {
+        return Vec::new();
+    }
 
-    let max_spikes = filtered.iter().map(|(c, _, _, _, _, _, _, _)| c.spike_count).max().unwrap_or(1) as f32;
+    let max_spikes = filtered
+        .iter()
+        .map(|(c, _, _, _, _, _, _, _)| c.spike_count)
+        .max()
+        .unwrap_or(1) as f32;
 
-    for (c, frames, cold_frames_set, temps, positions, wavelength_counts, frame_data, residue_data) in &mut filtered {
+    for (
+        c,
+        frames,
+        cold_frames_set,
+        temps,
+        positions,
+        wavelength_counts,
+        frame_data,
+        residue_data,
+    ) in &mut filtered
+    {
         c.unique_frames = frames.len();
 
         // 1. Frequency score (normalized spike count)
@@ -957,7 +1051,8 @@ fn cluster_spikes_pro(
         let frame_persistence = cold_frames_set.len() as f32 / cold_frames.max(1) as f32;
 
         // Find max single-frame spike intensity from Tier 2 frame data
-        let (max_frame_spikes, peak_frame_idx) = frame_data.iter()
+        let (max_frame_spikes, peak_frame_idx) = frame_data
+            .iter()
             .max_by_key(|(_, (spikes, _, _))| *spikes)
             .map(|(&frame, (spikes, _, _))| (*spikes, frame))
             .unwrap_or((0, 0));
@@ -969,13 +1064,13 @@ fn cluster_spikes_pro(
         // This allows high-intensity transient events (like TRP exposure) to score well
         // Below 200: partial credit; 200+: full burst credit
         let burst_significance = if max_frame_spikes >= 200 {
-            1.0  // Top 5% - full burst credit
+            1.0 // Top 5% - full burst credit
         } else if max_frame_spikes >= 150 {
-            0.75  // Top 25% - partial credit
+            0.75 // Top 25% - partial credit
         } else if max_frame_spikes >= 100 {
-            0.5   // Above median - minor credit
+            0.5 // Above median - minor credit
         } else {
-            0.0   // Below median - no burst credit
+            0.0 // Below median - no burst credit
         };
 
         // Persistence = max of temporal spread OR burst intensity (scaled to 0.75)
@@ -989,7 +1084,7 @@ fn cluster_spikes_pro(
                 let dx = pos[0] - c.centroid[0];
                 let dy = pos[1] - c.centroid[1];
                 let dz = pos[2] - c.centroid[2];
-                total_dist += (dx*dx + dy*dy + dz*dz).sqrt();
+                total_dist += (dx * dx + dy * dy + dz * dz).sqrt();
             }
             let avg_dist = total_dist / positions.len() as f32;
             // Tighter clusters get higher scores (inverse of spread)
@@ -1001,7 +1096,8 @@ fn cluster_spikes_pro(
         // 4. Thermal stability (consistent across temperature range)
         if temps.len() > 1 {
             let mean_temp: f32 = temps.iter().sum::<f32>() / temps.len() as f32;
-            let variance: f32 = temps.iter().map(|t| (t - mean_temp).powi(2)).sum::<f32>() / temps.len() as f32;
+            let variance: f32 =
+                temps.iter().map(|t| (t - mean_temp).powi(2)).sum::<f32>() / temps.len() as f32;
             // Lower variance = more stable = higher score
             c.thermal_stability = (1.0 / (1.0 + variance / 1000.0)).min(1.0);
         } else {
@@ -1013,7 +1109,10 @@ fn cluster_spikes_pro(
             let mut max_dist = 0.0f32;
             for (i, p1) in positions.iter().enumerate() {
                 for p2 in positions.iter().skip(i + 1) {
-                    let d = ((p1[0]-p2[0]).powi(2) + (p1[1]-p2[1]).powi(2) + (p1[2]-p2[2]).powi(2)).sqrt();
+                    let d = ((p1[0] - p2[0]).powi(2)
+                        + (p1[1] - p2[1]).powi(2)
+                        + (p1[2] - p2[2]).powi(2))
+                    .sqrt();
                     max_dist = max_dist.max(d);
                 }
             }
@@ -1028,8 +1127,8 @@ fn cluster_spikes_pro(
             c.spikes_per_wavelength = wavelength_counts.clone();
 
             // Find dominant wavelength (one with most spikes)
-            if let Some((dominant_wl, _count)) = wavelength_counts.iter()
-                .max_by_key(|(_, &count)| count)
+            if let Some((dominant_wl, _count)) =
+                wavelength_counts.iter().max_by_key(|(_, &count)| count)
             {
                 c.dominant_wavelength = dominant_wl.parse::<f32>().ok();
             }
@@ -1061,8 +1160,13 @@ fn cluster_spikes_pro(
             let chromophore_wavelengths = ["280", "274", "258", "250"];
 
             // Check if dominant wavelength is a chromophore channel
-            let dominant_is_chromophore = c.dominant_wavelength
-                .map(|w| chromophore_wavelengths.iter().any(|&cw| (w - cw.parse::<f32>().unwrap_or(0.0)).abs() < 5.0))
+            let dominant_is_chromophore = c
+                .dominant_wavelength
+                .map(|w| {
+                    chromophore_wavelengths
+                        .iter()
+                        .any(|&cw| (w - cw.parse::<f32>().unwrap_or(0.0)).abs() < 5.0)
+                })
                 .unwrap_or(false);
 
             // Calculate selectivity: fraction of spikes in dominant channel
@@ -1087,27 +1191,29 @@ fn cluster_spikes_pro(
         // With spectroscopy: add wavelength-aware factors (rebalance weights)
         c.overall_confidence = if has_spectroscopy_data {
             // Enhanced scoring with spectroscopy data
-            (
-                c.frequency_score * 0.25 +
-                c.persistence_score * 0.25 +
-                c.coherence_score * 0.20 +
-                c.thermal_stability * 0.10 +
-                c.chromophore_specificity * 0.10 +
-                c.wavelength_diversity * 0.10
-            ).clamp(0.0, 1.0)
+            (c.frequency_score * 0.25
+                + c.persistence_score * 0.25
+                + c.coherence_score * 0.20
+                + c.thermal_stability * 0.10
+                + c.chromophore_specificity * 0.10
+                + c.wavelength_diversity * 0.10)
+                .clamp(0.0, 1.0)
         } else {
             // Standard scoring without spectroscopy
-            (
-                c.frequency_score * 0.30 +
-                c.persistence_score * 0.30 +
-                c.coherence_score * 0.25 +
-                c.thermal_stability * 0.15
-            ).clamp(0.0, 1.0)
+            (c.frequency_score * 0.30
+                + c.persistence_score * 0.30
+                + c.coherence_score * 0.25
+                + c.thermal_stability * 0.15)
+                .clamp(0.0, 1.0)
         };
 
-        c.category = if c.overall_confidence >= 0.70 { "HIGH".into() }
-                     else if c.overall_confidence >= 0.50 { "MEDIUM".into() }
-                     else { "LOW".into() };
+        c.category = if c.overall_confidence >= 0.70 {
+            "HIGH".into()
+        } else if c.overall_confidence >= 0.50 {
+            "MEDIUM".into()
+        } else {
+            "LOW".into()
+        };
 
         // TIER 2: Build detailed output for mechanistic analysis
         // Convert frame_data HashMap to sorted FrameTimeseries Vec
@@ -1135,7 +1241,7 @@ fn cluster_spikes_pro(
                         frames_active: sorted_frames,
                         total_spikes: *total_spikes,
                         spikes_per_wavelength: wl_counts.clone(),
-                    }
+                    },
                 )
             })
             .collect();
@@ -1146,7 +1252,10 @@ fn cluster_spikes_pro(
         });
     }
 
-    let mut result: Vec<CrypticSite> = filtered.into_iter().map(|(c, _, _, _, _, _, _, _)| c).collect();
+    let mut result: Vec<CrypticSite> = filtered
+        .into_iter()
+        .map(|(c, _, _, _, _, _, _, _)| c)
+        .collect();
 
     // =========================================================================
     // EDGE CASE DETECTION & CHROMOPHORE-WEIGHTED RE-SCORING
@@ -1155,17 +1264,27 @@ fn cluster_spikes_pro(
     let (edge_case_triggered, trigger_reason) = check_edge_case_triggers(&result);
 
     let improvements = if edge_case_triggered {
-        eprintln!("  [Edge Case] Chromophore-weighted re-scoring triggered: {}", trigger_reason);
+        eprintln!(
+            "  [Edge Case] Chromophore-weighted re-scoring triggered: {}",
+            trigger_reason
+        );
         apply_chromophore_weighted_rescoring(&mut result)
     } else {
         Vec::new()
     };
 
-    result.sort_by(|a, b| b.overall_confidence.partial_cmp(&a.overall_confidence).unwrap_or(std::cmp::Ordering::Equal));
-    for (i, c) in result.iter_mut().enumerate() { c.id = i; }
+    result.sort_by(|a, b| {
+        b.overall_confidence
+            .partial_cmp(&a.overall_confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for (i, c) in result.iter_mut().enumerate() {
+        c.id = i;
+    }
 
     // Build and store edge case report (accessible via thread-local or return value)
-    let edge_case_report = build_edge_case_report(&result, edge_case_triggered, &trigger_reason, improvements);
+    let edge_case_report =
+        build_edge_case_report(&result, edge_case_triggered, &trigger_reason, improvements);
 
     // Store in thread-local for access by report generator
     EDGE_CASE_REPORT.with(|r| *r.borrow_mut() = Some(edge_case_report));
@@ -1181,9 +1300,11 @@ thread_local! {
 /// Check edge case triggers and return (triggered, reason)
 fn check_edge_case_triggers(sites: &[CrypticSite]) -> (bool, String) {
     // Condition 1: High-intensity aromatic bursts near threshold
-    let high_intensity_aromatics = sites.iter()
+    let high_intensity_aromatics = sites
+        .iter()
         .filter(|s| {
-            let is_aromatic = s.dominant_wavelength
+            let is_aromatic = s
+                .dominant_wavelength
                 .map(|w| (w - 280.0).abs() < 5.0 || (w - 274.0).abs() < 5.0)
                 .unwrap_or(false);
             let is_burst = s.max_single_frame_spikes >= 150;
@@ -1193,14 +1314,25 @@ fn check_edge_case_triggers(sites: &[CrypticSite]) -> (bool, String) {
         .count();
 
     // Condition 2: Wavelength-selective sites that missed HIGH threshold
-    let selective_low_confidence = sites.iter()
-        .filter(|s| s.wavelength_entropy < 0.7 && s.overall_confidence >= 0.65 && s.overall_confidence < 0.70)
+    let selective_low_confidence = sites
+        .iter()
+        .filter(|s| {
+            s.wavelength_entropy < 0.7
+                && s.overall_confidence >= 0.65
+                && s.overall_confidence < 0.70
+        })
         .count();
 
     if high_intensity_aromatics >= 1 {
-        (true, format!("high_intensity_aromatics ({})", high_intensity_aromatics))
+        (
+            true,
+            format!("high_intensity_aromatics ({})", high_intensity_aromatics),
+        )
     } else if selective_low_confidence >= 2 {
-        (true, format!("selective_low_confidence ({})", selective_low_confidence))
+        (
+            true,
+            format!("selective_low_confidence ({})", selective_low_confidence),
+        )
     } else {
         (false, "none".to_string())
     }
@@ -1232,7 +1364,10 @@ fn build_edge_case_report(
     EdgeCaseReport {
         phase2_triggered: triggered,
         trigger_reason: reason.to_string(),
-        sites_evaluated: sites.iter().filter(|s| s.overall_confidence >= 0.65 && s.overall_confidence < 0.72).count(),
+        sites_evaluated: sites
+            .iter()
+            .filter(|s| s.overall_confidence >= 0.65 && s.overall_confidence < 0.72)
+            .count(),
         sites_enhanced: improvements.len(),
         confidence_improvements: improvements,
         burst_analysis: BurstAnalysis {
@@ -1258,20 +1393,20 @@ fn apply_chromophore_weighted_rescoring(sites: &mut [CrypticSite]) -> Vec<Confid
 
         // Calculate chromophore weight based on dominant wavelength
         let chromophore_boost: f32 = match site.dominant_wavelength {
-            Some(w) if (w - 280.0).abs() < 5.0 => 0.04,  // TRP: critical for pocket detection
-            Some(w) if (w - 250.0).abs() < 5.0 => 0.03,  // S-S: disulfide exposure is diagnostic
+            Some(w) if (w - 280.0).abs() < 5.0 => 0.04, // TRP: critical for pocket detection
+            Some(w) if (w - 250.0).abs() < 5.0 => 0.03, // S-S: disulfide exposure is diagnostic
             Some(w) if (w - 274.0).abs() < 5.0 => 0.025, // TYR: moderate importance
-            Some(w) if (w - 258.0).abs() < 5.0 => 0.02,  // PHE: lower importance
-            _ => 0.0,  // Non-specific: no boost
+            Some(w) if (w - 258.0).abs() < 5.0 => 0.02, // PHE: lower importance
+            _ => 0.0,                                   // Non-specific: no boost
         };
 
         // Additional boost for high-intensity bursts (transient exposure events)
         let burst_boost: f32 = if site.max_single_frame_spikes >= 200 {
-            0.03  // Top 5% burst
+            0.03 // Top 5% burst
         } else if site.max_single_frame_spikes >= 150 {
-            0.02  // Top 25% burst
+            0.02 // Top 25% burst
         } else if site.max_single_frame_spikes >= 100 {
-            0.01  // Above median burst
+            0.01 // Above median burst
         } else {
             0.0
         };
@@ -1294,9 +1429,14 @@ fn apply_chromophore_weighted_rescoring(sites: &mut [CrypticSite]) -> Vec<Confid
         // Update category if promoted
         if promoted {
             site.category = "HIGH".to_string();
-            eprintln!("    [Promoted] Site {} ({:?}nm): {:.2} → {:.2} [{}]",
-                     site.id, site.dominant_wavelength, old_confidence,
-                     site.overall_confidence, site.category);
+            eprintln!(
+                "    [Promoted] Site {} ({:?}nm): {:.2} → {:.2} [{}]",
+                site.id,
+                site.dominant_wavelength,
+                old_confidence,
+                site.overall_confidence,
+                site.category
+            );
         }
 
         // Track improvement
@@ -1357,7 +1497,8 @@ fn generate_comprehensive_report(
     let validation_readiness = build_validation_readiness_report(sites);
 
     // Build performance QC report
-    let performance_qc = build_performance_qc_report(sites, total_spikes, frames_analyzed, elapsed_seconds);
+    let performance_qc =
+        build_performance_qc_report(sites, total_spikes, frames_analyzed, elapsed_seconds);
 
     // Build cross-target report
     let cross_target = build_cross_target_report(topology, grid_dim, grid_spacing);
@@ -1395,7 +1536,10 @@ fn generate_comprehensive_report(
     }
 }
 
-fn build_chromophore_selectivity_report(sites: &[CrypticSite], edge_report: &EdgeCaseReport) -> ChromophoreSelectivityReport {
+fn build_chromophore_selectivity_report(
+    sites: &[CrypticSite],
+    edge_report: &EdgeCaseReport,
+) -> ChromophoreSelectivityReport {
     let mut counts = ChromophoreCounts {
         trp_280nm_sites: 0,
         ss_250nm_sites: 0,
@@ -1418,19 +1562,27 @@ fn build_chromophore_selectivity_report(sites: &[CrypticSite], edge_report: &Edg
 
     let selectivity = SelectivityDistribution {
         high_selectivity: sites.iter().filter(|s| s.wavelength_entropy < 0.5).count(),
-        medium_selectivity: sites.iter().filter(|s| s.wavelength_entropy >= 0.5 && s.wavelength_entropy < 0.8).count(),
+        medium_selectivity: sites
+            .iter()
+            .filter(|s| s.wavelength_entropy >= 0.5 && s.wavelength_entropy < 0.8)
+            .count(),
         low_selectivity: sites.iter().filter(|s| s.wavelength_entropy >= 0.8).count(),
     };
 
-    let promoted_count = edge_report.confidence_improvements.iter()
+    let promoted_count = edge_report
+        .confidence_improvements
+        .iter()
         .filter(|c| c.promoted_to_high)
         .count();
     let avg_boost = if edge_report.confidence_improvements.is_empty() {
         0.0
     } else {
-        edge_report.confidence_improvements.iter()
+        edge_report
+            .confidence_improvements
+            .iter()
             .map(|c| c.boost_breakdown.total_boost)
-            .sum::<f32>() / edge_report.confidence_improvements.len() as f32
+            .sum::<f32>()
+            / edge_report.confidence_improvements.len() as f32
     };
 
     ChromophoreSelectivityReport {
@@ -1449,13 +1601,18 @@ fn build_validation_readiness_report(sites: &[CrypticSite]) -> ValidationReadine
     // Collect high-confidence residues from tier2 data
     let mut residue_spikes: HashMap<i32, (usize, usize, String, Vec<usize>)> = HashMap::new(); // (total_spikes, frames, dominant_wl, site_ids)
 
-    for site in sites.iter().filter(|s| s.category == "HIGH" || s.category == "MEDIUM") {
+    for site in sites
+        .iter()
+        .filter(|s| s.category == "HIGH" || s.category == "MEDIUM")
+    {
         if let Some(tier2) = &site.tier2 {
             for (res_str, contrib) in &tier2.residue_contributions {
                 if let Ok(res_id) = res_str.parse::<i32>() {
                     let entry = residue_spikes.entry(res_id).or_insert_with(|| {
                         // Find dominant wavelength for this residue
-                        let dom_wl = contrib.spikes_per_wavelength.iter()
+                        let dom_wl = contrib
+                            .spikes_per_wavelength
+                            .iter()
                             .max_by_key(|(_, &v)| v)
                             .map(|(k, _)| format!("{}nm", k))
                             .unwrap_or_else(|| "mixed".to_string());
@@ -1471,9 +1628,10 @@ fn build_validation_readiness_report(sites: &[CrypticSite]) -> ValidationReadine
 
     // Sort by total spikes and take top 20
     let mut sorted_residues: Vec<_> = residue_spikes.into_iter().collect();
-    sorted_residues.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+    sorted_residues.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
 
-    let top_profiles: Vec<ResidueProfile> = sorted_residues.iter()
+    let top_profiles: Vec<ResidueProfile> = sorted_residues
+        .iter()
         .take(20)
         .map(|(res_id, (spikes, frames, wl, site_ids))| ResidueProfile {
             residue_id: *res_id,
@@ -1484,7 +1642,8 @@ fn build_validation_readiness_report(sites: &[CrypticSite]) -> ValidationReadine
         })
         .collect();
 
-    let high_conf_residues: Vec<i32> = sorted_residues.iter()
+    let high_conf_residues: Vec<i32> = sorted_residues
+        .iter()
         .take(10)
         .map(|(res_id, _)| *res_id)
         .collect();
@@ -1538,15 +1697,18 @@ fn build_performance_qc_report(
     };
 
     // Quality indicators
-    let high_entropy_high_conf = sites.iter()
+    let high_entropy_high_conf = sites
+        .iter()
         .filter(|s| s.wavelength_entropy > 0.9 && s.overall_confidence >= 0.70)
         .count();
 
-    let single_residue_sites = sites.iter()
+    let single_residue_sites = sites
+        .iter()
         .filter(|s| s.residues.len() == 1 && s.category == "HIGH")
         .count();
 
-    let low_spike_high_conf = sites.iter()
+    let low_spike_high_conf = sites
+        .iter()
         .filter(|s| s.spike_count < 100 && s.overall_confidence >= 0.70)
         .count();
 
@@ -1566,7 +1728,11 @@ fn build_performance_qc_report(
     }
 }
 
-fn build_cross_target_report(topology: &PrismPrepTopology, grid_dim: usize, grid_spacing: f32) -> CrossTargetReport {
+fn build_cross_target_report(
+    topology: &PrismPrepTopology,
+    grid_dim: usize,
+    grid_spacing: f32,
+) -> CrossTargetReport {
     // Count chromophore residues from topology
     let mut trp_count = 0;
     let mut tyr_count = 0;
@@ -1595,11 +1761,21 @@ fn build_cross_target_report(topology: &PrismPrepTopology, grid_dim: usize, grid
             burst_threshold_spikes: 200,
             chromophore_weighting_enabled: true,
             edge_case_detection_enabled: true,
-            wavelength_channels: vec!["250nm".into(), "258nm".into(), "265nm".into(), "274nm".into(), "280nm".into(), "290nm".into()],
+            wavelength_channels: vec![
+                "250nm".into(),
+                "258nm".into(),
+                "265nm".into(),
+                "274nm".into(),
+                "280nm".into(),
+                "290nm".into(),
+            ],
         },
         generalization_notes: vec![
             format!("Grid resolution: {}³ @ {}Å spacing", grid_dim, grid_spacing),
-            format!("Aromatic coverage: {} TRP, {} TYR, {} PHE", trp_count, tyr_count, phe_count),
+            format!(
+                "Aromatic coverage: {} TRP, {} TYR, {} PHE",
+                trp_count, tyr_count, phe_count
+            ),
             format!("Potential disulfides: {} CYS residues", cys_count),
         ],
     }
@@ -1607,9 +1783,7 @@ fn build_cross_target_report(topology: &PrismPrepTopology, grid_dim: usize, grid
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -1621,9 +1795,12 @@ fn main() -> Result<()> {
 
     fs::create_dir_all(&args.output)?;
 
-    let topology = PrismPrepTopology::load(&args.topology)
-        .context("Failed to load topology")?;
-    println!("Structure: {} atoms, {} residues", topology.n_atoms, topology.residue_names.len());
+    let topology = PrismPrepTopology::load(&args.topology).context("Failed to load topology")?;
+    println!(
+        "Structure: {} atoms, {} residues",
+        topology.n_atoms,
+        topology.residue_names.len()
+    );
 
     let frames = load_ensemble_pdb(&args.input)?;
     println!("Ensemble: {} frames", frames.len());
@@ -1635,8 +1812,7 @@ fn main() -> Result<()> {
     // Load wavelength data from frames JSON if provided (spectroscopy mode)
     let wavelength_map: HashMap<usize, f32> = if let Some(ref json_path) = args.frames_json {
         println!("Loading wavelength data from: {}", json_path.display());
-        let json_str = fs::read_to_string(json_path)
-            .context("Failed to read frames JSON")?;
+        let json_str = fs::read_to_string(json_path).context("Failed to read frames JSON")?;
 
         // Parse as array of TrajectoryFrame-like objects
         #[derive(serde::Deserialize)]
@@ -1645,8 +1821,8 @@ fn main() -> Result<()> {
             wavelength_nm: Option<f32>,
         }
 
-        let frame_data: Vec<FrameWavelength> = serde_json::from_str(&json_str)
-            .context("Failed to parse frames JSON")?;
+        let frame_data: Vec<FrameWavelength> =
+            serde_json::from_str(&json_str).context("Failed to parse frames JSON")?;
 
         let mut map = HashMap::new();
         let mut wavelengths_found = 0;
@@ -1689,9 +1865,16 @@ fn main() -> Result<()> {
     engine.initialize(grid_origin)?;
     engine.set_params(args.tau_mem, args.sensitivity);
 
-    println!("  Grid: {}³ = {} voxels", args.grid_dim, args.grid_dim.pow(3));
+    println!(
+        "  Grid: {}³ = {} voxels",
+        args.grid_dim,
+        args.grid_dim.pow(3)
+    );
     println!("  Spacing: {:.2}Å", args.spacing);
-    println!("  LIF: tau={:.1}, sensitivity={:.1}", args.tau_mem, args.sensitivity);
+    println!(
+        "  LIF: tau={:.1}, sensitivity={:.1}",
+        args.tau_mem, args.sensitivity
+    );
     println!();
 
     println!("════════════════════════════════════════════════════════════════");
@@ -1700,10 +1883,7 @@ fn main() -> Result<()> {
     println!();
 
     let start = Instant::now();
-    let frames_to_process: Vec<_> = frames.iter()
-        .enumerate()
-        .step_by(args.skip)
-        .collect();
+    let frames_to_process: Vec<_> = frames.iter().enumerate().step_by(args.skip).collect();
     let total_frames = frames_to_process.len();
 
     let mut all_spikes: Vec<SpikeRecord> = Vec::new();
@@ -1717,7 +1897,9 @@ fn main() -> Result<()> {
         if count > 0 {
             let (positions, residues) = engine.extract_spikes()?;
             // Get wavelength from JSON map if available, otherwise from frame (which is usually None for PDB)
-            let wavelength = wavelength_map.get(frame_idx).copied()
+            let wavelength = wavelength_map
+                .get(frame_idx)
+                .copied()
                 .or(frame.wavelength_nm);
             for (i, pos) in positions.iter().enumerate() {
                 all_spikes.push(SpikeRecord {
@@ -1734,8 +1916,14 @@ fn main() -> Result<()> {
             let elapsed = start.elapsed().as_secs_f64();
             let fps = (idx + 1) as f64 / elapsed;
             let eta = (total_frames - idx - 1) as f64 / fps.max(1.0);
-            print!("\r  Frame {}/{} | {:.0} fps | ETA {:.1}s | Spikes: {}    ",
-                idx + 1, total_frames, fps, eta, total_spike_count);
+            print!(
+                "\r  Frame {}/{} | {:.0} fps | ETA {:.1}s | Spikes: {}    ",
+                idx + 1,
+                total_frames,
+                fps,
+                eta,
+                total_spike_count
+            );
             std::io::Write::flush(&mut std::io::stdout())?;
             last_report = Instant::now();
         }
@@ -1746,7 +1934,12 @@ fn main() -> Result<()> {
     let fps = total_frames as f64 / elapsed.as_secs_f64();
 
     // Advanced clustering
-    let sites = cluster_spikes_pro(&all_spikes, args.cluster_radius, total_frames, args.min_spikes);
+    let sites = cluster_spikes_pro(
+        &all_spikes,
+        args.cluster_radius,
+        total_frames,
+        args.min_spikes,
+    );
     let high = sites.iter().filter(|s| s.category == "HIGH").count();
     let medium = sites.iter().filter(|s| s.category == "MEDIUM").count();
 
@@ -1762,21 +1955,46 @@ fn main() -> Result<()> {
     println!();
     println!("Detection:");
     println!("  Total spikes:       {}", total_spike_count);
-    println!("  Avg spikes/frame:   {:.2}", total_spike_count as f64 / total_frames as f64);
+    println!(
+        "  Avg spikes/frame:   {:.2}",
+        total_spike_count as f64 / total_frames as f64
+    );
     println!();
-    println!("Cryptic Sites: {} (HIGH: {}, MEDIUM: {})", sites.len(), high, medium);
+    println!(
+        "Cryptic Sites: {} (HIGH: {}, MEDIUM: {})",
+        sites.len(),
+        high,
+        medium
+    );
     println!();
 
     for (i, site) in sites.iter().enumerate().take(15) {
-        let res_str: String = site.residues.iter()
+        let res_str: String = site
+            .residues
+            .iter()
             .take(5)
             .map(|r| r.to_string())
             .collect::<Vec<_>>()
             .join(",");
-        println!("  Site {}: {} spikes | conf={:.2} [{}]", i+1, site.spike_count, site.overall_confidence, site.category);
-        println!("          freq={:.2} pers={:.2} coher={:.2} therm={:.2}",
-            site.frequency_score, site.persistence_score, site.coherence_score, site.thermal_stability);
-        println!("          residues: [{}{}]", res_str, if site.residues.len() > 5 { "..." } else { "" });
+        println!(
+            "  Site {}: {} spikes | conf={:.2} [{}]",
+            i + 1,
+            site.spike_count,
+            site.overall_confidence,
+            site.category
+        );
+        println!(
+            "          freq={:.2} pers={:.2} coher={:.2} therm={:.2}",
+            site.frequency_score,
+            site.persistence_score,
+            site.coherence_score,
+            site.thermal_stability
+        );
+        println!(
+            "          residues: [{}{}]",
+            res_str,
+            if site.residues.len() > 5 { "..." } else { "" }
+        );
     }
 
     // Save results
@@ -1822,7 +2040,9 @@ fn main() -> Result<()> {
     serde_json::to_writer_pretty(summary_file, &summary)?;
 
     // Generate and save comprehensive report
-    let pdb_id = args.input.file_stem()
+    let pdb_id = args
+        .input
+        .file_stem()
         .and_then(|s| s.to_str())
         .map(|s| s.split('_').next().unwrap_or(s).to_string())
         .unwrap_or_else(|| "unknown".to_string());
@@ -1862,7 +2082,9 @@ fn main() {
 
 fn compute_bounds(positions: &[f32]) -> (f32, f32, f32) {
     let n = positions.len() / 3;
-    if n == 0 { return (0.0, 0.0, 0.0); }
+    if n == 0 {
+        return (0.0, 0.0, 0.0);
+    }
     let (mut mx, mut my, mut mz) = (f32::MAX, f32::MAX, f32::MAX);
     for i in 0..n {
         mx = mx.min(positions[i * 3]);
@@ -1894,16 +2116,37 @@ fn write_pymol_script(path: &std::path::Path, sites: &[CrypticSite]) -> Result<(
             _ => (0.9, 0.3, 0.2),
         };
 
-        writeln!(file, "# Site {} - {} spikes, conf={:.2} [{}]",
-            site.id + 1, site.spike_count, site.overall_confidence, site.category)?;
-        writeln!(file, "pseudoatom site_{}, pos=[{:.2}, {:.2}, {:.2}]",
-            site.id + 1, site.centroid[0], site.centroid[1], site.centroid[2])?;
-        writeln!(file, "color [{:.2}, {:.2}, {:.2}], site_{}", r, g, b, site.id + 1)?;
+        writeln!(
+            file,
+            "# Site {} - {} spikes, conf={:.2} [{}]",
+            site.id + 1,
+            site.spike_count,
+            site.overall_confidence,
+            site.category
+        )?;
+        writeln!(
+            file,
+            "pseudoatom site_{}, pos=[{:.2}, {:.2}, {:.2}]",
+            site.id + 1,
+            site.centroid[0],
+            site.centroid[1],
+            site.centroid[2]
+        )?;
+        writeln!(
+            file,
+            "color [{:.2}, {:.2}, {:.2}], site_{}",
+            r,
+            g,
+            b,
+            site.id + 1
+        )?;
         writeln!(file, "show spheres, site_{}", site.id + 1)?;
         writeln!(file, "set sphere_scale, {:.2}, site_{}", size, site.id + 1)?;
 
         if !site.residues.is_empty() {
-            let res_sel = site.residues.iter()
+            let res_sel = site
+                .residues
+                .iter()
                 .take(10)
                 .map(|r| format!("resi {}", r))
                 .collect::<Vec<_>>()

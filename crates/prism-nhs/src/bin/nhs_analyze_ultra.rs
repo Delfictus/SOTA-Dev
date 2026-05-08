@@ -21,9 +21,7 @@ use std::time::Instant;
 
 #[cfg(feature = "gpu")]
 use prism_nhs::{
-    load_ensemble_pdb,
-    input::PrismPrepTopology,
-    DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING,
+    input::PrismPrepTopology, load_ensemble_pdb, DEFAULT_GRID_DIM, DEFAULT_GRID_SPACING,
 };
 
 #[cfg(feature = "gpu")]
@@ -172,7 +170,8 @@ impl UltraFastEngine {
         let reset_grid_int = exclusion_module.load_function("reset_grid_int")?;
 
         let lif_dewetting_step = neuromorphic_module.load_function("lif_dewetting_step")?;
-        let apply_lateral_inhibition = neuromorphic_module.load_function("apply_lateral_inhibition")?;
+        let apply_lateral_inhibition =
+            neuromorphic_module.load_function("apply_lateral_inhibition")?;
         let extract_spike_indices = neuromorphic_module.load_function("extract_spike_indices")?;
         let map_spikes_to_residues = neuromorphic_module.load_function("map_spikes_to_residues")?;
         let init_lif_state = neuromorphic_module.load_function("init_lif_state")?;
@@ -192,13 +191,13 @@ impl UltraFastEngine {
         let spike_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
 
         // PRE-UPLOAD CONSTANT TOPOLOGY DATA (key optimization!)
-        let atom_types: Vec<i32> = topology.elements.iter()
+        let atom_types: Vec<i32> = topology
+            .elements
+            .iter()
             .map(|e| element_to_type(e))
             .collect();
         let atom_charges: Vec<f32> = topology.charges.clone();
-        let atom_residues: Vec<i32> = topology.residue_ids.iter()
-            .map(|&r| r as i32)
-            .collect();
+        let atom_residues: Vec<i32> = topology.residue_ids.iter().map(|&r| r as i32).collect();
 
         let mut atom_types_gpu: CudaSlice<i32> = stream.alloc_zeros(n_atoms)?;
         let mut atom_charges_gpu: CudaSlice<f32> = stream.alloc_zeros(n_atoms)?;
@@ -299,7 +298,8 @@ impl UltraFastEngine {
     /// Ultra-fast frame processing - only uploads positions!
     fn process_frame_fast(&mut self, positions: &[f32]) -> Result<usize> {
         // Upload ONLY positions (types/charges/residues already on GPU)
-        self.stream.memcpy_htod(positions, &mut self.atom_positions_gpu)?;
+        self.stream
+            .memcpy_htod(positions, &mut self.atom_positions_gpu)?;
 
         // Swap water density buffers
         std::mem::swap(&mut self.water_density, &mut self.prev_water_density);
@@ -308,7 +308,11 @@ impl UltraFastEngine {
         let blocks_3d = (self.grid_dim as u32).div_ceil(BLOCK_SIZE_3D as u32);
         let cfg_3d = LaunchConfig {
             grid_dim: (blocks_3d, blocks_3d, blocks_3d),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -380,7 +384,11 @@ impl UltraFastEngine {
         let blocks_3d = (self.grid_dim as u32).div_ceil(BLOCK_SIZE_3D as u32);
         let cfg_3d = LaunchConfig {
             grid_dim: (blocks_3d, blocks_3d, blocks_3d),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -450,9 +458,7 @@ impl UltraFastEngine {
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -468,7 +474,11 @@ fn main() -> Result<()> {
     // Load topology
     log::info!("Loading topology: {}", args.topology.display());
     let topology = PrismPrepTopology::load(&args.topology)?;
-    println!("Structure: {} atoms, {} residues", topology.n_atoms, topology.residue_names.len());
+    println!(
+        "Structure: {} atoms, {} residues",
+        topology.n_atoms,
+        topology.residue_names.len()
+    );
 
     // Load ensemble
     log::info!("Loading ensemble: {}", args.input.display());
@@ -503,8 +513,15 @@ fn main() -> Result<()> {
     engine.set_params(args.tau_mem, args.sensitivity);
 
     let init_time = init_start.elapsed();
-    println!("  Initialization: {:.2}ms", init_time.as_secs_f64() * 1000.0);
-    println!("  Grid: {}³ = {} voxels", args.grid_dim, args.grid_dim.pow(3));
+    println!(
+        "  Initialization: {:.2}ms",
+        init_time.as_secs_f64() * 1000.0
+    );
+    println!(
+        "  Grid: {}³ = {} voxels",
+        args.grid_dim,
+        args.grid_dim.pow(3)
+    );
     println!("  Topology: Pre-uploaded (types, charges, residues)");
     println!("  Batch optimization: ACTIVE");
     println!();
@@ -517,10 +534,7 @@ fn main() -> Result<()> {
     let start_time = Instant::now();
 
     // Process frames
-    let frames_to_process: Vec<_> = frames.iter()
-        .enumerate()
-        .step_by(args.skip)
-        .collect();
+    let frames_to_process: Vec<_> = frames.iter().enumerate().step_by(args.skip).collect();
     let total_frames = frames_to_process.len();
 
     let mut all_spikes: Vec<SpikeRecord> = Vec::new();
@@ -566,8 +580,14 @@ fn main() -> Result<()> {
             let elapsed = start_time.elapsed().as_secs_f64();
             let fps = (idx + 1) as f64 / elapsed;
             let eta = (total_frames - idx - 1) as f64 / fps;
-            print!("\r  Frame {}/{} | {:.0} fps | ETA {:.1}s | Spikes: {}    ",
-                idx + 1, total_frames, fps, eta, total_spike_count);
+            print!(
+                "\r  Frame {}/{} | {:.0} fps | ETA {:.1}s | Spikes: {}    ",
+                idx + 1,
+                total_frames,
+                fps,
+                eta,
+                total_spike_count
+            );
             std::io::Write::flush(&mut std::io::stdout())?;
             last_report = Instant::now();
         }
@@ -582,7 +602,10 @@ fn main() -> Result<()> {
 
     // Statistics
     let high_confidence = sites.iter().filter(|s| s.confidence_score >= 0.75).count();
-    let medium_confidence = sites.iter().filter(|s| s.confidence_score >= 0.50 && s.confidence_score < 0.75).count();
+    let medium_confidence = sites
+        .iter()
+        .filter(|s| s.confidence_score >= 0.50 && s.confidence_score < 0.75)
+        .count();
     let avg_confidence = if sites.is_empty() {
         0.0
     } else {
@@ -602,25 +625,42 @@ fn main() -> Result<()> {
     println!();
     println!("Detection:");
     println!("  Total spikes:       {}", total_spike_count);
-    println!("  Avg spikes/frame:   {:.2}", total_spike_count as f64 / total_frames as f64);
+    println!(
+        "  Avg spikes/frame:   {:.2}",
+        total_spike_count as f64 / total_frames as f64
+    );
     println!();
     println!("Cryptic Sites Found: {}", sites.len());
     println!("  High confidence:    {} (score >= 0.75)", high_confidence);
-    println!("  Medium confidence:  {} (score 0.50-0.75)", medium_confidence);
-    println!("  Low confidence:     {} (score < 0.50)", sites.len() - high_confidence - medium_confidence);
+    println!(
+        "  Medium confidence:  {} (score 0.50-0.75)",
+        medium_confidence
+    );
+    println!(
+        "  Low confidence:     {} (score < 0.50)",
+        sites.len() - high_confidence - medium_confidence
+    );
     println!("  Average confidence: {:.2}", avg_confidence);
     println!();
 
     for (i, site) in sites.iter().enumerate().take(10) {
-        let residue_str = site.residues.iter()
+        let residue_str = site
+            .residues
+            .iter()
             .take(5)
             .map(|r| r.to_string())
             .collect::<Vec<_>>()
             .join(", ");
         let more = if site.residues.len() > 5 { "..." } else { "" };
-        println!("  Site {}: {} spikes, conf={:.2} [{}], residues [{}{}]",
-            i + 1, site.spike_count, site.confidence_score, site.category,
-            residue_str, more);
+        println!(
+            "  Site {}: {} spikes, conf={:.2} [{}], residues [{}{}]",
+            i + 1,
+            site.spike_count,
+            site.confidence_score,
+            site.category,
+            residue_str,
+            more
+        );
     }
 
     // Save results
@@ -662,7 +702,11 @@ fn main() -> Result<()> {
     println!("  {}", pymol_path.display());
 
     println!();
-    println!("ULTRA-FAST Analysis complete: {:.0} fps ({:.0}x faster than baseline)", fps, fps / 50.0);
+    println!(
+        "ULTRA-FAST Analysis complete: {:.0} fps ({:.0}x faster than baseline)",
+        fps,
+        fps / 50.0
+    );
 
     Ok(())
 }
@@ -817,7 +861,8 @@ fn cluster_spikes(spikes: &[SpikeRecord], radius: f32, total_frames: usize) -> V
         cluster.persistence_fraction = cluster_frames[i].len() as f32 / total_frames.max(1) as f32;
         let frequency_score = (cluster.spike_count as f32 / max_spikes).min(1.0);
         let persistence_score = cluster.persistence_fraction.min(1.0);
-        cluster.confidence_score = (frequency_score * 0.5 + persistence_score * 0.5).clamp(0.0, 1.0);
+        cluster.confidence_score =
+            (frequency_score * 0.5 + persistence_score * 0.5).clamp(0.0, 1.0);
 
         cluster.category = if cluster.confidence_score >= 0.75 {
             "HIGH".to_string()
@@ -829,7 +874,8 @@ fn cluster_spikes(spikes: &[SpikeRecord], radius: f32, total_frames: usize) -> V
     }
 
     clusters.sort_by(|a, b| {
-        b.confidence_score.partial_cmp(&a.confidence_score)
+        b.confidence_score
+            .partial_cmp(&a.confidence_score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -860,22 +906,52 @@ fn write_pymol_script(path: &std::path::Path, sites: &[ClusteredSite]) -> Result
             _ => (0.9, 0.3, 0.2),
         };
 
-        writeln!(file, "# Site {} - {} spikes, conf={:.2} [{}]",
-            site.site_id + 1, site.spike_count, site.confidence_score, site.category)?;
-        writeln!(file, "pseudoatom site_{}, pos=[{:.2}, {:.2}, {:.2}]",
-            site.site_id + 1, site.centroid[0], site.centroid[1], site.centroid[2])?;
-        writeln!(file, "color [{:.2}, {:.2}, {:.2}], site_{}",
-            r, g, b, site.site_id + 1)?;
+        writeln!(
+            file,
+            "# Site {} - {} spikes, conf={:.2} [{}]",
+            site.site_id + 1,
+            site.spike_count,
+            site.confidence_score,
+            site.category
+        )?;
+        writeln!(
+            file,
+            "pseudoatom site_{}, pos=[{:.2}, {:.2}, {:.2}]",
+            site.site_id + 1,
+            site.centroid[0],
+            site.centroid[1],
+            site.centroid[2]
+        )?;
+        writeln!(
+            file,
+            "color [{:.2}, {:.2}, {:.2}], site_{}",
+            r,
+            g,
+            b,
+            site.site_id + 1
+        )?;
         writeln!(file, "show spheres, site_{}", site.site_id + 1)?;
-        writeln!(file, "set sphere_scale, {:.2}, site_{}", size_scale, site.site_id + 1)?;
+        writeln!(
+            file,
+            "set sphere_scale, {:.2}, site_{}",
+            size_scale,
+            site.site_id + 1
+        )?;
 
         if !site.residues.is_empty() {
-            let res_sel = site.residues.iter()
+            let res_sel = site
+                .residues
+                .iter()
                 .take(10)
                 .map(|r| format!("resi {}", r))
                 .collect::<Vec<_>>()
                 .join(" or ");
-            writeln!(file, "select site_{}_residues, {}", site.site_id + 1, res_sel)?;
+            writeln!(
+                file,
+                "select site_{}_residues, {}",
+                site.site_id + 1,
+                res_sel
+            )?;
         }
         writeln!(file)?;
     }

@@ -18,10 +18,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use prism_nhs::{
-    NhsConfig, NhsPipeline,
-    load_ensemble_pdb,
-    input::PrismPrepTopology,
-    CrypticSiteEvent,
+    input::PrismPrepTopology, load_ensemble_pdb, CrypticSiteEvent, NhsConfig, NhsPipeline,
 };
 
 #[derive(Parser, Debug)]
@@ -63,9 +60,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -75,19 +70,20 @@ fn main() -> Result<()> {
     println!();
 
     // Create output directory
-    fs::create_dir_all(&args.output)
-        .context("Failed to create output directory")?;
+    fs::create_dir_all(&args.output).context("Failed to create output directory")?;
 
     // Load topology
     log::info!("Loading topology: {}", args.topology.display());
-    let topology = PrismPrepTopology::load(&args.topology)
-        .context("Failed to load topology")?;
-    println!("Structure: {} atoms, {} residues", topology.n_atoms, topology.residue_names.len());
+    let topology = PrismPrepTopology::load(&args.topology).context("Failed to load topology")?;
+    println!(
+        "Structure: {} atoms, {} residues",
+        topology.n_atoms,
+        topology.residue_names.len()
+    );
 
     // Load ensemble
     log::info!("Loading ensemble: {}", args.input.display());
-    let frames = load_ensemble_pdb(&args.input)
-        .context("Failed to load ensemble PDB")?;
+    let frames = load_ensemble_pdb(&args.input).context("Failed to load ensemble PDB")?;
     println!("Ensemble: {} frames loaded", frames.len());
 
     if frames.is_empty() {
@@ -105,14 +101,22 @@ fn main() -> Result<()> {
 
     // Initialize with first frame
     let first_frame = &frames[0];
-    pipeline.initialize(
-        &first_frame.positions,
-        &topology.elements.iter().map(|e| element_to_atomic_num(e)).collect::<Vec<_>>(),
-        &topology.charges,
-        &topology.residue_names,
-        &topology.atom_names,
-        &(0..topology.n_atoms).map(|i| topology.residue_ids[i] as usize).collect::<Vec<_>>(),
-    ).context("Failed to initialize NHS pipeline")?;
+    pipeline
+        .initialize(
+            &first_frame.positions,
+            &topology
+                .elements
+                .iter()
+                .map(|e| element_to_atomic_num(e))
+                .collect::<Vec<_>>(),
+            &topology.charges,
+            &topology.residue_names,
+            &topology.atom_names,
+            &(0..topology.n_atoms)
+                .map(|i| topology.residue_ids[i] as usize)
+                .collect::<Vec<_>>(),
+        )
+        .context("Failed to initialize NHS pipeline")?;
 
     println!();
     println!("════════════════════════════════════════════════════════════════");
@@ -123,16 +127,14 @@ fn main() -> Result<()> {
     let start_time = Instant::now();
     let mut all_events: Vec<CrypticSiteEvent> = Vec::new();
     let mut frame_results = Vec::new();
-    let frames_to_process: Vec<_> = frames.iter()
-        .enumerate()
-        .step_by(args.skip)
-        .collect();
+    let frames_to_process: Vec<_> = frames.iter().enumerate().step_by(args.skip).collect();
 
     let total_frames = frames_to_process.len();
 
     for (idx, (frame_idx, frame)) in frames_to_process.iter().enumerate() {
         // Process frame
-        let (events, _perturbation) = pipeline.process_frame(&frame.positions)
+        let (events, _perturbation) = pipeline
+            .process_frame(&frame.positions)
             .context("Failed to process frame")?;
 
         let n_events = events.len();
@@ -152,8 +154,14 @@ fn main() -> Result<()> {
             let elapsed = start_time.elapsed().as_secs_f64();
             let fps = (idx + 1) as f64 / elapsed;
             let eta = (total_frames - idx - 1) as f64 / fps;
-            print!("\r  Frame {}/{} | {:.1} fps | ETA {:.0}s | Events: {}    ",
-                idx + 1, total_frames, fps, eta, all_events.len());
+            print!(
+                "\r  Frame {}/{} | {:.1} fps | ETA {:.0}s | Events: {}    ",
+                idx + 1,
+                total_frames,
+                fps,
+                eta,
+                all_events.len()
+            );
             std::io::Write::flush(&mut std::io::stdout())?;
         }
     }
@@ -170,7 +178,10 @@ fn main() -> Result<()> {
     println!("Processing:");
     println!("  Frames analyzed:    {}", total_frames);
     println!("  Total time:         {:.2}s", elapsed.as_secs_f64());
-    println!("  Frames/second:      {:.1}", total_frames as f64 / elapsed.as_secs_f64());
+    println!(
+        "  Frames/second:      {:.1}",
+        total_frames as f64 / elapsed.as_secs_f64()
+    );
     println!();
     println!("Detection:");
     println!("  Total spikes:       {}", stats.total_spikes);
@@ -183,7 +194,10 @@ fn main() -> Result<()> {
 
     // Count sites by confidence level
     let high_confidence = sites.iter().filter(|s| s.confidence_score >= 0.75).count();
-    let medium_confidence = sites.iter().filter(|s| s.confidence_score >= 0.50 && s.confidence_score < 0.75).count();
+    let medium_confidence = sites
+        .iter()
+        .filter(|s| s.confidence_score >= 0.50 && s.confidence_score < 0.75)
+        .count();
     let avg_confidence = if sites.is_empty() {
         0.0
     } else {
@@ -192,25 +206,38 @@ fn main() -> Result<()> {
 
     println!("Cryptic Sites Found: {}", sites.len());
     println!("  High confidence:    {} (score >= 0.75)", high_confidence);
-    println!("  Medium confidence:  {} (score 0.50-0.75)", medium_confidence);
-    println!("  Low confidence:     {} (score < 0.50)", sites.len() - high_confidence - medium_confidence);
+    println!(
+        "  Medium confidence:  {} (score 0.50-0.75)",
+        medium_confidence
+    );
+    println!(
+        "  Low confidence:     {} (score < 0.50)",
+        sites.len() - high_confidence - medium_confidence
+    );
     println!("  Average confidence: {:.2}", avg_confidence);
     println!();
 
     for (i, site) in sites.iter().enumerate().take(10) {
-        let residue_str = site.residues.iter()
+        let residue_str = site
+            .residues
+            .iter()
             .take(5)
             .map(|r| r.to_string())
             .collect::<Vec<_>>()
             .join(", ");
         let more = if site.residues.len() > 5 { "..." } else { "" };
-        println!("  Site {}: {} events, conf={:.2} [{}], center ({:.1}, {:.1}, {:.1}), residues [{}{}]",
+        println!(
+            "  Site {}: {} events, conf={:.2} [{}], center ({:.1}, {:.1}, {:.1}), residues [{}{}]",
             i + 1,
             site.event_count,
             site.confidence_score,
             site.category,
-            site.centroid[0], site.centroid[1], site.centroid[2],
-            residue_str, more);
+            site.centroid[0],
+            site.centroid[1],
+            site.centroid[2],
+            residue_str,
+            more
+        );
     }
     if sites.len() > 10 {
         println!("  ... and {} more sites", sites.len() - 10);
@@ -327,7 +354,11 @@ struct AnalysisSummary {
 }
 
 /// Cluster cryptic events by spatial proximity with quality scoring
-fn cluster_events(events: &[CrypticSiteEvent], radius: f32, total_frames: usize) -> Vec<ClusteredSite> {
+fn cluster_events(
+    events: &[CrypticSiteEvent],
+    radius: f32,
+    total_frames: usize,
+) -> Vec<ClusteredSite> {
     if events.is_empty() {
         return Vec::new();
     }
@@ -415,11 +446,8 @@ fn cluster_events(events: &[CrypticSiteEvent], radius: f32, total_frames: usize)
         let volume_score = (cluster.total_volume / (cluster.event_count as f32 * 50.0)).min(1.0);
 
         // Combined confidence (weighted average)
-        cluster.confidence_score = (
-            frequency_score * 0.4 +
-            persistence_score * 0.4 +
-            volume_score * 0.2
-        ).clamp(0.0, 1.0);
+        cluster.confidence_score =
+            (frequency_score * 0.4 + persistence_score * 0.4 + volume_score * 0.2).clamp(0.0, 1.0);
 
         // Categorize
         cluster.category = if cluster.confidence_score >= 0.75 {
@@ -433,7 +461,8 @@ fn cluster_events(events: &[CrypticSiteEvent], radius: f32, total_frames: usize)
 
     // Sort by confidence score (descending), then by event count
     clusters.sort_by(|a, b| {
-        b.confidence_score.partial_cmp(&a.confidence_score)
+        b.confidence_score
+            .partial_cmp(&a.confidence_score)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| b.event_count.cmp(&a.event_count))
     });
@@ -468,28 +497,58 @@ fn write_pymol_script(path: &std::path::Path, sites: &[ClusteredSite]) -> Result
 
         // Color by confidence category
         let (r, g, b) = match site.category.as_str() {
-            "HIGH" => (0.2, 0.9, 0.2),    // Green
-            "MEDIUM" => (0.9, 0.9, 0.2),  // Yellow
-            _ => (0.9, 0.3, 0.2),         // Red
+            "HIGH" => (0.2, 0.9, 0.2),   // Green
+            "MEDIUM" => (0.9, 0.9, 0.2), // Yellow
+            _ => (0.9, 0.3, 0.2),        // Red
         };
 
-        writeln!(file, "# Site {} - {} events, confidence={:.2} [{}]",
-            site.site_id + 1, site.event_count, site.confidence_score, site.category)?;
-        writeln!(file, "pseudoatom site_{}, pos=[{:.2}, {:.2}, {:.2}]",
-            site.site_id + 1, site.centroid[0], site.centroid[1], site.centroid[2])?;
-        writeln!(file, "color [{:.2}, {:.2}, {:.2}], site_{}",
-            r, g, b, site.site_id + 1)?;
+        writeln!(
+            file,
+            "# Site {} - {} events, confidence={:.2} [{}]",
+            site.site_id + 1,
+            site.event_count,
+            site.confidence_score,
+            site.category
+        )?;
+        writeln!(
+            file,
+            "pseudoatom site_{}, pos=[{:.2}, {:.2}, {:.2}]",
+            site.site_id + 1,
+            site.centroid[0],
+            site.centroid[1],
+            site.centroid[2]
+        )?;
+        writeln!(
+            file,
+            "color [{:.2}, {:.2}, {:.2}], site_{}",
+            r,
+            g,
+            b,
+            site.site_id + 1
+        )?;
         writeln!(file, "show spheres, site_{}", site.site_id + 1)?;
-        writeln!(file, "set sphere_scale, {:.2}, site_{}", size_scale, site.site_id + 1)?;
+        writeln!(
+            file,
+            "set sphere_scale, {:.2}, site_{}",
+            size_scale,
+            site.site_id + 1
+        )?;
 
         // Highlight residues
         if !site.residues.is_empty() {
-            let res_sel = site.residues.iter()
+            let res_sel = site
+                .residues
+                .iter()
                 .take(10)
                 .map(|r| format!("resi {}", r))
                 .collect::<Vec<_>>()
                 .join(" or ");
-            writeln!(file, "select site_{}_residues, {}", site.site_id + 1, res_sel)?;
+            writeln!(
+                file,
+                "select site_{}_residues, {}",
+                site.site_id + 1,
+                res_sel
+            )?;
         }
         writeln!(file)?;
     }
@@ -497,20 +556,44 @@ fn write_pymol_script(path: &std::path::Path, sites: &[ClusteredSite]) -> Result
     writeln!(file, "# Group sites by confidence")?;
     writeln!(file, "group high_confidence_sites, site_*")?;
 
-    let high_sites: Vec<_> = sites.iter().filter(|s| s.category == "HIGH").take(20).collect();
-    let medium_sites: Vec<_> = sites.iter().filter(|s| s.category == "MEDIUM").take(20).collect();
-    let low_sites: Vec<_> = sites.iter().filter(|s| s.category == "LOW").take(20).collect();
+    let high_sites: Vec<_> = sites
+        .iter()
+        .filter(|s| s.category == "HIGH")
+        .take(20)
+        .collect();
+    let medium_sites: Vec<_> = sites
+        .iter()
+        .filter(|s| s.category == "MEDIUM")
+        .take(20)
+        .collect();
+    let low_sites: Vec<_> = sites
+        .iter()
+        .filter(|s| s.category == "LOW")
+        .take(20)
+        .collect();
 
     if !high_sites.is_empty() {
-        let high_sel = high_sites.iter().map(|s| format!("site_{}", s.site_id + 1)).collect::<Vec<_>>().join(" ");
+        let high_sel = high_sites
+            .iter()
+            .map(|s| format!("site_{}", s.site_id + 1))
+            .collect::<Vec<_>>()
+            .join(" ");
         writeln!(file, "select high_confidence, {}", high_sel)?;
     }
     if !medium_sites.is_empty() {
-        let med_sel = medium_sites.iter().map(|s| format!("site_{}", s.site_id + 1)).collect::<Vec<_>>().join(" ");
+        let med_sel = medium_sites
+            .iter()
+            .map(|s| format!("site_{}", s.site_id + 1))
+            .collect::<Vec<_>>()
+            .join(" ");
         writeln!(file, "select medium_confidence, {}", med_sel)?;
     }
     if !low_sites.is_empty() {
-        let low_sel = low_sites.iter().map(|s| format!("site_{}", s.site_id + 1)).collect::<Vec<_>>().join(" ");
+        let low_sel = low_sites
+            .iter()
+            .map(|s| format!("site_{}", s.site_id + 1))
+            .collect::<Vec<_>>()
+            .join(" ");
         writeln!(file, "select low_confidence, {}", low_sel)?;
     }
 

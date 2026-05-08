@@ -7,14 +7,13 @@
 //! performance, NOT just aromatic validation.
 
 use anyhow::{Context, Result};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
 use prism_nhs::{
-    PersistentNhsEngine, PersistentBatchConfig, CryoUvProtocol,
-    PrismPrepTopology, GpuSpikeEvent,
+    CryoUvProtocol, GpuSpikeEvent, PersistentBatchConfig, PersistentNhsEngine, PrismPrepTopology,
 };
 
 /// Extract binding site residues from topology's aromatic residues
@@ -22,9 +21,10 @@ use prism_nhs::{
 fn get_truth_residues_mock(topology: &PrismPrepTopology) -> HashSet<i32> {
     // For now, use a subset of aromatic residues as "truth"
     // In production, this extracts from holo structure (residues within 4.5A of ligand)
-    topology.aromatic_residues()
+    topology
+        .aromatic_residues()
         .iter()
-        .take(15)  // Mock: first 15 aromatics are "binding site"
+        .take(15) // Mock: first 15 aromatics are "binding site"
         .cloned()
         .collect()
 }
@@ -61,10 +61,7 @@ fn cluster_residues_into_sites(
             break;
         }
 
-        let site_residues: HashSet<i32> = ranked[start..end]
-            .iter()
-            .map(|(res, _)| *res)
-            .collect();
+        let site_residues: HashSet<i32> = ranked[start..end].iter().map(|(res, _)| *res).collect();
 
         sites.push(site_residues);
     }
@@ -127,9 +124,18 @@ fn main() -> Result<()> {
 
     // Test topologies
     let test_cases = vec![
-        ("6M0J", "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6M0J_topology.json"),
-        ("6LU7", "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"),
-        ("1L2Y", "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/1L2Y_topology.json"),
+        (
+            "6M0J",
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6M0J_topology.json",
+        ),
+        (
+            "6LU7",
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
+        ),
+        (
+            "1L2Y",
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/1L2Y_topology.json",
+        ),
     ];
 
     let total_steps = config.survey_steps + config.convergence_steps + config.precision_steps;
@@ -143,19 +149,28 @@ fn main() -> Result<()> {
     for (idx, (name, topo_path)) in test_cases.iter().enumerate() {
         let path = Path::new(topo_path);
         if !path.exists() {
-            println!("[{}/{}] SKIP {} (not found)\n", idx+1, test_cases.len(), name);
+            println!(
+                "[{}/{}] SKIP {} (not found)\n",
+                idx + 1,
+                test_cases.len(),
+                name
+            );
             continue;
         }
 
         println!("═══════════════════════════════════════════════════════════════════════════");
-        println!("[{}/{}] {}", idx+1, test_cases.len(), name);
+        println!("[{}/{}] {}", idx + 1, test_cases.len(), name);
         println!("═══════════════════════════════════════════════════════════════════════════");
 
         let struct_start = Instant::now();
 
         // Load topology (hot-swap, reuses GPU context)
         let topology = PrismPrepTopology::load(path)?;
-        println!("  Atoms: {}, Aromatics: {}", topology.n_atoms, topology.aromatic_residues().len());
+        println!(
+            "  Atoms: {}, Aromatics: {}",
+            topology.n_atoms,
+            topology.aromatic_residues().len()
+        );
 
         engine.load_topology(&topology)?;
 
@@ -171,9 +186,11 @@ fn main() -> Result<()> {
         let summary = engine.run(total_steps)?;
 
         let elapsed = struct_start.elapsed();
-        println!("  ✓ Complete: {:.1}s ({:.0} steps/s)",
+        println!(
+            "  ✓ Complete: {:.1}s ({:.0} steps/s)",
             elapsed.as_secs_f64(),
-            total_steps as f64 / elapsed.as_secs_f64());
+            total_steps as f64 / elapsed.as_secs_f64()
+        );
 
         // Get results
         let spikes = engine.get_accumulated_spikes();
@@ -199,9 +216,15 @@ fn main() -> Result<()> {
             }
 
             // Check Hit@K
-            if f1 > 0.3 {  // F1 > 0.3 = hit
-                if rank == 0 { hit_at_1 += 1; }
-                if rank < 3 { hit_at_3 += 1; break; }
+            if f1 > 0.3 {
+                // F1 > 0.3 = hit
+                if rank == 0 {
+                    hit_at_1 += 1;
+                }
+                if rank < 3 {
+                    hit_at_3 += 1;
+                    break;
+                }
             }
         }
 
@@ -229,11 +252,20 @@ fn main() -> Result<()> {
     let avg_f1 = total_f1 / n_completed as f32;
 
     println!("  Targets completed: {}", n_completed);
-    println!("  Total time: {:.1}s (persistent engine speedup active)", total_time.as_secs_f64());
+    println!(
+        "  Total time: {:.1}s (persistent engine speedup active)",
+        total_time.as_secs_f64()
+    );
     println!();
     println!("  PRIMARY METRICS:");
-    println!("    Hit@1:  {}/{} ({:.1}%)  ← #1 site is correct", hit_at_1, n_completed, hit1_rate);
-    println!("    Hit@3:  {}/{} ({:.1}%)  ← Correct site in top 3", hit_at_3, n_completed, hit3_rate);
+    println!(
+        "    Hit@1:  {}/{} ({:.1}%)  ← #1 site is correct",
+        hit_at_1, n_completed, hit1_rate
+    );
+    println!(
+        "    Hit@3:  {}/{} ({:.1}%)  ← Correct site in top 3",
+        hit_at_3, n_completed, hit3_rate
+    );
     println!("    Avg F1: {:.3}", avg_f1);
     println!();
 
@@ -242,7 +274,10 @@ fn main() -> Result<()> {
     println!("    Schrödinger SiteMap  ~60%     ~80%");
     println!("    Fpocket (free)       ~35%     ~55%");
     println!("    P2Rank              ~45%     ~65%");
-    println!("    PRISM4D UV-LIF      {:>4.1}%    {:>4.1}%", hit1_rate, hit3_rate);
+    println!(
+        "    PRISM4D UV-LIF      {:>4.1}%    {:>4.1}%",
+        hit1_rate, hit3_rate
+    );
     println!();
 
     // Verdict
@@ -262,7 +297,9 @@ fn main() -> Result<()> {
 
     println!("\nNOTE: This uses mock truth (subset of aromatics).");
     println!("      For real accuracy, extract truth from holo PDB files (prism4d --holo flag).");
-    println!("      The prism4d binary already outputs tier2_hit_at_1, tier2_hit_at_3, tier2_best_f1.");
+    println!(
+        "      The prism4d binary already outputs tier2_hit_at_1, tier2_hit_at_3, tier2_best_f1."
+    );
 
     Ok(())
 }

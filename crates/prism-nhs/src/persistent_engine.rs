@@ -20,16 +20,16 @@
 
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
-use std::path::Path;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
-    CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
-    LaunchConfig, PushKernelArg, DevicePtrMut,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtrMut, LaunchConfig,
+    PushKernelArg,
 };
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
@@ -37,14 +37,14 @@ use cudarc::nvrtc::Ptx;
 use crate::input::PrismPrepTopology;
 
 #[cfg(feature = "gpu")]
-fn tier8_capture_driver_error_text(
-    rc: cudarc::driver::sys::CUresult,
-) -> (String, String) {
+fn tier8_capture_driver_error_text(rc: cudarc::driver::sys::CUresult) -> (String, String) {
     let err = cudarc::driver::DriverError(rc);
-    let name = err.error_name()
+    let name = err
+        .error_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("cuGetErrorName failed: {:?}", e));
-    let text = err.error_string()
+    let text = err
+        .error_string()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("cuGetErrorString failed: {:?}", e));
     (name, text)
@@ -60,9 +60,8 @@ fn tier8_capture_stream_slot(raw_stream: usize) -> u32 {
     static SLOT_MAP: OnceLock<Mutex<HashMap<usize, u32>>> = OnceLock::new();
     let map = SLOT_MAP.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = map.lock().expect("tier8 stream slot map poisoned");
-    *map.entry(raw_stream).or_insert_with(|| {
-        NEXT_SLOT.fetch_add(1, Ordering::Relaxed)
-    })
+    *map.entry(raw_stream)
+        .or_insert_with(|| NEXT_SLOT.fetch_add(1, Ordering::Relaxed))
 }
 
 #[cfg(feature = "gpu")]
@@ -93,11 +92,15 @@ macro_rules! tier8_capture_verbose {
 
 #[allow(deprecated)]
 use crate::fused_engine::{
-    NhsAmberFusedEngine, CryoUvProtocol,
+    CryoUvProtocol,
+    EnsembleSnapshot,
+    NhsAmberFusedEngine,
+    RunSummary,
+    SpikeEvent,
+    StepResult,
     // Deprecated - kept for backward compatibility
     TemperatureProtocol,
     UvProbeConfig,
-    StepResult, RunSummary, SpikeEvent, EnsembleSnapshot,
 };
 
 /// Configuration for persistent batch processing
@@ -126,10 +129,10 @@ pub struct PersistentBatchConfig {
 impl Default for PersistentBatchConfig {
     fn default() -> Self {
         Self {
-            max_atoms: 20000,  // Handle large structures (1DLO ~16K atoms)
+            max_atoms: 20000, // Handle large structures (1DLO ~16K atoms)
             grid_dim: 128,
             grid_spacing: 0.75,
-            survey_steps: 500000,    // 1ns
+            survey_steps: 500000,       // 1ns
             convergence_steps: 1000000, // 2ns
             precision_steps: 1000000,   // 2ns
             temperature: 300.0,
@@ -278,7 +281,9 @@ pub struct DruggabilityScore {
 }
 
 /// Catalytic residue types for enzyme active site detection
-pub const CATALYTIC_RESIDUES: &[&str] = &["GLU", "ASP", "HIS", "HID", "HIE", "HIP", "SER", "CYS", "LYS"];
+pub const CATALYTIC_RESIDUES: &[&str] = &[
+    "GLU", "ASP", "HIS", "HID", "HIE", "HIP", "SER", "CYS", "LYS",
+];
 
 /// Compute catalytic score from lining residues
 ///
@@ -343,7 +348,8 @@ pub fn compute_catalytic_score(lining_residues: &[LiningResidue]) -> (f32, usize
     };
 
     // Combined score
-    let score: f32 = (0.5 * count_score + 0.3 * proximity_score + 0.2 * clustering_bonus).clamp(0.0, 1.0);
+    let score: f32 =
+        (0.5 * count_score + 0.3 * proximity_score + 0.2 * clustering_bonus).clamp(0.0, 1.0);
 
     (score, catalytic_count)
 }
@@ -363,21 +369,22 @@ impl DruggabilityScore {
     ) -> Self {
         // Volume scoring: optimal range 200-800 Å³
         let volume_score = if volume < 100.0 {
-            volume / 100.0 * 0.3  // Too small
+            volume / 100.0 * 0.3 // Too small
         } else if volume < 200.0 {
-            0.3 + (volume - 100.0) / 100.0 * 0.4  // Getting better
+            0.3 + (volume - 100.0) / 100.0 * 0.4 // Getting better
         } else if volume <= 800.0 {
-            0.7 + (1.0 - (volume - 200.0) / 600.0 * 0.3).max(0.7)  // Optimal
+            0.7 + (1.0 - (volume - 200.0) / 600.0 * 0.3).max(0.7) // Optimal
         } else if volume <= 1500.0 {
-            0.7 - (volume - 800.0) / 700.0 * 0.3  // Large but ok
+            0.7 - (volume - 800.0) / 700.0 * 0.3 // Large but ok
         } else {
-            0.4 - (volume - 1500.0) / 2000.0 * 0.2  // Too large (surface area)
-        }.clamp(0.0, 1.0);
+            0.4 - (volume - 1500.0) / 2000.0 * 0.2 // Too large (surface area)
+        }
+        .clamp(0.0, 1.0);
 
         // Enclosure: ratio of volume to bounding box volume
         let bb_volume = bounding_box[0] * bounding_box[1] * bounding_box[2];
         let enclosure_score = if bb_volume > 0.0 {
-            (volume / bb_volume).clamp(0.0, 1.0) * 0.7 + 0.3  // Bias toward enclosed
+            (volume / bb_volume).clamp(0.0, 1.0) * 0.7 + 0.3 // Bias toward enclosed
         } else {
             0.0
         };
@@ -387,14 +394,15 @@ impl DruggabilityScore {
 
         // Aromatic score: based on proximity to aromatic residues
         // Aromatics enable pi-stacking with drug molecules
-        let aromatic_score = aromatic_info
-            .map(|info| info.aromatic_score)
-            .unwrap_or(0.5);  // Default to neutral if not computed
+        let aromatic_score = aromatic_info.map(|info| info.aromatic_score).unwrap_or(0.5); // Default to neutral if not computed
 
         // Overall: weighted combination (with aromatics)
         let overall = if aromatic_info.is_some() {
             // With aromatic info: 30% volume, 20% enclosure, 25% hydrophobicity, 25% aromatic
-            0.30 * volume_score + 0.20 * enclosure_score + 0.25 * hydrophobicity_score + 0.25 * aromatic_score
+            0.30 * volume_score
+                + 0.20 * enclosure_score
+                + 0.25 * hydrophobicity_score
+                + 0.25 * aromatic_score
         } else {
             // Without aromatic info: original weights
             0.40 * volume_score + 0.30 * enclosure_score + 0.30 * hydrophobicity_score
@@ -436,7 +444,8 @@ impl DruggabilityScore {
         lining_residues: &[LiningResidue],
     ) -> Self {
         // Start with base scoring
-        let mut score = Self::from_site_with_aromatics(volume, avg_intensity, bounding_box, aromatic_info);
+        let mut score =
+            Self::from_site_with_aromatics(volume, avg_intensity, bounding_box, aromatic_info);
 
         // Compute catalytic score
         let (catalytic_score, catalytic_count) = compute_catalytic_score(lining_residues);
@@ -458,12 +467,12 @@ impl DruggabilityScore {
             // (substrate mimics, covalent inhibitors, etc.)
             // Note: Large enzyme sites have low volume_score, so use lower threshold
             let enzyme_threshold = 0.35; // Lower threshold for enzyme sites
-            // Note: Large multi-subunit enzymes (aldolases, etc.) can have
-            // binding sites up to ~8000 Å³. Use < comparison to avoid
-            // floating-point boundary issues with clamped volumes.
-            score.is_druggable = score.overall >= enzyme_threshold
-                && volume >= 50.0
-                && volume < 8001.0; // Enzyme sites can be quite large
+                                         // Note: Large multi-subunit enzymes (aldolases, etc.) can have
+                                         // binding sites up to ~8000 Å³. Use < comparison to avoid
+                                         // floating-point boundary issues with clamped volumes.
+            score.is_druggable =
+                score.overall >= enzyme_threshold && volume >= 50.0 && volume < 8001.0;
+            // Enzyme sites can be quite large
         }
 
         score
@@ -481,10 +490,7 @@ impl AromaticProximityInfo {
     /// * 0 = TRP (tryptophan)
     /// * 1 = TYR (tyrosine)
     /// * 2 = PHE (phenylalanine)
-    pub fn compute(
-        site_centroid: &[f32; 3],
-        aromatic_positions: &[(u32, u8, [f32; 3])],
-    ) -> Self {
+    pub fn compute(site_centroid: &[f32; 3], aromatic_positions: &[(u32, u8, [f32; 3])]) -> Self {
         if aromatic_positions.is_empty() {
             return Self::default();
         }
@@ -505,17 +511,20 @@ impl AromaticProximityInfo {
 
             // Track nearest by type
             match aromatic_type {
-                0 => {  // TRP
+                0 => {
+                    // TRP
                     if nearest_trp.map_or(true, |d| dist < d) {
                         nearest_trp = Some(dist);
                     }
                 }
-                1 => {  // TYR
+                1 => {
+                    // TYR
                     if nearest_tyr.map_or(true, |d| dist < d) {
                         nearest_tyr = Some(dist);
                     }
                 }
-                2 => {  // PHE
+                2 => {
+                    // PHE
                     if nearest_phe.map_or(true, |d| dist < d) {
                         nearest_phe = Some(dist);
                     }
@@ -540,18 +549,18 @@ impl AromaticProximityInfo {
 
         // Compute aromatic score based on proximity
         // Higher score for closer aromatics, especially TRP (strongest UV absorber)
-        let aromatic_score = Self::compute_aromatic_score(
-            nearest_trp,
-            nearest_tyr,
-            nearest_phe,
-            within_5a,
-        );
+        let aromatic_score =
+            Self::compute_aromatic_score(nearest_trp, nearest_tyr, nearest_phe, within_5a);
 
         Self {
             nearest_trp_distance: nearest_trp,
             nearest_tyr_distance: nearest_tyr,
             nearest_phe_distance: nearest_phe,
-            nearest_aromatic_distance: if nearest_any < f32::MAX { nearest_any } else { 0.0 },
+            nearest_aromatic_distance: if nearest_any < f32::MAX {
+                nearest_any
+            } else {
+                0.0
+            },
             aromatics_within_5a: within_5a,
             aromatics_within_8a: within_8a,
             nearby_aromatic_residues: nearby_residues,
@@ -568,7 +577,7 @@ impl AromaticProximityInfo {
     ) -> f32 {
         // TRP is most important (strongest UV absorber, best for pi-stacking)
         let trp_score = nearest_trp
-            .map(|d| Self::distance_to_score(d, 1.5))  // TRP weight 1.5x
+            .map(|d| Self::distance_to_score(d, 1.5)) // TRP weight 1.5x
             .unwrap_or(0.0);
 
         // TYR is moderate
@@ -583,7 +592,7 @@ impl AromaticProximityInfo {
 
         // Combine scores (take best + bonus for multiple)
         let base_score = trp_score.max(tyr_score).max(phe_score);
-        let multi_bonus = (within_5a as f32 * 0.05).min(0.2);  // Up to 0.2 bonus
+        let multi_bonus = (within_5a as f32 * 0.05).min(0.2); // Up to 0.2 bonus
 
         (base_score + multi_bonus).clamp(0.0, 1.0)
     }
@@ -635,11 +644,11 @@ impl SiteClassification {
         if volume >= 400.0 && spike_count >= 50 {
             Self::ActiveSite
         } else if volume >= 200.0 && volume <= 600.0 && spike_count >= 20 {
-            Self::Cryptic  // Moderate size, fewer spikes → transient
+            Self::Cryptic // Moderate size, fewer spikes → transient
         } else if volume >= 150.0 && spike_count >= 10 {
             Self::Allosteric
         } else if volume >= 800.0 {
-            Self::PpiSurface  // Large surface areas
+            Self::PpiSurface // Large surface areas
         } else {
             Self::Unknown
         }
@@ -887,7 +896,8 @@ impl SitePersistenceTracker {
         tracked.avg_centroid[1] = (tracked.avg_centroid[1] * n + site_gvm[1]) / (n + 1.0);
         tracked.avg_centroid[2] = (tracked.avg_centroid[2] * n + site_gvm[2]) / (n + 1.0);
         tracked.avg_volume = (tracked.avg_volume * n + site.estimated_volume) / (n + 1.0);
-        tracked.avg_spike_count = (tracked.avg_spike_count * n + site.spike_count as f32) / (n + 1.0);
+        tracked.avg_spike_count =
+            (tracked.avg_spike_count * n + site.spike_count as f32) / (n + 1.0);
         tracked.avg_quality = (tracked.avg_quality * n + site.quality_score) / (n + 1.0);
 
         tracked.frame_count += 1;
@@ -930,7 +940,7 @@ impl SitePersistenceTracker {
 
     /// Update persistence status for all sites
     fn update_persistence_status(&mut self) {
-        let threshold = self.total_frames as f32 * 0.5;  // 50% of frames
+        let threshold = self.total_frames as f32 * 0.5; // 50% of frames
 
         for site in &mut self.tracked_sites {
             site.is_persistent = site.frame_count as f32 >= threshold;
@@ -939,15 +949,21 @@ impl SitePersistenceTracker {
 
     /// Get final persistence analysis
     pub fn analyze(&self) -> PersistenceAnalysis {
-        let persistent_count = self.tracked_sites.iter().filter(|s| s.is_persistent).count();
+        let persistent_count = self
+            .tracked_sites
+            .iter()
+            .filter(|s| s.is_persistent)
+            .count();
         let transient_count = self.tracked_sites.len() - persistent_count;
 
         let avg_lifetime = if self.tracked_sites.is_empty() {
             0.0
         } else {
-            self.tracked_sites.iter()
+            self.tracked_sites
+                .iter()
                 .map(|s| s.frame_count as f32)
-                .sum::<f32>() / self.tracked_sites.len() as f32
+                .sum::<f32>()
+                / self.tracked_sites.len() as f32
         };
 
         PersistenceAnalysis {
@@ -964,8 +980,11 @@ impl SitePersistenceTracker {
         let mut sites: Vec<_> = self.tracked_sites.iter().collect();
         sites.sort_by(|a, b| {
             // Sort by frame_count descending, then by avg_quality descending
-            b.frame_count.cmp(&a.frame_count)
-                .then_with(|| b.avg_quality.partial_cmp(&a.avg_quality).unwrap_or(std::cmp::Ordering::Equal))
+            b.frame_count.cmp(&a.frame_count).then_with(|| {
+                b.avg_quality
+                    .partial_cmp(&a.avg_quality)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
         sites
     }
@@ -991,11 +1010,14 @@ impl TrackedSite {
             return 0.0;
         }
 
-        let variance: f32 = self.spike_history.iter()
+        let variance: f32 = self
+            .spike_history
+            .iter()
             .map(|&x| (x as f32 - mean).powi(2))
-            .sum::<f32>() / self.spike_history.len() as f32;
+            .sum::<f32>()
+            / self.spike_history.len() as f32;
 
-        variance.sqrt() / mean  // CV
+        variance.sqrt() / mean // CV
     }
 
     /// Get frame presence ratio (0.0 to 1.0)
@@ -1055,12 +1077,14 @@ pub struct PersistentNhsEngine {
 impl PersistentNhsEngine {
     /// Create persistent engine with pre-allocated capacity
     pub fn new(config: &PersistentBatchConfig) -> Result<Self> {
-        log::info!("🚀 Initializing Persistent NHS Engine (max_atoms: {})", config.max_atoms);
+        log::info!(
+            "🚀 Initializing Persistent NHS Engine (max_atoms: {})",
+            config.max_atoms
+        );
 
         // Time context creation
         let ctx_start = Instant::now();
-        let context = CudaContext::new(0)
-            .context("Failed to create CUDA context")?;
+        let context = CudaContext::new(0).context("Failed to create CUDA context")?;
         let context_init_time_ms = ctx_start.elapsed().as_millis() as u64;
         log::info!("  CUDA context: {}ms", context_init_time_ms);
 
@@ -1069,14 +1093,17 @@ impl PersistentNhsEngine {
 
         // Try multiple PTX locations
         let ptx_candidates = [
-            "../prism-gpu/src/kernels/nhs_amber_fused.ptx",  // From workspace
-            "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx",  // From root
-            "target/ptx/nhs_amber_fused.ptx",  // Build output
+            "../prism-gpu/src/kernels/nhs_amber_fused.ptx", // From workspace
+            "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx", // From root
+            "target/ptx/nhs_amber_fused.ptx",               // Build output
         ];
 
-        let ptx_path = ptx_candidates.iter()
+        let ptx_path = ptx_candidates
+            .iter()
             .find(|p| Path::new(p).exists())
-            .ok_or_else(|| anyhow::anyhow!("nhs_amber_fused.ptx not found in any standard location"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("nhs_amber_fused.ptx not found in any standard location")
+            })?;
 
         let module = context
             .load_module(Ptx::from_file(ptx_path))
@@ -1086,15 +1113,17 @@ impl PersistentNhsEngine {
 
         let stream = context.default_stream();
 
-        log::info!("✅ Persistent engine ready (total init: {}ms)",
-            context_init_time_ms + module_init_time_ms);
+        log::info!(
+            "✅ Persistent engine ready (total init: {}ms)",
+            context_init_time_ms + module_init_time_ms
+        );
 
         Ok(Self {
             context,
             module,
             stream,
             engine: None,
-            rt_engine: None,  // Lazy initialized on first use
+            rt_engine: None,   // Lazy initialized on first use
             gpu_cluster: None, // Lazy initialized on first cluster_spikes call
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
@@ -1117,7 +1146,10 @@ impl PersistentNhsEngine {
         module: Arc<CudaModule>,
         stream: Arc<CudaStream>,
     ) -> Result<Self> {
-        log::info!("Persistent NHS Engine on dedicated stream (max_atoms: {})", config.max_atoms);
+        log::info!(
+            "Persistent NHS Engine on dedicated stream (max_atoms: {})",
+            config.max_atoms
+        );
         Ok(Self {
             context,
             module,
@@ -1157,14 +1189,21 @@ impl PersistentNhsEngine {
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        log::info!("📦 Loading topology: {} ({} atoms)", topo_id, topology.n_atoms);
+        log::info!(
+            "📦 Loading topology: {} ({} atoms)",
+            topo_id,
+            topology.n_atoms
+        );
 
         let load_start = Instant::now();
 
         // Check if we need to reallocate
         if topology.n_atoms > self.max_atoms {
-            log::warn!("  Structure exceeds max_atoms ({}), reallocating to {}",
-                self.max_atoms, topology.n_atoms + 1000);
+            log::warn!(
+                "  Structure exceeds max_atoms ({}), reallocating to {}",
+                self.max_atoms,
+                topology.n_atoms + 1000
+            );
             self.max_atoms = topology.n_atoms + 1000;
         }
 
@@ -1214,7 +1253,10 @@ impl PersistentNhsEngine {
     /// Telemetry observer — current host-side integration timestep (ps).
     /// Returns 0.0 if no topology loaded.
     pub fn current_dt_ps(&self) -> f64 {
-        self.engine.as_ref().map(|e| e.current_dt_ps()).unwrap_or(0.0)
+        self.engine
+            .as_ref()
+            .map(|e| e.current_dt_ps())
+            .unwrap_or(0.0)
     }
 
     /// Telemetry observer — base (pre-adaptive-scale) integration timestep (ps).
@@ -1226,12 +1268,18 @@ impl PersistentNhsEngine {
     /// Telemetry observer — true while host-side adaptive_dt heuristic
     /// is the writer of `self.dt` (i.e., not in V2 gearbox mode).
     pub fn adaptive_dt_enabled(&self) -> bool {
-        self.engine.as_ref().map(|e| e.adaptive_dt_enabled()).unwrap_or(false)
+        self.engine
+            .as_ref()
+            .map(|e| e.adaptive_dt_enabled())
+            .unwrap_or(false)
     }
 
     /// Telemetry observer — true while the V2 captured pipeline owns dt.
     pub fn is_gearbox_active(&self) -> bool {
-        self.engine.as_ref().map(|e| e.is_gearbox_active()).unwrap_or(false)
+        self.engine
+            .as_ref()
+            .map(|e| e.is_gearbox_active())
+            .unwrap_or(false)
     }
 
     /// Enable LADD observation kernel
@@ -1347,7 +1395,8 @@ impl PersistentNhsEngine {
     /// T6: raw device pointer to the `d_forces` buffer (n_atoms × 3 f32, AoS).
     /// Returns 0 if no topology is loaded. Pointer-stable for the campaign.
     pub fn d_forces_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_forces_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
@@ -1357,7 +1406,8 @@ impl PersistentNhsEngine {
     /// is loaded.  Pointer-stable for the campaign.  Consumed by the
     /// gradient gasp kernel and the Phase-3 Momentum Guard.
     pub fn d_masses_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_masses_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
@@ -1365,7 +1415,8 @@ impl PersistentNhsEngine {
     /// T6: raw device pointer to the `d_positions` buffer (n_atoms × 3 f32, AoS).
     /// Returns 0 if no topology is loaded. Pointer-stable for the campaign.
     pub fn d_positions_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_positions_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
@@ -1391,14 +1442,16 @@ impl PersistentNhsEngine {
 
     /// Raw device pointer to `d_warp_matrix`. Returns 0 if no topology.
     pub fn d_warp_matrix_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_warp_matrix_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
 
     /// Total byte size of `d_warp_matrix`.
     pub fn d_warp_matrix_n_bytes(&self) -> usize {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_warp_matrix_n_bytes())
             .unwrap_or(0)
     }
@@ -1406,14 +1459,16 @@ impl PersistentNhsEngine {
     /// Raw device pointer to `d_aromatic_centroids`. Returns 0 if no
     /// topology.
     pub fn d_aromatic_centroids_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_aromatic_centroids_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
 
     /// Number of f32 elements in `d_aromatic_centroids` (n_aromatics×3).
     pub fn d_aromatic_centroids_n_floats(&self) -> usize {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_aromatic_centroids_n_floats())
             .unwrap_or(0)
     }
@@ -1429,7 +1484,8 @@ impl PersistentNhsEngine {
     /// **B.3** raw device pointer to the `d_velocities` buffer.
     /// Forwards to inner `NhsAmberFusedEngine::d_velocities_dev_ptr`.
     pub fn d_velocities_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_velocities_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
@@ -1437,7 +1493,8 @@ impl PersistentNhsEngine {
     /// **B.3** raw device pointer to `d_protocol->dt` (offset 84 within
     /// the GPU-resident ProtocolState).  Forwarder.
     pub fn d_protocol_dt_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_protocol_dt_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
@@ -1446,7 +1503,8 @@ impl PersistentNhsEngine {
     /// components buffer (n_atoms × f64).  CUB DeviceReduce::Sum reads
     /// from this address.  Forwarder.
     pub fn d_potential_energy_components_dev_ptr(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_potential_energy_components_dev_ptr(&self.stream))
             .unwrap_or(0)
     }
@@ -1454,7 +1512,8 @@ impl PersistentNhsEngine {
     /// **M1.2.17** atom count for the per-atom PE buffer (= length of
     /// d_potential_energy_components / sizeof(f64)).  Forwarder.
     pub fn d_potential_energy_n_atoms(&self) -> usize {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.d_potential_energy_n_atoms())
             .unwrap_or(0)
     }
@@ -1466,7 +1525,8 @@ impl PersistentNhsEngine {
     /// starts with `*d_external_work == 0.0`.  Forwarder to inner
     /// `NhsAmberFusedEngine::allocate_external_work_buffer`.
     pub fn allocate_external_work_buffer(&self) -> u64 {
-        self.engine.as_ref()
+        self.engine
+            .as_ref()
             .map(|e| e.allocate_external_work_buffer(&self.stream))
             .unwrap_or(0)
     }
@@ -1481,7 +1541,9 @@ impl PersistentNhsEngine {
     }
 
     /// Get ALL GPU buffer references needed by the persistent coupling kernel.
-    pub fn twin_coupling_gpu_state(&mut self) -> Option<(
+    pub fn twin_coupling_gpu_state(
+        &mut self,
+    ) -> Option<(
         &mut CudaSlice<f32>,
         &CudaSlice<f32>,
         &CudaSlice<u8>,
@@ -1519,7 +1581,9 @@ impl PersistentNhsEngine {
 
     /// Get BOTH threshold buffers AND protocol state in one borrow — for GPU ring buffer coupling.
     /// Returns (osc_thresholds, base_thresholds, protocol_state) all as mutable.
-    pub fn coupling_buffers_mut(&mut self) -> Option<(&mut CudaSlice<f32>, &CudaSlice<f32>, &mut CudaSlice<u8>)> {
+    pub fn coupling_buffers_mut(
+        &mut self,
+    ) -> Option<(&mut CudaSlice<f32>, &CudaSlice<f32>, &mut CudaSlice<u8>)> {
         if let Some(ref mut engine) = self.engine {
             engine.coupling_buffers_for_twin()
         } else {
@@ -1541,11 +1605,11 @@ impl PersistentNhsEngine {
     /// `cuStreamBeginCapture_v2` / `cuStreamEndCapture` from
     /// `cudarc::driver::sys` so the template handle stays alive
     /// post-capture.
-    pub fn capture_autonomous_template(&mut self)
-        -> anyhow::Result<crate::graph_capture::CapturedTemplate>
-    {
+    pub fn capture_autonomous_template(
+        &mut self,
+    ) -> anyhow::Result<crate::graph_capture::CapturedTemplate> {
+        use crate::graph_capture::{CapturedTemplate, StreamCaptureTagger};
         use cudarc::driver::sys;
-        use crate::graph_capture::{StreamCaptureTagger, CapturedTemplate};
         let stream = self.stream.clone();
 
         // Same pre-capture posture as the legacy path, but use raw CUDA
@@ -1558,7 +1622,8 @@ impl PersistentNhsEngine {
         let stream_slot = tier8_capture_stream_slot(raw_stream as usize);
         let expected_ctx = ctx.cu_ctx();
         let diag_thread_id = format!("{:?}", std::thread::current().id());
-        let mut deferred_drain_context: Option<crate::fused_engine::Tier8DeferredDrainContext> = None;
+        let mut deferred_drain_context: Option<crate::fused_engine::Tier8DeferredDrainContext> =
+            None;
 
         // Cudarc launch_builder() still calls bind_to_thread() internally.
         // In capture mode that call skips cuCtxGetCurrent/cuCtxSetCurrent,
@@ -1578,10 +1643,9 @@ impl PersistentNhsEngine {
                 );
             }
             Err(first) => {
-                let drain_count = TIER8_DEFERRED_DRAIN_COUNT.fetch_add(
-                    1,
-                    std::sync::atomic::Ordering::Relaxed,
-                ) + 1;
+                let drain_count = TIER8_DEFERRED_DRAIN_COUNT
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    + 1;
                 let (name, text) = tier8_capture_driver_error_text(first.0);
                 log::warn!(
                     "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err \
@@ -1608,8 +1672,7 @@ impl PersistentNhsEngine {
                     cuda_string: text.clone(),
                 });
                 if let Err(second) = ctx.check_err() {
-                    let (second_name, second_text) =
-                        tier8_capture_driver_error_text(second.0);
+                    let (second_name, second_text) = tier8_capture_driver_error_text(second.0);
                     log::error!(
                         "[TIER8-CAPTURE deferred-error-state] call=ctx.check_err(second) \
                          result=FAIL stream_id={} protocol_group=monolithic_parent_template \
@@ -1634,8 +1697,7 @@ impl PersistentNhsEngine {
 
         let mut before_ctx: sys::CUcontext = std::ptr::null_mut();
         let rc_get_before = unsafe { sys::cuCtxGetCurrent(&mut before_ctx as *mut _) };
-        let (get_before_name, get_before_text) =
-            tier8_capture_driver_error_text(rc_get_before);
+        let (get_before_name, get_before_text) = tier8_capture_driver_error_text(rc_get_before);
         if !matches!(rc_get_before, sys::CUresult::CUDA_SUCCESS) {
             log::error!(
                 "[TIER8-CAPTURE raw-context-guard] call=cuCtxGetCurrent(before) \
@@ -1693,8 +1755,7 @@ impl PersistentNhsEngine {
 
         let mut after_ctx: sys::CUcontext = std::ptr::null_mut();
         let rc_get_after = unsafe { sys::cuCtxGetCurrent(&mut after_ctx as *mut _) };
-        let (get_after_name, get_after_text) =
-            tier8_capture_driver_error_text(rc_get_after);
+        let (get_after_name, get_after_text) = tier8_capture_driver_error_text(rc_get_after);
         if !matches!(rc_get_after, sys::CUresult::CUDA_SUCCESS) {
             log::error!(
                 "[TIER8-CAPTURE raw-context-guard] call=cuCtxGetCurrent(after) \
@@ -1827,7 +1888,9 @@ impl PersistentNhsEngine {
             diag_thread_id
         );
 
-        let engine = self.engine.as_mut()
+        let engine = self
+            .engine
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No engine loaded"))?;
 
         // Capture-mode flag for cudarc's bind_to_thread no-op shim.
@@ -1856,13 +1919,8 @@ impl PersistentNhsEngine {
 
         // Launch the captured kernel sequence. On error, abort capture
         // cleanly and propagate.
-        crate::fused_engine::tier8_set_deferred_drain_context(
-            deferred_drain_context.clone(),
-        );
-        let kernel_result = engine.step_autonomous_kernels_tagged(
-            &stream,
-            Some(&mut tagger),
-        );
+        crate::fused_engine::tier8_set_deferred_drain_context(deferred_drain_context.clone());
+        let kernel_result = engine.step_autonomous_kernels_tagged(&stream, Some(&mut tagger));
         crate::fused_engine::tier8_set_deferred_drain_context(None);
         if let Some(ref drain) = deferred_drain_context {
             let build_succeeded = kernel_result.is_ok();
@@ -1885,9 +1943,13 @@ impl PersistentNhsEngine {
         if let Err(e) = kernel_result {
             // Abort capture: end and discard the template.
             let mut discard: sys::CUgraph = std::ptr::null_mut();
-            unsafe { let _ = sys::cuStreamEndCapture(raw_stream, &mut discard); }
+            unsafe {
+                let _ = sys::cuStreamEndCapture(raw_stream, &mut discard);
+            }
             if !discard.is_null() {
-                unsafe { let _ = sys::cuGraphDestroy(discard); }
+                unsafe {
+                    let _ = sys::cuGraphDestroy(discard);
+                }
             }
             return Err(anyhow::anyhow!("step_autonomous_kernels_tagged: {}", e));
         }
@@ -1908,7 +1970,9 @@ impl PersistentNhsEngine {
         ))
     }
 
-    pub fn capture_autonomous_graph(&mut self) -> anyhow::Result<crate::graph_capture::AutonomousGraph> {
+    pub fn capture_autonomous_graph(
+        &mut self,
+    ) -> anyhow::Result<crate::graph_capture::AutonomousGraph> {
         use cudarc::driver::sys;
         let stream = self.stream.clone();
 
@@ -1916,9 +1980,12 @@ impl PersistentNhsEngine {
         // prior module loads, memcpy, and initialization. CUDA capture mode forbids
         // context management calls (cuCtxGetCurrent/cuCtxSetCurrent), so the context
         // must already be bound before we enter capture mode.
-        stream.context().bind_to_thread()
+        stream
+            .context()
+            .bind_to_thread()
             .map_err(|e| anyhow::anyhow!("Pre-capture context bind: {:?}", e))?;
-        stream.synchronize()
+        stream
+            .synchronize()
             .map_err(|e| anyhow::anyhow!("Pre-capture sync: {:?}", e))?;
 
         if let Some(ref mut engine) = self.engine {
@@ -1936,12 +2003,13 @@ impl PersistentNhsEngine {
             let _guard = CaptureGuard;
 
             // Begin stream capture
-            stream.begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+            stream
+                .begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
                 .map_err(|e| anyhow::anyhow!("Stream capture begin: {:?}", e))?;
 
             // Launch one step's kernels (captured, not executed)
             match engine.step_autonomous_kernels(&stream) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
                     log::warn!("step_autonomous: {} — aborting capture", e);
                     let _ = stream.end_capture(
@@ -1952,10 +2020,12 @@ impl PersistentNhsEngine {
             }
 
             // End capture → instantiate
-            let graph = stream.end_capture(
-                sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH
-            ).map_err(|e| anyhow::anyhow!("Stream capture end: {:?}", e))?
-             .ok_or_else(|| anyhow::anyhow!("Null graph from capture"))?;
+            let graph = stream
+                .end_capture(
+                    sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
+                )
+                .map_err(|e| anyhow::anyhow!("Stream capture end: {:?}", e))?
+                .ok_or_else(|| anyhow::anyhow!("Null graph from capture"))?;
             Ok(crate::graph_capture::AutonomousGraph::new(graph))
         } else {
             anyhow::bail!("No engine loaded")
@@ -2120,7 +2190,14 @@ impl PersistentNhsEngine {
     ///     println!("Binding site at {:?} with {} spikes", c, site.spike_count);
     /// }
     /// ```
-    pub fn run_and_cluster(&mut self, n_steps: i32) -> Result<(RunSummary, Vec<ClusteredBindingSite>, Option<ClusteringStats>)> {
+    pub fn run_and_cluster(
+        &mut self,
+        n_steps: i32,
+    ) -> Result<(
+        RunSummary,
+        Vec<ClusteredBindingSite>,
+        Option<ClusteringStats>,
+    )> {
         let summary = self.run(n_steps)?;
         let spike_events = self.get_spike_events();
 
@@ -2129,7 +2206,8 @@ impl PersistentNhsEngine {
         }
 
         // Extract positions
-        let positions: Vec<f32> = spike_events.iter()
+        let positions: Vec<f32> = spike_events
+            .iter()
             .flat_map(|s| s.position.iter().copied())
             .collect();
 
@@ -2199,7 +2277,10 @@ impl PersistentNhsEngine {
     ///
     /// Delegates to `NhsAmberFusedEngine::adapt_protocol_from_spike_rate()`.
     /// Returns the detected `FlexibilityClass`.
-    pub fn adapt_protocol_from_spike_rate(&mut self, cold_hold_steps: i32) -> crate::fused_engine::FlexibilityClass {
+    pub fn adapt_protocol_from_spike_rate(
+        &mut self,
+        cold_hold_steps: i32,
+    ) -> crate::fused_engine::FlexibilityClass {
         if let Some(ref mut engine) = self.engine {
             engine.adapt_protocol_from_spike_rate(cold_hold_steps)
         } else {
@@ -2221,7 +2302,9 @@ impl PersistentNhsEngine {
     }
 
     /// Download signal preservation buffers from the GPU engine
-    pub fn download_signal_preservation(&self) -> anyhow::Result<crate::fused_engine::SignalPreservationData> {
+    pub fn download_signal_preservation(
+        &self,
+    ) -> anyhow::Result<crate::fused_engine::SignalPreservationData> {
         if let Some(ref engine) = self.engine {
             engine.download_signal_preservation()
         } else {
@@ -2425,7 +2508,7 @@ impl PersistentNhsEngine {
     #[allow(unreachable_code)]
     pub fn ensure_rt_pipeline(&mut self) -> Result<bool> {
         if self.rt_engine.is_some() {
-            return Ok(true);  // Already initialized
+            return Ok(true); // Already initialized
         }
 
         // ════════════════════════════════════════════════════════════
@@ -2464,25 +2547,28 @@ impl PersistentNhsEngine {
         //   ~8000 atoms → 1.2 Å  (very large)
         // Formula: epsilon = 3.0 * (500 / n_atoms)^(1/3), clamped to [1.2, 3.0]
         let n_atoms = self.engine.as_ref().map(|e| e.n_atoms()).unwrap_or(500);
-        let adaptive_epsilon = (3.0_f32 * (500.0_f32 / n_atoms as f32).cbrt())
-            .clamp(1.2, 3.0);
-        log::info!("  Adaptive epsilon: {:.2}Å (n_atoms={})", adaptive_epsilon, n_atoms);
+        let adaptive_epsilon = (3.0_f32 * (500.0_f32 / n_atoms as f32).cbrt()).clamp(1.2, 3.0);
+        log::info!(
+            "  Adaptive epsilon: {:.2}Å (n_atoms={})",
+            adaptive_epsilon,
+            n_atoms
+        );
 
         // Create RT clustering config with adaptive epsilon
         let rt_config = crate::rt_clustering::RtClusteringConfig {
             epsilon: adaptive_epsilon,
-            min_points: 4,         // Minimum 4 neighbors for core point
-            min_cluster_size: 20,  // Minimum 20 points per cluster (catch smaller pockets)
-            rays_per_event: 32,    // 32 rays for neighbor finding
+            min_points: 4,        // Minimum 4 neighbors for core point
+            min_cluster_size: 20, // Minimum 20 points per cluster (catch smaller pockets)
+            rays_per_event: 32,   // 32 rays for neighbor finding
         };
 
         // Create and initialize the RT engine
-        let mut rt_engine = crate::rt_clustering::RtClusteringEngine::new(
-            self.context.clone(),
-            rt_config,
-        ).context("Failed to create RT clustering engine")?;
+        let mut rt_engine =
+            crate::rt_clustering::RtClusteringEngine::new(self.context.clone(), rt_config)
+                .context("Failed to create RT clustering engine")?;
 
-        rt_engine.load_pipeline(&optixir_path)
+        rt_engine
+            .load_pipeline(&optixir_path)
             .context("Failed to load RT clustering pipeline")?;
 
         let init_time = start.elapsed().as_millis() as u64;
@@ -2490,7 +2576,10 @@ impl PersistentNhsEngine {
         self.rt_engine = Some(rt_engine);
 
         log::info!("  RT pipeline initialized: {}ms", init_time);
-        log::info!("  GPU Architecture: {}", crate::rt_utils::get_architecture_name());
+        log::info!(
+            "  GPU Architecture: {}",
+            crate::rt_utils::get_architecture_name()
+        );
 
         Ok(true)
     }
@@ -2504,7 +2593,10 @@ impl PersistentNhsEngine {
     ///
     /// # Returns
     /// Clustering result with cluster assignments and statistics
-    pub fn cluster_spikes(&mut self, spike_positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
+    pub fn cluster_spikes(
+        &mut self,
+        spike_positions: &[f32],
+    ) -> Result<crate::rt_clustering::RtClusteringResult> {
         use crate::gpu_cluster_backend as gcb;
         let num_spikes = spike_positions.len() / 3;
 
@@ -2515,7 +2607,8 @@ impl PersistentNhsEngine {
 
         log::info!(
             "POST_MD_CLUSTER_BACKEND_SELECTED backend={} spikes={}",
-            gcb::backend_name(backend), num_spikes
+            gcb::backend_name(backend),
+            num_spikes
         );
         log::info!("POST_MD_CLUSTER_START spikes={}", num_spikes);
         let t_dispatch = std::time::Instant::now();
@@ -2524,16 +2617,19 @@ impl PersistentNhsEngine {
             gcb::BACKEND_GPU_HASH => {
                 // Lazy-init the GPU CCL backend once per engine
                 if self.gpu_cluster.is_none() {
-                    let b = gcb::GpuSpatialHashBackend::new(
-                        self.context.clone(), self.stream.clone()
-                    ).context("init GpuSpatialHashBackend")?;
+                    let b =
+                        gcb::GpuSpatialHashBackend::new(self.context.clone(), self.stream.clone())
+                            .context("init GpuSpatialHashBackend")?;
                     self.gpu_cluster = Some(b);
                 }
                 // Fixed epsilon semantics match the legacy fallback_grid_cluster.
                 // The 5.0 Å value is the established post-MD CCL radius; changing
                 // it would be semantic drift and is forbidden in this lane.
                 let epsilon = 5.0_f32;
-                self.gpu_cluster.as_mut().unwrap().cluster(spike_positions, epsilon)?
+                self.gpu_cluster
+                    .as_mut()
+                    .unwrap()
+                    .cluster(spike_positions, epsilon)?
             }
             gcb::BACKEND_RT_OPTIX => {
                 if self.ensure_rt_pipeline()? {
@@ -2573,7 +2669,8 @@ impl PersistentNhsEngine {
 
         log::info!(
             "POST_MD_CLUSTER_DONE clusters={} elapsed_ms={}",
-            result.num_clusters, t_dispatch.elapsed().as_millis()
+            result.num_clusters,
+            t_dispatch.elapsed().as_millis()
         );
 
         Ok(result)
@@ -2581,7 +2678,11 @@ impl PersistentNhsEngine {
 
     /// Re-cluster spikes at a specific epsilon (for mega-cluster subdivision).
     /// Temporarily overrides the RT engine's epsilon, clusters, then restores it.
-    pub fn cluster_spikes_at_epsilon(&mut self, spike_positions: &[f32], epsilon: f32) -> Result<crate::rt_clustering::RtClusteringResult> {
+    pub fn cluster_spikes_at_epsilon(
+        &mut self,
+        spike_positions: &[f32],
+        epsilon: f32,
+    ) -> Result<crate::rt_clustering::RtClusteringResult> {
         if let Some(ref mut rt_engine) = self.rt_engine {
             let saved = rt_engine.config.epsilon;
             rt_engine.config.epsilon = epsilon;
@@ -2618,11 +2719,7 @@ impl PersistentNhsEngine {
     ///
     /// # Returns
     /// Vector of epsilon values at 25th, 50th, 75th, and 90th percentiles
-    pub fn compute_adaptive_epsilon(
-        positions: &[f32],
-        k: usize,
-        sample_size: usize,
-    ) -> Vec<f32> {
+    pub fn compute_adaptive_epsilon(positions: &[f32], k: usize, sample_size: usize) -> Vec<f32> {
         let n_points = positions.len() / 3;
         if n_points < k + 1 {
             // Not enough points, return default
@@ -2647,8 +2744,11 @@ impl PersistentNhsEngine {
 
             // Compute distances to all other points (brute force for simplicity)
             let mut distances: Vec<f32> = Vec::with_capacity(n_points.min(1000));
-            for j in 0..n_points.min(5000) { // Limit comparison for performance
-                if i == j { continue; }
+            for j in 0..n_points.min(5000) {
+                // Limit comparison for performance
+                if i == j {
+                    continue;
+                }
                 let xj = positions[j * 3];
                 let yj = positions[j * 3 + 1];
                 let zj = positions[j * 3 + 2];
@@ -2691,7 +2791,11 @@ impl PersistentNhsEngine {
             epsilons.push((last * 1.4).min(25.0));
         }
 
-        log::info!("Adaptive epsilon: {:?} (from k-NN analysis, k={})", epsilons, k);
+        log::info!(
+            "Adaptive epsilon: {:?} (from k-NN analysis, k={})",
+            epsilons,
+            k
+        );
         epsilons
     }
 
@@ -2749,8 +2853,11 @@ impl PersistentNhsEngine {
             };
         let merge_distance = 12.0f32; // Clusters within 8Å are considered the same site
 
-        log::info!("Running multi-scale clustering on {} spikes at {} scales",
-            num_spikes, epsilon_scales.len());
+        log::info!(
+            "Running multi-scale clustering on {} spikes at {} scales",
+            num_spikes,
+            epsilon_scales.len()
+        );
 
         // Track clusters across scales: (centroid, spike_count, epsilon, cluster_id)
         let mut all_clusters: Vec<ScaleCluster> = Vec::new();
@@ -2770,18 +2877,22 @@ impl PersistentNhsEngine {
             let optixir_path = crate::rt_clustering::find_optixir_path()
                 .context("Could not find rt_clustering.optixir")?;
 
-            let mut rt_engine = crate::rt_clustering::RtClusteringEngine::new(
-                self.context.clone(),
-                rt_config,
-            ).context("Failed to create RT clustering engine")?;
+            let mut rt_engine =
+                crate::rt_clustering::RtClusteringEngine::new(self.context.clone(), rt_config)
+                    .context("Failed to create RT clustering engine")?;
 
-            rt_engine.load_pipeline(&optixir_path)
+            rt_engine
+                .load_pipeline(&optixir_path)
                 .context("Failed to load RT clustering pipeline")?;
 
             let result = rt_engine.cluster(spike_positions)?;
 
-            log::info!("  Scale ε={:.1}Å: {} clusters, {} neighbors",
-                epsilon, result.num_clusters, result.total_neighbors);
+            log::info!(
+                "  Scale ε={:.1}Å: {} clusters, {} neighbors",
+                epsilon,
+                result.num_clusters,
+                result.total_neighbors
+            );
 
             // Compute centroids for each cluster at this scale
             let mut cluster_points: HashMap<i32, Vec<usize>> = HashMap::new();
@@ -2847,7 +2958,7 @@ impl PersistentNhsEngine {
                 let dist = ((ci.centroid[0] - cj.centroid[0]).powi(2)
                     + (ci.centroid[1] - cj.centroid[1]).powi(2)
                     + (ci.centroid[2] - cj.centroid[2]).powi(2))
-                    .sqrt();
+                .sqrt();
 
                 if dist <= merge_distance {
                     merge_group.push(j);
@@ -2863,7 +2974,8 @@ impl PersistentNhsEngine {
             let persistence = scales_present.len();
 
             // Merge spike indices (union across scales)
-            let mut all_spike_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let mut all_spike_indices: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
             let mut sum_cx = 0.0f32;
             let mut sum_cy = 0.0f32;
             let mut sum_cz = 0.0f32;
@@ -2887,7 +2999,10 @@ impl PersistentNhsEngine {
                 spike_count: merged_spike_count,
                 spike_indices: all_spike_indices.into_iter().collect(),
                 persistence,
-                scales: scales_present.into_iter().map(|s| s as f32 / 10.0).collect(),
+                scales: scales_present
+                    .into_iter()
+                    .map(|s| s as f32 / 10.0)
+                    .collect(),
             });
         }
 
@@ -2904,12 +3019,19 @@ impl PersistentNhsEngine {
             .filter(|c| c.persistence >= 2)
             .collect();
 
-        log::info!("  Multi-scale result: {} persistent clusters (appear at ≥2 scales)",
-            persistent_clusters.len());
+        log::info!(
+            "  Multi-scale result: {} persistent clusters (appear at ≥2 scales)",
+            persistent_clusters.len()
+        );
 
         for (i, c) in persistent_clusters.iter().take(5).enumerate() {
-            log::info!("    #{}: {} spikes, persistence={}, scales={:?}",
-                i + 1, c.spike_count, c.persistence, c.scales);
+            log::info!(
+                "    #{}: {} spikes, persistence={}, scales={:?}",
+                i + 1,
+                c.spike_count,
+                c.persistence,
+                c.scales
+            );
         }
 
         Ok(MultiScaleClusteringResult {
@@ -2924,11 +3046,17 @@ impl PersistentNhsEngine {
 
     /// Fallback grid-based clustering when RT cores unavailable
     /// CPU grid clustering fallback — public for multi-stream path when RT cores fail
-    pub fn cluster_spikes_cpu_fallback(&self, positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
+    pub fn cluster_spikes_cpu_fallback(
+        &self,
+        positions: &[f32],
+    ) -> Result<crate::rt_clustering::RtClusteringResult> {
         self.fallback_grid_cluster(positions)
     }
 
-    fn fallback_grid_cluster(&self, positions: &[f32]) -> Result<crate::rt_clustering::RtClusteringResult> {
+    fn fallback_grid_cluster(
+        &self,
+        positions: &[f32],
+    ) -> Result<crate::rt_clustering::RtClusteringResult> {
         let num_points = positions.len() / 3;
         let start = Instant::now();
 
@@ -2986,12 +3114,15 @@ impl PersistentNhsEngine {
                                 let zi = positions[i * 3 + 2];
 
                                 for &j in neighbors {
-                                    if i >= j { continue; }
+                                    if i >= j {
+                                        continue;
+                                    }
                                     let xj = positions[j * 3];
                                     let yj = positions[j * 3 + 1];
                                     let zj = positions[j * 3 + 2];
 
-                                    let dist_sq = (xi - xj).powi(2) + (yi - yj).powi(2) + (zi - zj).powi(2);
+                                    let dist_sq =
+                                        (xi - xj).powi(2) + (yi - yj).powi(2) + (zi - zj).powi(2);
                                     if dist_sq <= epsilon * epsilon {
                                         union(&mut parent, i, j);
                                         total_neighbors += 1;
@@ -3060,10 +3191,8 @@ pub struct PersistentEngineStats {
 pub(crate) fn build_clustered_sites(
     spike_events: &[SpikeEvent],
     clustering_result: &crate::rt_clustering::RtClusteringResult,
-    #[cfg(feature = "gpu")]
-    gpu_engine: Option<&NhsAmberFusedEngine>,
-    #[cfg(not(feature = "gpu"))]
-    _gpu_engine: Option<&()>,
+    #[cfg(feature = "gpu")] gpu_engine: Option<&NhsAmberFusedEngine>,
+    #[cfg(not(feature = "gpu"))] _gpu_engine: Option<&()>,
 ) -> Vec<ClusteredBindingSite> {
     use std::collections::HashMap;
 
@@ -3073,12 +3202,15 @@ pub(crate) fn build_clustered_sites(
 
     // Group spikes by cluster
     let mut cluster_spikes: HashMap<i32, Vec<(usize, &SpikeEvent)>> = HashMap::new();
-    for (idx, (spike, &cluster_id)) in spike_events.iter()
+    for (idx, (spike, &cluster_id)) in spike_events
+        .iter()
         .zip(clustering_result.cluster_ids.iter())
         .enumerate()
     {
-        if cluster_id >= 0 {  // Skip noise points (-1)
-            cluster_spikes.entry(cluster_id)
+        if cluster_id >= 0 {
+            // Skip noise points (-1)
+            cluster_spikes
+                .entry(cluster_id)
                 .or_default()
                 .push((idx, spike));
         }
@@ -3159,16 +3291,18 @@ pub(crate) fn build_clustered_sites(
             // GPU path: use the fused engine's KDE kernel if available
             #[cfg(feature = "gpu")]
             if let Some(engine) = gpu_engine {
-                let positions: Vec<[f32; 3]> = spikes.iter()
-                    .map(|(_, s)| s.position)
-                    .collect();
-                let n_residues: Vec<i32> = spikes.iter()
+                let positions: Vec<[f32; 3]> = spikes.iter().map(|(_, s)| s.position).collect();
+                let n_residues: Vec<i32> = spikes
+                    .iter()
                     .map(|(_, s)| s.nearby_residues.len() as i32)
                     .collect();
 
                 match engine.compute_kde_centroid(
-                    &positions, &n_residues, centroid,
-                    search_radius, bandwidth,
+                    &positions,
+                    &n_residues,
+                    centroid,
+                    search_radius,
+                    bandwidth,
                 ) {
                     Ok(refined) => {
                         centroid = refined;
@@ -3229,56 +3363,60 @@ pub(crate) fn build_clustered_sites(
         // Estimate pocket volume using voxel density method
         // Grid the space at 2Å resolution and count occupied voxels
         let voxel_size = 2.0f32;
-        let estimated_volume = if bounding_box[0] > 0.0 && bounding_box[1] > 0.0 && bounding_box[2] > 0.0 {
-            let nx = ((bounding_box[0] / voxel_size).ceil() as usize).max(1);
-            let ny = ((bounding_box[1] / voxel_size).ceil() as usize).max(1);
-            let nz = ((bounding_box[2] / voxel_size).ceil() as usize).max(1);
+        let estimated_volume =
+            if bounding_box[0] > 0.0 && bounding_box[1] > 0.0 && bounding_box[2] > 0.0 {
+                let nx = ((bounding_box[0] / voxel_size).ceil() as usize).max(1);
+                let ny = ((bounding_box[1] / voxel_size).ceil() as usize).max(1);
+                let nz = ((bounding_box[2] / voxel_size).ceil() as usize).max(1);
 
-            // Use HashSet to count unique voxels occupied by spikes
-            let mut occupied_voxels = std::collections::HashSet::new();
-            for (_, spike) in &spikes {
-                let vx = ((spike.position[0] - min_pos[0]) / voxel_size) as i32;
-                let vy = ((spike.position[1] - min_pos[1]) / voxel_size) as i32;
-                let vz = ((spike.position[2] - min_pos[2]) / voxel_size) as i32;
+                // Use HashSet to count unique voxels occupied by spikes
+                let mut occupied_voxels = std::collections::HashSet::new();
+                for (_, spike) in &spikes {
+                    let vx = ((spike.position[0] - min_pos[0]) / voxel_size) as i32;
+                    let vy = ((spike.position[1] - min_pos[1]) / voxel_size) as i32;
+                    let vz = ((spike.position[2] - min_pos[2]) / voxel_size) as i32;
 
-                // Mark this voxel and its immediate neighbors (small neighborhood)
-                for dx in -1..=1 {
-                    for dy in -1..=1 {
-                        for dz in -1..=1 {
-                            let key = (vx + dx, vy + dy, vz + dz);
-                            occupied_voxels.insert(key);
+                    // Mark this voxel and its immediate neighbors (small neighborhood)
+                    for dx in -1..=1 {
+                        for dy in -1..=1 {
+                            for dz in -1..=1 {
+                                let key = (vx + dx, vy + dy, vz + dz);
+                                occupied_voxels.insert(key);
+                            }
                         }
                     }
                 }
-            }
 
-            // Volume = occupied voxels * voxel volume
-            let voxel_volume = voxel_size.powi(3);
-            let raw_volume = occupied_voxels.len() as f32 * voxel_volume;
+                // Volume = occupied voxels * voxel volume
+                let voxel_volume = voxel_size.powi(3);
+                let raw_volume = occupied_voxels.len() as f32 * voxel_volume;
 
-            // Apply packing efficiency correction (sphere packing ~74% efficiency)
-            let pocket_volume = raw_volume * 0.74;
+                // Apply packing efficiency correction (sphere packing ~74% efficiency)
+                let pocket_volume = raw_volume * 0.74;
 
-            // Sanity bounds: typical pockets 100-2000 Å³, large enzyme sites up to 8000 Å³
-            pocket_volume.clamp(50.0, 8000.0)
-        } else {
-            // Degenerate case: estimate from spike count
-            (spikes.len() as f32 * 15.0).clamp(50.0, 2000.0)
-        };
+                // Sanity bounds: typical pockets 100-2000 Å³, large enzyme sites up to 8000 Å³
+                pocket_volume.clamp(50.0, 8000.0)
+            } else {
+                // Degenerate case: estimate from spike count
+                (spikes.len() as f32 * 15.0).clamp(50.0, 2000.0)
+            };
 
         let avg_intensity = sum_intensity / n;
         let spike_count = spikes.len();
 
         // Compute druggability score
-        let druggability = DruggabilityScore::from_site(estimated_volume, avg_intensity, &bounding_box);
+        let druggability =
+            DruggabilityScore::from_site(estimated_volume, avg_intensity, &bounding_box);
 
         // Classify site
-        let classification = SiteClassification::from_properties(spike_count, estimated_volume, avg_intensity);
+        let classification =
+            SiteClassification::from_properties(spike_count, estimated_volume, avg_intensity);
 
         // Overall quality score: combines spike count, intensity, and druggability
         let spike_quality = (spike_count as f32 / 100.0).clamp(0.0, 1.0);
         let intensity_quality = (avg_intensity / 10.0).clamp(0.0, 1.0);
-        let quality_score = 0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
+        let quality_score =
+            0.3 * spike_quality + 0.3 * intensity_quality + 0.4 * druggability.overall;
 
         sites.push(ClusteredBindingSite::new_with_geometric_voxel_mass(
             cluster_id,
@@ -3574,7 +3712,11 @@ impl ClusteredBindingSite {
                 pocket_count += 1;
 
                 let internal_id = residue_ids[i];
-                let res_id = if internal_id < residue_pdb_ids.len() { residue_pdb_ids[internal_id] + 1 } else { (internal_id + 1) as i32 };
+                let res_id = if internal_id < residue_pdb_ids.len() {
+                    residue_pdb_ids[internal_id] + 1
+                } else {
+                    (internal_id + 1) as i32
+                };
                 let chain = chain_ids[i].clone();
                 let resname = if i < residue_names.len() {
                     residue_names[i].clone()
@@ -3635,7 +3777,11 @@ impl ClusteredBindingSite {
                     let d2 = ax * ax + ay * ay + az * az;
                     if d2 <= asym_radius_sq {
                         let dot = ax * ux + ay * uy + az * uz;
-                        if dot > 0.0 { toward += 1; } else { away += 1; }
+                        if dot > 0.0 {
+                            toward += 1;
+                        } else {
+                            away += 1;
+                        }
                     }
                 }
 
@@ -3668,18 +3814,22 @@ impl ClusteredBindingSite {
         // caller after this function runs (if they have spike attribution data).
         self.lining_residues = residue_info
             .into_iter()
-            .map(|((chain, resid), (resname, min_distance, n_atoms))| LiningResidue {
-                chain,
-                resid,
-                resname,
-                min_distance,
-                n_atoms_in_pocket: n_atoms,
-                spike_attribution_count: 0,
-            })
+            .map(
+                |((chain, resid), (resname, min_distance, n_atoms))| LiningResidue {
+                    chain,
+                    resid,
+                    resname,
+                    min_distance,
+                    n_atoms_in_pocket: n_atoms,
+                    spike_attribution_count: 0,
+                },
+            )
             .collect();
 
         self.lining_residues.sort_by(|a, b| {
-            a.min_distance.partial_cmp(&b.min_distance).unwrap_or(std::cmp::Ordering::Equal)
+            a.min_distance
+                .partial_cmp(&b.min_distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Recompute druggability with catalytic scoring
@@ -3727,7 +3877,9 @@ pub fn enhance_sites_with_aromatics(
 
     // Re-sort by quality score after enhancement
     sites.sort_by(|a, b| {
-        b.quality_score.partial_cmp(&a.quality_score).unwrap_or(std::cmp::Ordering::Equal)
+        b.quality_score
+            .partial_cmp(&a.quality_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 }
 
@@ -3747,9 +3899,15 @@ impl BatchProcessor {
     }
 
     /// Process multiple topology files
-    pub fn process_batch<P: AsRef<Path>>(&mut self, topology_paths: &[P]) -> Result<Vec<StructureResult>> {
+    pub fn process_batch<P: AsRef<Path>>(
+        &mut self,
+        topology_paths: &[P],
+    ) -> Result<Vec<StructureResult>> {
         log::info!("═══════════════════════════════════════════════════════════════");
-        log::info!("  PERSISTENT BATCH PROCESSING: {} structures", topology_paths.len());
+        log::info!(
+            "  PERSISTENT BATCH PROCESSING: {} structures",
+            topology_paths.len()
+        );
         log::info!("═══════════════════════════════════════════════════════════════");
 
         let batch_start = Instant::now();
@@ -3757,14 +3915,19 @@ impl BatchProcessor {
 
         for (idx, path) in topology_paths.iter().enumerate() {
             let path = path.as_ref();
-            log::info!("\n[{}/{}] Processing: {}",
-                idx + 1, topology_paths.len(), path.display());
+            log::info!(
+                "\n[{}/{}] Processing: {}",
+                idx + 1,
+                topology_paths.len(),
+                path.display()
+            );
 
             // Load topology
             let topology = PrismPrepTopology::load(path)
                 .with_context(|| format!("Failed to load topology: {}", path.display()))?;
 
-            let structure_id = path.file_stem()
+            let structure_id = path
+                .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unknown".to_string());
 
@@ -3785,7 +3948,7 @@ impl BatchProcessor {
                 uv_burst_energy: 30.0,
                 uv_burst_interval: 500,
                 uv_burst_duration: 50,
-                scan_wavelengths: vec![280.0, 274.0, 258.0],  // TRP, TYR, PHE
+                scan_wavelengths: vec![280.0, 274.0, 258.0], // TRP, TYR, PHE
                 wavelength_dwell_steps: 500,
                 ramp_down_steps: 0,
                 cold_return_steps: 0,
@@ -3808,7 +3971,8 @@ impl BatchProcessor {
             // RT-accelerated clustering of spike positions
             let (clustered_sites, clustering_stats) = if !spike_events.is_empty() {
                 // Extract positions for clustering
-                let spike_positions: Vec<f32> = spike_events.iter()
+                let spike_positions: Vec<f32> = spike_events
+                    .iter()
                     .flat_map(|s| s.position.iter().copied())
                     .collect();
 
@@ -3827,11 +3991,12 @@ impl BatchProcessor {
                                 ClusteringInput, ClusteringToClusteredSites,
                             };
                             use crate::transform::AuditedTransform;
-                            let outcome = ClusteringToClusteredSites::new().apply(ClusteringInput {
-                                spike_events: &spike_events,
-                                clustering_result: &result,
-                                engine: self.engine.engine.as_ref(),
-                            });
+                            let outcome =
+                                ClusteringToClusteredSites::new().apply(ClusteringInput {
+                                    spike_events: &spike_events,
+                                    clustering_result: &result,
+                                    engine: self.engine.engine.as_ref(),
+                                });
                             let (sites, quarantined) = outcome
                                 .into_result()
                                 .map_err(|aborted| anyhow::anyhow!("{aborted}"))?;
@@ -3851,11 +4016,13 @@ impl BatchProcessor {
                             gpu_time_ms: result.gpu_time_ms,
                             used_rt_cores: used_rt,
                         };
-                        log::info!("  📊 Clustered {} spikes → {} binding sites ({:.1}ms, {})",
+                        log::info!(
+                            "  📊 Clustered {} spikes → {} binding sites ({:.1}ms, {})",
                             spike_events.len(),
                             sites.len(),
                             result.gpu_time_ms,
-                            if used_rt { "RT cores" } else { "fallback" });
+                            if used_rt { "RT cores" } else { "fallback" }
+                        );
                         (sites, Some(stats))
                     }
                     Err(e) => {
@@ -3878,9 +4045,11 @@ impl BatchProcessor {
                 clustering_stats,
             });
 
-            log::info!("  ✓ Completed in {}ms ({:.1} steps/sec)",
+            log::info!(
+                "  ✓ Completed in {}ms ({:.1} steps/sec)",
                 wall_time_ms,
-                total_steps as f64 / (wall_time_ms as f64 / 1000.0));
+                total_steps as f64 / (wall_time_ms as f64 / 1000.0)
+            );
         }
 
         let total_time = batch_start.elapsed();
@@ -3892,9 +4061,14 @@ impl BatchProcessor {
         log::info!("  Structures processed: {}", stats.structures_processed);
         log::info!("  Total steps: {}", stats.total_steps_run);
         log::info!("  Total wall time: {:.1}s", total_time.as_secs_f64());
-        log::info!("  Overhead saved (persistent): {}ms", stats.overhead_saved_ms);
-        log::info!("  Avg throughput: {:.0} steps/sec",
-            stats.total_steps_run as f64 / total_time.as_secs_f64());
+        log::info!(
+            "  Overhead saved (persistent): {}ms",
+            stats.overhead_saved_ms
+        );
+        log::info!(
+            "  Avg throughput: {:.0} steps/sec",
+            stats.total_steps_run as f64 / total_time.as_secs_f64()
+        );
 
         Ok(results)
     }
@@ -3993,24 +4167,37 @@ impl BindingSiteFormatter {
             let site_num = idx + 1;
             // Emission-compat scalar for pseudoatom placement.
             let [x, y, z] = site.emission_compat_centroid();
-            let druggable_tag = if site.druggability.is_druggable { " [DRUGGABLE]" } else { "" };
+            let druggable_tag = if site.druggability.is_druggable {
+                " [DRUGGABLE]"
+            } else {
+                ""
+            };
 
-            script.push_str(&format!("# ========== Site {} ({:?}){} ==========\n",
-                site_num, site.classification, druggable_tag));
+            script.push_str(&format!(
+                "# ========== Site {} ({:?}){} ==========\n",
+                site_num, site.classification, druggable_tag
+            ));
 
             // Skip if no lining residues
             if site.lining_residues.is_empty() {
                 script.push_str(&format!("# No lining residues for site {}\n", site_num));
-                script.push_str(&format!("pseudoatom site_{}_center, pos=[{:.3}, {:.3}, {:.3}]\n",
-                    site_num, x, y, z));
+                script.push_str(&format!(
+                    "pseudoatom site_{}_center, pos=[{:.3}, {:.3}, {:.3}]\n",
+                    site_num, x, y, z
+                ));
                 script.push_str(&format!("show spheres, site_{}_center\n", site_num));
-                script.push_str(&format!("set sphere_scale, 1.0, site_{}_center\n", site_num));
+                script.push_str(&format!(
+                    "set sphere_scale, 1.0, site_{}_center\n",
+                    site_num
+                ));
                 script.push_str(&format!("color red, site_{}_center\n\n", site_num));
                 continue;
             }
 
             // Build residue selection string
-            let residue_sel: Vec<String> = site.lining_residues.iter()
+            let residue_sel: Vec<String> = site
+                .lining_residues
+                .iter()
                 .map(|r| format!("(chain {} and resi {})", r.chain, r.resid))
                 .collect();
             let sel_str = residue_sel.join(" or ");
@@ -4020,7 +4207,10 @@ impl BindingSiteFormatter {
 
             // Show lining residues as sticks
             script.push_str(&format!("show sticks, pocket_{}_lining\n", site_num));
-            script.push_str(&format!("set stick_radius, 0.15, pocket_{}_lining\n", site_num));
+            script.push_str(&format!(
+                "set stick_radius, 0.15, pocket_{}_lining\n",
+                site_num
+            ));
 
             // Color by residue type
             let catalytic = ["GLU", "ASP", "HIS", "SER", "CYS", "LYS"];
@@ -4028,56 +4218,101 @@ impl BindingSiteFormatter {
             let hydrophobic = ["ALA", "VAL", "LEU", "ILE", "MET", "PRO"];
 
             // Categorize residues
-            let cat_residues: Vec<_> = site.lining_residues.iter()
+            let cat_residues: Vec<_> = site
+                .lining_residues
+                .iter()
                 .filter(|r| catalytic.contains(&r.resname.as_str()))
                 .collect();
-            let aro_residues: Vec<_> = site.lining_residues.iter()
+            let aro_residues: Vec<_> = site
+                .lining_residues
+                .iter()
                 .filter(|r| aromatic.contains(&r.resname.as_str()))
                 .collect();
-            let hydro_residues: Vec<_> = site.lining_residues.iter()
+            let hydro_residues: Vec<_> = site
+                .lining_residues
+                .iter()
                 .filter(|r| hydrophobic.contains(&r.resname.as_str()))
                 .collect();
 
             // Color catalytic residues (magenta/hotpink)
             if !cat_residues.is_empty() {
-                let cat_sel: Vec<String> = cat_residues.iter()
+                let cat_sel: Vec<String> = cat_residues
+                    .iter()
                     .map(|r| format!("(chain {} and resi {})", r.chain, r.resid))
                     .collect();
-                script.push_str(&format!("select pocket_{}_catalytic, {}\n", site_num, cat_sel.join(" or ")));
+                script.push_str(&format!(
+                    "select pocket_{}_catalytic, {}\n",
+                    site_num,
+                    cat_sel.join(" or ")
+                ));
                 script.push_str(&format!("color magenta, pocket_{}_catalytic\n", site_num));
             }
 
             // Color aromatic residues (green)
             if !aro_residues.is_empty() {
-                let aro_sel: Vec<String> = aro_residues.iter()
+                let aro_sel: Vec<String> = aro_residues
+                    .iter()
                     .map(|r| format!("(chain {} and resi {})", r.chain, r.resid))
                     .collect();
-                script.push_str(&format!("select pocket_{}_aromatic, {}\n", site_num, aro_sel.join(" or ")));
+                script.push_str(&format!(
+                    "select pocket_{}_aromatic, {}\n",
+                    site_num,
+                    aro_sel.join(" or ")
+                ));
                 script.push_str(&format!("color forest, pocket_{}_aromatic\n", site_num));
             }
 
             // Color hydrophobic residues (yellow)
             if !hydro_residues.is_empty() {
-                let hydro_sel: Vec<String> = hydro_residues.iter()
+                let hydro_sel: Vec<String> = hydro_residues
+                    .iter()
                     .map(|r| format!("(chain {} and resi {})", r.chain, r.resid))
                     .collect();
-                script.push_str(&format!("select pocket_{}_hydrophobic, {}\n", site_num, hydro_sel.join(" or ")));
-                script.push_str(&format!("color tv_yellow, pocket_{}_hydrophobic\n", site_num));
+                script.push_str(&format!(
+                    "select pocket_{}_hydrophobic, {}\n",
+                    site_num,
+                    hydro_sel.join(" or ")
+                ));
+                script.push_str(&format!(
+                    "color tv_yellow, pocket_{}_hydrophobic\n",
+                    site_num
+                ));
             }
 
             // Create pocket surface (transparent)
-            script.push_str(&format!("create pocket_{}_surface, pocket_{}_lining\n", site_num, site_num));
+            script.push_str(&format!(
+                "create pocket_{}_surface, pocket_{}_lining\n",
+                site_num, site_num
+            ));
             script.push_str(&format!("show surface, pocket_{}_surface\n", site_num));
-            script.push_str(&format!("set surface_color, slate, pocket_{}_surface\n", site_num));
-            script.push_str(&format!("set transparency, 0.7, pocket_{}_surface\n", site_num));
+            script.push_str(&format!(
+                "set surface_color, slate, pocket_{}_surface\n",
+                site_num
+            ));
+            script.push_str(&format!(
+                "set transparency, 0.7, pocket_{}_surface\n",
+                site_num
+            ));
 
             // Small centroid marker
-            script.push_str(&format!("pseudoatom pocket_{}_center, pos=[{:.3}, {:.3}, {:.3}]\n",
-                site_num, x, y, z));
+            script.push_str(&format!(
+                "pseudoatom pocket_{}_center, pos=[{:.3}, {:.3}, {:.3}]\n",
+                site_num, x, y, z
+            ));
             script.push_str(&format!("show spheres, pocket_{}_center\n", site_num));
-            script.push_str(&format!("set sphere_scale, 0.5, pocket_{}_center\n", site_num));
-            let center_color = if site.druggability.is_druggable { "red" } else { "gray50" };
-            script.push_str(&format!("color {}, pocket_{}_center\n", center_color, site_num));
+            script.push_str(&format!(
+                "set sphere_scale, 0.5, pocket_{}_center\n",
+                site_num
+            ));
+            let center_color = if site.druggability.is_druggable {
+                "red"
+            } else {
+                "gray50"
+            };
+            script.push_str(&format!(
+                "color {}, pocket_{}_center\n",
+                center_color, site_num
+            ));
 
             // Group all pocket objects
             script.push_str(&format!(
@@ -4098,8 +4333,12 @@ impl BindingSiteFormatter {
 
         // Group all pockets
         if !sites.is_empty() {
-            let pocket_groups: Vec<String> = (1..=sites.len()).map(|i| format!("pocket_{}", i)).collect();
-            script.push_str(&format!("group all_pockets, {}\n\n", pocket_groups.join(" ")));
+            let pocket_groups: Vec<String> =
+                (1..=sites.len()).map(|i| format!("pocket_{}", i)).collect();
+            script.push_str(&format!(
+                "group all_pockets, {}\n\n",
+                pocket_groups.join(" ")
+            ));
         }
 
         // Add legend and usage tips
@@ -4115,7 +4354,9 @@ impl BindingSiteFormatter {
         script.push_str("# To view specific pocket: disable all_pockets, enable pocket_N\n");
         script.push_str("# To zoom on pocket: zoom pocket_N_lining\n");
         script.push_str("# To show H-bonds: select donors, pocket_N_lining; distance hbonds, donors, acceptors, 3.5\n");
-        script.push_str("# To label residues: label pocket_N_lining and name CA, \"%s%s\" % (resn, resi)\n");
+        script.push_str(
+            "# To label residues: label pocket_N_lining and name CA, \"%s%s\" % (resn, resi)\n",
+        );
 
         script
     }
@@ -4151,21 +4392,31 @@ impl BindingSiteFormatter {
             let site_num = idx + 1;
             // Emission-compat scalar for pseudoatom placement.
             let [x, y, z] = site.emission_compat_centroid();
-            let druggable_tag = if site.druggability.is_druggable { " [DRUGGABLE]" } else { "" };
+            let druggable_tag = if site.druggability.is_druggable {
+                " [DRUGGABLE]"
+            } else {
+                ""
+            };
 
-            script.push_str(&format!("# ========== Site {} ({:?}){} ==========\n",
-                site_num, site.classification, druggable_tag));
+            script.push_str(&format!(
+                "# ========== Site {} ({:?}){} ==========\n",
+                site_num, site.classification, druggable_tag
+            ));
 
             // Skip if no lining residues
             if site.lining_residues.is_empty() {
                 script.push_str(&format!("# No lining residues for site {}\n", site_num));
-                script.push_str(&format!("marker #10{} position {:.3},{:.3},{:.3} color red radius 2.0\n\n",
-                    site_num, x, y, z));
+                script.push_str(&format!(
+                    "marker #10{} position {:.3},{:.3},{:.3} color red radius 2.0\n\n",
+                    site_num, x, y, z
+                ));
                 continue;
             }
 
             // Build residue selection string for ChimeraX
-            let residue_sel: Vec<String> = site.lining_residues.iter()
+            let residue_sel: Vec<String> = site
+                .lining_residues
+                .iter()
                 .map(|r| format!("/{}:{}", r.chain, r.resid))
                 .collect();
             let sel_str = residue_sel.join(",");
@@ -4182,33 +4433,42 @@ impl BindingSiteFormatter {
             let hydrophobic = ["ALA", "VAL", "LEU", "ILE", "MET", "PRO"];
 
             // Color catalytic residues (magenta)
-            let cat_residues: Vec<_> = site.lining_residues.iter()
+            let cat_residues: Vec<_> = site
+                .lining_residues
+                .iter()
                 .filter(|r| catalytic.contains(&r.resname.as_str()))
                 .collect();
             if !cat_residues.is_empty() {
-                let cat_sel: Vec<String> = cat_residues.iter()
+                let cat_sel: Vec<String> = cat_residues
+                    .iter()
                     .map(|r| format!("/{}:{}", r.chain, r.resid))
                     .collect();
                 script.push_str(&format!("color #1{} magenta\n", cat_sel.join(",")));
             }
 
             // Color aromatic residues (forest green)
-            let aro_residues: Vec<_> = site.lining_residues.iter()
+            let aro_residues: Vec<_> = site
+                .lining_residues
+                .iter()
                 .filter(|r| aromatic.contains(&r.resname.as_str()))
                 .collect();
             if !aro_residues.is_empty() {
-                let aro_sel: Vec<String> = aro_residues.iter()
+                let aro_sel: Vec<String> = aro_residues
+                    .iter()
                     .map(|r| format!("/{}:{}", r.chain, r.resid))
                     .collect();
                 script.push_str(&format!("color #1{} forest green\n", aro_sel.join(",")));
             }
 
             // Color hydrophobic residues (gold)
-            let hydro_residues: Vec<_> = site.lining_residues.iter()
+            let hydro_residues: Vec<_> = site
+                .lining_residues
+                .iter()
                 .filter(|r| hydrophobic.contains(&r.resname.as_str()))
                 .collect();
             if !hydro_residues.is_empty() {
-                let hydro_sel: Vec<String> = hydro_residues.iter()
+                let hydro_sel: Vec<String> = hydro_residues
+                    .iter()
                     .map(|r| format!("/{}:{}", r.chain, r.resid))
                     .collect();
                 script.push_str(&format!("color #1{} gold\n", hydro_sel.join(",")));
@@ -4220,9 +4480,15 @@ impl BindingSiteFormatter {
             script.push_str(&format!("color pocket{}_lining slate gray\n", site_num));
 
             // Centroid marker
-            let marker_color = if site.druggability.is_druggable { "red" } else { "gray" };
-            script.push_str(&format!("marker #10{} position {:.3},{:.3},{:.3} color {} radius 1.0\n",
-                site_num, x, y, z, marker_color));
+            let marker_color = if site.druggability.is_druggable {
+                "red"
+            } else {
+                "gray"
+            };
+            script.push_str(&format!(
+                "marker #10{} position {:.3},{:.3},{:.3} color {} radius 1.0\n",
+                site_num, x, y, z, marker_color
+            ));
 
             // Label
             script.push_str(&format!("2dlabels text \"Pocket {} ({:.0}% druggable){}\" xpos 0.02 ypos {:.2} color black size 14\n",
@@ -4260,7 +4526,10 @@ impl BindingSiteFormatter {
     ) -> String {
         let mut report = String::new();
 
-        report.push_str(&format!("# PRISM4D Binding Site Analysis: {}\n\n", structure_name));
+        report.push_str(&format!(
+            "# PRISM4D Binding Site Analysis: {}\n\n",
+            structure_name
+        ));
 
         // Summary statistics
         report.push_str("## Summary\n\n");
@@ -4272,7 +4541,9 @@ impl BindingSiteFormatter {
         // Classification breakdown
         let mut class_counts = std::collections::HashMap::new();
         for site in sites {
-            *class_counts.entry(format!("{:?}", site.classification)).or_insert(0) += 1;
+            *class_counts
+                .entry(format!("{:?}", site.classification))
+                .or_insert(0) += 1;
         }
         report.push_str("\n### Classification Breakdown\n\n");
         for (class, count) in class_counts {
@@ -4282,27 +4553,49 @@ impl BindingSiteFormatter {
         // Persistence info if available
         if let Some(pers) = persistence {
             report.push_str("\n## Persistence Analysis\n\n");
-            report.push_str(&format!("- **Total Frames Analyzed:** {}\n", pers.total_frames));
-            report.push_str(&format!("- **Persistent Sites (>50% frames):** {}\n", pers.persistent_count));
-            report.push_str(&format!("- **Transient Sites (<50% frames):** {}\n", pers.transient_count));
-            report.push_str(&format!("- **Average Site Lifetime:** {:.1} frames\n", pers.avg_lifetime));
+            report.push_str(&format!(
+                "- **Total Frames Analyzed:** {}\n",
+                pers.total_frames
+            ));
+            report.push_str(&format!(
+                "- **Persistent Sites (>50% frames):** {}\n",
+                pers.persistent_count
+            ));
+            report.push_str(&format!(
+                "- **Transient Sites (<50% frames):** {}\n",
+                pers.transient_count
+            ));
+            report.push_str(&format!(
+                "- **Average Site Lifetime:** {:.1} frames\n",
+                pers.avg_lifetime
+            ));
         }
 
         // Top sites table
         report.push_str("\n## Top Binding Sites\n\n");
-        report.push_str("| Rank | Position (Å) | Volume (Å³) | Spikes | Quality | Druggable | Class |\n");
-        report.push_str("|------|--------------|-------------|--------|---------|-----------|-------|\n");
+        report.push_str(
+            "| Rank | Position (Å) | Volume (Å³) | Spikes | Quality | Druggable | Class |\n",
+        );
+        report.push_str(
+            "|------|--------------|-------------|--------|---------|-----------|-------|\n",
+        );
 
         for (idx, site) in sites.iter().take(10).enumerate() {
             let c = site.emission_compat_centroid();
             report.push_str(&format!(
                 "| {} | ({:.1}, {:.1}, {:.1}) | {:.0} | {} | {:.2} | {} | {:?} |\n",
                 idx + 1,
-                c[0], c[1], c[2],
+                c[0],
+                c[1],
+                c[2],
                 site.estimated_volume,
                 site.spike_count,
                 site.quality_score,
-                if site.druggability.is_druggable { "✓" } else { "✗" },
+                if site.druggability.is_druggable {
+                    "✓"
+                } else {
+                    "✗"
+                },
                 site.classification,
             ));
         }
@@ -4311,7 +4604,11 @@ impl BindingSiteFormatter {
         report.push_str("\n## Binding Site Residues (5Å cutoff)\n\n");
         for (idx, site) in sites.iter().take(10).enumerate() {
             if !site.lining_residues.is_empty() {
-                report.push_str(&format!("### Site {} ({:?})\n\n", idx + 1, site.classification));
+                report.push_str(&format!(
+                    "### Site {} ({:?})\n\n",
+                    idx + 1,
+                    site.classification
+                ));
                 report.push_str("| Chain | ResID | ResName | Distance (Å) | Atoms |\n");
                 report.push_str("|-------|-------|---------|--------------|-------|\n");
                 for res in site.lining_residues.iter().take(20) {
@@ -4321,8 +4618,10 @@ impl BindingSiteFormatter {
                     ));
                 }
                 if site.lining_residues.len() > 20 {
-                    report.push_str(&format!("| ... | {} more residues | | | |\n",
-                        site.lining_residues.len() - 20));
+                    report.push_str(&format!(
+                        "| ... | {} more residues | | | |\n",
+                        site.lining_residues.len() - 20
+                    ));
                 }
                 report.push_str("\n");
             }
@@ -4362,7 +4661,9 @@ pub fn write_binding_site_visualizations(
     // Write Markdown report
     let md_path = base_path.with_extension("binding_sites.md");
     let mut md_file = fs::File::create(&md_path)?;
-    md_file.write_all(BindingSiteFormatter::to_markdown_report(sites, structure_name, None).as_bytes())?;
+    md_file.write_all(
+        BindingSiteFormatter::to_markdown_report(sites, structure_name, None).as_bytes(),
+    )?;
     log::info!("Wrote Markdown report: {}", md_path.display());
 
     Ok(())

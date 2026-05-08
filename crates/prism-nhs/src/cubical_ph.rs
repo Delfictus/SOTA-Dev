@@ -189,8 +189,7 @@ pub fn compute_cubical_ph_cpu(
                     parent[older as usize] = younger;
                     size[younger as usize] += size[older as usize];
                     // Preserve the older component's birth density
-                    birth[younger as usize] =
-                        birth[older as usize].max(birth[younger as usize]);
+                    birth[younger as usize] = birth[older as usize].max(birth[younger as usize]);
                 } else {
                     parent[younger as usize] = older;
                     size[older as usize] += size[younger as usize];
@@ -264,7 +263,7 @@ mod tests {
         density[14] = 5.0; // (2,1,1)
         density[10] = 5.0; // (1,0,1)
         density[16] = 5.0; // (1,2,1)
-        density[4] = 5.0;  // (1,1,0)
+        density[4] = 5.0; // (1,1,0)
         density[22] = 5.0; // (1,1,2)
 
         let pockets = compute_cubical_ph_cpu(&density, dims, [0.0, 0.0, 0.0], 1.0, 0.0, 1);
@@ -287,7 +286,11 @@ mod tests {
         // Persistence of dying peak = 8 - 2 = 6
         assert!(!pockets.is_empty());
         let best = &pockets[0];
-        assert!((best.persistence - 6.0).abs() < 0.01, "persistence={}", best.persistence);
+        assert!(
+            (best.persistence - 6.0).abs() < 0.01,
+            "persistence={}",
+            best.persistence
+        );
     }
 
     #[test]
@@ -302,10 +305,7 @@ mod tests {
     fn test_grid_bounds() {
         // 4 atoms at corners of a 10x10x10 box
         let positions = vec![
-            0.0, 0.0, 0.0,
-            10.0, 0.0, 0.0,
-            0.0, 10.0, 0.0,
-            0.0, 0.0, 10.0,
+            0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0,
         ];
         let (origin, dims, spacing) = compute_density_grid_bounds(&positions, 5.0, 1.0);
         assert!((origin[0] - (-5.0)).abs() < 0.01);

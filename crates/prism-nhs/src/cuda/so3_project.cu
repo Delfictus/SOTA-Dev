@@ -753,12 +753,13 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const bool gain_saturated = (eta_eff > ETA_HARD_CAP);
     eta_eff = fminf(eta_eff, ETA_HARD_CAP);
     // Stamp the GAIN_SATURATION bit on adj.adjudication_reason_flags
-    // (offset 148, bit 3 = 0x8).  Atomic OR survives the 256-thread
-    // block contention.  Adjudicator step kernel reads this for the
-    // CSR-Q forensic readback.
+    // (offset 156 post-M1.2.26.RECOUPLE; relocated from 148 to make
+    // room for total_kl_mu/sigma at 148/152). Bit 3 = 0x8. Atomic OR
+    // survives the 256-thread block contention. Adjudicator step
+    // kernel reads this for the CSR-Q forensic readback.
     if (gain_saturated) {
         atomicOr(reinterpret_cast<uint32_t*>(
-            const_cast<uint8_t*>(adj_base) + 148), 0x8u);
+            const_cast<uint8_t*>(adj_base) + 156), 0x8u);
     }
 
     // Ruling 5 — 10× amplification when this is the burst step.

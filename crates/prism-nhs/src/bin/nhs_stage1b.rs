@@ -8,15 +8,13 @@
 //!   nhs-stage1b --topology-dir prep/ --output batch_manifest.json --gpu-memory 24000
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use chrono::Utc;
 
 use prism_nhs::{
-    StructureComposition, ComplexityTier, SpikeDensityTier,
-    group_for_batch,
-    PrismPrepTopology,
+    group_for_batch, ComplexityTier, PrismPrepTopology, SpikeDensityTier, StructureComposition,
 };
 
 #[derive(Parser)]
@@ -72,10 +70,10 @@ impl Default for ComputationFlags {
         Self {
             chain_count_computed: true,
             aromatic_density_computed: true,
-            spike_density_estimated: true,  // Estimated from ring count, not measured from simulation
-            hydrophobic_surface_estimated: false,  // NOW COMPUTED from Kyte-Doolittle + surface exposure
-            secondary_structure_computed: true,  // NOW COMPUTED from phi/psi dihedrals
-            domain_count_computed: true,  // NOW COMPUTED from CA contact map
+            spike_density_estimated: true, // Estimated from ring count, not measured from simulation
+            hydrophobic_surface_estimated: false, // NOW COMPUTED from Kyte-Doolittle + surface exposure
+            secondary_structure_computed: true,   // NOW COMPUTED from phi/psi dihedrals
+            domain_count_computed: true,          // NOW COMPUTED from CA contact map
             chain_breaks_computed: true,
         }
     }
@@ -203,7 +201,11 @@ pub struct TierCounts {
 
 impl Default for TierCounts {
     fn default() -> Self {
-        Self { small: 0, medium: 0, large: 0 }
+        Self {
+            small: 0,
+            medium: 0,
+            large: 0,
+        }
     }
 }
 
@@ -222,10 +224,17 @@ fn main() -> Result<()> {
 
     // Find topology files
     let topology_files = find_topology_files(&args.topology_dir)?;
-    println!("Found {} topology files in {}", topology_files.len(), args.topology_dir.display());
+    println!(
+        "Found {} topology files in {}",
+        topology_files.len(),
+        args.topology_dir.display()
+    );
 
     if topology_files.is_empty() {
-        anyhow::bail!("No .topology.json files found in {}", args.topology_dir.display());
+        anyhow::bail!(
+            "No .topology.json files found in {}",
+            args.topology_dir.display()
+        );
     }
 
     // Analyze each topology
@@ -280,12 +289,14 @@ fn main() -> Result<()> {
 
     // Merge groups within same memory tier to reduce single-structure batches
     // group_for_batch() creates too many groups - we want to maximize concurrency
-    use std::collections::HashMap;
     use prism_nhs::MemoryTier;
-    let mut merged_groups: HashMap<MemoryTier, Vec<prism_nhs::StructureComposition>> = HashMap::new();
+    use std::collections::HashMap;
+    let mut merged_groups: HashMap<MemoryTier, Vec<prism_nhs::StructureComposition>> =
+        HashMap::new();
 
     for group in fine_groups {
-        merged_groups.entry(group.memory_tier)
+        merged_groups
+            .entry(group.memory_tier)
             .or_insert_with(Vec::new)
             .extend(group.structures);
     }
@@ -328,7 +339,8 @@ fn main() -> Result<()> {
 
             for comp in chunk {
                 // Find the original path
-                let topo_path = compositions.iter()
+                let topo_path = compositions
+                    .iter()
                     .find(|(_, c)| c.structure_name == comp.structure_name)
                     .map(|(p, _)| p.to_string_lossy().to_string())
                     .unwrap_or_default();
@@ -363,9 +375,8 @@ fn main() -> Result<()> {
                 manifest_structures.push(structure);
             }
 
-            let total_gpu_mb_base: usize = manifest_structures.iter()
-                .map(|s| s.estimated_gpu_mb)
-                .sum();
+            let total_gpu_mb_base: usize =
+                manifest_structures.iter().map(|s| s.estimated_gpu_mb).sum();
 
             // Calculate GPU-informed replica count for this batch
             // Target 80-85% GPU utilization, floor of 3 (statistical validity), ceiling of 15 (diminishing returns)
@@ -376,25 +387,26 @@ fn main() -> Result<()> {
             };
 
             let replicas_per_structure = if per_structure_mb_avg > 0 {
-                let max_replicas_float = (args.gpu_memory as f32 * 0.85) / (chunk.len() as f32 * per_structure_mb_avg as f32);
+                let max_replicas_float = (args.gpu_memory as f32 * 0.85)
+                    / (chunk.len() as f32 * per_structure_mb_avg as f32);
                 let max_replicas = max_replicas_float.floor() as usize;
 
                 // Adaptive ceiling based on structure size (max 15 overall):
                 // Smaller structures = higher ceiling (more sampling, less overhead)
                 // Larger structures = lower ceiling (memory-constrained)
                 let ceiling = if per_structure_mb_avg < 5 {
-                    15  // <5MB: maximum sampling (was 30, reduced to 15 max)
+                    15 // <5MB: maximum sampling (was 30, reduced to 15 max)
                 } else if per_structure_mb_avg < 20 {
-                    15  // 5-20MB: standard sampling
+                    15 // 5-20MB: standard sampling
                 } else if per_structure_mb_avg < 50 {
-                    10  // 20-50MB: moderate sampling
+                    10 // 20-50MB: moderate sampling
                 } else {
-                    5   // >50MB: memory-constrained, minimal sampling
+                    5 // >50MB: memory-constrained, minimal sampling
                 };
 
                 max_replicas
-                    .max(3)        // Floor: minimum 3 for statistical validity
-                    .min(ceiling)  // Adaptive ceiling based on structure size
+                    .max(3) // Floor: minimum 3 for statistical validity
+                    .min(ceiling) // Adaptive ceiling based on structure size
             } else {
                 3
             };
@@ -419,8 +431,10 @@ fn main() -> Result<()> {
     // Print batch summary
     for batch in &batches {
         let names: Vec<_> = batch.structures.iter().map(|s| s.name.as_str()).collect();
-        let gpu_utilization = (batch.estimated_total_gpu_mb as f32 / args.gpu_memory as f32) * 100.0;
-        println!("  Batch {}: [{}] ({} concurrent × {} replicas, {} tier, ~{}MB, {:.1}% GPU)",
+        let gpu_utilization =
+            (batch.estimated_total_gpu_mb as f32 / args.gpu_memory as f32) * 100.0;
+        println!(
+            "  Batch {}: [{}] ({} concurrent × {} replicas, {} tier, ~{}MB, {:.1}% GPU)",
             batch.batch_id,
             names.join(", "),
             batch.concurrency,
@@ -445,8 +459,8 @@ fn main() -> Result<()> {
     };
 
     // Write manifest
-    let manifest_json = serde_json::to_string_pretty(&manifest)
-        .context("Failed to serialize manifest")?;
+    let manifest_json =
+        serde_json::to_string_pretty(&manifest).context("Failed to serialize manifest")?;
     std::fs::write(&args.output, &manifest_json)
         .with_context(|| format!("Failed to write manifest to: {}", args.output.display()))?;
 
@@ -455,34 +469,57 @@ fn main() -> Result<()> {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║                    STAGE 1B COMPLETE                          ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║ Structures analyzed: {:>4}                                    ║", manifest.total_structures);
-    println!("║ Batches created:     {:>4}                                    ║", manifest.total_batches);
-    println!("║ Max concurrency:     {:>4}                                    ║", manifest.statistics.max_concurrency);
-    println!("║ GPU memory budget:   {:>4} MB                                 ║", manifest.gpu_memory_mb);
+    println!(
+        "║ Structures analyzed: {:>4}                                    ║",
+        manifest.total_structures
+    );
+    println!(
+        "║ Batches created:     {:>4}                                    ║",
+        manifest.total_batches
+    );
+    println!(
+        "║ Max concurrency:     {:>4}                                    ║",
+        manifest.statistics.max_concurrency
+    );
+    println!(
+        "║ GPU memory budget:   {:>4} MB                                 ║",
+        manifest.gpu_memory_mb
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║ Memory tiers:  Small={:<3} Medium={:<3} Large={:<3}              ║",
+    println!(
+        "║ Memory tiers:  Small={:<3} Medium={:<3} Large={:<3}              ║",
         manifest.statistics.by_memory_tier.small,
         manifest.statistics.by_memory_tier.medium,
-        manifest.statistics.by_memory_tier.large);
-    println!("║ Complexity:    Simple={:<2} Moderate={:<2} Complex={:<2}            ║",
+        manifest.statistics.by_memory_tier.large
+    );
+    println!(
+        "║ Complexity:    Simple={:<2} Moderate={:<2} Complex={:<2}            ║",
         manifest.statistics.by_complexity.small,
         manifest.statistics.by_complexity.medium,
-        manifest.statistics.by_complexity.large);
-    println!("║ Spike density: Low={:<3} Medium={:<3} High={:<3}                 ║",
+        manifest.statistics.by_complexity.large
+    );
+    println!(
+        "║ Spike density: Low={:<3} Medium={:<3} High={:<3}                 ║",
         manifest.statistics.by_spike_density.small,
         manifest.statistics.by_spike_density.medium,
-        manifest.statistics.by_spike_density.large);
+        manifest.statistics.by_spike_density.large
+    );
     if manifest.statistics.structures_with_issues > 0 {
-        println!("║ ⚠ Structures with quality issues: {:>3}                        ║",
-            manifest.statistics.structures_with_issues);
+        println!(
+            "║ ⚠ Structures with quality issues: {:>3}                        ║",
+            manifest.statistics.structures_with_issues
+        );
     }
     println!("╚═══════════════════════════════════════════════════════════════╝");
     println!();
     println!("Manifest written to: {}", args.output.display());
     println!();
     println!("Next step:");
-    println!("  nhs-rt-full --manifest {} --fast --replicas {}",
-        args.output.display(), args.replicas);
+    println!(
+        "  nhs-rt-full --manifest {} --fast --replicas {}",
+        args.output.display(),
+        args.replicas
+    );
 
     Ok(())
 }

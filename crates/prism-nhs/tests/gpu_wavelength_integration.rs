@@ -16,8 +16,8 @@ mod gpu_tests {
     use anyhow::{Context, Result};
     use cudarc::driver::CudaContext;
     use prism_nhs::{
+        fused_engine::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig},
         input::PrismPrepTopology,
-        fused_engine::{NhsAmberFusedEngine, UvProbeConfig, TemperatureProtocol},
     };
     use std::sync::Arc;
     use std::time::Instant;
@@ -35,8 +35,8 @@ mod gpu_tests {
         let start = Instant::now();
 
         // Initialize CUDA context
-        let ctx = CudaContext::new(0)
-            .context("CUDA context required - this test must run on GPU")?;
+        let ctx =
+            CudaContext::new(0).context("CUDA context required - this test must run on GPU")?;
 
         // Load 1L2Y topology (has TRP for wavelength-dependent testing)
         // Try workspace root first, then package-relative path
@@ -44,11 +44,12 @@ mod gpu_tests {
             "data/curated_14/topologies/1L2Y_topology.json",
             "../../data/curated_14/topologies/1L2Y_topology.json",
         ];
-        let topology_content = topology_paths.iter()
+        let topology_content = topology_paths
+            .iter()
             .find_map(|p| std::fs::read_to_string(p).ok())
             .context("Failed to read 1L2Y topology - ensure data/curated_14/topologies/ exists")?;
-        let topology: PrismPrepTopology = serde_json::from_str(&topology_content)
-            .context("Failed to parse topology")?;
+        let topology: PrismPrepTopology =
+            serde_json::from_str(&topology_content).context("Failed to parse topology")?;
 
         // Must have aromatics for this test to be valid
         assert!(topology.n_residues > 0, "Topology must have residues");
@@ -81,7 +82,9 @@ mod gpu_tests {
             "FAIL: Wavelength not affecting GPU excitation! \
              Energy ratio {:.2} should be > 1.5. \
              280nm={:.5}, 258nm={:.5}",
-            ratio, energy_280, energy_258
+            ratio,
+            energy_280,
+            energy_258
         );
 
         // Sanity check: both should be non-zero
@@ -108,15 +111,16 @@ mod gpu_tests {
     ) -> Result<f32> {
         // Create engine
         let mut engine = NhsAmberFusedEngine::new(
-            ctx,
-            topology,
-            32,   // grid_dim
-            1.5,  // grid_spacing
-        ).context("Failed to create NHS engine")?;
+            ctx, topology, 32,  // grid_dim
+            1.5, // grid_spacing
+        )
+        .context("Failed to create NHS engine")?;
 
         // Skip test if no aromatics detected (can't test wavelength without them)
         if engine.n_aromatics() == 0 {
-            return Err(anyhow::anyhow!("No aromatics in topology - cannot test wavelength"));
+            return Err(anyhow::anyhow!(
+                "No aromatics in topology - cannot test wavelength"
+            ));
         }
 
         // Configure temperature (room temp, no ramp)
@@ -132,10 +136,10 @@ mod gpu_tests {
         // Configure UV burst at specific wavelength
         engine.set_uv_config(UvProbeConfig {
             burst_energy: 5.0,
-            burst_interval: 1,  // Burst every step
+            burst_interval: 1, // Burst every step
             burst_duration: 1,
             frequency_hopping_enabled: true,
-            scan_wavelengths: vec![wavelength_nm],  // Fixed wavelength
+            scan_wavelengths: vec![wavelength_nm], // Fixed wavelength
             current_wavelength_idx: 0,
             dwell_steps: 100,
             ..Default::default()

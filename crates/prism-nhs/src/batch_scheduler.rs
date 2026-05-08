@@ -15,11 +15,11 @@
 //! - Predictable batch completion times
 //! - Reduced total wall-clock time for multi-structure benchmarks
 
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use anyhow::{Context, Result};
 
-use crate::composition::{StructureComposition, MemoryTier, group_for_batch, BatchGroup};
+use crate::composition::{group_for_batch, BatchGroup, MemoryTier, StructureComposition};
 use crate::input::PrismPrepTopology;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -56,7 +56,8 @@ impl ScheduledBatch {
 
     /// Structure names
     pub fn structure_names(&self) -> Vec<String> {
-        self.structures.iter()
+        self.structures
+            .iter()
             .map(|s| s.structure_name.clone())
             .collect()
     }
@@ -110,7 +111,7 @@ pub struct BatchSchedulerConfig {
 impl Default for BatchSchedulerConfig {
     fn default() -> Self {
         Self {
-            max_gpu_memory_mb: 16_000,  // 16 GB
+            max_gpu_memory_mb: 16_000, // 16 GB
             max_concurrent_override: 0,
             prefer_throughput: true,
         }
@@ -224,7 +225,8 @@ impl BatchScheduler {
             let mut current_paths = Vec::new();
 
             for structure in group.structures {
-                let path = self.topology_paths
+                let path = self
+                    .topology_paths
                     .get(&structure.structure_name)
                     .cloned()
                     .unwrap_or_default();
@@ -310,7 +312,10 @@ impl BatchScheduler {
         println!();
 
         println!("Batch statistics:");
-        println!("  Sequential batches: {}", schedule.stats.sequential_batches);
+        println!(
+            "  Sequential batches: {}",
+            schedule.stats.sequential_batches
+        );
         println!("  Parallel batches: {}", schedule.stats.parallel_batches);
         println!("  Max concurrency: {}", schedule.stats.max_concurrency);
         println!();
@@ -318,7 +323,8 @@ impl BatchScheduler {
         println!("Execution order:");
         for batch in &schedule.batches {
             let names = batch.structure_names().join(", ");
-            println!("  Batch {}: [{}] ({} concurrent, {} tier, ~{}MB)",
+            println!(
+                "  Batch {}: [{}] ({} concurrent, {} tier, ~{}MB)",
                 batch.batch_id,
                 names,
                 batch.concurrency,

@@ -9,8 +9,7 @@ use std::time::Instant;
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
-    CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
-    LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
 };
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
@@ -26,8 +25,12 @@ pub struct SpikeData {
 }
 
 impl SpikeData {
-    pub fn len(&self) -> usize { self.pos_x.len() }
-    pub fn is_empty(&self) -> bool { self.pos_x.is_empty() }
+    pub fn len(&self) -> usize {
+        self.pos_x.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.pos_x.is_empty()
+    }
 
     /// Build from in-memory spike events (no JSON roundtrip).
     #[cfg(feature = "gpu")]
@@ -49,7 +52,7 @@ impl SpikeData {
             let dx = s.position[0] - centroid[0];
             let dy = s.position[1] - centroid[1];
             let dz = s.position[2] - centroid[2];
-            if dx*dx + dy*dy + dz*dz <= r2 {
+            if dx * dx + dy * dy + dz * dz <= r2 {
                 data.pos_x.push(s.position[0]);
                 data.pos_y.push(s.position[1]);
                 data.pos_z.push(s.position[2]);
@@ -65,9 +68,8 @@ impl SpikeData {
     pub fn from_json(path: &Path) -> anyhow::Result<(Self, [f32; 3], i32)> {
         log::info!("Loading spike events from {}...", path.display());
         let t = Instant::now();
-        let data: serde_json::Value = serde_json::from_reader(
-            std::io::BufReader::new(std::fs::File::open(path)?)
-        )?;
+        let data: serde_json::Value =
+            serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(path)?))?;
         log::info!("  JSON parsed in {:.1}s", t.elapsed().as_secs_f64());
 
         let ca = data["centroid"].as_array().unwrap();
@@ -82,23 +84,34 @@ impl SpikeData {
 
         let type_to_code = |t: &str| -> i32 {
             match t {
-                "TRP" => 0, "TYR" => 1, "PHE" => 2, "SS" => 3,
-                "BNZ" => 4, "CATION" => 5, "ANION" => 6, _ => 7,
+                "TRP" => 0,
+                "TYR" => 1,
+                "PHE" => 2,
+                "SS" => 3,
+                "BNZ" => 4,
+                "CATION" => 5,
+                "ANION" => 6,
+                _ => 7,
             }
         };
 
         let mut sd = SpikeData {
-            pos_x: Vec::with_capacity(n), pos_y: Vec::with_capacity(n),
-            pos_z: Vec::with_capacity(n), intensities: Vec::with_capacity(n),
-            types: Vec::with_capacity(n), frame_indices: Vec::with_capacity(n),
+            pos_x: Vec::with_capacity(n),
+            pos_y: Vec::with_capacity(n),
+            pos_z: Vec::with_capacity(n),
+            intensities: Vec::with_capacity(n),
+            types: Vec::with_capacity(n),
+            frame_indices: Vec::with_capacity(n),
         };
         for s in spikes {
             sd.pos_x.push(s["x"].as_f64().unwrap() as f32);
             sd.pos_y.push(s["y"].as_f64().unwrap() as f32);
             sd.pos_z.push(s["z"].as_f64().unwrap() as f32);
             sd.intensities.push(s["intensity"].as_f64().unwrap() as f32);
-            sd.types.push(type_to_code(s["type"].as_str().unwrap_or("UNK")));
-            sd.frame_indices.push(s["frame_index"].as_i64().unwrap_or(0) as i32);
+            sd.types
+                .push(type_to_code(s["type"].as_str().unwrap_or("UNK")));
+            sd.frame_indices
+                .push(s["frame_index"].as_i64().unwrap_or(0) as i32);
         }
         log::info!("  {} spikes loaded in {:.1}s", n, t.elapsed().as_secs_f64());
         Ok((sd, centroid, site_id))
@@ -160,28 +173,66 @@ impl PharmacophoreGpu {
     }
 
     /// Build combined density grid on GPU.
-    pub fn build_density_grid(&self, spikes: &SpikeData, spacing: f32, sigma: f32) -> anyhow::Result<DensityGrid> {
+    pub fn build_density_grid(
+        &self,
+        spikes: &SpikeData,
+        spacing: f32,
+        sigma: f32,
+    ) -> anyhow::Result<DensityGrid> {
         self.splat_impl(spikes, spacing, sigma, None)
     }
 
     /// Build per-type density grid on GPU.
-    pub fn build_density_grid_typed(&self, spikes: &SpikeData, spacing: f32, sigma: f32, type_code: i32) -> anyhow::Result<DensityGrid> {
+    pub fn build_density_grid_typed(
+        &self,
+        spikes: &SpikeData,
+        spacing: f32,
+        sigma: f32,
+        type_code: i32,
+    ) -> anyhow::Result<DensityGrid> {
         self.splat_impl(spikes, spacing, sigma, Some(type_code))
     }
 
-    fn splat_impl(&self, spikes: &SpikeData, spacing: f32, sigma: f32, type_filter: Option<i32>) -> anyhow::Result<DensityGrid> {
+    fn splat_impl(
+        &self,
+        spikes: &SpikeData,
+        spacing: f32,
+        sigma: f32,
+        type_filter: Option<i32>,
+    ) -> anyhow::Result<DensityGrid> {
         let n = spikes.len();
         if n == 0 {
-            return Ok(DensityGrid { data: vec![0.0], origin: [0.0; 3], dims: [1,1,1], spacing, max_val: 0.0 });
+            return Ok(DensityGrid {
+                data: vec![0.0],
+                origin: [0.0; 3],
+                dims: [1, 1, 1],
+                spacing,
+                max_val: 0.0,
+            });
         }
 
         let pad = 4.0f32;
         let min_x = spikes.pos_x.iter().cloned().fold(f32::INFINITY, f32::min) - pad;
         let min_y = spikes.pos_y.iter().cloned().fold(f32::INFINITY, f32::min) - pad;
         let min_z = spikes.pos_z.iter().cloned().fold(f32::INFINITY, f32::min) - pad;
-        let max_x = spikes.pos_x.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + pad;
-        let max_y = spikes.pos_y.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + pad;
-        let max_z = spikes.pos_z.iter().cloned().fold(f32::NEG_INFINITY, f32::max) + pad;
+        let max_x = spikes
+            .pos_x
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max)
+            + pad;
+        let max_y = spikes
+            .pos_y
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max)
+            + pad;
+        let max_z = spikes
+            .pos_z
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max)
+            + pad;
 
         let nx = ((max_x - min_x) / spacing).ceil() as usize + 1;
         let ny = ((max_y - min_y) / spacing).ceil() as usize + 1;
@@ -204,7 +255,11 @@ impl PharmacophoreGpu {
 
         let block = 256u32;
         let grid_dim = ((n as u32 + block - 1) / block, 1, 1);
-        let cfg = LaunchConfig { grid_dim, block_dim: (block, 1, 1), shared_mem_bytes: 0 };
+        let cfg = LaunchConfig {
+            grid_dim,
+            block_dim: (block, 1, 1),
+            shared_mem_bytes: 0,
+        };
 
         let ni = n as i32;
         let nxi = nx as i32;
@@ -216,21 +271,43 @@ impl PharmacophoreGpu {
             self.stream.memcpy_htod(&spikes.types, &mut d_types)?;
             unsafe {
                 let mut b = self.stream.launch_builder(&self.splat_typed_kernel);
-                b.arg(&d_px); b.arg(&d_py); b.arg(&d_pz); b.arg(&d_int);
-                b.arg(&d_types); b.arg(&tc); b.arg(&ni); b.arg(&d_grid);
-                b.arg(&nxi); b.arg(&nyi); b.arg(&nzi);
-                b.arg(&min_x); b.arg(&min_y); b.arg(&min_z);
-                b.arg(&spacing); b.arg(&inv_2sigma2); b.arg(&cutoff);
+                b.arg(&d_px);
+                b.arg(&d_py);
+                b.arg(&d_pz);
+                b.arg(&d_int);
+                b.arg(&d_types);
+                b.arg(&tc);
+                b.arg(&ni);
+                b.arg(&d_grid);
+                b.arg(&nxi);
+                b.arg(&nyi);
+                b.arg(&nzi);
+                b.arg(&min_x);
+                b.arg(&min_y);
+                b.arg(&min_z);
+                b.arg(&spacing);
+                b.arg(&inv_2sigma2);
+                b.arg(&cutoff);
                 b.launch(cfg)?;
             }
         } else {
             unsafe {
                 let mut b = self.stream.launch_builder(&self.splat_kernel);
-                b.arg(&d_px); b.arg(&d_py); b.arg(&d_pz); b.arg(&d_int);
-                b.arg(&ni); b.arg(&d_grid);
-                b.arg(&nxi); b.arg(&nyi); b.arg(&nzi);
-                b.arg(&min_x); b.arg(&min_y); b.arg(&min_z);
-                b.arg(&spacing); b.arg(&inv_2sigma2); b.arg(&cutoff);
+                b.arg(&d_px);
+                b.arg(&d_py);
+                b.arg(&d_pz);
+                b.arg(&d_int);
+                b.arg(&ni);
+                b.arg(&d_grid);
+                b.arg(&nxi);
+                b.arg(&nyi);
+                b.arg(&nzi);
+                b.arg(&min_x);
+                b.arg(&min_y);
+                b.arg(&min_z);
+                b.arg(&spacing);
+                b.arg(&inv_2sigma2);
+                b.arg(&cutoff);
                 b.launch(cfg)?;
             }
         }
@@ -240,7 +317,13 @@ impl PharmacophoreGpu {
         self.stream.synchronize()?;
 
         let max_val = grid_data.iter().cloned().fold(0.0f32, f32::max);
-        Ok(DensityGrid { data: grid_data, origin: [min_x, min_y, min_z], dims: [nx, ny, nz], spacing, max_val })
+        Ok(DensityGrid {
+            data: grid_data,
+            origin: [min_x, min_y, min_z],
+            dims: [nx, ny, nz],
+            spacing,
+            max_val,
+        })
     }
 }
 
@@ -251,22 +334,47 @@ pub fn write_dx(grid: &DensityGrid, filepath: &Path, comment: &str) -> anyhow::R
     let f = std::fs::File::create(filepath)?;
     let mut w = BufWriter::with_capacity(1 << 20, f);
     writeln!(w, "# {}", comment)?;
-    writeln!(w, "object 1 class gridpositions counts {} {} {}", nx, ny, nz)?;
-    writeln!(w, "origin {:.6} {:.6} {:.6}", grid.origin[0], grid.origin[1], grid.origin[2])?;
+    writeln!(
+        w,
+        "object 1 class gridpositions counts {} {} {}",
+        nx, ny, nz
+    )?;
+    writeln!(
+        w,
+        "origin {:.6} {:.6} {:.6}",
+        grid.origin[0], grid.origin[1], grid.origin[2]
+    )?;
     writeln!(w, "delta {:.6} 0.000000 0.000000", grid.spacing)?;
     writeln!(w, "delta 0.000000 {:.6} 0.000000", grid.spacing)?;
     writeln!(w, "delta 0.000000 0.000000 {:.6}", grid.spacing)?;
-    writeln!(w, "object 2 class gridconnections counts {} {} {}", nx, ny, nz)?;
-    writeln!(w, "object 3 class array type double rank 0 items {} data follows", nx*ny*nz)?;
+    writeln!(
+        w,
+        "object 2 class gridconnections counts {} {} {}",
+        nx, ny, nz
+    )?;
+    writeln!(
+        w,
+        "object 3 class array type double rank 0 items {} data follows",
+        nx * ny * nz
+    )?;
     let mut count = 0;
     for val in &grid.data {
         write!(w, "{:.6e}", val)?;
         count += 1;
-        if count % 3 == 0 { writeln!(w)?; } else { write!(w, " ")?; }
+        if count % 3 == 0 {
+            writeln!(w)?;
+        } else {
+            write!(w, " ")?;
+        }
     }
-    if count % 3 != 0 { writeln!(w)?; }
+    if count % 3 != 0 {
+        writeln!(w)?;
+    }
     writeln!(w, "attribute \"dep\" string \"positions\"")?;
-    writeln!(w, "object \"regular positions regular connections\" class field")?;
+    writeln!(
+        w,
+        "object \"regular positions regular connections\" class field"
+    )?;
     writeln!(w, "component \"positions\" value 1")?;
     writeln!(w, "component \"connections\" value 2")?;
     writeln!(w, "component \"data\" value 3")?;
@@ -282,7 +390,7 @@ pub fn find_open_frame(spikes: &SpikeData, centroid: [f32; 3]) -> (i32, Vec<(i32
         let dx = spikes.pos_x[i] - cx;
         let dy = spikes.pos_y[i] - cy;
         let dz = spikes.pos_z[i] - cz;
-        if dx*dx + dy*dy + dz*dz < 36.0 {
+        if dx * dx + dy * dy + dz * dz < 36.0 {
             *scores.entry(spikes.frame_indices[i]).or_default() += spikes.intensities[i] as f64;
         }
     }
@@ -295,31 +403,67 @@ pub fn find_open_frame(spikes: &SpikeData, centroid: [f32; 3]) -> (i32, Vec<(i32
 // ── PyMOL script ───────────────────────────────────────────────────
 
 pub fn write_pymol_script(
-    output_dir: &Path, site_id: i32, centroid: [f32; 3], receptor_pdb: &str,
-    combined_max: f32, type_grids: &[(String, f32, usize)],
+    output_dir: &Path,
+    site_id: i32,
+    centroid: [f32; 3],
+    receptor_pdb: &str,
+    combined_max: f32,
+    type_grids: &[(String, f32, usize)],
 ) -> anyhow::Result<PathBuf> {
     let p = output_dir.join(format!("site{}_visualize.pml", site_id));
     let mut w = BufWriter::new(std::fs::File::create(&p)?);
     writeln!(w, "# PRISM-4D Site {} Pharmacophore (GPU)", site_id)?;
     writeln!(w, "load {}, receptor", receptor_pdb)?;
-    writeln!(w, "color gray80, receptor\nshow cartoon, receptor\nhide lines, receptor\n")?;
+    writeln!(
+        w,
+        "color gray80, receptor\nshow cartoon, receptor\nhide lines, receptor\n"
+    )?;
     writeln!(w, "load site{}_combined.dx, combined_hotspot", site_id)?;
-    writeln!(w, "isosurface combined_surf, combined_hotspot, {:.1}", combined_max * 0.3)?;
-    writeln!(w, "color red, combined_surf\nset transparency, 0.4, combined_surf\n")?;
+    writeln!(
+        w,
+        "isosurface combined_surf, combined_hotspot, {:.1}",
+        combined_max * 0.3
+    )?;
+    writeln!(
+        w,
+        "color red, combined_surf\nset transparency, 0.4, combined_surf\n"
+    )?;
     for (name, mx, count) in type_grids {
         let dx = format!("site{}_{}", site_id, name.to_lowercase());
         let c = match name.as_str() {
-            "BNZ" => "orange", "TYR" => "cyan", "TRP" => "magenta",
-            "PHE" => "yellow", "ANION" => "red", "CATION" => "blue", _ => "white",
+            "BNZ" => "orange",
+            "TYR" => "cyan",
+            "TRP" => "magenta",
+            "PHE" => "yellow",
+            "ANION" => "red",
+            "CATION" => "blue",
+            _ => "white",
         };
         writeln!(w, "# {} ({} spikes)\nload {}.dx, {}", name, count, dx, dx)?;
         writeln!(w, "isosurface {}_surf, {}, {:.1}", dx, dx, mx * 0.25)?;
-        writeln!(w, "color {}, {}_surf\nset transparency, 0.5, {}_surf\n", c, dx, dx)?;
+        writeln!(
+            w,
+            "color {}, {}_surf\nset transparency, 0.5, {}_surf\n",
+            c, dx, dx
+        )?;
     }
-    writeln!(w, "pseudoatom centroid, pos=[{:.3}, {:.3}, {:.3}]", centroid[0], centroid[1], centroid[2])?;
-    writeln!(w, "show spheres, centroid\ncolor red, centroid\nset sphere_scale, 0.5, centroid")?;
-    writeln!(w, "select pocket, receptor within 8.0 of centroid\nshow sticks, pocket")?;
-    writeln!(w, "color palegreen, pocket and elem C\ncenter centroid\nzoom centroid, 15")?;
+    writeln!(
+        w,
+        "pseudoatom centroid, pos=[{:.3}, {:.3}, {:.3}]",
+        centroid[0], centroid[1], centroid[2]
+    )?;
+    writeln!(
+        w,
+        "show spheres, centroid\ncolor red, centroid\nset sphere_scale, 0.5, centroid"
+    )?;
+    writeln!(
+        w,
+        "select pocket, receptor within 8.0 of centroid\nshow sticks, pocket"
+    )?;
+    writeln!(
+        w,
+        "color palegreen, pocket and elem C\ncenter centroid\nzoom centroid, 15"
+    )?;
     writeln!(w, "bg_color white")?;
     Ok(p)
 }
@@ -327,8 +471,14 @@ pub fn write_pymol_script(
 // ── Full pipeline ──────────────────────────────────────────────────
 
 const TYPE_INFO: &[(&str, i32)] = &[
-    ("TRP", 0), ("TYR", 1), ("PHE", 2), ("SS", 3),
-    ("BNZ", 4), ("CATION", 5), ("ANION", 6), ("UNK", 7),
+    ("TRP", 0),
+    ("TYR", 1),
+    ("PHE", 2),
+    ("SS", 3),
+    ("BNZ", 4),
+    ("CATION", 5),
+    ("ANION", 6),
+    ("UNK", 7),
 ];
 
 #[cfg(feature = "gpu")]
@@ -342,41 +492,70 @@ pub fn extract_pharmacophore_gpu(
 ) -> anyhow::Result<()> {
     let t0 = Instant::now();
     std::fs::create_dir_all(output_dir)?;
-    log::info!("GPU Pharmacophore: site {} — {} spikes", site_id, spikes.len());
+    log::info!(
+        "GPU Pharmacophore: site {} — {} spikes",
+        site_id,
+        spikes.len()
+    );
 
     // Type counts
     let mut type_counts: HashMap<i32, usize> = HashMap::new();
-    for &t in &spikes.types { *type_counts.entry(t).or_default() += 1; }
+    for &t in &spikes.types {
+        *type_counts.entry(t).or_default() += 1;
+    }
 
     // Combined grid
     let t = Instant::now();
     let combined = engine.build_density_grid(spikes, 1.0, 1.5)?;
     let cp = output_dir.join(format!("site{}_combined.dx", site_id));
     write_dx(&combined, &cp, "PRISM-4D combined hotspot (GPU)")?;
-    log::info!("  Combined: {}x{}x{} max={:.1} [{:.0}ms]",
-        combined.dims[0], combined.dims[1], combined.dims[2], combined.max_val,
-        t.elapsed().as_secs_f64() * 1000.0);
+    log::info!(
+        "  Combined: {}x{}x{} max={:.1} [{:.0}ms]",
+        combined.dims[0],
+        combined.dims[1],
+        combined.dims[2],
+        combined.max_val,
+        t.elapsed().as_secs_f64() * 1000.0
+    );
 
     // Per-type grids
     let mut tg = Vec::new();
     for &(name, code) in TYPE_INFO {
         let count = type_counts.get(&code).copied().unwrap_or(0);
-        if count < 10 { continue; }
+        if count < 10 {
+            continue;
+        }
         let t = Instant::now();
         let grid = engine.build_density_grid_typed(spikes, 1.0, 1.5, code)?;
         let dp = output_dir.join(format!("site{}_{}.dx", site_id, name.to_lowercase()));
         write_dx(&grid, &dp, &format!("PRISM-4D {} hotspot (GPU)", name))?;
         tg.push((name.to_string(), grid.max_val, count));
-        log::info!("  {}: {} spikes max={:.1} [{:.0}ms]", name, count, grid.max_val,
-            t.elapsed().as_secs_f64() * 1000.0);
+        log::info!(
+            "  {}: {} spikes max={:.1} [{:.0}ms]",
+            name,
+            count,
+            grid.max_val,
+            t.elapsed().as_secs_f64() * 1000.0
+        );
     }
 
     // Open frame
     let (best, top) = find_open_frame(spikes, centroid);
-    log::info!("  Open frame: {} (top5: {:?})", best, &top[..top.len().min(5)]);
+    log::info!(
+        "  Open frame: {} (top5: {:?})",
+        best,
+        &top[..top.len().min(5)]
+    );
 
     // PyMOL
-    write_pymol_script(output_dir, site_id, centroid, receptor_pdb, combined.max_val, &tg)?;
+    write_pymol_script(
+        output_dir,
+        site_id,
+        centroid,
+        receptor_pdb,
+        combined.max_val,
+        &tg,
+    )?;
 
     log::info!("  Total: {:.0}ms", t0.elapsed().as_secs_f64() * 1000.0);
     Ok(())

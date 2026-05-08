@@ -31,9 +31,7 @@
 #![cfg(feature = "gpu")]
 
 use cudarc::driver::{CudaContext, DevicePtr};
-use prism_nhs::gearbox::{
-    default_gearbox_table, ChronometricStateTensor, ffi::*,
-};
+use prism_nhs::gearbox::{default_gearbox_table, ffi::*, ChronometricStateTensor};
 use std::ffi::c_void;
 
 #[test]
@@ -57,18 +55,15 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
     //    Production gearbox table uses ps values (0.0005 / 0.002 /
     //    0.004); we override here purely for bit-pattern legibility.
     let mut host_table = default_gearbox_table();
-    host_table[0]  = 0.5_f32;
-    host_table[4]  = 2.0_f32;
-    host_table[8]  = 4.0_f32;
-    let rc = unsafe {
-        prism_gearbox_init_table_async(host_table.as_ptr(), raw_stream)
-    };
+    host_table[0] = 0.5_f32;
+    host_table[4] = 2.0_f32;
+    host_table[8] = 4.0_f32;
+    let rc = unsafe { prism_gearbox_init_table_async(host_table.as_ptr(), raw_stream) };
     assert_eq!(rc, 0, "prism_gearbox_init_table_async returned {}", rc);
     stream.synchronize().expect("post-init sync");
 
     // ── Synthetic dt buffer.  Pre-seed with 2.0f (0x40000000). ──
-    let mut d_dt: cudarc::driver::CudaSlice<f32> =
-        stream.alloc_zeros::<f32>(1).expect("alloc dt");
+    let mut d_dt: cudarc::driver::CudaSlice<f32> = stream.alloc_zeros::<f32>(1).expect("alloc dt");
     let initial: [f32; 1] = [2.0_f32];
     stream.memcpy_htod(&initial, &mut d_dt).expect("htod dt");
     let d_dt_addr_u64: u64 = {
@@ -84,9 +79,11 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
         "[B.1 PRE]  d_dt = {:.6}f (bit-pattern 0x{:08X})",
         readback[0], pre_bits
     );
-    assert_eq!(pre_bits, 0x40000000,
+    assert_eq!(
+        pre_bits, 0x40000000,
         "pre-state bit pattern MUST be 0x40000000 (= 2.0f32); got 0x{:08X}",
-        pre_bits);
+        pre_bits
+    );
 
     // ── Synthetic Adjudicator FFI struct (128 bytes). ──
     // adjudication_code at offset 52 (u32); d_dt at offset 112 (*mut f32).
@@ -108,8 +105,10 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
     //   into *(adj->d_dt).  Bit-pattern flip: 0x40000000 → 0x40800000.
     // ════════════════════════════════════════════════════════════════
     {
-        host_adj[52..56].copy_from_slice(&0u32.to_le_bytes());  // code = 0
-        stream.memcpy_htod(&host_adj, &mut d_adj).expect("htod adj A");
+        host_adj[52..56].copy_from_slice(&0u32.to_le_bytes()); // code = 0
+        stream
+            .memcpy_htod(&host_adj, &mut d_adj)
+            .expect("htod adj A");
 
         let cruise_seed = ChronometricStateTensor {
             counter: 500,
@@ -119,10 +118,11 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
             v_prev: 0.0,
             _pad_v_prev: 0,
         };
-        let cruise_bytes: [u8; 32] = unsafe {
-            std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed)
-        };
-        stream.memcpy_htod(&cruise_bytes, &mut d_cruise).expect("htod cruise A");
+        let cruise_bytes: [u8; 32] =
+            unsafe { std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed) };
+        stream
+            .memcpy_htod(&cruise_bytes, &mut d_cruise)
+            .expect("htod cruise A");
 
         let (adj_addr, cruise_addr) = {
             let (a, _ga) = d_adj.device_ptr(&stream);
@@ -131,7 +131,7 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
         };
         let rc = unsafe {
             prism_gearbox_launch_pointer_swap(
-                adj_addr    as *const _,
+                adj_addr as *const _,
                 cruise_addr as *mut _,
                 /*current_frame=*/ 0,
                 raw_stream,
@@ -141,24 +141,32 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
         stream.synchronize().expect("[A] post-kernel sync");
 
         // Bit-pattern audit.
-        stream.memcpy_dtoh(&d_dt, &mut readback).expect("[A] dtoh dt");
+        stream
+            .memcpy_dtoh(&d_dt, &mut readback)
+            .expect("[A] dtoh dt");
         let post_bits = readback[0].to_bits();
         eprintln!(
             "[B.1 EQ POST] d_dt = {:.6}f (bit-pattern 0x{:08X})",
             readback[0], post_bits
         );
-        assert_eq!(post_bits, 0x40800000,
+        assert_eq!(
+            post_bits, 0x40800000,
             "[A] dt-flip GATE FAIL: expected 0x40800000 (= 4.0f32, Gear 2); got 0x{:08X}",
-            post_bits);
-        assert_ne!(pre_bits, post_bits, "[A] pre and post bit patterns identical");
+            post_bits
+        );
+        assert_ne!(
+            pre_bits, post_bits,
+            "[A] pre and post bit patterns identical"
+        );
 
         // Cruise state-machine audit.
         let mut cruise_back = [0u8; 32];
-        stream.memcpy_dtoh(&d_cruise, &mut cruise_back).expect("[A] dtoh cruise");
-        let cruise_after: ChronometricStateTensor = unsafe {
-            std::mem::transmute::<[u8; 32], ChronometricStateTensor>(cruise_back)
-        };
-        assert_eq!(cruise_after.counter,      501);
+        stream
+            .memcpy_dtoh(&d_cruise, &mut cruise_back)
+            .expect("[A] dtoh cruise");
+        let cruise_after: ChronometricStateTensor =
+            unsafe { std::mem::transmute::<[u8; 32], ChronometricStateTensor>(cruise_back) };
+        assert_eq!(cruise_after.counter, 501);
         assert_eq!(cruise_after.current_gear, 2);
 
         eprintln!(
@@ -177,12 +185,16 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
     // ════════════════════════════════════════════════════════════════
     {
         let pre_burst_bits = readback[0].to_bits();
-        assert_eq!(pre_burst_bits, 0x40800000,
+        assert_eq!(
+            pre_burst_bits, 0x40800000,
             "[B] expected pre-state to be 0x40800000 (post-A); got 0x{:08X}",
-            pre_burst_bits);
+            pre_burst_bits
+        );
 
-        host_adj[52..56].copy_from_slice(&1u32.to_le_bytes());  // code = 1 (Burst)
-        stream.memcpy_htod(&host_adj, &mut d_adj).expect("htod adj B");
+        host_adj[52..56].copy_from_slice(&1u32.to_le_bytes()); // code = 1 (Burst)
+        stream
+            .memcpy_htod(&host_adj, &mut d_adj)
+            .expect("htod adj B");
 
         let cruise_seed = ChronometricStateTensor {
             counter: 1234,
@@ -192,10 +204,11 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
             v_prev: 0.0,
             _pad_v_prev: 0,
         };
-        let cruise_bytes: [u8; 32] = unsafe {
-            std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed)
-        };
-        stream.memcpy_htod(&cruise_bytes, &mut d_cruise).expect("htod cruise B");
+        let cruise_bytes: [u8; 32] =
+            unsafe { std::mem::transmute::<ChronometricStateTensor, [u8; 32]>(cruise_seed) };
+        stream
+            .memcpy_htod(&cruise_bytes, &mut d_cruise)
+            .expect("htod cruise B");
 
         let (adj_addr, cruise_addr) = {
             let (a, _ga) = d_adj.device_ptr(&stream);
@@ -204,7 +217,7 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
         };
         let rc = unsafe {
             prism_gearbox_launch_pointer_swap(
-                adj_addr    as *const _,
+                adj_addr as *const _,
                 cruise_addr as *mut _,
                 /*current_frame=*/ 9999,
                 raw_stream,
@@ -214,25 +227,33 @@ fn b1_pointer_swap_bit_pattern_flip_and_burst_state_machine() {
         stream.synchronize().expect("[B] post-kernel sync");
 
         // Bit-pattern audit.
-        stream.memcpy_dtoh(&d_dt, &mut readback).expect("[B] dtoh dt");
+        stream
+            .memcpy_dtoh(&d_dt, &mut readback)
+            .expect("[B] dtoh dt");
         let post_bits = readback[0].to_bits();
         eprintln!(
             "[B.1 BURST POST] d_dt = {:.6}f (bit-pattern 0x{:08X})",
             readback[0], post_bits
         );
-        assert_eq!(post_bits, 0x3F000000,
+        assert_eq!(
+            post_bits, 0x3F000000,
             "[B] burst gate FAIL: expected 0x3F000000 (= 0.5f32, Gear 0); got 0x{:08X}",
-            post_bits);
+            post_bits
+        );
 
         // Cruise state-machine audit (Zero-Trust last_burst_frame stamp).
         let mut cruise_back = [0u8; 32];
-        stream.memcpy_dtoh(&d_cruise, &mut cruise_back).expect("[B] dtoh cruise");
-        let cruise_after: ChronometricStateTensor = unsafe {
-            std::mem::transmute::<[u8; 32], ChronometricStateTensor>(cruise_back)
-        };
-        assert_eq!(cruise_after.counter,          0,    "burst MUST reset counter");
-        assert_eq!(cruise_after.current_gear,     0,    "burst MUST select Gear 0");
-        assert_eq!(cruise_after.last_burst_frame, 9999, "burst MUST stamp last_burst_frame");
+        stream
+            .memcpy_dtoh(&d_cruise, &mut cruise_back)
+            .expect("[B] dtoh cruise");
+        let cruise_after: ChronometricStateTensor =
+            unsafe { std::mem::transmute::<[u8; 32], ChronometricStateTensor>(cruise_back) };
+        assert_eq!(cruise_after.counter, 0, "burst MUST reset counter");
+        assert_eq!(cruise_after.current_gear, 0, "burst MUST select Gear 0");
+        assert_eq!(
+            cruise_after.last_burst_frame, 9999,
+            "burst MUST stamp last_burst_frame"
+        );
 
         eprintln!(
             "[B.1 BURST PASS] bit-exact swap 0x40800000 (4.0f) → 0x{:08X} (0.5f); \

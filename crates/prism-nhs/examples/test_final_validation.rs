@@ -7,10 +7,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 const STEPS_PER_RUN: i32 = 2000;
 const N_RUNS: usize = 5;
@@ -24,7 +24,9 @@ fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f3
     let recall = tp / truth.len() as f32;
     let f1 = if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -37,30 +39,38 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
     println!("Structure: 6LU7 (SARS-CoV-2 Main Protease)");
-    println!("Atoms: {}, Residues: {}\n", topology.n_atoms, topology.residue_ids.iter().max().unwrap_or(&0) + 1);
+    println!(
+        "Atoms: {}, Residues: {}\n",
+        topology.n_atoms,
+        topology.residue_ids.iter().max().unwrap_or(&0) + 1
+    );
 
     // Truth: 6LU7 active site (0-indexed to match topology)
     // PDB His41 = topology 40, PDB Cys145 = topology 144, etc.
     // Active site spans: catalytic dyad (His41, Cys145) + substrate binding pocket
     let truth_0idx: HashSet<i32> = [
         // S1' subsite (PDB 24-27 = topo 23-26)
-        23, 24, 25, 26,
-        // Catalytic His41 region (PDB 40-50 = topo 39-49)
+        23, 24, 25, 26, // Catalytic His41 region (PDB 40-50 = topo 39-49)
         39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
         // Catalytic Cys145 region (PDB 140-146 = topo 139-145)
-        139, 140, 141, 142, 143, 144, 145,
-        // S1 subsite (PDB 163-173 = topo 162-172)
+        139, 140, 141, 142, 143, 144, 145, // S1 subsite (PDB 163-173 = topo 162-172)
         162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
         // S2 subsite (PDB 187-193 = topo 186-192)
         186, 187, 188, 189, 190, 191, 192,
-    ].iter().cloned().collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
-    println!("Truth (0-indexed): {} residues in active site", truth_0idx.len());
+    println!(
+        "Truth (0-indexed): {} residues in active site",
+        truth_0idx.len()
+    );
 
     // Run detection
     print!("Running Cryo-UV detection");
@@ -84,7 +94,8 @@ fn main() -> Result<()> {
             for spike in gpu_spikes {
                 for i in 0..spike.n_residues.min(8) as usize {
                     let res_id = spike.nearby_residues[i];
-                    if res_id >= 0 {  // Include 0-indexed
+                    if res_id >= 0 {
+                        // Include 0-indexed
                         *residue_counts.entry(res_id).or_insert(0) += 1;
                     }
                 }
@@ -103,7 +114,10 @@ fn main() -> Result<()> {
     println!("{}", "═".repeat(60));
     println!("TOP 40 SPIKE RESIDUES (0-indexed)");
     println!("{}", "═".repeat(60));
-    println!("{:>4} {:>8} {:>8} {:>12}", "Rank", "ResID", "Count", "In Truth?");
+    println!(
+        "{:>4} {:>8} {:>8} {:>12}",
+        "Rank", "ResID", "Count", "In Truth?"
+    );
     println!("{}", "-".repeat(40));
 
     let mut hits_in_top_40 = 0;
@@ -111,7 +125,9 @@ fn main() -> Result<()> {
         let in_truth = if truth_0idx.contains(&res_id) {
             hits_in_top_40 += 1;
             "YES ←"
-        } else { "" };
+        } else {
+            ""
+        };
         println!("{:>4} {:>8} {:>8} {:>12}", i + 1, res_id, count, in_truth);
     }
 
@@ -119,7 +135,10 @@ fn main() -> Result<()> {
     println!("\n{}", "═".repeat(60));
     println!("PRECISION-RECALL AT CUTOFFS");
     println!("{}", "═".repeat(60));
-    println!("{:>8} {:>10} {:>10} {:>10} {:>8}", "Top-N", "Precision", "Recall", "F1", "Status");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>8}",
+        "Top-N", "Precision", "Recall", "F1", "Status"
+    );
     println!("{}", "-".repeat(50));
 
     let cutoffs = [20, 30, 40, 50, 60, 80, 100];
@@ -127,16 +146,15 @@ fn main() -> Result<()> {
     let mut best_n = 0;
 
     for &n in &cutoffs {
-        let predicted: HashSet<i32> = ranked.iter()
-            .take(n)
-            .map(|(&res_id, _)| res_id)
-            .collect();
+        let predicted: HashSet<i32> = ranked.iter().take(n).map(|(&res_id, _)| res_id).collect();
 
         let (precision, recall, f1) = calculate_metrics(&predicted, &truth_0idx);
         let status = if f1 > 0.3 { "HIT ✓" } else { "miss" };
 
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>8}",
-                 n, precision, recall, f1, status);
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>8}",
+            n, precision, recall, f1, status
+        );
 
         if f1 > best_f1 {
             best_f1 = f1;
@@ -153,17 +171,27 @@ fn main() -> Result<()> {
         let top_n: HashSet<i32> = ranked.iter().take(n).map(|(&r, _)| r).collect();
         let hit = !top_n.is_disjoint(&truth_0idx);
         let count = top_n.intersection(&truth_0idx).count();
-        println!("  Hit@{:2}: {} ({} truth residues)", n, if hit { "YES ✓" } else { "NO   " }, count);
+        println!(
+            "  Hit@{:2}: {} ({} truth residues)",
+            n,
+            if hit { "YES ✓" } else { "NO   " },
+            count
+        );
     }
 
     // Summary
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");
     println!("║                            SUMMARY                                    ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
-    println!("║  Truth residues in top 40: {}/{}                                      ║",
-             hits_in_top_40, truth_0idx.len());
-    println!("║  Best F1: {:.3} at Top-{}                                             ║",
-             best_f1, best_n);
+    println!(
+        "║  Truth residues in top 40: {}/{}                                      ║",
+        hits_in_top_40,
+        truth_0idx.len()
+    );
+    println!(
+        "║  Best F1: {:.3} at Top-{}                                             ║",
+        best_f1, best_n
+    );
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     if best_f1 > 0.3 {
         println!("║  RESULT: ✓ PASSED - Cryptic site detection working!                 ║");

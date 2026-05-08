@@ -196,32 +196,44 @@ mod tests {
         let n = LBVHNode::uninit();
         let base = &n as *const LBVHNode as usize;
         macro_rules! ofs {
-            ($field:ident) => { (&n.$field as *const _ as usize) - base };
+            ($field:ident) => {
+                (&n.$field as *const _ as usize) - base
+            };
         }
-        assert_eq!(ofs!(parent_idx),  0);
-        assert_eq!(ofs!(left_child),  4);
+        assert_eq!(ofs!(parent_idx), 0);
+        assert_eq!(ofs!(left_child), 4);
         assert_eq!(ofs!(right_child), 8);
         assert_eq!(ofs!(atomic_flag), 12);
-        assert_eq!(ofs!(aabb_min),    16);
-        assert_eq!(ofs!(aabb_max),    32);
-        assert_eq!(ofs!(metadata),    48);
+        assert_eq!(ofs!(aabb_min), 16);
+        assert_eq!(ofs!(aabb_max), 32);
+        assert_eq!(ofs!(metadata), 48);
     }
 
     #[test]
     fn compose_extract_round_trip() {
         for &(m, r) in &[
             (0u32, 0i32),
-            (0x3FFFFFFF, 0i32),  // max Morton (30 bits)
-            (0u32, -1i32),        // sentinel residue
+            (0x3FFFFFFF, 0i32), // max Morton (30 bits)
+            (0u32, -1i32),      // sentinel residue
             (0x3FFFFFFF, i32::MAX),
             (0x3FFFFFFF, i32::MIN),
             (12345, 678),
         ] {
             let k = compose_sort_key(m, r);
-            assert_eq!(extract_morton(k), m & 0x3FFFFFFF,
-                "Morton round-trip failed for ({:#x}, {})", m, r);
-            assert_eq!(extract_residue_raw(k) as i32, r,
-                "residue round-trip failed for ({:#x}, {})", m, r);
+            assert_eq!(
+                extract_morton(k),
+                m & 0x3FFFFFFF,
+                "Morton round-trip failed for ({:#x}, {})",
+                m,
+                r
+            );
+            assert_eq!(
+                extract_residue_raw(k) as i32,
+                r,
+                "residue round-trip failed for ({:#x}, {})",
+                m,
+                r
+            );
         }
     }
 
@@ -230,15 +242,19 @@ mod tests {
         // Morton-major ordering is the foundation of the LBVH's
         // spatial locality. Two spikes with different Morton must
         // sort by Morton regardless of residue.
-        let k_low_morton  = compose_sort_key(10, 9999);
+        let k_low_morton = compose_sort_key(10, 9999);
         let k_high_morton = compose_sort_key(11, 0);
-        assert!(k_low_morton < k_high_morton,
-            "lower Morton must produce lower composite key");
+        assert!(
+            k_low_morton < k_high_morton,
+            "lower Morton must produce lower composite key"
+        );
         // Same Morton, different residue: residue is the tiebreaker.
         let k_a = compose_sort_key(10, 5);
         let k_b = compose_sort_key(10, 8);
-        assert!(k_a < k_b,
-            "same Morton + lower residue must produce lower key");
+        assert!(
+            k_a < k_b,
+            "same Morton + lower residue must produce lower key"
+        );
     }
 
     #[test]
@@ -247,8 +263,10 @@ mod tests {
         // (Morton is 30-bit; high 2 bits are reserved/unused).
         let with_high = compose_sort_key(0xFFFFFFFF, 0);
         let masked = compose_sort_key(0x3FFFFFFF, 0);
-        assert_eq!(with_high, masked,
-            "high bits 30..31 of Morton input must be masked off");
+        assert_eq!(
+            with_high, masked,
+            "high bits 30..31 of Morton input must be masked off"
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -285,20 +303,28 @@ mod tests {
         let stream = ctx.new_stream().expect("stream");
 
         // 8 sorted keys with non-trivial Morton diversity.
-        let keys: Vec<u64> = (0..8u64).map(|i| {
-            // morton = i * 1000 to spread the keys; residue = i.
-            compose_sort_key((i as u32) * 1000, i as i32)
-        }).collect();
+        let keys: Vec<u64> = (0..8u64)
+            .map(|i| {
+                // morton = i * 1000 to spread the keys; residue = i.
+                compose_sort_key((i as u32) * 1000, i as i32)
+            })
+            .collect();
         let n_leaves = keys.len() as u32;
         let n_internal = n_leaves - 1;
 
-        let mut d_keys = stream.alloc_zeros::<u64>(n_leaves as usize).expect("alloc d_keys");
+        let mut d_keys = stream
+            .alloc_zeros::<u64>(n_leaves as usize)
+            .expect("alloc d_keys");
         stream.memcpy_htod(&keys, &mut d_keys).expect("htod keys");
         // 7 internal nodes × 64 B = 448 B. Allocated as u8 to avoid
         // requiring DeviceRepr on LBVHNode.
         let n_internal_bytes = (n_internal as usize) * std::mem::size_of::<LBVHNode>();
-        let d_internal_bytes = stream.alloc_zeros::<u8>(n_internal_bytes).expect("alloc d_internal");
-        let d_leaf_parents = stream.alloc_zeros::<i32>(n_leaves as usize).expect("alloc d_leaf_parents");
+        let d_internal_bytes = stream
+            .alloc_zeros::<u8>(n_internal_bytes)
+            .expect("alloc d_internal");
+        let d_leaf_parents = stream
+            .alloc_zeros::<i32>(n_leaves as usize)
+            .expect("alloc d_leaf_parents");
 
         let raw_stream = stream.cu_stream() as usize;
         let (keys_dev, _g1) = d_keys.device_ptr(&stream);
@@ -330,52 +356,90 @@ mod tests {
 
         // dtoh and verify invariants.
         let mut nodes_bytes = vec![0u8; n_internal_bytes];
-        stream.memcpy_dtoh(&d_internal_bytes, &mut nodes_bytes).expect("dtoh nodes");
-        let nodes: Vec<LBVHNode> = (0..n_internal as usize).map(|i| {
-            unsafe {
+        stream
+            .memcpy_dtoh(&d_internal_bytes, &mut nodes_bytes)
+            .expect("dtoh nodes");
+        let nodes: Vec<LBVHNode> = (0..n_internal as usize)
+            .map(|i| unsafe {
                 std::ptr::read_unaligned(
-                    nodes_bytes.as_ptr().add(i * std::mem::size_of::<LBVHNode>())
+                    nodes_bytes
+                        .as_ptr()
+                        .add(i * std::mem::size_of::<LBVHNode>())
                         as *const LBVHNode,
                 )
-            }
-        }).collect();
+            })
+            .collect();
         let mut leaf_parents = vec![0i32; n_leaves as usize];
-        stream.memcpy_dtoh(&d_leaf_parents, &mut leaf_parents).expect("dtoh leaf_parents");
+        stream
+            .memcpy_dtoh(&d_leaf_parents, &mut leaf_parents)
+            .expect("dtoh leaf_parents");
 
         // Invariant 1: root is at index 0 with parent_idx == -1.
-        assert_eq!(nodes[0].parent_idx, LBVHNode::PARENT_NONE,
-            "root's parent_idx must be -1");
+        assert_eq!(
+            nodes[0].parent_idx,
+            LBVHNode::PARENT_NONE,
+            "root's parent_idx must be -1"
+        );
 
         // Invariant 2: every internal node has children in valid
         // range (children either internal index in [0, n_internal)
         // or leaf index in [n_internal, 2*n_internal+1)).
         for (i, node) in nodes.iter().enumerate() {
-            assert!(node.left_child >= 0,
-                "internal[{}].left_child must be set: got {}", i, node.left_child);
-            assert!(node.right_child >= 0,
-                "internal[{}].right_child must be set: got {}", i, node.right_child);
+            assert!(
+                node.left_child >= 0,
+                "internal[{}].left_child must be set: got {}",
+                i,
+                node.left_child
+            );
+            assert!(
+                node.right_child >= 0,
+                "internal[{}].right_child must be set: got {}",
+                i,
+                node.right_child
+            );
             let total_unified = (n_internal + n_leaves) as i32;
-            assert!(node.left_child < total_unified,
-                "internal[{}].left_child = {} out of range [0, {})", i, node.left_child, total_unified);
-            assert!(node.right_child < total_unified,
-                "internal[{}].right_child = {} out of range [0, {})", i, node.right_child, total_unified);
+            assert!(
+                node.left_child < total_unified,
+                "internal[{}].left_child = {} out of range [0, {})",
+                i,
+                node.left_child,
+                total_unified
+            );
+            assert!(
+                node.right_child < total_unified,
+                "internal[{}].right_child = {} out of range [0, {})",
+                i,
+                node.right_child,
+                total_unified
+            );
         }
 
         // Invariant 3: every leaf has a valid parent.
         for (k, &p) in leaf_parents.iter().enumerate() {
-            assert!(p >= 0 && (p as u32) < n_internal,
-                "leaf[{}].parent_idx = {} out of range [0, {})", k, p, n_internal);
+            assert!(
+                p >= 0 && (p as u32) < n_internal,
+                "leaf[{}].parent_idx = {} out of range [0, {})",
+                k,
+                p,
+                n_internal
+            );
         }
 
         // Invariant 4: walking up from leaf 0 reaches the root.
         let mut steps = 0;
         let mut cur: i32 = leaf_parents[0];
         while cur != LBVHNode::PARENT_NONE {
-            assert!(cur >= 0 && (cur as u32) < n_internal,
-                "walk-up: invalid index {}", cur);
+            assert!(
+                cur >= 0 && (cur as u32) < n_internal,
+                "walk-up: invalid index {}",
+                cur
+            );
             cur = nodes[cur as usize].parent_idx;
             steps += 1;
-            assert!(steps < 100, "walk-up didn't terminate within 100 hops (cycle?)");
+            assert!(
+                steps < 100,
+                "walk-up didn't terminate within 100 hops (cycle?)"
+            );
         }
         assert!(steps > 0, "leaf 0's walk-up was empty");
 
@@ -392,8 +456,12 @@ mod tests {
                 panic!("internal[{}] has parent_idx = -1 but it isn't the root", i);
             }
             let p = node.parent_idx;
-            assert!(p >= 0 && (p as u32) < n_internal,
-                "internal[{}].parent_idx = {} out of range", i, p);
+            assert!(
+                p >= 0 && (p as u32) < n_internal,
+                "internal[{}].parent_idx = {} out of range",
+                i,
+                p
+            );
         }
     }
 
@@ -436,36 +504,57 @@ mod tests {
         };
         let cpu_expand = |mut v: u32| -> u32 {
             v = (v | (v << 16)) & 0x030000FF;
-            v = (v | (v << 8))  & 0x0300F00F;
-            v = (v | (v << 4))  & 0x030C30C3;
-            v = (v | (v << 2))  & 0x09249249;
+            v = (v | (v << 8)) & 0x0300F00F;
+            v = (v | (v << 4)) & 0x030C30C3;
+            v = (v | (v << 2)) & 0x09249249;
             v
         };
-        let mut keys: Vec<(u64, usize)> = (0..n_leaves as usize).map(|i| {
-            let qx = cpu_quantize(positions[i*3 + 0], bbox_min[0], bbox_max[0]);
-            let qy = cpu_quantize(positions[i*3 + 1], bbox_min[1], bbox_max[1]);
-            let qz = cpu_quantize(positions[i*3 + 2], bbox_min[2], bbox_max[2]);
-            let m = cpu_expand(qx) | (cpu_expand(qy) << 1) | (cpu_expand(qz) << 2);
-            (compose_sort_key(m, i as i32), i)
-        }).collect();
+        let mut keys: Vec<(u64, usize)> = (0..n_leaves as usize)
+            .map(|i| {
+                let qx = cpu_quantize(positions[i * 3 + 0], bbox_min[0], bbox_max[0]);
+                let qy = cpu_quantize(positions[i * 3 + 1], bbox_min[1], bbox_max[1]);
+                let qz = cpu_quantize(positions[i * 3 + 2], bbox_min[2], bbox_max[2]);
+                let m = cpu_expand(qx) | (cpu_expand(qy) << 1) | (cpu_expand(qz) << 2);
+                (compose_sort_key(m, i as i32), i)
+            })
+            .collect();
         keys.sort_by_key(|&(k, _)| k);
 
         // Reorder positions according to the sort permutation so leaf
         // index in the LBVH matches the sort order.
         let sorted_keys: Vec<u64> = keys.iter().map(|&(k, _)| k).collect();
-        let sorted_positions: Vec<f32> = keys.iter().flat_map(|&(_, original_i)| {
-            [positions[original_i*3], positions[original_i*3+1], positions[original_i*3+2]]
-        }).collect();
+        let sorted_positions: Vec<f32> = keys
+            .iter()
+            .flat_map(|&(_, original_i)| {
+                [
+                    positions[original_i * 3],
+                    positions[original_i * 3 + 1],
+                    positions[original_i * 3 + 2],
+                ]
+            })
+            .collect();
 
         let n_internal = n_leaves - 1;
         let n_internal_bytes = (n_internal as usize) * std::mem::size_of::<LBVHNode>();
 
-        let mut d_keys = stream.alloc_zeros::<u64>(n_leaves as usize).expect("alloc d_keys");
-        stream.memcpy_htod(&sorted_keys, &mut d_keys).expect("htod keys");
-        let mut d_positions = stream.alloc_zeros::<f32>(sorted_positions.len()).expect("alloc d_positions");
-        stream.memcpy_htod(&sorted_positions, &mut d_positions).expect("htod positions");
-        let d_internal_bytes = stream.alloc_zeros::<u8>(n_internal_bytes).expect("alloc d_internal");
-        let d_leaf_parents = stream.alloc_zeros::<i32>(n_leaves as usize).expect("alloc d_leaf_parents");
+        let mut d_keys = stream
+            .alloc_zeros::<u64>(n_leaves as usize)
+            .expect("alloc d_keys");
+        stream
+            .memcpy_htod(&sorted_keys, &mut d_keys)
+            .expect("htod keys");
+        let mut d_positions = stream
+            .alloc_zeros::<f32>(sorted_positions.len())
+            .expect("alloc d_positions");
+        stream
+            .memcpy_htod(&sorted_positions, &mut d_positions)
+            .expect("htod positions");
+        let d_internal_bytes = stream
+            .alloc_zeros::<u8>(n_internal_bytes)
+            .expect("alloc d_internal");
+        let d_leaf_parents = stream
+            .alloc_zeros::<i32>(n_leaves as usize)
+            .expect("alloc d_leaf_parents");
 
         let raw_stream = stream.cu_stream() as usize;
         let (keys_dev, _g1) = d_keys.device_ptr(&stream);
@@ -473,53 +562,83 @@ mod tests {
         let (internal_dev, _g3) = d_internal_bytes.device_ptr(&stream);
         let (leaf_parents_dev, _g4) = d_leaf_parents.device_ptr(&stream);
 
-        let rc = unsafe { ffi::prism_lbvh_init_internal_nodes(
-            internal_dev as *mut LBVHNode, n_internal,
-            raw_stream as *mut std::ffi::c_void) };
+        let rc = unsafe {
+            ffi::prism_lbvh_init_internal_nodes(
+                internal_dev as *mut LBVHNode,
+                n_internal,
+                raw_stream as *mut std::ffi::c_void,
+            )
+        };
         assert_eq!(rc, ffi::CUDA_SUCCESS, "init failed");
 
-        let rc = unsafe { ffi::prism_lbvh_karras_build(
-            keys_dev as *const u64, n_leaves,
-            internal_dev as *mut LBVHNode, leaf_parents_dev as *mut i32,
-            raw_stream as *mut std::ffi::c_void) };
+        let rc = unsafe {
+            ffi::prism_lbvh_karras_build(
+                keys_dev as *const u64,
+                n_leaves,
+                internal_dev as *mut LBVHNode,
+                leaf_parents_dev as *mut i32,
+                raw_stream as *mut std::ffi::c_void,
+            )
+        };
         assert_eq!(rc, ffi::CUDA_SUCCESS, "karras_build failed");
 
-        let rc = unsafe { ffi::prism_lbvh_aabb_reduce(
-            internal_dev as *mut LBVHNode, n_internal,
-            leaf_parents_dev as *const i32,
-            positions_dev as *const f32,
-            n_leaves,
-            raw_stream as *mut std::ffi::c_void) };
+        let rc = unsafe {
+            ffi::prism_lbvh_aabb_reduce(
+                internal_dev as *mut LBVHNode,
+                n_internal,
+                leaf_parents_dev as *const i32,
+                positions_dev as *const f32,
+                n_leaves,
+                raw_stream as *mut std::ffi::c_void,
+            )
+        };
         assert_eq!(rc, ffi::CUDA_SUCCESS, "aabb_reduce failed");
 
         stream.synchronize().expect("stream sync");
 
         // Read back internal node 0 (the root).
         let mut nodes_bytes = vec![0u8; n_internal_bytes];
-        stream.memcpy_dtoh(&d_internal_bytes, &mut nodes_bytes).expect("dtoh nodes");
-        let root: LBVHNode = unsafe {
-            std::ptr::read_unaligned(nodes_bytes.as_ptr() as *const LBVHNode)
-        };
+        stream
+            .memcpy_dtoh(&d_internal_bytes, &mut nodes_bytes)
+            .expect("dtoh nodes");
+        let root: LBVHNode =
+            unsafe { std::ptr::read_unaligned(nodes_bytes.as_ptr() as *const LBVHNode) };
 
         // Compute the host-side bbox over sorted_positions.
         let mut bmin = [f32::INFINITY; 3];
         let mut bmax = [f32::NEG_INFINITY; 3];
         for chunk in sorted_positions.chunks_exact(3) {
             for ax in 0..3 {
-                if chunk[ax] < bmin[ax] { bmin[ax] = chunk[ax]; }
-                if chunk[ax] > bmax[ax] { bmax[ax] = chunk[ax]; }
+                if chunk[ax] < bmin[ax] {
+                    bmin[ax] = chunk[ax];
+                }
+                if chunk[ax] > bmax[ax] {
+                    bmax[ax] = chunk[ax];
+                }
             }
         }
 
         // Compare. min/max are exact under the AABB-reduce semantics
         // (no FP arithmetic, just min/max). f32 BitExact match.
         for ax in 0..3 {
-            assert_eq!(root.aabb_min[ax].to_bits(), bmin[ax].to_bits(),
+            assert_eq!(
+                root.aabb_min[ax].to_bits(),
+                bmin[ax].to_bits(),
                 "root.aabb_min[{}] = {} (bits {:#x}) != host bbox min {} (bits {:#x})",
-                ax, root.aabb_min[ax], root.aabb_min[ax].to_bits(), bmin[ax], bmin[ax].to_bits());
-            assert_eq!(root.aabb_max[ax].to_bits(), bmax[ax].to_bits(),
+                ax,
+                root.aabb_min[ax],
+                root.aabb_min[ax].to_bits(),
+                bmin[ax],
+                bmin[ax].to_bits()
+            );
+            assert_eq!(
+                root.aabb_max[ax].to_bits(),
+                bmax[ax].to_bits(),
                 "root.aabb_max[{}] = {} != host bbox max {}",
-                ax, root.aabb_max[ax], bmax[ax]);
+                ax,
+                root.aabb_max[ax],
+                bmax[ax]
+            );
         }
     }
 }

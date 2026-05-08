@@ -40,10 +40,12 @@
 #![cfg(feature = "gpu")]
 
 use anyhow::{anyhow, Context, Result};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 
-use cudarc::driver::{CudaContext, CudaFunction, CudaModule, CudaStream, LaunchConfig, PushKernelArg};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaStream, LaunchConfig, PushKernelArg,
+};
 use cudarc::nvrtc::compile_ptx;
 
 use crate::rt_clustering::RtClusteringResult;
@@ -280,25 +282,39 @@ pub struct GpuSpatialHashBackend {
 impl GpuSpatialHashBackend {
     /// Compile the kernel source via nvrtc and bind functions.
     pub fn new(context: Arc<CudaContext>, stream: Arc<CudaStream>) -> Result<Self> {
-        log::info!("  [GPU-HASH] nvrtc-compiling spatial-hash CCL kernels ({} bytes of source)",
-            CUDA_SRC.len());
+        log::info!(
+            "  [GPU-HASH] nvrtc-compiling spatial-hash CCL kernels ({} bytes of source)",
+            CUDA_SRC.len()
+        );
         let t0 = std::time::Instant::now();
 
-        let ptx = compile_ptx(CUDA_SRC)
-            .map_err(|e| anyhow!("nvrtc compile of gpu_cluster_backend kernels failed: {:?}", e))?;
-        let module = context.load_module(ptx)
+        let ptx = compile_ptx(CUDA_SRC).map_err(|e| {
+            anyhow!(
+                "nvrtc compile of gpu_cluster_backend kernels failed: {:?}",
+                e
+            )
+        })?;
+        let module = context
+            .load_module(ptx)
             .context("load compiled PTX into CUDA module")?;
 
-        let f_assign_cells = module.load_function("assign_cells")
+        let f_assign_cells = module
+            .load_function("assign_cells")
             .context("load assign_cells kernel")?;
-        let f_init_parent = module.load_function("init_parent")
+        let f_init_parent = module
+            .load_function("init_parent")
             .context("load init_parent kernel")?;
-        let f_find_union = module.load_function("find_neighbors_union")
+        let f_find_union = module
+            .load_function("find_neighbors_union")
             .context("load find_neighbors_union kernel")?;
-        let f_path_compress = module.load_function("path_compress")
+        let f_path_compress = module
+            .load_function("path_compress")
             .context("load path_compress kernel")?;
 
-        log::info!("  [GPU-HASH] kernels compiled + loaded in {} ms", t0.elapsed().as_millis());
+        log::info!(
+            "  [GPU-HASH] kernels compiled + loaded in {} ms",
+            t0.elapsed().as_millis()
+        );
 
         Ok(Self {
             context,
@@ -331,14 +347,30 @@ impl GpuSpatialHashBackend {
         // ── Step 0. Compute bbox on host ────────────────────────────────
         let t0 = std::time::Instant::now();
         let (mut min_x, mut min_y, mut min_z) = (f32::INFINITY, f32::INFINITY, f32::INFINITY);
-        let (mut max_x, mut max_y, mut max_z) = (f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+        let (mut max_x, mut max_y, mut max_z) =
+            (f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
         for i in 0..n {
-            let x = positions[3*i];
-            let y = positions[3*i + 1];
-            let z = positions[3*i + 2];
-            if x < min_x { min_x = x; } if x > max_x { max_x = x; }
-            if y < min_y { min_y = y; } if y > max_y { max_y = y; }
-            if z < min_z { min_z = z; } if z > max_z { max_z = z; }
+            let x = positions[3 * i];
+            let y = positions[3 * i + 1];
+            let z = positions[3 * i + 2];
+            if x < min_x {
+                min_x = x;
+            }
+            if x > max_x {
+                max_x = x;
+            }
+            if y < min_y {
+                min_y = y;
+            }
+            if y > max_y {
+                max_y = y;
+            }
+            if z < min_z {
+                min_z = z;
+            }
+            if z > max_z {
+                max_z = z;
+            }
         }
         // Pad so saturate-to-zero on negative side is safe and the upper grid dim is sufficient.
         let origin_x = min_x - cell_size;
@@ -354,16 +386,25 @@ impl GpuSpatialHashBackend {
 
         // ── Step 1. Upload positions + allocate cell_ids / parent ─────
         let t1 = std::time::Instant::now();
-        let d_positions = self.stream.memcpy_stod(positions)
+        let d_positions = self
+            .stream
+            .memcpy_stod(positions)
             .context("upload positions to device")?;
         let mut d_cell_ids = unsafe { self.stream.alloc::<u32>(n)? };
         let mut d_parent = unsafe { self.stream.alloc::<i32>(n)? };
-        log::info!("  [GPU-HASH] device alloc+upload: {} ms", t1.elapsed().as_millis());
+        log::info!(
+            "  [GPU-HASH] device alloc+upload: {} ms",
+            t1.elapsed().as_millis()
+        );
 
         // ── Step 2. assign_cells kernel ──────────────────────────────
         let block = 256u32;
         let grid = ((n as u32) + block - 1) / block;
-        let cfg = LaunchConfig { grid_dim: (grid, 1, 1), block_dim: (block, 1, 1), shared_mem_bytes: 0 };
+        let cfg = LaunchConfig {
+            grid_dim: (grid, 1, 1),
+            block_dim: (block, 1, 1),
+            shared_mem_bytes: 0,
+        };
 
         let t2 = std::time::Instant::now();
         unsafe {
@@ -379,7 +420,8 @@ impl GpuSpatialHashBackend {
                 .arg(&grid_x)
                 .arg(&grid_y)
                 .launch(cfg.clone())
-        }.context("launch assign_cells")?;
+        }
+        .context("launch assign_cells")?;
 
         // init_parent[i] = i
         unsafe {
@@ -388,15 +430,22 @@ impl GpuSpatialHashBackend {
                 .arg(&mut d_parent)
                 .arg(&(n as i32))
                 .launch(cfg.clone())
-        }.context("launch init_parent")?;
+        }
+        .context("launch init_parent")?;
 
-        self.stream.synchronize().context("sync after assign_cells")?;
-        log::info!("  [GPU-HASH] assign_cells + init_parent: {} ms", t2.elapsed().as_millis());
+        self.stream
+            .synchronize()
+            .context("sync after assign_cells")?;
+        log::info!(
+            "  [GPU-HASH] assign_cells + init_parent: {} ms",
+            t2.elapsed().as_millis()
+        );
 
         // ── Step 3. Host: sort indices by cell_id, build offsets ─────
         let t3 = std::time::Instant::now();
         let mut cell_ids_host: Vec<u32> = vec![0; n];
-        self.stream.memcpy_dtoh(&d_cell_ids, &mut cell_ids_host)
+        self.stream
+            .memcpy_dtoh(&d_cell_ids, &mut cell_ids_host)
             .context("download cell_ids")?;
 
         // Sort indices by cell_id (stable sort — deterministic tie-break by index).
@@ -419,21 +468,32 @@ impl GpuSpatialHashBackend {
             }
             cell_end[cur] = sorted_indices.len() as u32;
         }
-        log::info!("  [GPU-HASH] sort + offsets (host): {} ms (n_sorted={})",
-            t3.elapsed().as_millis(), sorted_indices.len());
+        log::info!(
+            "  [GPU-HASH] sort + offsets (host): {} ms (n_sorted={})",
+            t3.elapsed().as_millis(),
+            sorted_indices.len()
+        );
 
         // ── Step 4. Upload sorted_indices + offsets ──────────────────
         let t4 = std::time::Instant::now();
-        let d_sorted_indices = self.stream.memcpy_stod(&sorted_indices)
+        let d_sorted_indices = self
+            .stream
+            .memcpy_stod(&sorted_indices)
             .context("upload sorted_indices")?;
-        let d_cell_start = self.stream.memcpy_stod(&cell_start)
+        let d_cell_start = self
+            .stream
+            .memcpy_stod(&cell_start)
             .context("upload cell_start")?;
-        let d_cell_end = self.stream.memcpy_stod(&cell_end)
+        let d_cell_end = self
+            .stream
+            .memcpy_stod(&cell_end)
             .context("upload cell_end")?;
-        log::info!("  [GPU-HASH] table upload: {} ms (sorted={} KB, cell tables={} KB)",
+        log::info!(
+            "  [GPU-HASH] table upload: {} ms (sorted={} KB, cell tables={} KB)",
             t4.elapsed().as_millis(),
             (sorted_indices.len() * 4) / 1024,
-            (2 * cell_start.len() * 4) / 1024);
+            (2 * cell_start.len() * 4) / 1024
+        );
 
         // ── Step 5. find_neighbors_union ─────────────────────────────
         let t5 = std::time::Instant::now();
@@ -455,9 +515,15 @@ impl GpuSpatialHashBackend {
                 .arg(&grid_y)
                 .arg(&grid_z)
                 .launch(cfg.clone())
-        }.context("launch find_neighbors_union")?;
-        self.stream.synchronize().context("sync after find_neighbors_union")?;
-        log::info!("  [GPU-HASH] find_neighbors_union: {} ms", t5.elapsed().as_millis());
+        }
+        .context("launch find_neighbors_union")?;
+        self.stream
+            .synchronize()
+            .context("sync after find_neighbors_union")?;
+        log::info!(
+            "  [GPU-HASH] find_neighbors_union: {} ms",
+            t5.elapsed().as_millis()
+        );
 
         // ── Step 6. path_compress until stable (one pass is sufficient
         //            for path-halving find since union-find depth ≤ log N
@@ -469,14 +535,21 @@ impl GpuSpatialHashBackend {
                 .arg(&mut d_parent)
                 .arg(&(n as i32))
                 .launch(cfg.clone())
-        }.context("launch path_compress")?;
-        self.stream.synchronize().context("sync after path_compress")?;
-        log::info!("  [GPU-HASH] path_compress: {} ms", t6.elapsed().as_millis());
+        }
+        .context("launch path_compress")?;
+        self.stream
+            .synchronize()
+            .context("sync after path_compress")?;
+        log::info!(
+            "  [GPU-HASH] path_compress: {} ms",
+            t6.elapsed().as_millis()
+        );
 
         // ── Step 7. Download parent, renumber cluster ids ────────────
         let t7 = std::time::Instant::now();
         let mut parent_host: Vec<i32> = vec![0; n];
-        self.stream.memcpy_dtoh(&d_parent, &mut parent_host)
+        self.stream
+            .memcpy_dtoh(&d_parent, &mut parent_host)
             .context("download parent")?;
 
         // Renumber roots to dense 0..K cluster ids. Keep i32 for contract parity.
@@ -490,7 +563,11 @@ impl GpuSpatialHashBackend {
             cluster_ids.push(id);
         }
         let num_clusters = root_to_id.len();
-        log::info!("  [GPU-HASH] renumber: {} ms ({} clusters)", t7.elapsed().as_millis(), num_clusters);
+        log::info!(
+            "  [GPU-HASH] renumber: {} ms ({} clusters)",
+            t7.elapsed().as_millis(),
+            num_clusters
+        );
 
         let gpu_time_ms = t_total.elapsed().as_secs_f64() * 1000.0;
 

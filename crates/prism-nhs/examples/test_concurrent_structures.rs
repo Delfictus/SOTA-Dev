@@ -10,10 +10,10 @@ use std::thread;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 /// Result from a single structure run
 #[derive(Debug, Clone)]
@@ -99,8 +99,10 @@ fn run_structure(topology_path: &str, n_steps: usize) -> Result<StructureResult>
     let time_ms = elapsed.as_secs_f64() * 1000.0;
     let steps_per_sec = n_steps as f64 / elapsed.as_secs_f64();
 
-    println!("[{}] Completed: {:.1} steps/s, RMSD={:.2}Å, valid={}",
-             name, steps_per_sec, rmsd, valid);
+    println!(
+        "[{}] Completed: {:.1} steps/s, RMSD={:.2}Å, valid={}",
+        name, steps_per_sec, rmsd, valid
+    );
 
     Ok(StructureResult {
         name,
@@ -127,14 +129,23 @@ fn main() -> Result<()> {
 
     // Test configurations: (path, steps)
     let configs = vec![
-        ("/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/1L2Y_topology.json", 500),
-        ("/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json", 300),
+        (
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/1L2Y_topology.json",
+            500,
+        ),
+        (
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
+            300,
+        ),
     ];
 
     // Collect results in thread-safe container
     let results: Arc<Mutex<Vec<StructureResult>>> = Arc::new(Mutex::new(Vec::new()));
 
-    println!("Starting {} concurrent structure simulations...\n", configs.len());
+    println!(
+        "Starting {} concurrent structure simulations...\n",
+        configs.len()
+    );
 
     let start = Instant::now();
 
@@ -144,15 +155,13 @@ fn main() -> Result<()> {
         .map(|(path, steps)| {
             let results = Arc::clone(&results);
             let path = path.to_string();
-            thread::spawn(move || {
-                match run_structure(&path, steps) {
-                    Ok(result) => {
-                        let mut r = results.lock().unwrap();
-                        r.push(result);
-                    }
-                    Err(e) => {
-                        eprintln!("[ERROR] Failed: {}", e);
-                    }
+            thread::spawn(move || match run_structure(&path, steps) {
+                Ok(result) => {
+                    let mut r = results.lock().unwrap();
+                    r.push(result);
+                }
+                Err(e) => {
+                    eprintln!("[ERROR] Failed: {}", e);
                 }
             })
         })
@@ -176,8 +185,15 @@ fn main() -> Result<()> {
     for r in results.iter() {
         println!("\n  Structure: {}", r.name);
         println!("    Atoms: {} | Steps: {}", r.n_atoms, r.n_steps);
-        println!("    Time: {:.1}ms | Throughput: {:.1} steps/s", r.time_ms, r.steps_per_sec);
-        println!("    Final RMSD: {:.2} Å | Valid: {}", r.final_rmsd, if r.valid { "✓" } else { "✗" });
+        println!(
+            "    Time: {:.1}ms | Throughput: {:.1} steps/s",
+            r.time_ms, r.steps_per_sec
+        );
+        println!(
+            "    Final RMSD: {:.2} Å | Valid: {}",
+            r.final_rmsd,
+            if r.valid { "✓" } else { "✗" }
+        );
         if !r.valid {
             all_valid = false;
         }
@@ -187,9 +203,15 @@ fn main() -> Result<()> {
     let concurrent_throughput = total_steps as f64 / total_elapsed.as_secs_f64();
 
     println!("\n{}", "-".repeat(70));
-    println!("  Total wall-clock time: {:.1}ms", total_elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  Total wall-clock time: {:.1}ms",
+        total_elapsed.as_secs_f64() * 1000.0
+    );
     println!("  Total steps (all structures): {}", total_steps);
-    println!("  Concurrent throughput: {:.1} steps/sec", concurrent_throughput);
+    println!(
+        "  Concurrent throughput: {:.1} steps/sec",
+        concurrent_throughput
+    );
     println!();
 
     if all_valid {

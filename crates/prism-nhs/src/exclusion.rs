@@ -181,11 +181,7 @@ pub struct ExclusionGrid {
 impl ExclusionGrid {
     /// Create grid from bounding box
     pub fn new(min: [f32; 3], max: [f32; 3], spacing: f32, padding: f32) -> Self {
-        let origin = [
-            min[0] - padding,
-            min[1] - padding,
-            min[2] - padding,
-        ];
+        let origin = [min[0] - padding, min[1] - padding, min[2] - padding];
 
         let extent = [
             max[0] - min[0] + 2.0 * padding,
@@ -459,8 +455,7 @@ impl ExclusionComputer {
                     let grad_z = grid.exclusion[grid.index(ix, iy, iz + 1)]
                         - grid.exclusion[grid.index(ix, iy, iz - 1)];
 
-                    let grad_mag =
-                        (grad_x * grad_x + grad_y * grad_y + grad_z * grad_z).sqrt();
+                    let grad_mag = (grad_x * grad_x + grad_y * grad_y + grad_z * grad_z).sqrt();
 
                     // Pocket probability: surface × gradient
                     grid.pocket_probability[idx] = surface_score * grad_mag.min(1.0);

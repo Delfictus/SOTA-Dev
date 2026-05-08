@@ -161,8 +161,7 @@ impl AuditedTransform for ClusterToCausome {
     }
 
     fn apply<'a>(&self, input: Self::Input<'a>) -> AuditOutcome<Self::Output> {
-        let mut out: Vec<(CausomeBlock, LiningResidSet)> =
-            Vec::with_capacity(input.sites.len());
+        let mut out: Vec<(CausomeBlock, LiningResidSet)> = Vec::with_capacity(input.sites.len());
         for site in input.sites {
             let sid = site.cluster_id;
             let Some(kcc) = input.kcc_per_site.get(&sid) else {
@@ -172,11 +171,7 @@ impl AuditedTransform for ClusterToCausome {
                 // situation that the upstream KCC pipeline owns.
                 continue;
             };
-            let lining = input
-                .lining_per_site
-                .get(&sid)
-                .cloned()
-                .unwrap_or_default();
+            let lining = input.lining_per_site.get(&sid).cloned().unwrap_or_default();
             out.push((Self::project(kcc), lining));
         }
         self.adjudicate(out)
@@ -296,7 +291,12 @@ mod tests {
         let cb = ClusterToCausome::project(&cb_input);
         let mut violations = Vec::new();
         verify_l3_driver_subset_of_lining(&cb, &lining, &mut violations);
-        assert!(violations.is_empty(), "got {} violations: {:?}", violations.len(), violations);
+        assert!(
+            violations.is_empty(),
+            "got {} violations: {:?}",
+            violations.len(),
+            violations
+        );
     }
 
     #[test]
@@ -358,14 +358,12 @@ mod tests {
         let outcome = ClusterToCausome::new().adjudicate(vec![(bad_cb, lining)]);
         match outcome {
             AuditOutcome::Aborted { violations, .. } => {
-                assert!(violations.iter().any(|v| matches!(
-                    v.evidence,
-                    ViolationEvidence::DriverNotInLining { .. }
-                )));
-                assert!(violations.iter().any(|v| matches!(
-                    v.evidence,
-                    ViolationEvidence::CandidateNotInLining { .. }
-                )));
+                assert!(violations
+                    .iter()
+                    .any(|v| matches!(v.evidence, ViolationEvidence::DriverNotInLining { .. })));
+                assert!(violations
+                    .iter()
+                    .any(|v| matches!(v.evidence, ViolationEvidence::CandidateNotInLining { .. })));
             }
             other => panic!("expected Aborted, got {other:?}"),
         }

@@ -519,7 +519,11 @@ pub fn build_spike_record_batch(
         for (i, (field, col)) in schema.fields().iter().zip(columns.iter()).enumerate() {
             log::debug!(
                 "  Arrow col {}: {} expected={:?} got={:?} len={}",
-                i, field.name(), field.data_type(), col.data_type(), col.len()
+                i,
+                field.name(),
+                field.data_type(),
+                col.data_type(),
+                col.len()
             );
         }
     }
@@ -527,7 +531,8 @@ pub fn build_spike_record_batch(
         // Re-walk on failure to give actionable diagnostics in the log.
         log::warn!(
             "  RecordBatch::try_new failed with {} expected rows: {}",
-            n, e
+            n,
+            e
         );
         anyhow::anyhow!("RecordBatch::try_new failed: {}", e)
     })
@@ -543,8 +548,8 @@ pub fn write_spike_arrow_file(path: &Path, batch: &RecordBatch) -> Result<()> {
     use std::fs::File;
     let file = File::create(path)
         .with_context(|| format!("Failed to create Arrow file: {}", path.display()))?;
-    let mut writer = FileWriter::try_new(file, &batch.schema())
-        .context("FileWriter::try_new failed")?;
+    let mut writer =
+        FileWriter::try_new(file, &batch.schema()).context("FileWriter::try_new failed")?;
     writer.write(batch).context("FileWriter::write failed")?;
     writer.finish().context("FileWriter::finish failed")?;
     Ok(())
@@ -648,9 +653,7 @@ mod tests {
             voxel_idx: i as i32,
             position: [i as f32, i as f32 * 2.0, i as f32 * 3.0],
             intensity: 50.0 + i as f32,
-            nearby_residues: [
-                i as i32, i as i32 + 1, i as i32 + 2, -1, -1, -1, -1, -1,
-            ],
+            nearby_residues: [i as i32, i as i32 + 1, i as i32 + 2, -1, -1, -1, -1, -1],
             n_residues: 3,
             spike_source: 1,
             wavelength_nm: 280.0,

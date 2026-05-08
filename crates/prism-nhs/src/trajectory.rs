@@ -32,7 +32,7 @@ pub struct TrajectoryConfig {
 impl Default for TrajectoryConfig {
     fn default() -> Self {
         Self {
-            save_interval: 1000,  // Every 1000 steps = 2ps
+            save_interval: 1000, // Every 1000 steps = 2ps
             save_on_spike: true,
             max_memory_snapshots: 1000,
             output_dir: ".".to_string(),
@@ -116,13 +116,10 @@ impl TrajectoryWriter {
 
         let filename = format!(
             "{}/{}_part{:04}.frames.json",
-            self.config.output_dir,
-            self.config.base_name,
-            self.current_file_idx
+            self.config.output_dir, self.config.base_name, self.current_file_idx
         );
 
-        let file = File::create(&filename)
-            .context("Failed to create trajectory file")?;
+        let file = File::create(&filename).context("Failed to create trajectory file")?;
         serde_json::to_writer_pretty(file, &self.frames)
             .context("Failed to write trajectory JSON")?;
 
@@ -143,8 +140,7 @@ impl TrajectoryWriter {
         // Write combined ensemble PDB
         let pdb_path = format!(
             "{}/{}_ensemble.pdb",
-            self.config.output_dir,
-            self.config.base_name
+            self.config.output_dir, self.config.base_name
         );
 
         // Load all frames back and write PDB
@@ -154,8 +150,7 @@ impl TrajectoryWriter {
         // Write metadata JSON
         let meta_path = format!(
             "{}/{}_metadata.json",
-            self.config.output_dir,
-            self.config.base_name
+            self.config.output_dir, self.config.base_name
         );
         let stats = TrajectoryStats {
             total_frames: all_frames.len(),
@@ -166,8 +161,14 @@ impl TrajectoryWriter {
                 all_frames.last().map(|f| f.time_ps).unwrap_or(0.0),
             ),
             temperature_range: (
-                all_frames.iter().map(|f| f.temperature).fold(f32::INFINITY, f32::min),
-                all_frames.iter().map(|f| f.temperature).fold(f32::NEG_INFINITY, f32::max),
+                all_frames
+                    .iter()
+                    .map(|f| f.temperature)
+                    .fold(f32::INFINITY, f32::min),
+                all_frames
+                    .iter()
+                    .map(|f| f.temperature)
+                    .fold(f32::NEG_INFINITY, f32::max),
             ),
             ensemble_pdb: pdb_path.clone(),
         };
@@ -175,7 +176,11 @@ impl TrajectoryWriter {
         let meta_file = File::create(&meta_path)?;
         serde_json::to_writer_pretty(meta_file, &stats)?;
 
-        log::info!("Trajectory finalized: {} frames, PDB: {}", stats.total_frames, pdb_path);
+        log::info!(
+            "Trajectory finalized: {} frames, PDB: {}",
+            stats.total_frames,
+            pdb_path
+        );
 
         Ok(stats)
     }
@@ -187,9 +192,7 @@ impl TrajectoryWriter {
         for idx in 0..self.current_file_idx {
             let filename = format!(
                 "{}/{}_part{:04}.frames.json",
-                self.config.output_dir,
-                self.config.base_name,
-                idx
+                self.config.output_dir, self.config.base_name, idx
             );
 
             if Path::new(&filename).exists() {
@@ -228,22 +231,27 @@ pub fn write_ensemble_pdb(
     frames: &[TrajectoryFrame],
     topology: &PrismPrepTopology,
 ) -> Result<()> {
-    let mut file = File::create(path)
-        .context("Failed to create ensemble PDB")?;
+    let mut file = File::create(path).context("Failed to create ensemble PDB")?;
 
     // Write header
     writeln!(file, "REMARK   PRISM-CryoUV Ensemble Trajectory")?;
     writeln!(file, "REMARK   Frames: {}", frames.len())?;
     if let Some(first) = frames.first() {
-        writeln!(file, "REMARK   Time range: {:.2} - {:.2} ps",
+        writeln!(
+            file,
+            "REMARK   Time range: {:.2} - {:.2} ps",
             first.time_ps,
-            frames.last().map(|f| f.time_ps).unwrap_or(first.time_ps))?;
+            frames.last().map(|f| f.time_ps).unwrap_or(first.time_ps)
+        )?;
     }
 
     for (model_idx, frame) in frames.iter().enumerate() {
         writeln!(file, "MODEL     {:>4}", model_idx + 1)?;
-        writeln!(file, "REMARK   Timestep: {} Time: {:.2}ps Temp: {:.1}K Spike: {}",
-            frame.timestep, frame.time_ps, frame.temperature, frame.spike_triggered)?;
+        writeln!(
+            file,
+            "REMARK   Timestep: {} Time: {:.2}ps Temp: {:.1}K Spike: {}",
+            frame.timestep, frame.time_ps, frame.temperature, frame.spike_triggered
+        )?;
 
         let positions = &frame.positions;
         let n_atoms = positions.len() / 3;
@@ -253,19 +261,23 @@ pub fn write_ensemble_pdb(
             let y = positions[i * 3 + 1];
             let z = positions[i * 3 + 2];
 
-            let atom_name = topology.atom_names.get(i)
+            let atom_name = topology
+                .atom_names
+                .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or("CA");
-            let residue_name = topology.residue_names.get(i)
+            let residue_name = topology
+                .residue_names
+                .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or("UNK");
             let residue_id = topology.residue_ids.get(i).copied().unwrap_or(1);
-            let chain_id = topology.chain_ids.get(i)
+            let chain_id = topology
+                .chain_ids
+                .get(i)
                 .map(|s| s.chars().next().unwrap_or('A'))
                 .unwrap_or('A');
-            let element_sym = topology.elements.get(i)
-                .map(|s| s.as_str())
-                .unwrap_or("C");
+            let element_sym = topology.elements.get(i).map(|s| s.as_str()).unwrap_or("C");
 
             // B-factor encodes temperature, occupancy encodes spike status
             let b_factor = frame.temperature;
@@ -295,8 +307,7 @@ pub fn write_ensemble_pdb(
 
 /// Load trajectory frames from ensemble PDB
 pub fn load_ensemble_pdb(path: &Path) -> Result<Vec<TrajectoryFrame>> {
-    let file = File::open(path)
-        .context("Failed to open ensemble PDB")?;
+    let file = File::open(path).context("Failed to open ensemble PDB")?;
     let reader = BufReader::new(file);
 
     let mut frames = Vec::new();
@@ -351,7 +362,7 @@ pub fn load_ensemble_pdb(path: &Path) -> Result<Vec<TrajectoryFrame>> {
                     spike_triggered: current_spike,
                     spike_count: None,
                     spike_voxels: None,
-                    wavelength_nm: None,  // Not available when loading from PDB
+                    wavelength_nm: None, // Not available when loading from PDB
                 });
                 current_frame_idx += 1;
             }

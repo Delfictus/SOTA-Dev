@@ -90,29 +90,29 @@ pub struct NhsGpuEngine {
     reset_lif_state: CudaFunction,
 
     // Grid buffers (persistent in VRAM)
-    exclusion_field: CudaSlice<f32>,       // [grid_dim³]
-    water_density: CudaSlice<f32>,         // [grid_dim³]
-    prev_water_density: CudaSlice<f32>,    // [grid_dim³] for dewetting delta
-    water_gradient: CudaSlice<f32>,        // [grid_dim³]
-    pocket_mean: CudaSlice<f32>,           // [grid_dim³] for variance tracking
-    pocket_m2: CudaSlice<f32>,             // [grid_dim³] for Welford's algorithm
-    pocket_probability: CudaSlice<f32>,    // [grid_dim³]
+    exclusion_field: CudaSlice<f32>,    // [grid_dim³]
+    water_density: CudaSlice<f32>,      // [grid_dim³]
+    prev_water_density: CudaSlice<f32>, // [grid_dim³] for dewetting delta
+    water_gradient: CudaSlice<f32>,     // [grid_dim³]
+    pocket_mean: CudaSlice<f32>,        // [grid_dim³] for variance tracking
+    pocket_m2: CudaSlice<f32>,          // [grid_dim³] for Welford's algorithm
+    pocket_probability: CudaSlice<f32>, // [grid_dim³]
 
     // LIF neuron state (persistent in VRAM)
-    membrane_potential: CudaSlice<f32>,    // [grid_dim³]
-    refractory_counter: CudaSlice<i32>,    // [grid_dim³]
-    spike_output: CudaSlice<i32>,          // [grid_dim³]
+    membrane_potential: CudaSlice<f32>, // [grid_dim³]
+    refractory_counter: CudaSlice<i32>, // [grid_dim³]
+    spike_output: CudaSlice<i32>,       // [grid_dim³]
 
     // Spike extraction buffers
-    spike_indices: CudaSlice<i32>,         // [MAX_SPIKES_PER_FRAME]
-    spike_positions: CudaSlice<f32>,       // [MAX_SPIKES_PER_FRAME * 3]
-    spike_count: CudaSlice<i32>,           // [1] atomic counter
+    spike_indices: CudaSlice<i32>,   // [MAX_SPIKES_PER_FRAME]
+    spike_positions: CudaSlice<f32>, // [MAX_SPIKES_PER_FRAME * 3]
+    spike_count: CudaSlice<i32>,     // [1] atomic counter
 
     // Atom data buffers (updated per frame)
-    atom_positions_gpu: CudaSlice<f32>,    // [max_atoms * 3]
-    atom_types_gpu: CudaSlice<i32>,        // [max_atoms]
-    atom_charges_gpu: CudaSlice<f32>,      // [max_atoms]
-    atom_residues_gpu: CudaSlice<i32>,     // [max_atoms]
+    atom_positions_gpu: CudaSlice<f32>, // [max_atoms * 3]
+    atom_types_gpu: CudaSlice<i32>,     // [max_atoms]
+    atom_charges_gpu: CudaSlice<f32>,   // [max_atoms]
+    atom_residues_gpu: CudaSlice<i32>,  // [max_atoms]
 
     // Configuration
     grid_dim: usize,
@@ -141,11 +141,7 @@ impl NhsGpuEngine {
     ///
     /// # Returns
     /// Initialized GPU engine with allocated buffers
-    pub fn new(
-        context: Arc<CudaContext>,
-        grid_dim: usize,
-        max_atoms: usize,
-    ) -> Result<Self> {
+    pub fn new(context: Arc<CudaContext>, grid_dim: usize, max_atoms: usize) -> Result<Self> {
         Self::new_with_params(context, grid_dim, max_atoms, DEFAULT_GRID_SPACING)
     }
 
@@ -191,13 +187,13 @@ impl NhsGpuEngine {
 
         // Load exclusion kernel functions
         let compute_exclusion_field = exclusion_module.load_function("compute_exclusion_field")?;
-        let compute_exclusion_field_cell_list = exclusion_module
-            .load_function("compute_exclusion_field_cell_list")?;
+        let compute_exclusion_field_cell_list =
+            exclusion_module.load_function("compute_exclusion_field_cell_list")?;
         let infer_water_density = exclusion_module.load_function("infer_water_density")?;
-        let accumulate_pocket_probability = exclusion_module
-            .load_function("accumulate_pocket_probability")?;
-        let finalize_pocket_probability = exclusion_module
-            .load_function("finalize_pocket_probability")?;
+        let accumulate_pocket_probability =
+            exclusion_module.load_function("accumulate_pocket_probability")?;
+        let finalize_pocket_probability =
+            exclusion_module.load_function("finalize_pocket_probability")?;
         let detect_aromatic_targets = exclusion_module.load_function("detect_aromatic_targets")?;
         let reset_grid = exclusion_module.load_function("reset_grid")?;
         let reset_grid_int = exclusion_module.load_function("reset_grid_int")?;
@@ -205,8 +201,8 @@ impl NhsGpuEngine {
         // Load neuromorphic kernel functions
         let lif_dewetting_step = neuromorphic_module.load_function("lif_dewetting_step")?;
         let lif_dewetting_batch = neuromorphic_module.load_function("lif_dewetting_batch")?;
-        let apply_lateral_inhibition = neuromorphic_module
-            .load_function("apply_lateral_inhibition")?;
+        let apply_lateral_inhibition =
+            neuromorphic_module.load_function("apply_lateral_inhibition")?;
         let extract_spike_indices = neuromorphic_module.load_function("extract_spike_indices")?;
         let map_spikes_to_residues = neuromorphic_module.load_function("map_spikes_to_residues")?;
         let init_lif_state = neuromorphic_module.load_function("init_lif_state")?;
@@ -291,9 +287,18 @@ impl NhsGpuEngine {
         let total_mb = (grid_bytes + spike_bytes + atom_bytes) as f64 / 1024.0 / 1024.0;
 
         log::info!("NHS GPU buffers allocated: {:.2}MB total", total_mb);
-        log::info!("  Grid buffers: {:.2}MB", grid_bytes as f64 / 1024.0 / 1024.0);
-        log::info!("  Spike buffers: {:.2}MB", spike_bytes as f64 / 1024.0 / 1024.0);
-        log::info!("  Atom buffers: {:.2}MB", atom_bytes as f64 / 1024.0 / 1024.0);
+        log::info!(
+            "  Grid buffers: {:.2}MB",
+            grid_bytes as f64 / 1024.0 / 1024.0
+        );
+        log::info!(
+            "  Spike buffers: {:.2}MB",
+            spike_bytes as f64 / 1024.0 / 1024.0
+        );
+        log::info!(
+            "  Atom buffers: {:.2}MB",
+            atom_bytes as f64 / 1024.0 / 1024.0
+        );
 
         Ok(Self {
             context,
@@ -524,7 +529,11 @@ impl NhsGpuEngine {
 
         let cfg = LaunchConfig {
             grid_dim: (blocks_per_dim, blocks_per_dim, blocks_per_dim),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -556,7 +565,11 @@ impl NhsGpuEngine {
 
         let cfg = LaunchConfig {
             grid_dim: (blocks_per_dim, blocks_per_dim, blocks_per_dim),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -596,7 +609,11 @@ impl NhsGpuEngine {
 
         let cfg = LaunchConfig {
             grid_dim: (blocks_per_dim, blocks_per_dim, blocks_per_dim),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -654,7 +671,11 @@ impl NhsGpuEngine {
 
         let cfg = LaunchConfig {
             grid_dim: (blocks_per_dim, blocks_per_dim, blocks_per_dim),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -761,7 +782,11 @@ impl NhsGpuEngine {
 
         let cfg = LaunchConfig {
             grid_dim: (blocks_per_dim, blocks_per_dim, blocks_per_dim),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -786,7 +811,11 @@ impl NhsGpuEngine {
 
         let cfg = LaunchConfig {
             grid_dim: (blocks_per_dim, blocks_per_dim, blocks_per_dim),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
@@ -1032,7 +1061,9 @@ impl TrajectoryWriter {
                 std::io::ErrorKind::InvalidInput,
                 format!(
                     "TrajectoryWriter expects {} floats per frame ({} atoms × 3), got {}",
-                    self.expected_floats_per_frame, self.n_atoms, positions.len()
+                    self.expected_floats_per_frame,
+                    self.n_atoms,
+                    positions.len()
                 ),
             ));
         }
@@ -1255,7 +1286,11 @@ mod tests {
         let context = CudaContext::new(0).expect("CUDA not available");
         let engine = NhsGpuEngine::new(context, 32, 1000);
 
-        assert!(engine.is_ok(), "Failed to create GPU engine: {:?}", engine.err());
+        assert!(
+            engine.is_ok(),
+            "Failed to create GPU engine: {:?}",
+            engine.err()
+        );
     }
 
     #[test]
@@ -1267,7 +1302,9 @@ mod tests {
         let mut engine = NhsGpuEngine::new(context, 32, 100).expect("Failed to create engine");
 
         // Initialize
-        engine.initialize([0.0, 0.0, 0.0]).expect("Failed to initialize");
+        engine
+            .initialize([0.0, 0.0, 0.0])
+            .expect("Failed to initialize");
 
         // Create dummy atom data
         let positions = vec![0.0f32; 30]; // 10 atoms

@@ -165,14 +165,26 @@ struct __align__(128) InterferometricAdjudicatorFfi {
     // kernel reads this and forces adjudication_code = VIOLATION
     // (overrides the KL-divergence trigger).
     uint32_t momentum_violation_flag;        // offset 144
+    // M1.2.26.RECOUPLE Part 2 — KL-Native Noise Floor.  Run-locked
+    // μ/σ of total_kl computed during the Phase-2 segment of the Split
+    // T7 Epoch (steps 51-100).  The F1 SWITCH predicate uses
+    // threshold = total_kl_mu + 12.0f * total_kl_sigma instead of the
+    // legacy noise_floor_mu[0] + 12σ comparison (which was on a
+    // dimensionally-mismatched SH-coefficient scale per the M1.2.26
+    // coupling audit).  Sentinel 0.0f ⇒ Phase 2 not yet converged;
+    // legacy fallback applies for compatibility.
+    float    total_kl_mu;                    // offset 148
+    float    total_kl_sigma;                 // offset 152
     // M1.2.20.C-G / T24 — Adjudication Reason Flags (was lqi_flags).
     // Bit-mapped self-auditing field.  Set by gasp + Adjudicator +
     // Momentum Guard + SISR; read by host at teardown into
     // v2_ignition_summary.json.  Bit map:
     //   0 NaN_POTENTIAL  1 MOMENTUM_VIOLATION  2 SYMMETRY_VETO  3 GAIN_SATURATION
     //   31 LQI_T7_VARIANCE_ZERO (Lineage Protection)
-    uint32_t adjudication_reason_flags;      // offset 148
-    uint8_t  _reserved_m1_2_20[104];         // offset 152..256
+    // M1.2.26.RECOUPLE relocated this from offset 148 → 156 to make
+    // room for total_kl_mu/sigma at 148/152.
+    uint32_t adjudication_reason_flags;      // offset 156
+    uint8_t  _reserved_m1_2_26[96];          // offset 160..256
 };
 static_assert(sizeof(InterferometricAdjudicatorFfi) == 256,
               "FFI Size Mismatch — must be 256 bytes (Zero-Trust §1.1).");
@@ -198,10 +210,14 @@ static_assert(offsetof(InterferometricAdjudicatorFfi, force_burst_step) == 140,
               "M1.2.20.C-A: force_burst_step offset drift — must be 140.");
 static_assert(offsetof(InterferometricAdjudicatorFfi, momentum_violation_flag) == 144,
               "M1.2.20.C-B: momentum_violation_flag offset drift — must be 144.");
-static_assert(offsetof(InterferometricAdjudicatorFfi, adjudication_reason_flags) == 148,
-              "M1.2.20.C-G / T24: adjudication_reason_flags offset drift — must be 148.");
-static_assert(offsetof(InterferometricAdjudicatorFfi, _reserved_m1_2_20) == 152,
-              "M1.2.20.C: _reserved tail offset drift — must be 152.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, total_kl_mu) == 148,
+              "M1.2.26.RECOUPLE: total_kl_mu offset drift — must be 148.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, total_kl_sigma) == 152,
+              "M1.2.26.RECOUPLE: total_kl_sigma offset drift — must be 152.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, adjudication_reason_flags) == 156,
+              "M1.2.26.RECOUPLE: adjudication_reason_flags relocated to 156.");
+static_assert(offsetof(InterferometricAdjudicatorFfi, _reserved_m1_2_26) == 160,
+              "M1.2.26.RECOUPLE: _reserved_m1_2_26 tail offset drift — must be 160.");
 
 // ════════════════════════════════════════════════════════════════════
 // __device__ helpers (T1 — Quantum-Photonic Bridge)

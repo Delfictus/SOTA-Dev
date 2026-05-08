@@ -189,7 +189,10 @@ impl HierarchicalRtClustering {
 
         log::info!(
             "Hierarchical clustering: {} spikes, {} epsilon levels [{:.1}..{:.1}]",
-            n_spikes, n_levels, eps_start, eps_end
+            n_spikes,
+            n_levels,
+            eps_start,
+            eps_end
         );
 
         // ── 3. Sweep epsilon levels, track clusters ─────────────────────
@@ -204,7 +207,9 @@ impl HierarchicalRtClustering {
 
         for (level_idx, &epsilon) in epsilon_levels.iter().enumerate() {
             // Run RT-DBSCAN at this epsilon
-            let result = self.rt_engine.cluster_at_epsilon(&flat_positions, epsilon)
+            let result = self
+                .rt_engine
+                .cluster_at_epsilon(&flat_positions, epsilon)
                 .with_context(|| format!("RT clustering failed at epsilon={:.1}", epsilon))?;
             total_gpu_time += result.gpu_time_ms;
 
@@ -222,7 +227,8 @@ impl HierarchicalRtClustering {
                 .into_values()
                 .filter(|indices| indices.len() >= min_spikes)
                 .map(|indices| {
-                    let centroid = compute_centroid(spikes, &indices, self.config.intensity_weighted);
+                    let centroid =
+                        compute_centroid(spikes, &indices, self.config.intensity_weighted);
                     EpsilonCluster {
                         spike_indices: indices,
                         centroid,
@@ -232,7 +238,10 @@ impl HierarchicalRtClustering {
 
             log::debug!(
                 "  ε={:.1}Å: {} raw clusters → {} after size filter (min={})",
-                epsilon, result.num_clusters, current_clusters.len(), min_spikes
+                epsilon,
+                result.num_clusters,
+                current_clusters.len(),
+                min_spikes
             );
 
             if level_idx == 0 {
@@ -293,7 +302,9 @@ impl HierarchicalRtClustering {
 
         log::info!(
             "  {} total chains, {} with persistence >= {}",
-            chains.len(), persistent_chains.len(), min_persistence
+            chains.len(),
+            persistent_chains.len(),
+            min_persistence
         );
 
         // ── 5. Build PersistentCluster from each chain ──────────────────
@@ -304,17 +315,24 @@ impl HierarchicalRtClustering {
 
             // Mean intensity
             let intensities: Vec<f32> = indices.iter().map(|&i| spikes[i].intensity).collect();
-            let mean_intensity = intensities.iter().map(|&x| x as f64).sum::<f64>() / intensities.len() as f64;
+            let mean_intensity =
+                intensities.iter().map(|&x| x as f64).sum::<f64>() / intensities.len() as f64;
 
             // Intensity CV (coefficient of variation)
-            let variance = intensities.iter()
+            let variance = intensities
+                .iter()
                 .map(|&x| {
                     let d = x as f64 - mean_intensity;
                     d * d
                 })
-                .sum::<f64>() / intensities.len() as f64;
+                .sum::<f64>()
+                / intensities.len() as f64;
             let std_dev = variance.sqrt();
-            let intensity_cv = if mean_intensity > 1e-12 { std_dev / mean_intensity } else { 0.0 };
+            let intensity_cv = if mean_intensity > 1e-12 {
+                std_dev / mean_intensity
+            } else {
+                0.0
+            };
 
             // Probe diversity: count unique aromatic types (0..3)
             let mut probe_set = [false; 4]; // TRP=0, TYR=1, PHE=2, SS=3
@@ -327,19 +345,23 @@ impl HierarchicalRtClustering {
             let probe_diversity = probe_set.iter().filter(|&&b| b).count() as u32;
 
             // Mean water density
-            let mean_water_density = indices.iter()
+            let mean_water_density = indices
+                .iter()
                 .map(|&i| spikes[i].water_density as f64)
-                .sum::<f64>() / indices.len() as f64;
+                .sum::<f64>()
+                / indices.len() as f64;
 
             // Cluster radius: RMS distance from centroid
-            let rms_sq = indices.iter()
+            let rms_sq = indices
+                .iter()
                 .map(|&i| {
                     let dx = spikes[i].position[0] as f64 - centroid[0];
                     let dy = spikes[i].position[1] as f64 - centroid[1];
                     let dz = spikes[i].position[2] as f64 - centroid[2];
                     dx * dx + dy * dy + dz * dz
                 })
-                .sum::<f64>() / indices.len() as f64;
+                .sum::<f64>()
+                / indices.len() as f64;
             let cluster_radius = rms_sq.sqrt();
 
             // Sample density grid at centroid
@@ -366,7 +388,11 @@ impl HierarchicalRtClustering {
         clusters = merge_overlapping(clusters, 4.0);
 
         // ── 7. Sort by peak_density descending ──────────────────────────
-        clusters.sort_by(|a, b| b.peak_density.partial_cmp(&a.peak_density).unwrap_or(std::cmp::Ordering::Equal));
+        clusters.sort_by(|a, b| {
+            b.peak_density
+                .partial_cmp(&a.peak_density)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Re-assign sequential IDs after merge + sort
         for (i, c) in clusters.iter_mut().enumerate() {
@@ -375,7 +401,8 @@ impl HierarchicalRtClustering {
 
         log::info!(
             "Hierarchical clustering complete: {} persistent sites (total GPU time: {:.1}ms)",
-            clusters.len(), total_gpu_time
+            clusters.len(),
+            total_gpu_time
         );
 
         Ok(HierarchicalResult {
@@ -418,16 +445,40 @@ fn compute_centroid(
         } else {
             // Fallback to unweighted
             let n = indices.len() as f64;
-            let cx = indices.iter().map(|&i| spikes[i].position[0] as f64).sum::<f64>() / n;
-            let cy = indices.iter().map(|&i| spikes[i].position[1] as f64).sum::<f64>() / n;
-            let cz = indices.iter().map(|&i| spikes[i].position[2] as f64).sum::<f64>() / n;
+            let cx = indices
+                .iter()
+                .map(|&i| spikes[i].position[0] as f64)
+                .sum::<f64>()
+                / n;
+            let cy = indices
+                .iter()
+                .map(|&i| spikes[i].position[1] as f64)
+                .sum::<f64>()
+                / n;
+            let cz = indices
+                .iter()
+                .map(|&i| spikes[i].position[2] as f64)
+                .sum::<f64>()
+                / n;
             [cx, cy, cz]
         }
     } else {
         let n = indices.len() as f64;
-        let cx = indices.iter().map(|&i| spikes[i].position[0] as f64).sum::<f64>() / n;
-        let cy = indices.iter().map(|&i| spikes[i].position[1] as f64).sum::<f64>() / n;
-        let cz = indices.iter().map(|&i| spikes[i].position[2] as f64).sum::<f64>() / n;
+        let cx = indices
+            .iter()
+            .map(|&i| spikes[i].position[0] as f64)
+            .sum::<f64>()
+            / n;
+        let cy = indices
+            .iter()
+            .map(|&i| spikes[i].position[1] as f64)
+            .sum::<f64>()
+            / n;
+        let cz = indices
+            .iter()
+            .map(|&i| spikes[i].position[2] as f64)
+            .sum::<f64>()
+            / n;
         [cx, cy, cz]
     }
 }
@@ -446,14 +497,17 @@ fn find_best_overlap(
     }
 
     // Build a set of current spike indices for fast lookup
-    let current_set: std::collections::HashSet<usize> = current.spike_indices.iter().copied().collect();
+    let current_set: std::collections::HashSet<usize> =
+        current.spike_indices.iter().copied().collect();
 
     let mut best_chain: Option<usize> = None;
     let mut best_jaccard = 0.0f64;
 
     for (prev_idx, prev) in prev_clusters.iter().enumerate() {
         // Intersection: spikes in both current and previous cluster
-        let intersection = prev.spike_indices.iter()
+        let intersection = prev
+            .spike_indices
+            .iter()
             .filter(|idx| current_set.contains(idx))
             .count();
 
@@ -480,7 +534,10 @@ fn find_best_overlap(
 ///
 /// When two clusters merge, we keep the one with higher peak_density and
 /// add the other's persistence. Spike indices are combined.
-fn merge_overlapping(mut clusters: Vec<PersistentCluster>, merge_radius: f64) -> Vec<PersistentCluster> {
+fn merge_overlapping(
+    mut clusters: Vec<PersistentCluster>,
+    merge_radius: f64,
+) -> Vec<PersistentCluster> {
     if clusters.len() <= 1 {
         return clusters;
     }
@@ -494,9 +551,13 @@ fn merge_overlapping(mut clusters: Vec<PersistentCluster>, merge_radius: f64) ->
         let mut merged_into: Vec<Option<usize>> = vec![None; clusters.len()];
 
         for i in 0..clusters.len() {
-            if merged_into[i].is_some() { continue; }
+            if merged_into[i].is_some() {
+                continue;
+            }
             for j in (i + 1)..clusters.len() {
-                if merged_into[j].is_some() { continue; }
+                if merged_into[j].is_some() {
+                    continue;
+                }
 
                 let dx = clusters[i].centroid[0] - clusters[j].centroid[0];
                 let dy = clusters[i].centroid[1] - clusters[j].centroid[1];
@@ -514,7 +575,9 @@ fn merge_overlapping(mut clusters: Vec<PersistentCluster>, merge_radius: f64) ->
             // Apply merges: collect indices to merge, build new list
             let mut new_clusters: Vec<PersistentCluster> = Vec::new();
             for i in 0..clusters.len() {
-                if merged_into[i].is_some() { continue; }
+                if merged_into[i].is_some() {
+                    continue;
+                }
 
                 let mut merged = clusters[i].clone();
 
@@ -526,14 +589,17 @@ fn merge_overlapping(mut clusters: Vec<PersistentCluster>, merge_radius: f64) ->
                         // Sum spike counts
                         merged.spike_count += clusters[j].spike_count;
                         // Combine spike indices
-                        merged.spike_indices.extend_from_slice(&clusters[j].spike_indices);
+                        merged
+                            .spike_indices
+                            .extend_from_slice(&clusters[j].spike_indices);
                         // Keep higher peak_density
                         if clusters[j].peak_density > merged.peak_density {
                             merged.peak_density = clusters[j].peak_density;
                             merged.centroid = clusters[j].centroid;
                         }
                         // Max probe diversity
-                        merged.probe_diversity = merged.probe_diversity.max(clusters[j].probe_diversity);
+                        merged.probe_diversity =
+                            merged.probe_diversity.max(clusters[j].probe_diversity);
                     }
                 }
 
@@ -552,7 +618,12 @@ fn merge_overlapping(mut clusters: Vec<PersistentCluster>, merge_radius: f64) ->
 mod tests {
     use super::*;
 
-    fn make_spike(pos: [f32; 3], intensity: f32, aromatic_type: i32, water_density: f32) -> GpuSpikeEvent {
+    fn make_spike(
+        pos: [f32; 3],
+        intensity: f32,
+        aromatic_type: i32,
+        water_density: f32,
+    ) -> GpuSpikeEvent {
         GpuSpikeEvent {
             timestep: 0,
             voxel_idx: 0,
@@ -580,7 +651,11 @@ mod tests {
         ];
         let indices = vec![0, 1];
         let c = compute_centroid(&spikes, &indices, false);
-        assert!((c[0] - 5.0).abs() < 1e-6, "x centroid should be 5.0, got {}", c[0]);
+        assert!(
+            (c[0] - 5.0).abs() < 1e-6,
+            "x centroid should be 5.0, got {}",
+            c[0]
+        );
         assert!(c[1].abs() < 1e-6);
         assert!(c[2].abs() < 1e-6);
     }
@@ -596,7 +671,11 @@ mod tests {
         ];
         let indices = vec![0, 1];
         let c = compute_centroid(&spikes, &indices, true);
-        assert!((c[0] - 2.0).abs() < 1e-6, "weighted x centroid should be 2.0, got {}", c[0]);
+        assert!(
+            (c[0] - 2.0).abs() < 1e-6,
+            "weighted x centroid should be 2.0, got {}",
+            c[0]
+        );
     }
 
     #[test]
@@ -644,12 +723,10 @@ mod tests {
             spike_indices: vec![100, 101, 102, 103, 104],
             centroid: [50.0, 0.0, 0.0],
         };
-        let prev = vec![
-            EpsilonCluster {
-                spike_indices: vec![0, 1, 2, 3, 4],
-                centroid: [0.0; 3],
-            },
-        ];
+        let prev = vec![EpsilonCluster {
+            spike_indices: vec![0, 1, 2, 3, 4],
+            centroid: [0.0; 3],
+        }];
         let chain_map = vec![0];
 
         let result = find_best_overlap(&current, &prev, &chain_map);

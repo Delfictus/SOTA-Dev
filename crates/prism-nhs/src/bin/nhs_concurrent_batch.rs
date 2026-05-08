@@ -10,16 +10,16 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::collections::HashSet;
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::CudaContext;
 #[cfg(feature = "gpu")]
-use prism_nhs::PrismPrepTopology;
-#[cfg(feature = "gpu")]
 use prism_gpu::amber_mega_fused::AmberMegaFusedHmc;
+#[cfg(feature = "gpu")]
+use prism_nhs::PrismPrepTopology;
 
 #[derive(Parser)]
 #[command(name = "nhs-concurrent-batch")]
@@ -58,7 +58,14 @@ struct Args {
     multi_stream: bool,
 }
 
-#[allow(unreachable_code, dead_code, unused_variables, unused_mut, unused_imports, unused_assignments)]
+#[allow(
+    unreachable_code,
+    dead_code,
+    unused_variables,
+    unused_mut,
+    unused_imports,
+    unused_assignments
+)]
 fn main() -> Result<()> {
     // Wave B.1 surgical-cleanup gate (operator 2026-05-02): this bin's
     // AmberMegaFusedHmc::new_with_stream call site has drifted from the
@@ -71,9 +78,7 @@ fn main() -> Result<()> {
     );
     std::process::exit(2);
 
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     #[cfg(not(feature = "gpu"))]
     {
@@ -95,8 +100,8 @@ fn main() -> Result<()> {
 /// Each structure runs on its own CUDA stream for GPU-level parallelism
 #[cfg(feature = "gpu")]
 fn run_multi_stream_batch(args: Args) -> Result<()> {
-    use std::time::Instant;
     use cudarc::driver::CudaStream;
+    use std::time::Instant;
 
     println!("═══════════════════════════════════════════════════════════════");
     println!("  NHS MULTI-STREAM CONCURRENT BATCH PROCESSOR");
@@ -113,7 +118,9 @@ fn run_multi_stream_batch(args: Args) -> Result<()> {
 
     // Load all topologies
     println!("Loading topologies...");
-    let topologies: Vec<PrismPrepTopology> = args.topologies.iter()
+    let topologies: Vec<PrismPrepTopology> = args
+        .topologies
+        .iter()
         .map(|p| {
             println!("  Loading: {}", p.display());
             PrismPrepTopology::load(p)
@@ -133,8 +140,12 @@ fn run_multi_stream_batch(args: Args) -> Result<()> {
         let batch_start = Instant::now();
         let n_concurrent = topology_chunk.len();
 
-        println!("Batch {}: {} structures on {} concurrent streams...",
-            batch_idx + 1, n_concurrent, n_concurrent);
+        println!(
+            "Batch {}: {} structures on {} concurrent streams...",
+            batch_idx + 1,
+            n_concurrent,
+            n_concurrent
+        );
 
         // Create independent streams for each structure
         println!("  Creating {} independent CUDA streams...", n_concurrent);
@@ -161,29 +172,59 @@ fn run_multi_stream_batch(args: Args) -> Result<()> {
             );
 
             // Convert and upload topology
-            let bonds: Vec<(usize, usize, f32, f32)> = topo.bonds.iter()
+            let bonds: Vec<(usize, usize, f32, f32)> = topo
+                .bonds
+                .iter()
                 .map(|b| (b.i, b.j, b.k as f32, b.r0 as f32))
                 .collect();
 
-            let angles: Vec<(usize, usize, usize, f32, f32)> = topo.angles.iter()
+            let angles: Vec<(usize, usize, usize, f32, f32)> = topo
+                .angles
+                .iter()
                 .map(|a| (a.i, a.j, a.k_idx, a.force_k as f32, a.theta0 as f32))
                 .collect();
 
-            let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topo.dihedrals.iter()
-                .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k as f32, d.periodicity as f32, d.phase as f32))
+            let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topo
+                .dihedrals
+                .iter()
+                .map(|d| {
+                    (
+                        d.i,
+                        d.j,
+                        d.k_idx,
+                        d.l,
+                        d.force_k as f32,
+                        d.periodicity as f32,
+                        d.phase as f32,
+                    )
+                })
                 .collect();
 
             let nb_params: Vec<(f32, f32, f32, f32)> = (0..topo.n_atoms)
-                .map(|i| (topo.lj_params[i].sigma as f32, topo.lj_params[i].epsilon as f32,
-                         topo.charges[i], topo.masses[i]))
+                .map(|i| {
+                    (
+                        topo.lj_params[i].sigma as f32,
+                        topo.lj_params[i].epsilon as f32,
+                        topo.charges[i],
+                        topo.masses[i],
+                    )
+                })
                 .collect();
 
-            let exclusions: Vec<HashSet<usize>> = topo.exclusions.iter()
+            let exclusions: Vec<HashSet<usize>> = topo
+                .exclusions
+                .iter()
                 .map(|v| v.iter().copied().collect())
                 .collect();
 
-            engine.upload_topology(&topo.positions, &bonds, &angles, &dihedrals,
-                                  &nb_params, &exclusions)?;
+            engine.upload_topology(
+                &topo.positions,
+                &bonds,
+                &angles,
+                &dihedrals,
+                &nb_params,
+                &exclusions,
+            )?;
             engine.initialize_velocities(args.temperature)?;
 
             engines.push(engine);
@@ -191,8 +232,10 @@ fn run_multi_stream_batch(args: Args) -> Result<()> {
         println!("  ✓ All engines initialized\n");
 
         // Run simulations CONCURRENTLY on different streams
-        println!("  🚀 Running {} steps on {} streams CONCURRENTLY...",
-            args.steps, n_concurrent);
+        println!(
+            "  🚀 Running {} steps on {} streams CONCURRENTLY...",
+            args.steps, n_concurrent
+        );
 
         let sim_start = Instant::now();
 
@@ -222,10 +265,18 @@ fn run_multi_stream_batch(args: Args) -> Result<()> {
         println!("    Concurrent streams: {}", n_concurrent);
         println!("    Simulation time: {:.2}s", sim_elapsed.as_secs_f64());
         println!("    Total time: {:.2}s", batch_elapsed.as_secs_f64());
-        println!("    Effective throughput: {:.0} steps/sec", effective_throughput);
-        println!("    Per-structure throughput: {:.0} steps/sec", per_structure_throughput);
-        println!("    Speedup vs sequential: {:.1}x\n",
-            effective_throughput / per_structure_throughput);
+        println!(
+            "    Effective throughput: {:.0} steps/sec",
+            effective_throughput
+        );
+        println!(
+            "    Per-structure throughput: {:.0} steps/sec",
+            per_structure_throughput
+        );
+        println!(
+            "    Speedup vs sequential: {:.1}x\n",
+            effective_throughput / per_structure_throughput
+        );
 
         total_steps_completed += batch_steps;
     }
@@ -263,7 +314,9 @@ fn run_sequential_batch(args: Args) -> Result<()> {
 
     std::fs::create_dir_all(&args.output)?;
 
-    let topologies: Vec<PrismPrepTopology> = args.topologies.iter()
+    let topologies: Vec<PrismPrepTopology> = args
+        .topologies
+        .iter()
         .map(|p| PrismPrepTopology::load(p))
         .collect::<Result<Vec<_>>>()?;
 
@@ -271,42 +324,82 @@ fn run_sequential_batch(args: Args) -> Result<()> {
     let total_start = Instant::now();
 
     for (i, topo) in topologies.iter().enumerate() {
-        println!("[{}/{}] Processing {} atoms...", i + 1, topologies.len(), topo.n_atoms);
+        println!(
+            "[{}/{}] Processing {} atoms...",
+            i + 1,
+            topologies.len(),
+            topo.n_atoms
+        );
 
         let mut engine = AmberMegaFusedHmc::new(Arc::clone(&context), topo.n_atoms)?;
 
-        let bonds: Vec<(usize, usize, f32, f32)> = topo.bonds.iter()
+        let bonds: Vec<(usize, usize, f32, f32)> = topo
+            .bonds
+            .iter()
             .map(|b| (b.i, b.j, b.k as f32, b.r0 as f32))
             .collect();
-        let angles: Vec<(usize, usize, usize, f32, f32)> = topo.angles.iter()
+        let angles: Vec<(usize, usize, usize, f32, f32)> = topo
+            .angles
+            .iter()
             .map(|a| (a.i, a.j, a.k_idx, a.force_k as f32, a.theta0 as f32))
             .collect();
-        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topo.dihedrals.iter()
-            .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k as f32, d.periodicity as f32, d.phase as f32))
+        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topo
+            .dihedrals
+            .iter()
+            .map(|d| {
+                (
+                    d.i,
+                    d.j,
+                    d.k_idx,
+                    d.l,
+                    d.force_k as f32,
+                    d.periodicity as f32,
+                    d.phase as f32,
+                )
+            })
             .collect();
         let nb_params: Vec<(f32, f32, f32, f32)> = (0..topo.n_atoms)
-            .map(|i| (topo.lj_params[i].sigma as f32, topo.lj_params[i].epsilon as f32,
-                     topo.charges[i], topo.masses[i]))
+            .map(|i| {
+                (
+                    topo.lj_params[i].sigma as f32,
+                    topo.lj_params[i].epsilon as f32,
+                    topo.charges[i],
+                    topo.masses[i],
+                )
+            })
             .collect();
-        let exclusions: Vec<HashSet<usize>> = topo.exclusions.iter()
+        let exclusions: Vec<HashSet<usize>> = topo
+            .exclusions
+            .iter()
             .map(|v| v.iter().copied().collect())
             .collect();
 
-        engine.upload_topology(&topo.positions, &bonds, &angles, &dihedrals,
-                              &nb_params, &exclusions)?;
+        engine.upload_topology(
+            &topo.positions,
+            &bonds,
+            &angles,
+            &dihedrals,
+            &nb_params,
+            &exclusions,
+        )?;
         engine.initialize_velocities(args.temperature)?;
 
         let start = Instant::now();
         engine.run(args.steps, args.dt, args.temperature, args.gamma)?;
         let elapsed = start.elapsed();
 
-        println!("  Done: {:.0} steps/sec", args.steps as f64 / elapsed.as_secs_f64());
+        println!(
+            "  Done: {:.0} steps/sec",
+            args.steps as f64 / elapsed.as_secs_f64()
+        );
     }
 
     let total_elapsed = total_start.elapsed();
     println!("\nTotal time: {:.2}s", total_elapsed.as_secs_f64());
-    println!("Overall throughput: {:.0} steps/sec",
-        (args.steps * topologies.len()) as f64 / total_elapsed.as_secs_f64());
+    println!(
+        "Overall throughput: {:.0} steps/sec",
+        (args.steps * topologies.len()) as f64 / total_elapsed.as_secs_f64()
+    );
 
     Ok(())
 }

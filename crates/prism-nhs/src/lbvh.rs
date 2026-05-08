@@ -223,8 +223,16 @@ mod tests {
         assert_eq!(cpu_expand_bits_30(0b11), 0b1001);
         // All 10 bits set → bits 0,3,6,9,12,15,18,21,24,27 set
         let all10 = 0b1111111111u32;
-        let expected = (1 << 0) | (1 << 3) | (1 << 6) | (1 << 9) | (1 << 12)
-                     | (1 << 15) | (1 << 18) | (1 << 21) | (1 << 24) | (1 << 27);
+        let expected = (1 << 0)
+            | (1 << 3)
+            | (1 << 6)
+            | (1 << 9)
+            | (1 << 12)
+            | (1 << 15)
+            | (1 << 18)
+            | (1 << 21)
+            | (1 << 24)
+            | (1 << 27);
         assert_eq!(cpu_expand_bits_30(all10), expected);
         assert_eq!(cpu_expand_bits_30(all10), 0x09249249);
     }
@@ -251,12 +259,22 @@ mod tests {
         // unit cube grid (cell side = 1/1024).
         let bbox = MortonBboxParams::new([0.0; 3], [1.0; 3]);
         let cell = 1.0 / 1024.0;
-        let p1 = [5.0 * cell + 0.1 * cell, 5.0 * cell + 0.1 * cell, 5.0 * cell + 0.1 * cell];
-        let p2 = [5.0 * cell + 0.4 * cell, 5.0 * cell + 0.4 * cell, 5.0 * cell + 0.4 * cell];
+        let p1 = [
+            5.0 * cell + 0.1 * cell,
+            5.0 * cell + 0.1 * cell,
+            5.0 * cell + 0.1 * cell,
+        ];
+        let p2 = [
+            5.0 * cell + 0.4 * cell,
+            5.0 * cell + 0.4 * cell,
+            5.0 * cell + 0.4 * cell,
+        ];
         let m1 = cpu_morton_30bit_encode_position(p1, &bbox);
         let m2 = cpu_morton_30bit_encode_position(p2, &bbox);
-        assert_eq!(m1, m2,
-            "two positions in the same voxel should produce identical codes");
+        assert_eq!(
+            m1, m2,
+            "two positions in the same voxel should produce identical codes"
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -308,9 +326,15 @@ mod tests {
             .collect();
 
         // GPU run.
-        let mut d_positions = stream.alloc_zeros::<f32>(positions.len()).expect("alloc d_positions");
-        stream.memcpy_htod(&positions, &mut d_positions).expect("htod positions");
-        let d_codes = stream.alloc_zeros::<u32>(n as usize).expect("alloc d_codes");
+        let mut d_positions = stream
+            .alloc_zeros::<f32>(positions.len())
+            .expect("alloc d_positions");
+        stream
+            .memcpy_htod(&positions, &mut d_positions)
+            .expect("htod positions");
+        let d_codes = stream
+            .alloc_zeros::<u32>(n as usize)
+            .expect("alloc d_codes");
 
         let raw_stream = stream.cu_stream() as usize;
         let (positions_dev, _g1) = d_positions.device_ptr(&stream);
@@ -328,10 +352,14 @@ mod tests {
         stream.synchronize().expect("stream sync");
 
         let mut gpu_codes = vec![0u32; n as usize];
-        stream.memcpy_dtoh(&d_codes, &mut gpu_codes).expect("dtoh codes");
+        stream
+            .memcpy_dtoh(&d_codes, &mut gpu_codes)
+            .expect("dtoh codes");
 
-        assert_eq!(gpu_codes, cpu_codes,
-            "CPU/GPU Morton 30-bit code parity violated (V3 single-source contract failed)");
+        assert_eq!(
+            gpu_codes, cpu_codes,
+            "CPU/GPU Morton 30-bit code parity violated (V3 single-source contract failed)"
+        );
 
         // Sanity: corner 0 → 0; corner all → 0x3FFFFFFF.
         assert_eq!(gpu_codes[0], 0);
@@ -357,11 +385,15 @@ mod tests {
         // `rand` crate. The bbox is `[-50, +75]³` — a typical
         // protein-coordinate magnitude that exercises non-zero
         // bbox_min and asymmetric span.
-        struct Lcg { s: u64 }
+        struct Lcg {
+            s: u64,
+        }
         impl Lcg {
             fn next_f32(&mut self) -> f32 {
-                self.s = self.s.wrapping_mul(6_364_136_223_846_793_005)
-                               .wrapping_add(1_442_695_040_888_963_407);
+                self.s = self
+                    .s
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
                 (self.s >> 32) as u32 as f32 / 4_294_967_296.0
             }
         }
@@ -379,9 +411,15 @@ mod tests {
             .map(|c| cpu_morton_30bit_encode_position([c[0], c[1], c[2]], &bbox))
             .collect();
 
-        let mut d_positions = stream.alloc_zeros::<f32>(positions.len()).expect("alloc d_positions");
-        stream.memcpy_htod(&positions, &mut d_positions).expect("htod positions");
-        let d_codes = stream.alloc_zeros::<u32>(n as usize).expect("alloc d_codes");
+        let mut d_positions = stream
+            .alloc_zeros::<f32>(positions.len())
+            .expect("alloc d_positions");
+        stream
+            .memcpy_htod(&positions, &mut d_positions)
+            .expect("htod positions");
+        let d_codes = stream
+            .alloc_zeros::<u32>(n as usize)
+            .expect("alloc d_codes");
 
         let raw_stream = stream.cu_stream() as usize;
         let (positions_dev, _g1) = d_positions.device_ptr(&stream);
@@ -399,10 +437,14 @@ mod tests {
         stream.synchronize().expect("stream sync");
 
         let mut gpu_codes = vec![0u32; n as usize];
-        stream.memcpy_dtoh(&d_codes, &mut gpu_codes).expect("dtoh codes");
+        stream
+            .memcpy_dtoh(&d_codes, &mut gpu_codes)
+            .expect("dtoh codes");
 
-        assert_eq!(gpu_codes, cpu_codes,
-            "1024-point random parity test failed: CPU/GPU Morton codes diverged");
+        assert_eq!(
+            gpu_codes, cpu_codes,
+            "1024-point random parity test failed: CPU/GPU Morton codes diverged"
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -443,11 +485,7 @@ mod tests {
 
     #[test]
     fn from_positions_wraps_inputs() {
-        let positions = vec![
-            -3.0, 2.0, 7.0,
-             1.0, -5.0, 0.0,
-             4.0, 6.0, -2.0,
-        ];
+        let positions = vec![-3.0, 2.0, 7.0, 1.0, -5.0, 0.0, 4.0, 6.0, -2.0];
         let bbox = MortonBboxParams::from_positions(&positions);
         assert_eq!(bbox.min, [-3.0, -5.0, -2.0]);
         assert_eq!(bbox.max, [4.0, 6.0, 7.0]);

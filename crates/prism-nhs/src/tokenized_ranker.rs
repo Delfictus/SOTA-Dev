@@ -126,11 +126,11 @@ impl TokenizedRanker {
         let mut unsat_frac_thresholds = [0f32; 3];
         for i in 0..3 {
             spike_count_thresholds[i] =
-                f32::from_le_bytes(bytes[12 + i*4..16 + i*4].try_into().unwrap());
+                f32::from_le_bytes(bytes[12 + i * 4..16 + i * 4].try_into().unwrap());
             interaction_thresholds[i] =
-                f32::from_le_bytes(bytes[24 + i*4..28 + i*4].try_into().unwrap());
+                f32::from_le_bytes(bytes[24 + i * 4..28 + i * 4].try_into().unwrap());
             unsat_frac_thresholds[i] =
-                f32::from_le_bytes(bytes[36 + i*4..40 + i*4].try_into().unwrap());
+                f32::from_le_bytes(bytes[36 + i * 4..40 + i * 4].try_into().unwrap());
         }
 
         let mut lookup = [0f32; N_TOKENS];
@@ -151,10 +151,15 @@ impl TokenizedRanker {
     /// Bin a continuous value into 0..=3 using 3 cut thresholds.
     #[inline]
     fn bin4(value: f32, thresholds: &[f32; 3]) -> usize {
-        if value < thresholds[0] { 0 }
-        else if value < thresholds[1] { 1 }
-        else if value < thresholds[2] { 2 }
-        else { 3 }
+        if value < thresholds[0] {
+            0
+        } else if value < thresholds[1] {
+            1
+        } else if value < thresholds[2] {
+            2
+        } else {
+            3
+        }
     }
 
     /// Compute the token for a site from its raw features.
@@ -208,10 +213,9 @@ pub fn apply_tokenized_rerank(
     let mut n_scored = 0usize;
 
     for site in sites_json.iter_mut() {
-        let cluster_id = site.get("id")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(-1);
-        let spike_count = site.get("spike_count")
+        let cluster_id = site.get("id").and_then(|v| v.as_i64()).unwrap_or(-1);
+        let spike_count = site
+            .get("spike_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
@@ -237,8 +241,14 @@ pub fn apply_tokenized_rerank(
 
     if reorder_by_score {
         sites_json.sort_by(|a, b| {
-            let sa = a.get("tokenized_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let sb = b.get("tokenized_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let sa = a
+                .get("tokenized_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let sb = b
+                .get("tokenized_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             // Primary: tokenized_score descending
             let primary = sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal);
             if primary != std::cmp::Ordering::Equal {
@@ -280,10 +290,7 @@ pub fn compute_unsat_frac(intensities: &[f32], sat_tolerance: f32) -> f32 {
         .copied()
         .fold(f32::NEG_INFINITY, f32::max);
     let sat_threshold = max_intensity - sat_tolerance;
-    let n_unsat = intensities
-        .iter()
-        .filter(|&&v| v < sat_threshold)
-        .count();
+    let n_unsat = intensities.iter().filter(|&&v| v < sat_threshold).count();
     n_unsat as f32 / intensities.len() as f32
 }
 
@@ -317,7 +324,11 @@ mod tests {
         // With spike_count and unsat_frac at the low end, token should be
         // in 48..=63 range (d0=0, d1=3, d2=0, d3=0..3).
         let token = r.compute_token(100_000, 4, 0.01);
-        assert!(token >= 48 && token <= 63, "token {} not in expected range", token);
+        assert!(
+            token >= 48 && token <= 63,
+            "token {} not in expected range",
+            token
+        );
     }
 
     #[test]
@@ -359,7 +370,7 @@ mod tests {
         // Site 2 has many spikes with varied intensities → higher unsat_frac → different token.
         let intensity_fn = |cid: i64| -> Option<Vec<f32>> {
             if cid == 1 {
-                Some(vec![64.8; 100])  // all saturated, unsat_frac=0
+                Some(vec![64.8; 100]) // all saturated, unsat_frac=0
             } else if cid == 2 {
                 // Mix of saturated and non-saturated — boosts to a populated bin
                 let mut v = vec![64.8; 70];

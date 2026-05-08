@@ -113,16 +113,16 @@ pub fn cpu_sh_eval_lmax5(theta: f32, phi: f32, k_lm: &[f32; N_COEFFS]) -> [f32; 
 
     let mut y = [0.0f32; N_COEFFS];
 
-    y[0]  = k_lm[0]  * p_0_0;
-    y[1]  = k_lm[1]  * p_1_1 * sin_phi;
-    y[2]  = k_lm[2]  * p_1_0;
-    y[3]  = k_lm[3]  * p_1_1 * cos_phi;
-    y[4]  = k_lm[4]  * p_2_2 * sin_2phi;
-    y[5]  = k_lm[5]  * p_2_1 * sin_phi;
-    y[6]  = k_lm[6]  * p_2_0;
-    y[7]  = k_lm[7]  * p_2_1 * cos_phi;
-    y[8]  = k_lm[8]  * p_2_2 * cos_2phi;
-    y[9]  = k_lm[9]  * p_3_3 * sin_3phi;
+    y[0] = k_lm[0] * p_0_0;
+    y[1] = k_lm[1] * p_1_1 * sin_phi;
+    y[2] = k_lm[2] * p_1_0;
+    y[3] = k_lm[3] * p_1_1 * cos_phi;
+    y[4] = k_lm[4] * p_2_2 * sin_2phi;
+    y[5] = k_lm[5] * p_2_1 * sin_phi;
+    y[6] = k_lm[6] * p_2_0;
+    y[7] = k_lm[7] * p_2_1 * cos_phi;
+    y[8] = k_lm[8] * p_2_2 * cos_2phi;
+    y[9] = k_lm[9] * p_3_3 * sin_3phi;
     y[10] = k_lm[10] * p_3_2 * sin_2phi;
     y[11] = k_lm[11] * p_3_1 * sin_phi;
     y[12] = k_lm[12] * p_3_0;
@@ -278,9 +278,14 @@ mod tests {
     fn lm_index_round_trip() {
         for idx in 0..N_COEFFS {
             let lm = LMIndex::from_idx(idx).expect("valid idx");
-            assert_eq!(lm.to_idx(), idx,
+            assert_eq!(
+                lm.to_idx(),
+                idx,
                 "round-trip failed for idx={}, got LMIndex {{l={}, m={}}}",
-                idx, lm.l, lm.m);
+                idx,
+                lm.l,
+                lm.m
+            );
             assert!((lm.l as usize) <= LMAX);
             assert!((lm.m as i32).unsigned_abs() <= lm.l as u32);
         }
@@ -298,9 +303,14 @@ mod tests {
             (0.001, 6.28),
         ] {
             let y = cpu_sh_eval_lmax5(t, p, &k);
-            assert!((y[0] - k[0]).abs() < 1e-6,
+            assert!(
+                (y[0] - k[0]).abs() < 1e-6,
                 "Y_0^0 not constant: at (θ={}, φ={}) got {} (expected {})",
-                t, p, y[0], k[0]);
+                t,
+                p,
+                y[0],
+                k[0]
+            );
         }
     }
 
@@ -310,8 +320,15 @@ mod tests {
         let k = k_lm_table();
         let y_pole = cpu_sh_eval_lmax5(0.0, 0.0, &k);
         let y_eq = cpu_sh_eval_lmax5(std::f32::consts::FRAC_PI_2, 0.0, &k);
-        assert!((y_pole[2] - k[2]).abs() < 1e-6, "Y_1^0(0, 0) should equal K_1^0");
-        assert!(y_eq[2].abs() < 1e-6, "Y_1^0(π/2, 0) should be 0; got {}", y_eq[2]);
+        assert!(
+            (y_pole[2] - k[2]).abs() < 1e-6,
+            "Y_1^0(0, 0) should equal K_1^0"
+        );
+        assert!(
+            y_eq[2].abs() < 1e-6,
+            "Y_1^0(π/2, 0) should be 0; got {}",
+            y_eq[2]
+        );
     }
 
     #[test]
@@ -326,12 +343,20 @@ mod tests {
             if m0_idxs.contains(&idx) {
                 // m=0 harmonics: should be K_lm * P_l^0(1) = K_lm * P_l(1) = K_lm * 1 (all P_l(1) = 1).
                 // Actually Legendre at x=1: P_0(1)=1, P_1(1)=1, ..., P_l(1)=1. So Y_l^0(0, φ) = K_l^0.
-                assert!((y[idx] - k[idx]).abs() < 1e-5,
+                assert!(
+                    (y[idx] - k[idx]).abs() < 1e-5,
                     "Y[{}]_m=0 at θ=0 should be K_lm: got {}, expected {}",
-                    idx, y[idx], k[idx]);
+                    idx,
+                    y[idx],
+                    k[idx]
+                );
             } else {
-                assert!(y[idx].abs() < 1e-5,
-                    "Y[{}]_|m|>0 at θ=0 should be 0: got {}", idx, y[idx]);
+                assert!(
+                    y[idx].abs() < 1e-5,
+                    "Y[{}]_|m|>0 at θ=0 should be 0: got {}",
+                    idx,
+                    y[idx]
+                );
             }
         }
     }
@@ -359,44 +384,62 @@ mod tests {
 
         // Init device-side K_LM.
         let raw_stream = stream.cu_stream() as usize;
-        let rc = unsafe {
-            ffi::prism_sh_basis_init(raw_stream as *mut std::ffi::c_void)
-        };
+        let rc = unsafe { ffi::prism_sh_basis_init(raw_stream as *mut std::ffi::c_void) };
         assert_eq!(rc, ffi::CUDA_SUCCESS);
 
         let pi = std::f32::consts::PI;
         let pi2 = pi / 2.0;
         let theta_phi: Vec<f32> = vec![
             // (θ, φ)
-            0.001, 0.0,        // near north pole
-            pi - 0.001, 0.0,   // near south pole
-            pi2, 0.0,          // equator, +X
-            pi2, pi2,          // equator, +Y
-            pi2, pi,           // equator, -X
-            pi2, 3.0 * pi2,    // equator, -Y
-            pi / 4.0, pi / 4.0,
-            pi / 3.0, 2.0 * pi / 3.0,
-            pi / 6.0, pi / 6.0,
-            5.0 * pi / 6.0, 7.0 * pi / 6.0,
-            pi / 4.0, 7.0 * pi / 4.0,
-            pi / 2.0 + 0.1, 1.234,
+            0.001,
+            0.0, // near north pole
+            pi - 0.001,
+            0.0, // near south pole
+            pi2,
+            0.0, // equator, +X
+            pi2,
+            pi2, // equator, +Y
+            pi2,
+            pi, // equator, -X
+            pi2,
+            3.0 * pi2, // equator, -Y
+            pi / 4.0,
+            pi / 4.0,
+            pi / 3.0,
+            2.0 * pi / 3.0,
+            pi / 6.0,
+            pi / 6.0,
+            5.0 * pi / 6.0,
+            7.0 * pi / 6.0,
+            pi / 4.0,
+            7.0 * pi / 4.0,
+            pi / 2.0 + 0.1,
+            1.234,
         ];
         let n = (theta_phi.len() / 2) as u32;
 
         let k = k_lm_table();
-        let cpu_y: Vec<[f32; N_COEFFS]> = theta_phi.chunks_exact(2)
+        let cpu_y: Vec<[f32; N_COEFFS]> = theta_phi
+            .chunks_exact(2)
             .map(|c| cpu_sh_eval_lmax5(c[0], c[1], &k))
             .collect();
 
-        let mut d_theta_phi = stream.alloc_zeros::<f32>(theta_phi.len()).expect("alloc tp");
-        stream.memcpy_htod(&theta_phi, &mut d_theta_phi).expect("htod tp");
-        let d_y_out = stream.alloc_zeros::<f32>((n as usize) * N_COEFFS).expect("alloc y");
+        let mut d_theta_phi = stream
+            .alloc_zeros::<f32>(theta_phi.len())
+            .expect("alloc tp");
+        stream
+            .memcpy_htod(&theta_phi, &mut d_theta_phi)
+            .expect("htod tp");
+        let d_y_out = stream
+            .alloc_zeros::<f32>((n as usize) * N_COEFFS)
+            .expect("alloc y");
 
         let (tp_dev, _g1) = d_theta_phi.device_ptr(&stream);
         let (y_dev, _g2) = d_y_out.device_ptr(&stream);
         let rc = unsafe {
             ffi::prism_sh_eval_run(
-                tp_dev as *const f32, n,
+                tp_dev as *const f32,
+                n,
                 y_dev as *mut f32,
                 raw_stream as *mut std::ffi::c_void,
             )
@@ -405,7 +448,9 @@ mod tests {
         stream.synchronize().expect("stream sync");
 
         let mut gpu_y_flat = vec![0.0f32; (n as usize) * N_COEFFS];
-        stream.memcpy_dtoh(&d_y_out, &mut gpu_y_flat).expect("dtoh y");
+        stream
+            .memcpy_dtoh(&d_y_out, &mut gpu_y_flat)
+            .expect("dtoh y");
 
         let tol: f32 = 1e-5;
         for (i, expected_row) in cpu_y.iter().enumerate() {
@@ -415,9 +460,16 @@ mod tests {
                 let diff = (gpu - cpu).abs();
                 let scale = cpu.abs().max(1e-3);
                 let rel = diff / scale;
-                assert!(diff < tol || rel < tol,
+                assert!(
+                    diff < tol || rel < tol,
                     "parity violation at point {} idx {}: cpu={}, gpu={}, diff={}, rel={}",
-                    i, j, cpu, gpu, diff, rel);
+                    i,
+                    j,
+                    cpu,
+                    gpu,
+                    diff,
+                    rel
+                );
             }
         }
     }
@@ -442,11 +494,15 @@ mod tests {
         assert_eq!(rc, ffi::CUDA_SUCCESS);
 
         // Deterministic LCG so the test is reproducible.
-        struct Lcg { s: u64 }
+        struct Lcg {
+            s: u64,
+        }
         impl Lcg {
             fn next_f32(&mut self) -> f32 {
-                self.s = self.s.wrapping_mul(6_364_136_223_846_793_005)
-                               .wrapping_add(1_442_695_040_888_963_407);
+                self.s = self
+                    .s
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
                 (self.s >> 32) as u32 as f32 / 4_294_967_296.0
             }
         }
@@ -468,19 +524,27 @@ mod tests {
         }
 
         let k = k_lm_table();
-        let cpu_y: Vec<[f32; N_COEFFS]> = theta_phi.chunks_exact(2)
+        let cpu_y: Vec<[f32; N_COEFFS]> = theta_phi
+            .chunks_exact(2)
             .map(|c| cpu_sh_eval_lmax5(c[0], c[1], &k))
             .collect();
 
-        let mut d_theta_phi = stream.alloc_zeros::<f32>(theta_phi.len()).expect("alloc tp");
-        stream.memcpy_htod(&theta_phi, &mut d_theta_phi).expect("htod tp");
-        let d_y_out = stream.alloc_zeros::<f32>((n as usize) * N_COEFFS).expect("alloc y");
+        let mut d_theta_phi = stream
+            .alloc_zeros::<f32>(theta_phi.len())
+            .expect("alloc tp");
+        stream
+            .memcpy_htod(&theta_phi, &mut d_theta_phi)
+            .expect("htod tp");
+        let d_y_out = stream
+            .alloc_zeros::<f32>((n as usize) * N_COEFFS)
+            .expect("alloc y");
 
         let (tp_dev, _g1) = d_theta_phi.device_ptr(&stream);
         let (y_dev, _g2) = d_y_out.device_ptr(&stream);
         let rc = unsafe {
             ffi::prism_sh_eval_run(
-                tp_dev as *const f32, n,
+                tp_dev as *const f32,
+                n,
                 y_dev as *mut f32,
                 raw_stream as *mut std::ffi::c_void,
             )
@@ -489,7 +553,9 @@ mod tests {
         stream.synchronize().expect("stream sync");
 
         let mut gpu_y_flat = vec![0.0f32; (n as usize) * N_COEFFS];
-        stream.memcpy_dtoh(&d_y_out, &mut gpu_y_flat).expect("dtoh y");
+        stream
+            .memcpy_dtoh(&d_y_out, &mut gpu_y_flat)
+            .expect("dtoh y");
 
         // Tolerance: 1e-4 absolute OR 1e-4 relative. The high-l
         // harmonics involve products of up to sin^5(θ) and angular
@@ -510,12 +576,21 @@ mod tests {
                 }
                 let scale = cpu.abs().max(1e-3);
                 let rel = diff / scale;
-                assert!(diff < tol || rel < tol,
+                assert!(
+                    diff < tol || rel < tol,
                     "parity violation at random point {} idx {}: cpu={}, gpu={}, diff={}, rel={}",
-                    i, j, cpu, gpu, diff, rel);
+                    i,
+                    j,
+                    cpu,
+                    gpu,
+                    diff,
+                    rel
+                );
             }
         }
-        eprintln!("[sh parity rand] max diff over 64×36 = {:.2e} (idx {}, {})",
-                  max_diff, max_diff_loc.0, max_diff_loc.1);
+        eprintln!(
+            "[sh parity rand] max diff over 64×36 = {:.2e} (idx {}, {})",
+            max_diff, max_diff_loc.0, max_diff_loc.1
+        );
     }
 }

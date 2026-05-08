@@ -14,18 +14,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "gpu")]
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, CudaFunction, CudaModule, LaunchConfig, PushKernelArg};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtr, LaunchConfig,
+    PushKernelArg,
+};
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
 
 #[cfg(feature = "gpu")]
-use prism_optix::{
-    AccelStructure, BvhBuildFlags, Module, ModuleCompileOptions, OptixContext,
-    Pipeline, PipelineCompileOptions, PipelineLinkOptions, ProgramGroup,
-    ShaderBindingTable, SBT_RECORD_HEADER_SIZE, aligned_sbt_record_size,
-};
-#[cfg(feature = "gpu")]
 use optix_sys::CUstream;
+#[cfg(feature = "gpu")]
+use prism_optix::{
+    aligned_sbt_record_size, AccelStructure, BvhBuildFlags, Module, ModuleCompileOptions,
+    OptixContext, Pipeline, PipelineCompileOptions, PipelineLinkOptions, ProgramGroup,
+    ShaderBindingTable, SBT_RECORD_HEADER_SIZE,
+};
 
 /// Maximum neighbors per event in fixed-size buffer
 const MAX_NEIGHBORS_PER_EVENT: u32 = 128;
@@ -49,7 +52,7 @@ impl Default for RtClusteringConfig {
             epsilon: 5.0,
             min_points: 3,
             min_cluster_size: 100,
-            rays_per_event: 16,  // v2: reduced from 64 (anyhit finds multiple per ray)
+            rays_per_event: 16, // v2: reduced from 64 (anyhit finds multiple per ray)
         }
     }
 }
@@ -59,19 +62,19 @@ impl Default for RtClusteringConfig {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct RtClusteringParams {
-    pub traversable: u64,        // 8 @ 0:  OptixTraversableHandle
-    pub event_positions: u64,    // 8 @ 8:  float3* device pointer
-    pub num_events: u32,         // 4 @ 16
-    pub epsilon_sq: f32,         // 4 @ 20: current epsilon² for distance filter
-    pub ray_tmax: f32,           // 4 @ 24: max epsilon (ray extent)
-    pub rays_per_event: u32,     // 4 @ 28
-    pub max_neighbors: u32,      // 4 @ 32: fixed buffer size per event
-    pub _pad: u32,               // 4 @ 36: alignment padding
-    pub neighbor_list: u64,      // 8 @ 40: [num_events * max_neighbors]
-    pub neighbor_count: u64,     // 8 @ 48: [num_events]
-    pub parent: u64,             // 8 @ 56: [num_events] Union-Find
-    pub num_clusters: u64,       // 8 @ 64: single value
-    // Total: 72 bytes
+    pub traversable: u64,     // 8 @ 0:  OptixTraversableHandle
+    pub event_positions: u64, // 8 @ 8:  float3* device pointer
+    pub num_events: u32,      // 4 @ 16
+    pub epsilon_sq: f32,      // 4 @ 20: current epsilon² for distance filter
+    pub ray_tmax: f32,        // 4 @ 24: max epsilon (ray extent)
+    pub rays_per_event: u32,  // 4 @ 28
+    pub max_neighbors: u32,   // 4 @ 32: fixed buffer size per event
+    pub _pad: u32,            // 4 @ 36: alignment padding
+    pub neighbor_list: u64,   // 8 @ 40: [num_events * max_neighbors]
+    pub neighbor_count: u64,  // 8 @ 48: [num_events]
+    pub parent: u64,          // 8 @ 56: [num_events] Union-Find
+    pub num_clusters: u64,    // 8 @ 64: single value
+                              // Total: 72 bytes
 }
 
 /// Result of RT clustering
@@ -118,7 +121,7 @@ pub struct RtClusteringEngine {
 
     // v2: Cached BVH for reuse across epsilon scales
     cached_bvh: Option<AccelStructure>,
-    cached_bvh_ray_tmax: f32,           // Max epsilon the BVH was built for
+    cached_bvh_ray_tmax: f32, // Max epsilon the BVH was built for
     cached_d_positions: Option<CudaSlice<f32>>,
     cached_d_radii: Option<CudaSlice<f32>>,
     cached_num_events: usize,
@@ -137,8 +140,7 @@ impl RtClusteringEngine {
     /// Create a new RT clustering engine
     pub fn new(context: Arc<CudaContext>, config: RtClusteringConfig) -> Result<Self> {
         // Initialize OptiX
-        OptixContext::init()
-            .map_err(|e| anyhow::anyhow!("OptiX init failed: {}", e))?;
+        OptixContext::init().map_err(|e| anyhow::anyhow!("OptiX init failed: {}", e))?;
 
         let optix_ctx = OptixContext::new(context.cu_ctx(), false)
             .map_err(|e| anyhow::anyhow!("OptiX context failed: {}", e))?;
@@ -189,32 +191,24 @@ impl RtClusteringEngine {
         let module_options = ModuleCompileOptions::default();
 
         let mut pipeline_options = PipelineCompileOptions::default();
-        pipeline_options.num_payload_values = 2;  // p0=source_event, p1=unused
+        pipeline_options.num_payload_values = 2; // p0=source_event, p1=unused
         pipeline_options.num_attribute_values = 0;
 
         let params_size = std::mem::size_of::<RtClusteringParams>();
         log::info!("RT clustering v2 params struct size: {} bytes", params_size);
 
         // Load module from OptiX IR
-        let module = Module::from_optix_ir(
-            &self.optix_ctx,
-            path,
-            &module_options,
-            &pipeline_options,
-        ).context("Failed to load OptiX IR module")?;
+        let module =
+            Module::from_optix_ir(&self.optix_ctx, path, &module_options, &pipeline_options)
+                .context("Failed to load OptiX IR module")?;
 
         // Create program groups — v2: single pipeline with anyhit
-        let raygen_pg = ProgramGroup::create_raygen(
-            &self.optix_ctx,
-            &module,
-            "__raygen__find_neighbors",
-        ).context("Failed to create raygen program group")?;
+        let raygen_pg =
+            ProgramGroup::create_raygen(&self.optix_ctx, &module, "__raygen__find_neighbors")
+                .context("Failed to create raygen program group")?;
 
-        let miss_pg = ProgramGroup::create_miss(
-            &self.optix_ctx,
-            &module,
-            "__miss__find_neighbors",
-        ).context("Failed to create miss program group")?;
+        let miss_pg = ProgramGroup::create_miss(&self.optix_ctx, &module, "__miss__find_neighbors")
+            .context("Failed to create miss program group")?;
 
         // v2: Hitgroup with ANYHIT (the key optimization)
         // closesthit is a no-op, anyhit does all neighbor recording
@@ -225,20 +219,23 @@ impl RtClusteringEngine {
             None,
             None,
             None, // No anyhit module (falling back to closesthit)
-            None  // No anyhit entry
-        ).map_err(|e| anyhow::anyhow!("Failed to pack raygen header: {}", e))?;
-                let record_size = aligned_sbt_record_size(0); // 0 extra bytes for payload in SBT
+            None, // No anyhit entry
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to pack raygen header: {}", e))?;
+        let record_size = aligned_sbt_record_size(0); // 0 extra bytes for payload in SBT
         let mut raygen_record = vec![0u8; record_size];
         raygen_pg.pack_header(&mut raygen_record)?;
         self.d_raygen_record = Some(self.stream.clone_htod(&raygen_record)?);
 
         let mut miss_record = vec![0u8; record_size];
-        miss_pg.pack_header(&mut miss_record)
+        miss_pg
+            .pack_header(&mut miss_record)
             .map_err(|e| anyhow::anyhow!("Failed to pack miss header: {}", e))?;
         self.d_miss_record = Some(self.stream.clone_htod(&miss_record)?);
 
         let mut hitgroup_record = vec![0u8; record_size];
-        hitgroup_pg.pack_header(&mut hitgroup_record)
+        hitgroup_pg
+            .pack_header(&mut hitgroup_record)
             .map_err(|e| anyhow::anyhow!("Failed to pack hitgroup header: {}", e))?;
         self.d_hitgroup_record = Some(self.stream.clone_htod(&hitgroup_record)?);
 
@@ -256,7 +253,9 @@ impl RtClusteringEngine {
 
         log::info!(
             "Preparing BVH: {} events, max_epsilon={:.1}Å (sphere radius={:.1}Å)",
-            num_events, max_epsilon, max_epsilon / 2.0
+            num_events,
+            max_epsilon,
+            max_epsilon / 2.0
         );
 
         // Upload positions
@@ -276,25 +275,32 @@ impl RtClusteringEngine {
                 radii_ptr,
                 num_events,
                 BvhBuildFlags::dynamic(),
-            ).map_err(|e| anyhow::anyhow!("BVH build failed: {}", e))?
+            )
+            .map_err(|e| anyhow::anyhow!("BVH build failed: {}", e))?
         };
 
         // Allocate output buffers if needed
         if num_events > self.cached_capacity {
             let max_neighbors = MAX_NEIGHBORS_PER_EVENT as usize;
-            self.cached_d_neighbor_list = Some(self.stream.clone_htod(
-                &vec![0u32; num_events * max_neighbors])?);
-            self.cached_d_neighbor_count = Some(self.stream.clone_htod(
-                &vec![0u32; num_events])?);
-            self.cached_d_parent = Some(self.stream.clone_htod(
-                &(0..num_events as i32).collect::<Vec<_>>())?);
-            self.cached_d_cluster_ids = Some(self.stream.clone_htod(
-                &vec![-1i32; num_events])?);
+            self.cached_d_neighbor_list =
+                Some(
+                    self.stream
+                        .clone_htod(&vec![0u32; num_events * max_neighbors])?,
+                );
+            self.cached_d_neighbor_count = Some(self.stream.clone_htod(&vec![0u32; num_events])?);
+            self.cached_d_parent = Some(
+                self.stream
+                    .clone_htod(&(0..num_events as i32).collect::<Vec<_>>())?,
+            );
+            self.cached_d_cluster_ids = Some(self.stream.clone_htod(&vec![-1i32; num_events])?);
             self.cached_d_num_clusters = Some(self.stream.clone_htod(&vec![0u32])?);
             self.cached_capacity = num_events;
-            log::info!("  Allocated buffers: {} events × {} max_neighbors = {:.1} MB",
-                num_events, max_neighbors,
-                (num_events * max_neighbors * 4) as f64 / 1e6);
+            log::info!(
+                "  Allocated buffers: {} events × {} max_neighbors = {:.1} MB",
+                num_events,
+                max_neighbors,
+                (num_events * max_neighbors * 4) as f64 / 1e6
+            );
         }
 
         // Cache everything
@@ -304,7 +310,10 @@ impl RtClusteringEngine {
         self.cached_d_radii = Some(d_radii);
         self.cached_num_events = num_events;
 
-        log::info!("  BVH cached for {} events (reusable across epsilon scales)", num_events);
+        log::info!(
+            "  BVH cached for {} events (reusable across epsilon scales)",
+            num_events
+        );
         Ok(())
     }
 
@@ -316,7 +325,11 @@ impl RtClusteringEngine {
     /// Cluster positions at a specific epsilon.
     /// If prepare_bvh() was called, reuses cached BVH (fast path).
     /// Otherwise builds BVH inline (slow path, backward compatible).
-    pub fn cluster_at_epsilon(&mut self, positions: &[f32], epsilon: f32) -> Result<RtClusteringResult> {
+    pub fn cluster_at_epsilon(
+        &mut self,
+        positions: &[f32],
+        epsilon: f32,
+    ) -> Result<RtClusteringResult> {
         let num_events = positions.len() / 3;
         if num_events == 0 {
             return Ok(RtClusteringResult {
@@ -327,7 +340,9 @@ impl RtClusteringEngine {
             });
         }
 
-        let pipeline = self.pipeline.as_ref()
+        let pipeline = self
+            .pipeline
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Pipeline not loaded. Call load_pipeline() first."))?;
 
         let start = std::time::Instant::now();
@@ -345,7 +360,11 @@ impl RtClusteringEngine {
         let ray_tmax = self.cached_bvh_ray_tmax;
         let bvh_handle = self.cached_bvh.as_ref().unwrap().handle();
         let positions_ptr = {
-            let (p, _) = self.cached_d_positions.as_ref().unwrap().device_ptr(&self.stream);
+            let (p, _) = self
+                .cached_d_positions
+                .as_ref()
+                .unwrap()
+                .device_ptr(&self.stream);
             p
         };
 
@@ -377,10 +396,38 @@ impl RtClusteringEngine {
         }
 
         // Get device pointers for params from CACHED buffers
-        let neighbor_list_ptr = { let (p, _) = self.cached_d_neighbor_list.as_ref().unwrap().device_ptr(&self.stream); p };
-        let neighbor_count_ptr = { let (p, _) = self.cached_d_neighbor_count.as_ref().unwrap().device_ptr(&self.stream); p };
-        let parent_ptr = { let (p, _) = self.cached_d_parent.as_ref().unwrap().device_ptr(&self.stream); p };
-        let num_clusters_ptr = { let (p, _) = self.cached_d_num_clusters.as_ref().unwrap().device_ptr(&self.stream); p };
+        let neighbor_list_ptr = {
+            let (p, _) = self
+                .cached_d_neighbor_list
+                .as_ref()
+                .unwrap()
+                .device_ptr(&self.stream);
+            p
+        };
+        let neighbor_count_ptr = {
+            let (p, _) = self
+                .cached_d_neighbor_count
+                .as_ref()
+                .unwrap()
+                .device_ptr(&self.stream);
+            p
+        };
+        let parent_ptr = {
+            let (p, _) = self
+                .cached_d_parent
+                .as_ref()
+                .unwrap()
+                .device_ptr(&self.stream);
+            p
+        };
+        let num_clusters_ptr = {
+            let (p, _) = self
+                .cached_d_num_clusters
+                .as_ref()
+                .unwrap()
+                .device_ptr(&self.stream);
+            p
+        };
 
         // Setup launch parameters (72 bytes)
         let params = RtClusteringParams {
@@ -409,9 +456,21 @@ impl RtClusteringEngine {
 
         // Build SBT
         let record_size = aligned_sbt_record_size(0) as u32;
-        let (raygen_ptr, _gr) = self.d_raygen_record.as_ref().unwrap().device_ptr(&self.stream);
-        let (miss_ptr, _gm) = self.d_miss_record.as_ref().unwrap().device_ptr(&self.stream);
-        let (hitgroup_ptr, _gh) = self.d_hitgroup_record.as_ref().unwrap().device_ptr(&self.stream);
+        let (raygen_ptr, _gr) = self
+            .d_raygen_record
+            .as_ref()
+            .unwrap()
+            .device_ptr(&self.stream);
+        let (miss_ptr, _gm) = self
+            .d_miss_record
+            .as_ref()
+            .unwrap()
+            .device_ptr(&self.stream);
+        let (hitgroup_ptr, _gh) = self
+            .d_hitgroup_record
+            .as_ref()
+            .unwrap()
+            .device_ptr(&self.stream);
 
         let sbt = ShaderBindingTable {
             raygen_record: raygen_ptr,
@@ -432,26 +491,36 @@ impl RtClusteringEngine {
         // (v1 required TWO launches: count + build)
         // ══════════════════════════════════════════════════════════════════
         let cu_stream = self.stream.cu_stream() as CUstream;
-        pipeline.launch(
-            cu_stream,
-            params_ptr_dev,
-            std::mem::size_of::<RtClusteringParams>(),
-            &sbt,
-            num_events as u32,            // width = num_events
-            self.config.rays_per_event,   // height = rays_per_event
-            1,                            // depth = 1
-        ).map_err(|e| anyhow::anyhow!("Pipeline launch failed: {}", e))?;
+        pipeline
+            .launch(
+                cu_stream,
+                params_ptr_dev,
+                std::mem::size_of::<RtClusteringParams>(),
+                &sbt,
+                num_events as u32,          // width = num_events
+                self.config.rays_per_event, // height = rays_per_event
+                1,                          // depth = 1
+            )
+            .map_err(|e| anyhow::anyhow!("Pipeline launch failed: {}", e))?;
         self.stream.synchronize()?;
 
         // Debug: check neighbor counts
         let d_neighbor_count_dbg = self.cached_d_neighbor_count.as_ref().unwrap();
         let mut neighbor_counts_host = vec![0u32; num_events];
-        self.stream.memcpy_dtoh(d_neighbor_count_dbg, &mut neighbor_counts_host)?;
+        self.stream
+            .memcpy_dtoh(d_neighbor_count_dbg, &mut neighbor_counts_host)?;
         let total_neighbors: u64 = neighbor_counts_host.iter().map(|&x| x as u64).sum();
-        let avg_neighbors = if num_events > 0 { total_neighbors as f64 / num_events as f64 } else { 0.0 };
+        let avg_neighbors = if num_events > 0 {
+            total_neighbors as f64 / num_events as f64
+        } else {
+            0.0
+        };
         log::info!(
             "  Single-pass (cached BVH): {} neighbors ({:.1} avg/event), {} events, eps={:.1}",
-            total_neighbors, avg_neighbors, num_events, epsilon
+            total_neighbors,
+            avg_neighbors,
+            num_events,
+            epsilon
         );
 
         // Run union-find clustering pipeline
@@ -462,9 +531,13 @@ impl RtClusteringEngine {
         let d_num_clusters_ref = self.cached_d_num_clusters.as_ref().unwrap();
         let final_result = if self.cuda_module.is_some() {
             self.run_union_find(
-                d_parent_ref, d_neighbor_list_ref, d_neighbor_count_ref,
-                d_cluster_ids_ref, d_num_clusters_ref,
-                num_events, total_neighbors as usize,
+                d_parent_ref,
+                d_neighbor_list_ref,
+                d_neighbor_count_ref,
+                d_cluster_ids_ref,
+                d_num_clusters_ref,
+                num_events,
+                total_neighbors as usize,
             )?
         } else {
             log::warn!("CUDA kernels not loaded - returning neighbor counts only");
@@ -475,7 +548,11 @@ impl RtClusteringEngine {
 
         log::info!(
             "RT clustering v2: {} events, {} neighbors, {} clusters, {:.1}ms (ε={:.1}Å)",
-            num_events, final_result.1, final_result.2, gpu_time, epsilon
+            num_events,
+            final_result.1,
+            final_result.2,
+            gpu_time,
+            epsilon
         );
 
         Ok(RtClusteringResult {
@@ -487,9 +564,15 @@ impl RtClusteringEngine {
     }
 
     /// Fresh clustering without cached BVH (backward compatible path)
-    fn cluster_at_epsilon_fresh(&self, positions: &[f32], epsilon: f32) -> Result<RtClusteringResult> {
+    fn cluster_at_epsilon_fresh(
+        &self,
+        positions: &[f32],
+        epsilon: f32,
+    ) -> Result<RtClusteringResult> {
         let num_events = positions.len() / 3;
-        let pipeline = self.pipeline.as_ref()
+        let pipeline = self
+            .pipeline
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Pipeline not loaded"))?;
 
         let start = std::time::Instant::now();
@@ -508,22 +591,26 @@ impl RtClusteringEngine {
             radii_ptr,
             num_events,
             BvhBuildFlags::dynamic(),
-        ).map_err(|e| anyhow::anyhow!("BVH build failed: {}", e))?;
+        )
+        .map_err(|e| anyhow::anyhow!("BVH build failed: {}", e))?;
 
         // Allocate buffers
         let max_neighbors = MAX_NEIGHBORS_PER_EVENT as usize;
-        let d_neighbor_list: CudaSlice<u32> = self.stream.clone_htod(
-            &vec![0u32; num_events * max_neighbors])?;
-        let d_neighbor_count: CudaSlice<u32> = self.stream.clone_htod(
-            &vec![0u32; num_events])?;
-        let d_parent: CudaSlice<i32> = self.stream.clone_htod(
-            &(0..num_events as i32).collect::<Vec<_>>())?;
-        let d_cluster_ids: CudaSlice<i32> = self.stream.clone_htod(
-            &vec![-1i32; num_events])?;
+        let d_neighbor_list: CudaSlice<u32> =
+            self.stream
+                .clone_htod(&vec![0u32; num_events * max_neighbors])?;
+        let d_neighbor_count: CudaSlice<u32> = self.stream.clone_htod(&vec![0u32; num_events])?;
+        let d_parent: CudaSlice<i32> = self
+            .stream
+            .clone_htod(&(0..num_events as i32).collect::<Vec<_>>())?;
+        let d_cluster_ids: CudaSlice<i32> = self.stream.clone_htod(&vec![-1i32; num_events])?;
         let d_num_clusters: CudaSlice<u32> = self.stream.clone_htod(&vec![0u32])?;
 
         // Get device pointers
-        let positions_ptr2 = { let (p, _) = d_positions.device_ptr(&self.stream); p };
+        let positions_ptr2 = {
+            let (p, _) = d_positions.device_ptr(&self.stream);
+            p
+        };
         let (nl_ptr, _g3) = d_neighbor_list.device_ptr(&self.stream);
         let (nc_ptr, _g4) = d_neighbor_count.device_ptr(&self.stream);
         let (par_ptr, _g5) = d_parent.device_ptr(&self.stream);
@@ -555,9 +642,21 @@ impl RtClusteringEngine {
         let (params_ptr_dev, _gp) = d_params.device_ptr(&self.stream);
 
         let record_size = aligned_sbt_record_size(0) as u32;
-        let (raygen_ptr, _gr) = self.d_raygen_record.as_ref().unwrap().device_ptr(&self.stream);
-        let (miss_ptr, _gm) = self.d_miss_record.as_ref().unwrap().device_ptr(&self.stream);
-        let (hitgroup_ptr, _gh) = self.d_hitgroup_record.as_ref().unwrap().device_ptr(&self.stream);
+        let (raygen_ptr, _gr) = self
+            .d_raygen_record
+            .as_ref()
+            .unwrap()
+            .device_ptr(&self.stream);
+        let (miss_ptr, _gm) = self
+            .d_miss_record
+            .as_ref()
+            .unwrap()
+            .device_ptr(&self.stream);
+        let (hitgroup_ptr, _gh) = self
+            .d_hitgroup_record
+            .as_ref()
+            .unwrap()
+            .device_ptr(&self.stream);
 
         let sbt = ShaderBindingTable {
             raygen_record: raygen_ptr,
@@ -574,15 +673,17 @@ impl RtClusteringEngine {
         };
 
         let cu_stream = self.stream.cu_stream() as CUstream;
-        pipeline.launch(
-            cu_stream,
-            params_ptr_dev,
-            std::mem::size_of::<RtClusteringParams>(),
-            &sbt,
-            num_events as u32,
-            self.config.rays_per_event,
-            1,
-        ).map_err(|e| anyhow::anyhow!("Pipeline launch failed: {}", e))?;
+        pipeline
+            .launch(
+                cu_stream,
+                params_ptr_dev,
+                std::mem::size_of::<RtClusteringParams>(),
+                &sbt,
+                num_events as u32,
+                self.config.rays_per_event,
+                1,
+            )
+            .map_err(|e| anyhow::anyhow!("Pipeline launch failed: {}", e))?;
         self.stream.synchronize()?;
 
         // Get total neighbors
@@ -592,14 +693,20 @@ impl RtClusteringEngine {
 
         log::info!(
             "  Single-pass (fresh BVH): {} neighbor pairs from {} events (ε={:.1}Å)",
-            total_neighbors, num_events, epsilon
+            total_neighbors,
+            num_events,
+            epsilon
         );
 
         let final_result = if self.cuda_module.is_some() {
             self.run_union_find(
-                &d_parent, &d_neighbor_list, &d_neighbor_count,
-                &d_cluster_ids, &d_num_clusters,
-                num_events, total_neighbors as usize,
+                &d_parent,
+                &d_neighbor_list,
+                &d_neighbor_count,
+                &d_cluster_ids,
+                &d_num_clusters,
+                num_events,
+                total_neighbors as usize,
             )?
         } else {
             (vec![-1i32; num_events], total_neighbors as usize, 0)
@@ -633,7 +740,8 @@ impl RtClusteringEngine {
         // Phase 1: Initialize union-find
         let fn_init = self.fn_init_union_find.as_ref().unwrap();
         unsafe {
-            self.stream.launch_builder(fn_init)
+            self.stream
+                .launch_builder(fn_init)
                 .arg(d_parent)
                 .arg(&num_events_u32)
                 .launch(LaunchConfig {
@@ -647,7 +755,8 @@ impl RtClusteringEngine {
         // Phase 2: Union neighbors (flat buffer version)
         let fn_union = self.fn_union_neighbors_flat.as_ref().unwrap();
         unsafe {
-            self.stream.launch_builder(fn_union)
+            self.stream
+                .launch_builder(fn_union)
                 .arg(d_parent)
                 .arg(d_neighbor_list)
                 .arg(d_neighbor_count)
@@ -664,7 +773,8 @@ impl RtClusteringEngine {
         // Phase 3: Flatten (full path compression)
         let fn_flatten = self.fn_flatten_clusters_full.as_ref().unwrap();
         unsafe {
-            self.stream.launch_builder(fn_flatten)
+            self.stream
+                .launch_builder(fn_flatten)
                 .arg(d_parent)
                 .arg(&num_events_u32)
                 .launch(LaunchConfig {
@@ -678,7 +788,8 @@ impl RtClusteringEngine {
         // Phase 4: Propagate cluster IDs
         let fn_propagate = self.fn_propagate_ids.as_ref().unwrap();
         unsafe {
-            self.stream.launch_builder(fn_propagate)
+            self.stream
+                .launch_builder(fn_propagate)
                 .arg(d_parent)
                 .arg(d_cluster_ids)
                 .arg(&num_events_u32)
@@ -815,7 +926,7 @@ mod tests {
         let config = RtClusteringConfig::default();
         assert_eq!(config.epsilon, 5.0);
         assert_eq!(config.min_points, 3);
-        assert_eq!(config.rays_per_event, 16);  // v2: reduced from 64
+        assert_eq!(config.rays_per_event, 16); // v2: reduced from 64
     }
 
     #[test]

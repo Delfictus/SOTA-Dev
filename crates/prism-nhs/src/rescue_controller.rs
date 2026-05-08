@@ -265,9 +265,9 @@ impl RescueTargets {
                 format!("rescue-targets JSON parse error: {}", e),
             )
         })?;
-        parsed.validate().map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-        })?;
+        parsed
+            .validate()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         Ok(parsed)
     }
 
@@ -373,8 +373,7 @@ impl InformationDeficit {
         let spike_rate_deficit =
             ((target_rate - obs.mean_spike_rate()) / target_rate).clamp(0.0, 1.0);
         let coherence_deficit = (targets.target_pcmi - obs.pcmi_mean).clamp(0.0, 1.0);
-        let synergy_deficit =
-            (targets.target_synergy - obs.gcpid_synergy_mean).clamp(0.0, 1.0);
+        let synergy_deficit = (targets.target_synergy - obs.gcpid_synergy_mean).clamp(0.0, 1.0);
         // Phasor entropy TOO HIGH is the deficit (uniform = no structure).
         let entropy_deficit =
             (obs.phasor_entropy - targets.target_phasor_entropy).clamp(0.0, 2.0) / 2.0;
@@ -558,11 +557,7 @@ impl RescueController {
     /// the history for later telemetry export.
     ///
     /// Returns an empty vec if the controller is disabled.
-    pub fn decide(
-        &self,
-        obs: &ObservationWindow,
-        targets: &RescueTargets,
-    ) -> Vec<RescueAction> {
+    pub fn decide(&self, obs: &ObservationWindow, targets: &RescueTargets) -> Vec<RescueAction> {
         if !self.is_enabled() {
             return Vec::new();
         }
@@ -647,8 +642,7 @@ impl RescueController {
         // and at deficit=0 the amp = 1 (passthrough, identity). The cap
         // at 8 prevents runaway when the engine is completely dead.
         let k_amp: f32 = 4.0;
-        let multiplier =
-            (1.0 + k_amp * deficit.spike_rate_deficit).clamp(1.0, 8.0);
+        let multiplier = (1.0 + k_amp * deficit.spike_rate_deficit).clamp(1.0, 8.0);
         if multiplier > 1.0 + 1e-3 {
             actions.push(RescueAction::FocusWeightAmplifier { multiplier });
         }
@@ -845,8 +839,11 @@ impl ChunkIntensityChannel {
         if stream_idx >= self.n.len() {
             return;
         }
-        let mut filtered: Vec<f32> =
-            intensities.iter().copied().filter(|v| v.is_finite()).collect();
+        let mut filtered: Vec<f32> = intensities
+            .iter()
+            .copied()
+            .filter(|v| v.is_finite())
+            .collect();
         if filtered.is_empty() {
             self.publish_empty(stream_idx);
             return;
@@ -1117,7 +1114,11 @@ mod tests {
             let _ = ctrl.decide(&obs, &targets);
         }
         let actions = ctrl.decide(&obs, &targets);
-        assert!(actions.is_empty(), "healthy obs should produce no actions, got {:?}", actions);
+        assert!(
+            actions.is_empty(),
+            "healthy obs should produce no actions, got {:?}",
+            actions
+        );
     }
 
     #[test]
@@ -1141,11 +1142,16 @@ mod tests {
         // First 2 chunks: hold (below consecutive threshold).
         for _ in 0..2 {
             let actions = ctrl.decide(&obs, &targets);
-            assert!(actions.iter().all(|a| matches!(a, RescueAction::Hold { .. })));
+            assert!(actions
+                .iter()
+                .all(|a| matches!(a, RescueAction::Hold { .. })));
         }
         // Third chunk: actions derived.
         let actions = ctrl.decide(&obs, &targets);
-        assert!(!actions.is_empty(), "expected actions on 3rd consecutive chunk");
+        assert!(
+            !actions.is_empty(),
+            "expected actions on 3rd consecutive chunk"
+        );
         let has_amp = actions
             .iter()
             .any(|a| matches!(a, RescueAction::FocusWeightAmplifier { .. }));
@@ -1169,9 +1175,9 @@ mod tests {
         }
         // Now a sudden drop to zero — BOCPD should flag a changepoint.
         let result = ctrl.decide(&obs, &targets);
-        let gated = result
-            .iter()
-            .any(|a| matches!(a, RescueAction::Hold { reason, .. } if reason == "regime_unstable_bocpd"));
+        let gated = result.iter().any(
+            |a| matches!(a, RescueAction::Hold { reason, .. } if reason == "regime_unstable_bocpd"),
+        );
         assert!(gated, "expected regime-unstable hold, got {:?}", result);
     }
 
@@ -1249,7 +1255,12 @@ mod tests {
         };
         let h_uniform = shannon_entropy_nats(&uniform);
         let h_peaked = shannon_entropy_nats(&peaked);
-        assert!(h_uniform > h_peaked, "uniform entropy {} should exceed peaked {}", h_uniform, h_peaked);
+        assert!(
+            h_uniform > h_peaked,
+            "uniform entropy {} should exceed peaked {}",
+            h_uniform,
+            h_peaked
+        );
     }
 
     #[test]
@@ -1265,7 +1276,11 @@ mod tests {
 
     #[test]
     fn v2_actions_flagged_correctly() {
-        assert!(RescueAction::EngineV2Rest2LambdaStep { stream_idx: 0, delta: -0.1 }.is_engine_v2_only());
+        assert!(RescueAction::EngineV2Rest2LambdaStep {
+            stream_idx: 0,
+            delta: -0.1
+        }
+        .is_engine_v2_only());
         assert!(RescueAction::EngineV2NmaAmpMultiplier { multiplier: 2.0 }.is_engine_v2_only());
         assert!(!RescueAction::FocusWeightAmplifier { multiplier: 2.0 }.is_engine_v2_only());
         assert!(!RescueAction::FocusListInjection { residues: vec![] }.is_engine_v2_only());
@@ -1350,7 +1365,10 @@ mod tests {
         let mut synergy = vec![(10, 0.5_f32)];
         let mut redundancy = vec![(11, 0.6_f32)];
         let actions = vec![
-            RescueAction::EngineV2Rest2LambdaStep { stream_idx: 0, delta: -0.1 },
+            RescueAction::EngineV2Rest2LambdaStep {
+                stream_idx: 0,
+                delta: -0.1,
+            },
             RescueAction::EngineV2NmaAmpMultiplier { multiplier: 3.0 },
         ];
         let summary = apply_actions(&actions, &mut synergy, &mut redundancy, 64, |_| vec![]);
@@ -1441,10 +1459,14 @@ mod tests {
             let _ = ctrl.decide(&obs, &targets);
         }
         let actions = ctrl.decide(&obs, &targets);
-        let has_nma = actions.iter().any(|a|
-            matches!(a, RescueAction::EngineV2NmaAmpMultiplier { .. }));
-        assert!(has_nma,
-            "expected NMA rescue on flat intensity distribution, got: {:?}", actions);
+        let has_nma = actions
+            .iter()
+            .any(|a| matches!(a, RescueAction::EngineV2NmaAmpMultiplier { .. }));
+        assert!(
+            has_nma,
+            "expected NMA rescue on flat intensity distribution, got: {:?}",
+            actions
+        );
     }
 
     #[test]
@@ -1463,9 +1485,12 @@ mod tests {
         let deficit = InformationDeficit::from_observation(&obs, &targets);
         // Log-scale: 1 - log(1.5)/log(3.0) ≈ 1 - 0.4055/1.0986 ≈ 0.631
         let expected = 1.0 - (1.5_f32).ln() / (3.0_f32).ln();
-        assert!((deficit.intensity_flatness_deficit - expected).abs() < 1e-4,
+        assert!(
+            (deficit.intensity_flatness_deficit - expected).abs() < 1e-4,
             "expected log-scale flatness deficit ~{:.4}, got {}",
-            expected, deficit.intensity_flatness_deficit);
+            expected,
+            deficit.intensity_flatness_deficit
+        );
     }
 
     #[test]
@@ -1475,8 +1500,11 @@ mod tests {
         obs.spike_intensity_p90_over_p10 = 1.0; // perfectly flat
         let deficit = InformationDeficit::from_observation(&obs, &targets);
         // log(1)/log(3) = 0  → deficit = 1.0
-        assert!((deficit.intensity_flatness_deficit - 1.0).abs() < 1e-5,
-            "expected flatness deficit 1.0, got {}", deficit.intensity_flatness_deficit);
+        assert!(
+            (deficit.intensity_flatness_deficit - 1.0).abs() < 1e-5,
+            "expected flatness deficit 1.0, got {}",
+            deficit.intensity_flatness_deficit
+        );
     }
 
     #[test]
@@ -1503,8 +1531,12 @@ mod tests {
         ch.publish_stream(0, &data);
         let ratio = ch.aggregate().unwrap();
         let expected = 0.91_f32 / 0.11_f32;
-        assert!((ratio - expected).abs() < 0.01,
-            "expected {:.3}, got {:.3}", expected, ratio);
+        assert!(
+            (ratio - expected).abs() < 0.01,
+            "expected {:.3}, got {:.3}",
+            expected,
+            ratio
+        );
     }
 
     #[test]
@@ -1517,7 +1549,18 @@ mod tests {
     #[test]
     fn channel_filters_non_finite_intensities() {
         let ch = ChunkIntensityChannel::new(1);
-        let mixed = vec![1.0, f32::NAN, 2.0, f32::INFINITY, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let mixed = vec![
+            1.0,
+            f32::NAN,
+            2.0,
+            f32::INFINITY,
+            3.0,
+            4.0,
+            5.0,
+            6.0,
+            7.0,
+            8.0,
+        ];
         ch.publish_stream(0, &mixed);
         let ratio = ch.aggregate().unwrap();
         // After filter: 8 finite samples 1..8, p10 idx = 0 (→ 1.0), p90 idx = 7 (→ 8.0)
@@ -1562,14 +1605,18 @@ mod tests {
             }));
         }
         barrier.wait();
-        for h in handles { h.join().unwrap(); }
+        for h in handles {
+            h.join().unwrap();
+        }
         let ratio = ch.aggregate().unwrap();
         // median_p10 across [1.0, 1.0, 1.0, 5.0] = 1.0
         // median_p90 across [10.0, 10.0, 10.0, 5.0] = 10.0
         // ratio = 10.0. The flat stream does NOT drag the aggregate down.
-        assert!(ratio > 5.0,
+        assert!(
+            ratio > 5.0,
             "median-of-medians should preserve wide signal from 3 streams, got {}",
-            ratio);
+            ratio
+        );
     }
 
     #[test]
@@ -1583,8 +1630,11 @@ mod tests {
             ch.publish_stream(s_idx, &data);
         }
         let ratio = ch.aggregate().unwrap();
-        assert!((ratio - 1.0).abs() < 1e-3,
-            "all-flat distribution should aggregate to ~1.0, got {}", ratio);
+        assert!(
+            (ratio - 1.0).abs() < 1e-3,
+            "all-flat distribution should aggregate to ~1.0, got {}",
+            ratio
+        );
     }
 
     #[test]
@@ -1593,8 +1643,10 @@ mod tests {
         ch.publish_stream(0, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
         assert!(ch.aggregate().is_some());
         ch.reset();
-        assert!(ch.aggregate().is_none(),
-            "reset should clear all slots to no-data state");
+        assert!(
+            ch.aggregate().is_none(),
+            "reset should clear all slots to no-data state"
+        );
     }
 
     #[test]
@@ -1603,8 +1655,10 @@ mod tests {
         // Must not panic.
         ch.publish_stream(99, &[1.0, 2.0, 3.0]);
         ch.publish_empty(99);
-        assert!(ch.aggregate().is_none(),
-            "out-of-bounds publishes should not corrupt valid slots");
+        assert!(
+            ch.aggregate().is_none(),
+            "out-of-bounds publishes should not corrupt valid slots"
+        );
     }
 
     #[test]
@@ -1636,8 +1690,11 @@ mod tests {
             (200..200 + k as i32).map(|i| (i, 0.2)).collect()
         });
         // At spike_rate_deficit=1.0, amp = 1 + 4·1 = 5.0.
-        assert!(synergy[0].1 >= 4.99 && synergy[0].1 <= 5.01,
-            "expected weight ~5.0 after amplification, got {}", synergy[0].1);
+        assert!(
+            synergy[0].1 >= 4.99 && synergy[0].1 <= 5.01,
+            "expected weight ~5.0 after amplification, got {}",
+            synergy[0].1
+        );
         assert!(summary.amplifier_applied >= 1);
     }
 }

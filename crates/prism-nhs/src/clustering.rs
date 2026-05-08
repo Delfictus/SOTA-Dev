@@ -97,7 +97,10 @@ impl TrajectoryClusterer {
             }
         }
 
-        anyhow::ensure!(!ca_indices.is_empty(), "No Cα atoms found for RMSD calculation");
+        anyhow::ensure!(
+            !ca_indices.is_empty(),
+            "No Cα atoms found for RMSD calculation"
+        );
 
         log::info!(
             "Trajectory clusterer initialized: {} Cα atoms, target {} clusters",
@@ -130,10 +133,7 @@ impl TrajectoryClusterer {
         timesteps: &[i32],
         energies: Option<&[f32]>,
     ) -> Result<ClusteringResults> {
-        anyhow::ensure!(
-            !frames.is_empty(),
-            "No frames provided for clustering"
-        );
+        anyhow::ensure!(!frames.is_empty(), "No frames provided for clustering");
         anyhow::ensure!(
             frames.len() == timesteps.len(),
             "Frame count mismatch: {} frames, {} timesteps",
@@ -150,7 +150,11 @@ impl TrajectoryClusterer {
             );
         }
 
-        log::info!("Clustering {} frames into ~{} clusters", frames.len(), self.config.target_clusters);
+        log::info!(
+            "Clustering {} frames into ~{} clusters",
+            frames.len(),
+            self.config.target_clusters
+        );
 
         // Greedy leader clustering
         let mut cluster_centers = Vec::new();
@@ -380,8 +384,8 @@ mod tests {
         for i in 0..4 {
             let mut frame = vec![0.0; 18];
             // Set CA positions (indices 1 and 4)
-            frame[1 * 3] = 0.1 * i as f32;     // CA1 x
-            frame[4 * 3] = 0.1 * i as f32;     // CA2 x
+            frame[1 * 3] = 0.1 * i as f32; // CA1 x
+            frame[4 * 3] = 0.1 * i as f32; // CA2 x
             frames.push(frame);
             timesteps.push(i);
         }
@@ -389,9 +393,9 @@ mod tests {
         // Group 2: frames at x=5 (3 frames)
         for i in 0..3 {
             let mut frame = vec![0.0; 18];
-            frame[1 * 3] = 5.0;                // CA1 x = 5.0
+            frame[1 * 3] = 5.0; // CA1 x = 5.0
             frame[1 * 3 + 1] = 0.1 * i as f32; // CA1 y varies
-            frame[4 * 3] = 5.0;                // CA2 x = 5.0
+            frame[4 * 3] = 5.0; // CA2 x = 5.0
             frame[4 * 3 + 1] = 0.1 * i as f32; // CA2 y varies
             frames.push(frame);
             timesteps.push(4 + i);
@@ -400,9 +404,9 @@ mod tests {
         // Group 3: frames at x=10 (3 frames)
         for i in 0..3 {
             let mut frame = vec![0.0; 18];
-            frame[1 * 3] = 10.0;               // CA1 x = 10.0
+            frame[1 * 3] = 10.0; // CA1 x = 10.0
             frame[1 * 3 + 1] = 0.1 * i as f32; // CA1 y varies
-            frame[4 * 3] = 10.0;               // CA2 x = 10.0
+            frame[4 * 3] = 10.0; // CA2 x = 10.0
             frame[4 * 3 + 1] = 0.1 * i as f32; // CA2 y varies
             frames.push(frame);
             timesteps.push(7 + i);
@@ -416,7 +420,11 @@ mod tests {
         assert_eq!(result.total_frames, 10);
 
         // Check Boltzmann weights sum to 1.0
-        let weight_sum: f32 = result.representatives.iter().map(|r| r.boltzmann_weight).sum();
+        let weight_sum: f32 = result
+            .representatives
+            .iter()
+            .map(|r| r.boltzmann_weight)
+            .sum();
         assert!((weight_sum - 1.0).abs() < 0.01);
 
         // Largest cluster should have highest weight (4/10 = 0.4)

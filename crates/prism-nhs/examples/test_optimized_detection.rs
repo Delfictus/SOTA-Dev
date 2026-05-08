@@ -11,21 +11,27 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
-const STEPS_PER_RUN: i32 = 2500;  // More steps for better statistics
-const N_RUNS: usize = 6;  // More runs
-const AROMATIC_PROXIMITY_CUTOFF: i32 = 12;  // Wider cutoff
+const STEPS_PER_RUN: i32 = 2500; // More steps for better statistics
+const N_RUNS: usize = 6; // More runs
+const AROMATIC_PROXIMITY_CUTOFF: i32 = 12; // Wider cutoff
 
 fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f32, f32) {
-    if predicted.is_empty() || truth.is_empty() { return (0.0, 0.0, 0.0); }
+    if predicted.is_empty() || truth.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
     let tp = predicted.intersection(truth).count() as f32;
     let precision = tp / predicted.len() as f32;
     let recall = tp / truth.len() as f32;
-    let f1 = if precision + recall > 0.0 { 2.0 * precision * recall / (precision + recall) } else { 0.0 };
+    let f1 = if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -35,7 +41,7 @@ struct ResidueData {
     warm_count: usize,     // Spikes at T > 250K
     high_intensity: usize, // Spikes with intensity > 1.5
     total_intensity: f32,
-    runs_detected: usize,  // In how many runs was this detected?
+    runs_detected: usize, // In how many runs was this detected?
 }
 
 #[cfg(feature = "gpu")]
@@ -48,7 +54,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -58,7 +64,9 @@ fn main() -> Result<()> {
     println!("Atoms: {}, Residues: {}", topology.n_atoms, n_residues);
 
     // Aromatic residues
-    let aromatic_residues: Vec<i32> = topology.residue_names.iter()
+    let aromatic_residues: Vec<i32> = topology
+        .residue_names
+        .iter()
         .enumerate()
         .filter_map(|(i, name)| {
             if matches!(name.as_str(), "TRP" | "TYR" | "PHE") {
@@ -72,28 +80,38 @@ fn main() -> Result<()> {
     println!("Aromatic residues: {}", aromatic_residues.len());
 
     // Also consider His as weak UV absorbers at 280nm
-    let histidine_residues: Vec<i32> = topology.residue_names.iter()
+    let histidine_residues: Vec<i32> = topology
+        .residue_names
+        .iter()
         .enumerate()
-        .filter_map(|(i, name)| {
-            if name == "HIS" { Some(i as i32) } else { None }
-        })
+        .filter_map(
+            |(i, name)| {
+                if name == "HIS" {
+                    Some(i as i32)
+                } else {
+                    None
+                }
+            },
+        )
         .collect();
     println!("Histidine residues: {}", histidine_residues.len());
 
     // Combined chromophores (aromatics + His)
-    let chromophores: HashSet<i32> = aromatic_residues.iter()
+    let chromophores: HashSet<i32> = aromatic_residues
+        .iter()
         .chain(histidine_residues.iter())
         .cloned()
         .collect();
 
     // Truth
     let truth: HashSet<i32> = [
-        23, 24, 25, 26,
-        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-        139, 140, 141, 142, 143, 144, 145,
-        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
-        186, 187, 188, 189, 190, 191, 192,
-    ].iter().cloned().collect();
+        23, 24, 25, 26, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 139, 140, 141, 142, 143, 144,
+        145, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 186, 187, 188, 189, 190, 191,
+        192,
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     println!("\nTruth residues: {}", truth.len());
 
@@ -116,7 +134,10 @@ fn main() -> Result<()> {
     println!("\nConfiguration:");
     println!("  Steps/run: {}, Runs: {}", STEPS_PER_RUN, N_RUNS);
     println!("  UV burst energy: {} kcal/mol", uv_config.burst_energy);
-    println!("  Aromatic proximity cutoff: {} residues", AROMATIC_PROXIMITY_CUTOFF);
+    println!(
+        "  Aromatic proximity cutoff: {} residues",
+        AROMATIC_PROXIMITY_CUTOFF
+    );
 
     // Collect data
     let mut residue_data: HashMap<i32, ResidueData> = HashMap::new();
@@ -155,20 +176,29 @@ fn main() -> Result<()> {
 
                 for i in 0..spike.n_residues.min(8) as usize {
                     let res_id = spike.nearby_residues[i];
-                    if res_id < 0 { continue; }
+                    if res_id < 0 {
+                        continue;
+                    }
 
                     // Check proximity to any chromophore
-                    let near_chromophore = chromophores.iter()
+                    let near_chromophore = chromophores
+                        .iter()
                         .any(|&ch| (ch - res_id).abs() <= AROMATIC_PROXIMITY_CUTOFF);
 
-                    if !near_chromophore { continue; }
+                    if !near_chromophore {
+                        continue;
+                    }
 
                     let data = residue_data.entry(res_id).or_default();
                     data.total_count += 1;
                     data.total_intensity += spike.intensity;
 
-                    if is_warm { data.warm_count += 1; }
-                    if spike.intensity > 1.5 { data.high_intensity += 1; }
+                    if is_warm {
+                        data.warm_count += 1;
+                    }
+                    if spike.intensity > 1.5 {
+                        data.high_intensity += 1;
+                    }
 
                     run_detected.insert(res_id);
                 }
@@ -189,14 +219,16 @@ fn main() -> Result<()> {
     println!("Unique residues: {}", residue_data.len());
 
     // Compute scores using multiple strategies
-    let mut scored: Vec<_> = residue_data.iter()
-        .filter(|(_, data)| data.total_count >= 3)  // Minimum detections
+    let mut scored: Vec<_> = residue_data
+        .iter()
+        .filter(|(_, data)| data.total_count >= 3) // Minimum detections
         .map(|(&res_id, data)| {
             let is_terminal = res_id < terminal_start as i32 || res_id >= terminal_end as i32;
             let terminal_penalty = if is_terminal { 0.25 } else { 1.0 };
 
             // Nearest chromophore distance
-            let min_dist = chromophores.iter()
+            let min_dist = chromophores
+                .iter()
                 .map(|&ch| (ch - res_id).abs())
                 .min()
                 .unwrap_or(100) as f32;
@@ -220,7 +252,14 @@ fn main() -> Result<()> {
                 * (0.5 + consistency)
                 * (0.8 + avg_intensity * 0.2);
 
-            (res_id, score, data.clone(), min_dist as i32, warm_ratio, consistency)
+            (
+                res_id,
+                score,
+                data.clone(),
+                min_dist as i32,
+                warm_ratio,
+                consistency,
+            )
         })
         .collect();
 
@@ -230,28 +269,44 @@ fn main() -> Result<()> {
     println!("═══════════════════════════════════════════════════════════════════════");
     println!("TOP 60 SCORED RESIDUES");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>4} {:>5} {:>7} {:>5} {:>6} {:>5} {:>6} {:>8}",
-             "Rank", "Res", "Score", "Count", "Warm%", "Runs", "Dist", "Truth?");
+    println!(
+        "{:>4} {:>5} {:>7} {:>5} {:>6} {:>5} {:>6} {:>8}",
+        "Rank", "Res", "Score", "Count", "Warm%", "Runs", "Dist", "Truth?"
+    );
     println!("{}", "-".repeat(60));
 
     let mut top_40_hits = 0;
-    for (i, (res_id, score, data, dist, warm_ratio, consistency)) in scored.iter().take(60).enumerate() {
+    for (i, (res_id, score, data, dist, warm_ratio, consistency)) in
+        scored.iter().take(60).enumerate()
+    {
         let in_truth = truth.contains(res_id);
         let truth_mark = if in_truth { "YES ←" } else { "" };
 
-        if in_truth && i < 40 { top_40_hits += 1; }
+        if in_truth && i < 40 {
+            top_40_hits += 1;
+        }
 
-        println!("{:>4} {:>5} {:>7.2} {:>5} {:>5.0}% {:>5} {:>6} {:>8}",
-                 i + 1, res_id, score, data.total_count,
-                 warm_ratio * 100.0, data.runs_detected, dist, truth_mark);
+        println!(
+            "{:>4} {:>5} {:>7.2} {:>5} {:>5.0}% {:>5} {:>6} {:>8}",
+            i + 1,
+            res_id,
+            score,
+            data.total_count,
+            warm_ratio * 100.0,
+            data.runs_detected,
+            dist,
+            truth_mark
+        );
     }
 
     // Metrics
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("METRICS");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>8} {:>10} {:>10} {:>10} {:>6} {:>8}",
-             "Top-N", "Precision", "Recall", "F1", "Hits", "Status");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>6} {:>8}",
+        "Top-N", "Precision", "Recall", "F1", "Hits", "Status"
+    );
     println!("{}", "-".repeat(60));
 
     let cutoffs = [20, 30, 40, 50, 60, 80, 100];
@@ -259,16 +314,26 @@ fn main() -> Result<()> {
     let mut best_n = 0;
 
     for &n in &cutoffs {
-        let predicted: HashSet<i32> = scored.iter()
+        let predicted: HashSet<i32> = scored
+            .iter()
             .take(n)
             .map(|(res_id, _, _, _, _, _)| *res_id)
             .collect();
 
         let (p, r, f1) = calculate_metrics(&predicted, &truth);
         let hits = predicted.intersection(&truth).count();
-        let status = if f1 >= 0.3 { "HIT ✓" } else if f1 >= 0.25 { "close" } else { "miss" };
+        let status = if f1 >= 0.3 {
+            "HIT ✓"
+        } else if f1 >= 0.25 {
+            "close"
+        } else {
+            "miss"
+        };
 
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6} {:>8}", n, p, r, f1, hits, status);
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6} {:>8}",
+            n, p, r, f1, hits, status
+        );
 
         if f1 > best_f1 {
             best_f1 = f1;
@@ -280,17 +345,32 @@ fn main() -> Result<()> {
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");
     println!("║                            SUMMARY                                    ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
-    println!("║  Truth residues in top 40: {}/40                                      ║", top_40_hits);
-    println!("║  Best F1: {:.3} at Top-{}                                             ║", best_f1, best_n);
+    println!(
+        "║  Truth residues in top 40: {}/40                                      ║",
+        top_40_hits
+    );
+    println!(
+        "║  Best F1: {:.3} at Top-{}                                             ║",
+        best_f1, best_n
+    );
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     if best_f1 >= 0.30 {
         println!("║  RESULT: ✓✓ PASSED - F1 >= 0.30 achieved!                           ║");
     } else if best_f1 >= 0.28 {
-        println!("║  RESULT: ✓ NEARLY PASSED - F1 = {:.3} (target 0.30)                 ║", best_f1);
+        println!(
+            "║  RESULT: ✓ NEARLY PASSED - F1 = {:.3} (target 0.30)                 ║",
+            best_f1
+        );
     } else if best_f1 >= 0.25 {
-        println!("║  RESULT: CLOSE - F1 = {:.3}                                         ║", best_f1);
+        println!(
+            "║  RESULT: CLOSE - F1 = {:.3}                                         ║",
+            best_f1
+        );
     } else {
-        println!("║  RESULT: NEEDS IMPROVEMENT - F1 = {:.3}                             ║", best_f1);
+        println!(
+            "║  RESULT: NEEDS IMPROVEMENT - F1 = {:.3}                             ║",
+            best_f1
+        );
     }
     println!("╚══════════════════════════════════════════════════════════════════════╝");
 

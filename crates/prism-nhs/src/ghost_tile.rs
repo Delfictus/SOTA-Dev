@@ -289,6 +289,27 @@ pub const GHOST_V2_OFFSET_AABB_MAX:          usize = 172;
 pub const GHOST_V2_OFFSET_CENTROID:          usize = 184;
 pub const GHOST_V2_OFFSET_V2_RESERVED:       usize = 196;
 
+/// **GHOST_NATIVE_SPATIAL_MAPPING_WIRE — field_completeness_flags bits.**
+///
+/// Bits 0-3 are populated by the v2 kernel directly (kl-finite, gear, dt,
+/// not-tainted). Bit 4 is set when AABB / centroid spatial fields at
+/// offsets 160 / 172 / 184 were natively populated from
+/// `ContactShellTile.aabb_min/aabb_max` at write time. When Bit 4 == 0,
+/// the spatial fields are sentinel-zero and must be treated as missing
+/// by any downstream consumer; the host audit (probe / scanner) reads
+/// this bit to distinguish native-populated from sentinel-zero records.
+///
+/// The selected centroid view at offset 184 is the AABB midpoint —
+/// labelled as `aabb_midpoint_native_contact_shell_tile`. It is NOT a
+/// phase-manifold complete centroid; richer views (spike_density,
+/// kcc_driver, phasor_coherent, thermo_weighted, ghost_zstr_event_weighted)
+/// are computed offline by the SiteManifest materializer.
+pub const GHOST_FCF_BIT_KL_FINITE:             u16 = 0x0001;
+pub const GHOST_FCF_BIT_GEAR_ID_NONZERO:       u16 = 0x0002;
+pub const GHOST_FCF_BIT_DT_FS_POSITIVE:        u16 = 0x0004;
+pub const GHOST_FCF_BIT_THERMO_NOT_TAINTED:    u16 = 0x0008;
+pub const GHOST_FCF_BIT_SPATIAL_NATIVE_AABB_MIDPOINT: u16 = 0x0010;
+
 // The v2 region MUST end at or before _slack (offset 256).
 const _: () = {
     assert!(GHOST_V2_OFFSET_SCHEMA_VERSION    >= 128);

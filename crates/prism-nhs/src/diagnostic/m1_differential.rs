@@ -282,12 +282,10 @@ pub fn compute_differential(
     tolerance: &DifferentialTolerance,
 ) -> M1Differential {
     // ---- Integer metrics 1-3 (BitExact) ---------------------------------
-    let total_attributed_delta =
-        m1_typed.total_attributed as i64 - legacy.total_attributed as i64;
-    let background_count_delta =
-        m1_typed.background_count as i64 - legacy.background_count as i64;
-    let num_clusters_delta = m1_typed.num_clusters_attributed as i32
-        - legacy.num_clusters_attributed as i32;
+    let total_attributed_delta = m1_typed.total_attributed as i64 - legacy.total_attributed as i64;
+    let background_count_delta = m1_typed.background_count as i64 - legacy.background_count as i64;
+    let num_clusters_delta =
+        m1_typed.num_clusters_attributed as i32 - legacy.num_clusters_attributed as i32;
 
     // ---- Metric 4: per-cluster centroid drift (max L2) ------------------
     let n_pairs = legacy
@@ -348,10 +346,7 @@ pub fn compute_differential(
 
 /// Promotion ladder for [`AgreementClass`]. First match wins; protocol
 /// doc § 2.
-fn classify(
-    deltas: &DifferentialDeltas,
-    tolerance: &DifferentialTolerance,
-) -> AgreementClass {
+fn classify(deltas: &DifferentialDeltas, tolerance: &DifferentialTolerance) -> AgreementClass {
     // --- BlockingDivergence (any one) -----------------------------------
     if deltas.total_attributed_delta != 0 {
         return AgreementClass::blocking("total_attributed_mismatch");
@@ -517,19 +512,21 @@ mod tests {
     use super::*;
 
     fn legacy_baseline() -> LegacySnapshot {
-        LegacySnapshot::from_extracted(
-            7, 7, 80, 12, 92,
-            vec![[1.0, 2.0, 3.0]; 7],
-            vec![3.0; 7],
-        )
+        LegacySnapshot::from_extracted(7, 7, 80, 12, 92, vec![[1.0, 2.0, 3.0]; 7], vec![3.0; 7])
     }
 
     fn m1_baseline() -> M1TypedSnapshot {
         M1TypedSnapshot::from_components(
-            7, 80, 12, 92, 100,
+            7,
+            80,
+            12,
+            92,
+            100,
             vec![[1.0, 2.0, 3.0]; 7],
             vec![3.0; 7],
-            14.7, 14.7, 14.7,
+            14.7,
+            14.7,
+            14.7,
         )
     }
 
@@ -548,8 +545,11 @@ mod tests {
     #[test]
     fn strict_match_when_all_metrics_agree() {
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1_baseline(),
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1_baseline(),
             &DifferentialTolerance::CANONICAL,
         );
         assert_eq!(r.agreement_class, AgreementClass::StrictMatch);
@@ -565,8 +565,11 @@ mod tests {
         let mut m1 = m1_baseline();
         m1.total_attributed = 81;
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         assert!(r.agreement_class.is_blocking());
@@ -583,8 +586,11 @@ mod tests {
         let mut m1 = m1_baseline();
         m1.background_count = 13;
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         match r.agreement_class {
@@ -600,8 +606,11 @@ mod tests {
         let mut m1 = m1_baseline();
         m1.num_clusters_attributed = 6;
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         match r.agreement_class {
@@ -618,8 +627,11 @@ mod tests {
         // 1.5e-3 Å drift along x — between 1× and 2× of 1e-3 Å
         m1.cluster_centroids_ang = vec![[1.0 + 1.5e-3, 2.0, 3.0]; 7];
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         assert_eq!(r.agreement_class, AgreementClass::BenignDivergence);
@@ -631,8 +643,11 @@ mod tests {
         // 2.5e-3 Å drift — above 2× tolerance
         m1.cluster_centroids_ang = vec![[1.0 + 2.5e-3, 2.0, 3.0]; 7];
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         match r.agreement_class {
@@ -648,8 +663,11 @@ mod tests {
         let mut m1 = m1_baseline();
         m1.cluster_aabb_volumes_ang3 = vec![3.0 * 1.015; 7]; // 1.5% drift
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         assert_eq!(r.agreement_class, AgreementClass::BenignDivergence);
@@ -660,8 +678,11 @@ mod tests {
         let mut m1 = m1_baseline();
         m1.cluster_aabb_volumes_ang3 = vec![3.0 * 1.025; 7]; // 2.5% drift
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         match r.agreement_class {
@@ -680,8 +701,11 @@ mod tests {
         m1.total_attributed = 81;
         m1.cluster_centroids_ang = vec![[1.0 + 1e-2, 2.0, 3.0]; 7];
         let r = compute_differential(
-            100, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            100,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         );
         match r.agreement_class {
@@ -698,8 +722,11 @@ mod tests {
         // 10 strict matches across distinct frames
         for f in 0..10 {
             records.push(compute_differential(
-                f, 0, AnchorSite::Main,
-                legacy_baseline(), m1_baseline(),
+                f,
+                0,
+                AnchorSite::Main,
+                legacy_baseline(),
+                m1_baseline(),
                 &DifferentialTolerance::CANONICAL,
             ));
         }
@@ -707,16 +734,22 @@ mod tests {
         let mut m1 = m1_baseline();
         m1.cluster_centroids_ang = vec![[1.0 + 1.5e-3, 2.0, 3.0]; 7];
         records.push(compute_differential(
-            10, 0, AnchorSite::Main,
-            legacy_baseline(), m1,
+            10,
+            0,
+            AnchorSite::Main,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         ));
         // 1 blocking
         let mut m1 = m1_baseline();
         m1.total_attributed = 81;
         records.push(compute_differential(
-            11, 1, AnchorSite::PerStream,
-            legacy_baseline(), m1,
+            11,
+            1,
+            AnchorSite::PerStream,
+            legacy_baseline(),
+            m1,
             &DifferentialTolerance::CANONICAL,
         ));
 
@@ -729,7 +762,10 @@ mod tests {
         assert_eq!(s.blocking_divergence_frames.len(), 1);
         assert_eq!(s.blocking_divergence_frames[0].frame, 11);
         assert_eq!(s.blocking_divergence_frames[0].stream_id, 1);
-        assert_eq!(s.blocking_divergence_frames[0].anchor_site, AnchorSite::PerStream);
+        assert_eq!(
+            s.blocking_divergence_frames[0].anchor_site,
+            AnchorSite::PerStream
+        );
         assert_eq!(
             s.blocking_divergence_frames[0].reason,
             "total_attributed_mismatch"
@@ -765,17 +801,17 @@ mod tests {
         let s = serde_json::to_string(&AgreementClass::BenignDivergence).unwrap();
         assert_eq!(s, r#"{"kind":"BenignDivergence"}"#);
         let s = serde_json::to_string(&AgreementClass::blocking("foo_bar")).unwrap();
-        assert_eq!(
-            s,
-            r#"{"kind":"BlockingDivergence","reason":"foo_bar"}"#
-        );
+        assert_eq!(s, r#"{"kind":"BlockingDivergence","reason":"foo_bar"}"#);
     }
 
     #[test]
     fn differential_round_trips_serde() {
         let r = compute_differential(
-            42, 7, AnchorSite::Replica,
-            legacy_baseline(), m1_baseline(),
+            42,
+            7,
+            AnchorSite::Replica,
+            legacy_baseline(),
+            m1_baseline(),
             &DifferentialTolerance::CANONICAL,
         );
         let json = serde_json::to_string(&r).unwrap();

@@ -11,7 +11,9 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 
 #[cfg(feature = "gpu")]
-use cudarc::driver::{CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+};
 
 /// Result from GPU k-NN computation
 #[derive(Debug, Clone)]
@@ -176,7 +178,11 @@ impl GpuKnnEngine {
 
         log::info!(
             "GPU adaptive epsilon: {:?} (k={}, sampled={}/{}, {:.1}ms)",
-            epsilons, k, actual_samples, n_points, gpu_time_ms
+            epsilons,
+            k,
+            actual_samples,
+            n_points,
+            gpu_time_ms
         );
 
         Ok(GpuKnnResult {
@@ -238,7 +244,8 @@ impl GpuKnnEngine {
 
         // Download results
         let mut kth_distances = vec![0.0f32; n_queries];
-        self.stream.memcpy_dtoh(&d_kth_distances, &mut kth_distances)?;
+        self.stream
+            .memcpy_dtoh(&d_kth_distances, &mut kth_distances)?;
 
         Ok(kth_distances)
     }
@@ -257,16 +264,14 @@ pub fn compute_adaptive_epsilon_auto(
     #[cfg(feature = "gpu")]
     if let Some(ctx) = context {
         match GpuKnnEngine::new(ctx) {
-            Ok(engine) => {
-                match engine.compute_adaptive_epsilon(positions, k, sample_size) {
-                    Ok(result) => {
-                        return Ok((result.epsilon_values, result.num_queries));
-                    }
-                    Err(e) => {
-                        log::warn!("GPU k-NN failed, falling back to CPU: {}", e);
-                    }
+            Ok(engine) => match engine.compute_adaptive_epsilon(positions, k, sample_size) {
+                Ok(result) => {
+                    return Ok((result.epsilon_values, result.num_queries));
                 }
-            }
+                Err(e) => {
+                    log::warn!("GPU k-NN failed, falling back to CPU: {}", e);
+                }
+            },
             Err(e) => {
                 log::warn!("Could not initialize GPU k-NN, falling back to CPU: {}", e);
             }
@@ -278,7 +283,11 @@ pub fn compute_adaptive_epsilon_auto(
 }
 
 /// CPU implementation of adaptive epsilon (fallback)
-fn compute_adaptive_epsilon_cpu(positions: &[f32], k: usize, sample_size: usize) -> (Vec<f32>, usize) {
+fn compute_adaptive_epsilon_cpu(
+    positions: &[f32],
+    k: usize,
+    sample_size: usize,
+) -> (Vec<f32>, usize) {
     let n_points = positions.len() / 3;
     if n_points < k + 1 {
         return (vec![5.0, 7.0, 10.0, 14.0], 0);
@@ -301,7 +310,9 @@ fn compute_adaptive_epsilon_cpu(positions: &[f32], k: usize, sample_size: usize)
 
         let mut distances: Vec<f32> = Vec::with_capacity(n_points.min(5000));
         for j in 0..n_points.min(5000) {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let xj = positions[j * 3];
             let yj = positions[j * 3 + 1];
             let zj = positions[j * 3 + 2];
@@ -349,9 +360,7 @@ mod tests {
     #[test]
     fn test_cpu_fallback() {
         // Create some random positions
-        let positions: Vec<f32> = (0..3000)
-            .map(|i| (i as f32 * 0.1) % 100.0)
-            .collect();
+        let positions: Vec<f32> = (0..3000).map(|i| (i as f32 * 0.1) % 100.0).collect();
 
         let (epsilons, samples) = compute_adaptive_epsilon_cpu(&positions, 4, 100);
 

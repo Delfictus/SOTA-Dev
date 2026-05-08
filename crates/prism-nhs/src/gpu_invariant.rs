@@ -150,7 +150,9 @@ mod tests {
         // Allocate two u64 buffers and htod the values.
         let mut d_total = stream.alloc_zeros::<u64>(1).expect("alloc total");
         let mut d_bg = stream.alloc_zeros::<u64>(1).expect("alloc bg");
-        stream.memcpy_htod(&[80u64], &mut d_total).expect("htod total");
+        stream
+            .memcpy_htod(&[80u64], &mut d_total)
+            .expect("htod total");
         stream.memcpy_htod(&[20u64], &mut d_bg).expect("htod bg");
 
         use cudarc::driver::DevicePtr;
@@ -162,7 +164,9 @@ mod tests {
 
         // Stream synchronize — invariant holds, no trap, returns
         // success.
-        stream.synchronize().expect("audit on valid input must not trap");
+        stream
+            .synchronize()
+            .expect("audit on valid input must not trap");
     }
 
     #[cfg(feature = "gpu")]
@@ -196,7 +200,9 @@ mod tests {
 
         let mut d_total = stream.alloc_zeros::<u64>(1).expect("alloc total");
         let mut d_bg = stream.alloc_zeros::<u64>(1).expect("alloc bg");
-        stream.memcpy_htod(&[80u64], &mut d_total).expect("htod total");
+        stream
+            .memcpy_htod(&[80u64], &mut d_total)
+            .expect("htod total");
         stream.memcpy_htod(&[20u64], &mut d_bg).expect("htod bg");
 
         use cudarc::driver::DevicePtr;

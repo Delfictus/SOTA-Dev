@@ -1,5 +1,5 @@
 //! Test aromatic enrichment in spike positions
-//! 
+//!
 //! Verifies that spikes occurring during UV bursts are
 //! enriched near aromatic residues.
 
@@ -7,10 +7,10 @@ use anyhow::Result;
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, CryoUvProtocol, GpuSpikeEvent};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{CryoUvProtocol, GpuSpikeEvent, NhsAmberFusedEngine};
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<()> {
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -55,17 +55,22 @@ fn main() -> Result<()> {
 
     // Get aromatic residue IDs for comparison
     let aromatic_residues = engine.aromatic_residue_ids();
-    println!("Aromatic residues ({}): {:?}\n", aromatic_residues.len(), 
-             &aromatic_residues[..aromatic_residues.len().min(10)]);
+    println!(
+        "Aromatic residues ({}): {:?}\n",
+        aromatic_residues.len(),
+        &aromatic_residues[..aromatic_residues.len().min(10)]
+    );
 
     // Separate UV and non-UV spikes
     let burst_interval = 200i32;
     let burst_duration = 20i32;
 
-    let uv_spikes: Vec<_> = spikes.iter()
+    let uv_spikes: Vec<_> = spikes
+        .iter()
         .filter(|s| s.timestep % burst_interval < burst_duration)
         .collect();
-    let non_uv_spikes: Vec<_> = spikes.iter()
+    let non_uv_spikes: Vec<_> = spikes
+        .iter()
         .filter(|s| s.timestep % burst_interval >= burst_duration)
         .collect();
 
@@ -73,13 +78,19 @@ fn main() -> Result<()> {
     println!("Non-UV spikes: {}", non_uv_spikes.len());
 
     // Check how many spikes have aromatic residues in their nearby_residues field
-    fn count_with_aromatics(spikes: &[&GpuSpikeEvent], aromatic_set: &std::collections::HashSet<i32>) -> usize {
-        spikes.iter().filter(|s| {
-            // Copy fields to avoid packed struct alignment issues
-            let n = s.n_residues;
-            let nearby = s.nearby_residues;  // Copy the array
-            (0..n as usize).any(|i| aromatic_set.contains(&nearby[i]))
-        }).count()
+    fn count_with_aromatics(
+        spikes: &[&GpuSpikeEvent],
+        aromatic_set: &std::collections::HashSet<i32>,
+    ) -> usize {
+        spikes
+            .iter()
+            .filter(|s| {
+                // Copy fields to avoid packed struct alignment issues
+                let n = s.n_residues;
+                let nearby = s.nearby_residues; // Copy the array
+                (0..n as usize).any(|i| aromatic_set.contains(&nearby[i]))
+            })
+            .count()
     }
 
     let aromatic_set: std::collections::HashSet<i32> = aromatic_residues.iter().cloned().collect();
@@ -87,20 +98,32 @@ fn main() -> Result<()> {
     let uv_with_aromatics = count_with_aromatics(&uv_spikes, &aromatic_set);
     let non_uv_with_aromatics = count_with_aromatics(&non_uv_spikes, &aromatic_set);
 
-    let uv_aromatic_rate = if uv_spikes.len() > 0 { 
-        100.0 * uv_with_aromatics as f32 / uv_spikes.len() as f32 
-    } else { 0.0 };
-    let non_uv_aromatic_rate = if non_uv_spikes.len() > 0 { 
-        100.0 * non_uv_with_aromatics as f32 / non_uv_spikes.len() as f32 
-    } else { 0.0 };
+    let uv_aromatic_rate = if uv_spikes.len() > 0 {
+        100.0 * uv_with_aromatics as f32 / uv_spikes.len() as f32
+    } else {
+        0.0
+    };
+    let non_uv_aromatic_rate = if non_uv_spikes.len() > 0 {
+        100.0 * non_uv_with_aromatics as f32 / non_uv_spikes.len() as f32
+    } else {
+        0.0
+    };
 
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("AROMATIC ENRICHMENT ANALYSIS");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("\nUV spikes near aromatics: {}/{} ({:.1}%)", 
-             uv_with_aromatics, uv_spikes.len(), uv_aromatic_rate);
-    println!("Non-UV spikes near aromatics: {}/{} ({:.1}%)", 
-             non_uv_with_aromatics, non_uv_spikes.len(), non_uv_aromatic_rate);
+    println!(
+        "\nUV spikes near aromatics: {}/{} ({:.1}%)",
+        uv_with_aromatics,
+        uv_spikes.len(),
+        uv_aromatic_rate
+    );
+    println!(
+        "Non-UV spikes near aromatics: {}/{} ({:.1}%)",
+        non_uv_with_aromatics,
+        non_uv_spikes.len(),
+        non_uv_aromatic_rate
+    );
 
     let enrichment = if non_uv_aromatic_rate > 0.0 {
         uv_aromatic_rate / non_uv_aromatic_rate
@@ -122,27 +145,35 @@ fn main() -> Result<()> {
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("SAMPLE UV SPIKES (first 10)");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>6} {:>8} {:>8} {:>30}", "Index", "Timestep", "n_res", "Nearby Residues");
+    println!(
+        "{:>6} {:>8} {:>8} {:>30}",
+        "Index", "Timestep", "n_res", "Nearby Residues"
+    );
     println!("{}", "-".repeat(60));
 
     for (i, spike) in uv_spikes.iter().take(10).enumerate() {
         // Copy fields to avoid packed struct alignment issues
         let ts = spike.timestep;
         let n_res = spike.n_residues;
-        let nearby_arr = spike.nearby_residues;  // Copy the array
+        let nearby_arr = spike.nearby_residues; // Copy the array
 
         let nearby: Vec<i32> = (0..n_res as usize)
             .map(|j| nearby_arr[j])
             .filter(|&r| r >= 0)
             .collect();
-        let is_aromatic: Vec<bool> = nearby.iter()
-            .map(|r| aromatic_set.contains(r))
-            .collect();
-        let residue_str: Vec<String> = nearby.iter().zip(is_aromatic.iter())
+        let is_aromatic: Vec<bool> = nearby.iter().map(|r| aromatic_set.contains(r)).collect();
+        let residue_str: Vec<String> = nearby
+            .iter()
+            .zip(is_aromatic.iter())
             .map(|(r, &is_aro)| format!("{}{}", r, if is_aro { "*" } else { "" }))
             .collect();
-        println!("{:>6} {:>8} {:>8} {:>30}",
-                 i, ts, n_res, residue_str.join(", "));
+        println!(
+            "{:>6} {:>8} {:>8} {:>30}",
+            i,
+            ts,
+            n_res,
+            residue_str.join(", ")
+        );
     }
     println!("(* = aromatic residue)");
 

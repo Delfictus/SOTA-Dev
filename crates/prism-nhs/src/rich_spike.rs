@@ -102,11 +102,22 @@ impl RichSpike {
     /// zero. Convenient for tests and as a default base for builders.
     pub const fn zero() -> Self {
         Self {
-            x: 0.0, y: 0.0, z: 0.0, t_frame: 0,
-            water_density: 0.0, wd_change: 0.0, vib_energy: 0.0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            t_frame: 0,
+            water_density: 0.0,
+            wd_change: 0.0,
+            vib_energy: 0.0,
             intensity_packed: 0,
-            residue_id: 0, cluster_id: 0, causal_lag: 0.0, n_excited: 0,
-            origin_phase: 0, spike_source: 0, chem_flags: 0, kinetic_delta: 0.0,
+            residue_id: 0,
+            cluster_id: 0,
+            causal_lag: 0.0,
+            n_excited: 0,
+            origin_phase: 0,
+            spike_source: 0,
+            chem_flags: 0,
+            kinetic_delta: 0.0,
         }
     }
 }
@@ -257,26 +268,42 @@ mod tests {
         // Round-trip every (percentile, intensity) at boundaries.
         for &(p, i) in &[
             (0u32, 0u32),
-            (0u32, 0x00FF_FFFF),  // max intensity
-            (0xFF, 0u32),         // max percentile
-            (0xFF, 0x00FF_FFFF),  // both max
-            (42, 1234567),        // arbitrary
+            (0u32, 0x00FF_FFFF), // max intensity
+            (0xFF, 0u32),        // max percentile
+            (0xFF, 0x00FF_FFFF), // both max
+            (42, 1234567),       // arbitrary
         ] {
             let packed = cpu_pack_intensity(p, i);
-            assert_eq!(cpu_unpack_percentile(packed), p,
-                "percentile round-trip failed: input ({}, {})", p, i);
-            assert_eq!(cpu_unpack_intensity(packed), i,
-                "intensity round-trip failed: input ({}, {})", p, i);
+            assert_eq!(
+                cpu_unpack_percentile(packed),
+                p,
+                "percentile round-trip failed: input ({}, {})",
+                p,
+                i
+            );
+            assert_eq!(
+                cpu_unpack_intensity(packed),
+                i,
+                "intensity round-trip failed: input ({}, {})",
+                p,
+                i
+            );
         }
     }
 
     #[test]
     fn intensity_pack_truncates_overflow() {
         // Inputs above the field width are silently truncated.
-        assert_eq!(cpu_unpack_percentile(cpu_pack_intensity(0xFFFF_FF00, 0)), 0,
-            "percentile high bits should be masked");
-        assert_eq!(cpu_unpack_intensity(cpu_pack_intensity(0, 0xFFFF_FFFF)), 0x00FF_FFFF,
-            "intensity high bits should be masked");
+        assert_eq!(
+            cpu_unpack_percentile(cpu_pack_intensity(0xFFFF_FF00, 0)),
+            0,
+            "percentile high bits should be masked"
+        );
+        assert_eq!(
+            cpu_unpack_intensity(cpu_pack_intensity(0, 0xFFFF_FFFF)),
+            0x00FF_FFFF,
+            "intensity high bits should be masked"
+        );
     }
 
     #[test]
@@ -289,19 +316,35 @@ mod tests {
 
         let mut s1 = s0;
         s1.t_frame = 42;
-        assert_ne!(cpu_rich_spike_feature_hash(&s1), h0, "t_frame must affect hash");
+        assert_ne!(
+            cpu_rich_spike_feature_hash(&s1),
+            h0,
+            "t_frame must affect hash"
+        );
 
         let mut s2 = s0;
         s2.water_density = 1.0;
-        assert_ne!(cpu_rich_spike_feature_hash(&s2), h0, "water_density must affect hash");
+        assert_ne!(
+            cpu_rich_spike_feature_hash(&s2),
+            h0,
+            "water_density must affect hash"
+        );
 
         let mut s3 = s0;
         s3.residue_id = 7;
-        assert_ne!(cpu_rich_spike_feature_hash(&s3), h0, "residue_id must affect hash");
+        assert_ne!(
+            cpu_rich_spike_feature_hash(&s3),
+            h0,
+            "residue_id must affect hash"
+        );
 
         let mut s4 = s0;
         s4.kinetic_delta = std::f32::consts::PI;
-        assert_ne!(cpu_rich_spike_feature_hash(&s4), h0, "kinetic_delta must affect hash");
+        assert_ne!(
+            cpu_rich_spike_feature_hash(&s4),
+            h0,
+            "kinetic_delta must affect hash"
+        );
     }
 
     #[test]
@@ -348,10 +391,12 @@ mod tests {
     fn splitmix64_nonzero_input_diffuses() {
         // Distinct small inputs produce distinct outputs. A weak
         // mixer would collide on small adjacent values.
-        let outs: std::collections::HashSet<u64> =
-            (0u64..1024).map(cpu_splitmix64).collect();
-        assert_eq!(outs.len(), 1024,
-            "SplitMix64 collided on small adjacent inputs (mixer broken)");
+        let outs: std::collections::HashSet<u64> = (0u64..1024).map(cpu_splitmix64).collect();
+        assert_eq!(
+            outs.len(),
+            1024,
+            "SplitMix64 collided on small adjacent inputs (mixer broken)"
+        );
     }
 
     #[cfg(feature = "gpu")]

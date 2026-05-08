@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use rand::Rng;
 
 use cudarc::driver::CudaContext;
-use prism_nhs::{RtClusteringEngine, RtClusteringConfig, find_optixir_path};
+use prism_nhs::{find_optixir_path, RtClusteringConfig, RtClusteringEngine};
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -16,13 +16,9 @@ fn main() -> Result<()> {
 
     // Parse command line for point count
     let args: Vec<String> = std::env::args().collect();
-    let num_points: usize = args.get(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(10_000);
+    let num_points: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(10_000);
 
-    let num_clusters: usize = args.get(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
+    let num_clusters: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(20);
 
     println!("Configuration:");
     println!("  Points: {}", num_points);
@@ -30,8 +26,7 @@ fn main() -> Result<()> {
 
     // Initialize CUDA
     println!("\n[1/5] Initializing CUDA...");
-    let context = CudaContext::new(0)
-        .context("Failed to create CUDA context")?;
+    let context = CudaContext::new(0).context("Failed to create CUDA context")?;
 
     // Create RT clustering engine
     println!("\n[2/5] Creating RT clustering engine...");
@@ -50,22 +45,30 @@ fn main() -> Result<()> {
     let optixir_path = find_optixir_path()
         .or_else(|| {
             let p = std::path::PathBuf::from("crates/prism-gpu/src/kernels/rt_clustering.optixir");
-            if p.exists() { Some(p) } else { None }
+            if p.exists() {
+                Some(p)
+            } else {
+                None
+            }
         })
         .context("Could not find rt_clustering.optixir")?;
 
-    engine.load_pipeline(&optixir_path)
+    engine
+        .load_pipeline(&optixir_path)
         .context("Failed to load OptiX pipeline")?;
     println!("  Pipeline loaded successfully!");
 
     // Generate test data: many clusters in a 3D grid
-    println!("\n[4/5] Generating {} test points in {} clusters...", num_points, num_clusters);
+    println!(
+        "\n[4/5] Generating {} test points in {} clusters...",
+        num_points, num_clusters
+    );
     let mut rng = rand::thread_rng();
     let mut positions: Vec<f32> = Vec::with_capacity(num_points * 3);
 
     let points_per_cluster = num_points / num_clusters;
     let cluster_spacing = 30.0f32; // 30 Angstroms between cluster centers
-    let cluster_radius = 2.0f32;   // Points within 2 Angstrom radius
+    let cluster_radius = 2.0f32; // Points within 2 Angstrom radius
 
     // Create clusters arranged in a 3D grid
     let grid_size = (num_clusters as f32).cbrt().ceil() as usize;
@@ -97,15 +100,16 @@ fn main() -> Result<()> {
     }
 
     let actual_points = positions.len() / 3;
-    println!("  Generated {} points ({} per cluster, {} noise)",
-             actual_points, points_per_cluster, noise_count);
+    println!(
+        "  Generated {} points ({} per cluster, {} noise)",
+        actual_points, points_per_cluster, noise_count
+    );
 
     // Run clustering
     println!("\n[5/5] Running RT-core clustering...");
     let start = std::time::Instant::now();
 
-    let result = engine.cluster(&positions)
-        .context("Clustering failed")?;
+    let result = engine.cluster(&positions).context("Clustering failed")?;
 
     let total_time = start.elapsed();
 
@@ -115,7 +119,10 @@ fn main() -> Result<()> {
     println!("  Clusters found:   {}", result.num_clusters);
     println!("  Neighbor pairs:   {}", result.total_neighbors);
     println!("  GPU time:         {:.2} ms", result.gpu_time_ms);
-    println!("  Total time:       {:.2} ms", total_time.as_secs_f64() * 1000.0);
+    println!(
+        "  Total time:       {:.2} ms",
+        total_time.as_secs_f64() * 1000.0
+    );
 
     // Throughput metrics
     let points_per_ms = actual_points as f64 / result.gpu_time_ms;
@@ -124,15 +131,20 @@ fn main() -> Result<()> {
     println!("\n=== Performance Metrics ===");
     println!("  Points/ms:        {:.0}", points_per_ms);
     println!("  Neighbors/ms:     {:.0}", neighbors_per_ms);
-    println!("  Avg neighbors:    {:.1} per point", result.total_neighbors as f64 / actual_points as f64);
+    println!(
+        "  Avg neighbors:    {:.1} per point",
+        result.total_neighbors as f64 / actual_points as f64
+    );
 
     // Cluster size distribution (top 10)
-    let mut cluster_counts: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+    let mut cluster_counts: std::collections::HashMap<i32, usize> =
+        std::collections::HashMap::new();
     for &cid in &result.cluster_ids {
         *cluster_counts.entry(cid).or_default() += 1;
     }
 
-    let mut sorted_clusters: Vec<_> = cluster_counts.iter()
+    let mut sorted_clusters: Vec<_> = cluster_counts
+        .iter()
         .filter(|(&k, _)| k >= 0)
         .map(|(&k, &v)| (k, v))
         .collect();
@@ -147,22 +159,34 @@ fn main() -> Result<()> {
     let small_clusters = sorted_clusters.iter().filter(|(_, c)| *c < 5).count();
     println!("\n  Noise points:     {}", noise_count);
     println!("  Small clusters (<5): {}", small_clusters);
-    println!("  Large clusters (>=5): {}", sorted_clusters.len() - small_clusters);
+    println!(
+        "  Large clusters (>=5): {}",
+        sorted_clusters.len() - small_clusters
+    );
 
     // Validation
     println!("\n=== Validation ===");
     if result.num_clusters >= num_clusters / 2 {
-        println!("  [PASS] Found reasonable cluster count ({} >= {})",
-                 result.num_clusters, num_clusters / 2);
+        println!(
+            "  [PASS] Found reasonable cluster count ({} >= {})",
+            result.num_clusters,
+            num_clusters / 2
+        );
     } else {
-        println!("  [WARN] Fewer clusters than expected: {} < {}",
-                 result.num_clusters, num_clusters / 2);
+        println!(
+            "  [WARN] Fewer clusters than expected: {} < {}",
+            result.num_clusters,
+            num_clusters / 2
+        );
     }
 
     if result.gpu_time_ms < 100.0 {
         println!("  [PASS] Fast GPU execution: {:.2}ms", result.gpu_time_ms);
     } else if result.gpu_time_ms < 1000.0 {
-        println!("  [OK] Acceptable GPU execution: {:.2}ms", result.gpu_time_ms);
+        println!(
+            "  [OK] Acceptable GPU execution: {:.2}ms",
+            result.gpu_time_ms
+        );
     } else {
         println!("  [SLOW] GPU execution took: {:.2}ms", result.gpu_time_ms);
     }

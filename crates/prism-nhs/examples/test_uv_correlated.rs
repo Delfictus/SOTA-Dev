@@ -8,10 +8,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 const STEPS_PER_RUN: i32 = 2000;
 const N_RUNS: usize = 5;
@@ -25,7 +25,9 @@ fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f3
     let recall = tp / truth.len() as f32;
     let f1 = if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -38,7 +40,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -56,15 +58,18 @@ fn main() -> Result<()> {
 
     // Known active site
     let truth: HashSet<i32> = [
-        25, 26, 27, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-        140, 141, 142, 143, 144, 145,
-        163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
-        187, 188, 189, 190, 191, 192,
-    ].iter().cloned().collect();
+        25, 26, 27, 41, 42, 43, 44, 45, 46, 47, 48, 49, 140, 141, 142, 143, 144, 145, 163, 164,
+        165, 166, 167, 168, 169, 170, 171, 172, 187, 188, 189, 190, 191, 192,
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     println!("\nTruth (active site): {} residues", truth.len());
-    println!("Active site aromatics: {:?}",
-             truth.intersection(&aromatic_residues).collect::<Vec<_>>());
+    println!(
+        "Active site aromatics: {:?}",
+        truth.intersection(&aromatic_residues).collect::<Vec<_>>()
+    );
 
     // Run detection with focus on aromatic neighbors
     println!("\nRunning UV-correlated detection...");
@@ -99,9 +104,9 @@ fn main() -> Result<()> {
                 }
 
                 // Check if any spike residue is near an aromatic
-                let near_aromatic = spike_residues.iter().any(|r| {
-                    aromatic_residues.iter().any(|ar| (*ar - *r).abs() <= 5)
-                });
+                let near_aromatic = spike_residues
+                    .iter()
+                    .any(|r| aromatic_residues.iter().any(|ar| (*ar - *r).abs() <= 5));
 
                 // Only count residues that are near aromatics (UV-correlated)
                 if near_aromatic {
@@ -124,11 +129,18 @@ fn main() -> Result<()> {
     println!("\n{}", "═".repeat(60));
     println!("TOP 30 UV-PROXIMAL SPIKE RESIDUES");
     println!("{}", "═".repeat(60));
-    println!("{:>4} {:>8} {:>8} {:>10}", "Rank", "ResID", "Count", "In Truth?");
+    println!(
+        "{:>4} {:>8} {:>8} {:>10}",
+        "Rank", "ResID", "Count", "In Truth?"
+    );
     println!("{}", "-".repeat(36));
 
     for (i, (res_id, count)) in ranked_aromatic.iter().take(30).enumerate() {
-        let in_truth = if truth.contains(res_id) { "YES ←" } else { "" };
+        let in_truth = if truth.contains(res_id) {
+            "YES ←"
+        } else {
+            ""
+        };
         println!("{:>4} {:>8} {:>8} {:>10}", i + 1, res_id, count, in_truth);
     }
 
@@ -136,14 +148,18 @@ fn main() -> Result<()> {
     println!("\n{}", "═".repeat(60));
     println!("PRECISION-RECALL (UV-PROXIMAL RESIDUES)");
     println!("{}", "═".repeat(60));
-    println!("{:>8} {:>10} {:>10} {:>10} {:>10}", "Top-N", "Precision", "Recall", "F1", "Status");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>10}",
+        "Top-N", "Precision", "Recall", "F1", "Status"
+    );
     println!("{}", "-".repeat(60));
 
     let cutoffs = [10, 20, 30, 40, 50, 60, 80];
     let mut best_f1 = 0.0f32;
 
     for &n in &cutoffs {
-        let predicted: HashSet<i32> = ranked_aromatic.iter()
+        let predicted: HashSet<i32> = ranked_aromatic
+            .iter()
             .take(n)
             .map(|(res_id, _)| *res_id)
             .collect();
@@ -151,10 +167,14 @@ fn main() -> Result<()> {
         let (precision, recall, f1) = calculate_metrics(&predicted, &truth);
         let status = if f1 > 0.3 { "HIT ✓" } else { "miss" };
 
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>10}",
-                 n, precision, recall, f1, status);
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>10}",
+            n, precision, recall, f1, status
+        );
 
-        if f1 > best_f1 { best_f1 = f1; }
+        if f1 > best_f1 {
+            best_f1 = f1;
+        }
     }
 
     // Compare to all residues
@@ -163,20 +183,28 @@ fn main() -> Result<()> {
     println!("{}", "═".repeat(60));
 
     let (p_all, r_all, f1_all) = calculate_metrics(&all_spike_residues, &truth);
-    println!("All spike residues:    {} residues, F1={:.3}", all_spike_residues.len(), f1_all);
+    println!(
+        "All spike residues:    {} residues, F1={:.3}",
+        all_spike_residues.len(),
+        f1_all
+    );
 
-    let uv_proximal: HashSet<i32> = ranked_aromatic.iter()
-        .take(40)
-        .map(|(r, _)| *r)
-        .collect();
+    let uv_proximal: HashSet<i32> = ranked_aromatic.iter().take(40).map(|(r, _)| *r).collect();
     let (p_uv, r_uv, f1_uv) = calculate_metrics(&uv_proximal, &truth);
-    println!("UV-proximal (top 40):  {} residues, F1={:.3}", uv_proximal.len(), f1_uv);
+    println!(
+        "UV-proximal (top 40):  {} residues, F1={:.3}",
+        uv_proximal.len(),
+        f1_uv
+    );
 
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");
     if best_f1 > 0.3 {
         println!("║  RESULT: PASSED - UV-correlated detection works!                    ║");
     } else {
-        println!("║  RESULT: Best F1 = {:.3}                                             ║", best_f1);
+        println!(
+            "║  RESULT: Best F1 = {:.3}                                             ║",
+            best_f1
+        );
     }
     println!("╚══════════════════════════════════════════════════════════════════════╝");
 

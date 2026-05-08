@@ -8,20 +8,26 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 const STEPS_PER_RUN: i32 = 2000;
 const N_RUNS: usize = 5;
 
 fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f32, f32) {
-    if predicted.is_empty() || truth.is_empty() { return (0.0, 0.0, 0.0); }
+    if predicted.is_empty() || truth.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
     let tp = predicted.intersection(truth).count() as f32;
     let precision = tp / predicted.len() as f32;
     let recall = tp / truth.len() as f32;
-    let f1 = if precision + recall > 0.0 { 2.0 * precision * recall / (precision + recall) } else { 0.0 };
+    let f1 = if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -34,7 +40,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -42,11 +48,13 @@ fn main() -> Result<()> {
 
     // Truth (0-indexed)
     let truth: HashSet<i32> = [
-        23, 24, 25, 26, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-        139, 140, 141, 142, 143, 144, 145,
-        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
-        186, 187, 188, 189, 190, 191, 192,
-    ].iter().cloned().collect();
+        23, 24, 25, 26, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 139, 140, 141, 142, 143, 144,
+        145, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 186, 187, 188, 189, 190, 191,
+        192,
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     // Collect spikes with quality scores
     let mut high_quality_residues: HashMap<i32, f32> = HashMap::new();
@@ -59,15 +67,20 @@ fn main() -> Result<()> {
         let mut engine = NhsAmberFusedEngine::new(context, &topology, 48, 1.2)?;
 
         engine.set_temperature_protocol(TemperatureProtocol {
-            start_temp: 100.0, end_temp: 300.0,
-            ramp_steps: 1500, hold_steps: 500, current_step: 0,
+            start_temp: 100.0,
+            end_temp: 300.0,
+            ramp_steps: 1500,
+            hold_steps: 500,
+            current_step: 0,
         })?;
 
         let _summary = engine.run(STEPS_PER_RUN)?;
 
         // Get ensemble snapshots with quality-scored spikes
         for snapshot in engine.get_ensemble_snapshots() {
-            for (spike, quality) in snapshot.trigger_spikes.iter()
+            for (spike, quality) in snapshot
+                .trigger_spikes
+                .iter()
                 .zip(snapshot.spike_quality_scores.iter())
             {
                 for &res_id in &spike.nearby_residues {
@@ -102,18 +115,34 @@ fn main() -> Result<()> {
     if hq_ranked.is_empty() {
         println!("No high-confidence spikes found.");
     } else {
-        println!("{:>4} {:>8} {:>12} {:>12}", "Rank", "ResID", "Score", "In Truth?");
+        println!(
+            "{:>4} {:>8} {:>12} {:>12}",
+            "Rank", "ResID", "Score", "In Truth?"
+        );
         println!("{}", "-".repeat(40));
 
         for (i, (&res_id, &score)) in hq_ranked.iter().take(20).enumerate() {
-            let in_truth = if truth.contains(&res_id) { "YES ←" } else { "" };
-            println!("{:>4} {:>8} {:>12.3} {:>12}", i + 1, res_id, score, in_truth);
+            let in_truth = if truth.contains(&res_id) {
+                "YES ←"
+            } else {
+                ""
+            };
+            println!(
+                "{:>4} {:>8} {:>12.3} {:>12}",
+                i + 1,
+                res_id,
+                score,
+                in_truth
+            );
         }
 
         // Metrics for high-quality
         let hq_predicted: HashSet<i32> = hq_ranked.iter().take(40).map(|(&r, _)| r).collect();
         let (p, r, f1) = calculate_metrics(&hq_predicted, &truth);
-        println!("\nTop-40 HQ: Precision={:.3}, Recall={:.3}, F1={:.3}", p, r, f1);
+        println!(
+            "\nTop-40 HQ: Precision={:.3}, Recall={:.3}, F1={:.3}",
+            p, r, f1
+        );
     }
 
     // Compare with all residues
@@ -127,8 +156,16 @@ fn main() -> Result<()> {
     let (p_all, r_all, f1_all) = calculate_metrics(&all_set, &truth);
     let (p_hq, r_hq, f1_hq) = calculate_metrics(&hq_set, &truth);
 
-    println!("All residues:    {} detected, F1={:.3}", all_set.len(), f1_all);
-    println!("High-quality:    {} detected, F1={:.3}", hq_set.len(), f1_hq);
+    println!(
+        "All residues:    {} detected, F1={:.3}",
+        all_set.len(),
+        f1_all
+    );
+    println!(
+        "High-quality:    {} detected, F1={:.3}",
+        hq_set.len(),
+        f1_hq
+    );
 
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");
     if f1_hq > 0.3 {

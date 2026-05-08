@@ -24,12 +24,11 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{
-    NhsAmberFusedEngine, PrismPrepTopology, TemperatureProtocol, UvProbeConfig,
-    EnsembleSnapshot,
-};
-#[cfg(feature = "gpu")]
 use cudarc::driver::CudaContext;
+#[cfg(feature = "gpu")]
+use prism_nhs::{
+    EnsembleSnapshot, NhsAmberFusedEngine, PrismPrepTopology, TemperatureProtocol, UvProbeConfig,
+};
 use std::sync::Arc;
 
 #[derive(Parser, Debug)]
@@ -87,9 +86,7 @@ struct Hotspot {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -98,13 +95,20 @@ fn main() -> Result<()> {
     log::info!("╚══════════════════════════════════════════════════════════════╝");
 
     // Load and cluster Stage 1 hotspots
-    let hotspots = load_and_cluster_hotspots(&args.stage1_spikes, args.cluster_radius, args.top_hotspots)?;
+    let hotspots =
+        load_and_cluster_hotspots(&args.stage1_spikes, args.cluster_radius, args.top_hotspots)?;
     log::info!("Loaded {} hotspots from Stage 1", hotspots.len());
 
     for (i, hs) in hotspots.iter().take(5).enumerate() {
-        log::info!("  Hotspot {}: ({:.1}, {:.1}, {:.1}) - {} spikes, max intensity {:.3}",
-            i + 1, hs.center[0], hs.center[1], hs.center[2],
-            hs.spike_count, hs.max_intensity);
+        log::info!(
+            "  Hotspot {}: ({:.1}, {:.1}, {:.1}) - {} spikes, max intensity {:.3}",
+            i + 1,
+            hs.center[0],
+            hs.center[1],
+            hs.center[2],
+            hs.spike_count,
+            hs.max_intensity
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -186,13 +190,19 @@ fn load_and_cluster_hotspots(
     }
 
     // Convert to Hotspot structs
-    let mut hotspots: Vec<Hotspot> = clusters.into_iter()
+    let mut hotspots: Vec<Hotspot> = clusters
+        .into_iter()
         .filter(|(spikes, _)| spikes.len() >= 5) // Minimum 5 spikes
         .map(|(spikes, center)| {
             let spike_count = spikes.len();
             let avg_intensity = spikes.iter().map(|(_, i)| i).sum::<f32>() / spike_count as f32;
             let max_intensity = spikes.iter().map(|(_, i)| *i).fold(0.0f32, |a, b| a.max(b));
-            Hotspot { center, spike_count, avg_intensity, max_intensity }
+            Hotspot {
+                center,
+                spike_count,
+                avg_intensity,
+                max_intensity,
+            }
         })
         .collect();
 
@@ -212,12 +222,14 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
     // Load topology
     log::info!("\nLoading topology: {}", args.topology.display());
     let topology = PrismPrepTopology::load(&args.topology)?;
-    log::info!("  Atoms: {}, Aromatics: {}",
-        topology.n_atoms, topology.aromatic_residues().len());
+    log::info!(
+        "  Atoms: {}, Aromatics: {}",
+        topology.n_atoms,
+        topology.aromatic_residues().len()
+    );
 
     // Create CUDA context
-    let context = CudaContext::new(0)
-        .context("Failed to create CUDA context")?;
+    let context = CudaContext::new(0).context("Failed to create CUDA context")?;
 
     // Create engine
     log::info!("Creating NHS engine...");
@@ -230,7 +242,10 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
 
     // [STAGE-2A-PERF] Initialize parallel replicas if requested (3-5x speedup)
     if args.replicas > 0 {
-        log::info!("🚀 Initializing {} parallel replicas (expected 3-5x speedup)...", args.replicas);
+        log::info!(
+            "🚀 Initializing {} parallel replicas (expected 3-5x speedup)...",
+            args.replicas
+        );
         engine.init_parallel_streams(args.replicas, &topology)?;
         log::info!("✅ Parallel replicas initialized");
     }
@@ -249,8 +264,8 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
     // Configure UV probe - target hotspot regions
     // The UV config targets aromatics, but we'll focus on those near hotspots
     let uv_config = UvProbeConfig {
-        burst_energy: 2.0,      // Moderate energy for production
-        burst_interval: 2000,   // Less frequent than Stage 1
+        burst_energy: 2.0,    // Moderate energy for production
+        burst_interval: 2000, // Less frequent than Stage 1
         burst_duration: 50,
         target_sequence: find_aromatics_near_hotspots(&topology, hotspots),
         current_target: 0,
@@ -258,25 +273,36 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
         ..Default::default()
     };
     engine.set_uv_config(uv_config);
-    log::info!("UV targeting {} aromatic residues near hotspots",
-        find_aromatics_near_hotspots(&topology, hotspots).len());
+    log::info!(
+        "UV targeting {} aromatic residues near hotspots",
+        find_aromatics_near_hotspots(&topology, hotspots).len()
+    );
 
     // Equilibration
-    log::info!("\nEquilibration: {} steps at {:.0}K...", args.equilibration, args.temperature);
+    log::info!(
+        "\nEquilibration: {} steps at {:.0}K...",
+        args.equilibration,
+        args.temperature
+    );
     let eq_start = Instant::now();
     let _eq_summary = engine.run(args.equilibration)?;
     log::info!("  Equilibration: {:.1}s", eq_start.elapsed().as_secs_f64());
 
     // Production
-    log::info!("\nProduction: {} steps ({:.1}ns)...",
-        args.steps, args.steps as f64 * 2e-6); // 2fs timestep
+    log::info!(
+        "\nProduction: {} steps ({:.1}ns)...",
+        args.steps,
+        args.steps as f64 * 2e-6
+    ); // 2fs timestep
     let prod_start = Instant::now();
     let summary = engine.run(args.steps)?;
     let prod_time = prod_start.elapsed();
 
-    log::info!("  Production: {:.1}s ({:.0} steps/sec)",
+    log::info!(
+        "  Production: {:.1}s ({:.0} steps/sec)",
         prod_time.as_secs_f64(),
-        args.steps as f64 / prod_time.as_secs_f64());
+        args.steps as f64 / prod_time.as_secs_f64()
+    );
 
     // Get results
     let spikes = engine.get_spike_events();
@@ -291,19 +317,32 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
     let output_dir = args.output.parent().unwrap_or(std::path::Path::new("."));
     fs::create_dir_all(output_dir)?;
 
-    let base_name = args.output.file_stem()
+    let base_name = args
+        .output
+        .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "stage2".to_string());
 
     // Save spike CSV
     let spike_path = output_dir.join(format!("{}_stage2_spikes.csv", base_name));
     let mut spike_file = fs::File::create(&spike_path)?;
-    writeln!(spike_file, "timestep,voxel_idx,x,y,z,intensity,temperature,uv_active")?;
+    writeln!(
+        spike_file,
+        "timestep,voxel_idx,x,y,z,intensity,temperature,uv_active"
+    )?;
     for spike in spikes {
-        writeln!(spike_file, "{},{},{:.3},{:.3},{:.3},{:.4},{:.1},{}",
-            spike.timestep, spike.voxel_idx,
-            spike.position[0], spike.position[1], spike.position[2],
-            spike.intensity, spike.temperature, spike.uv_burst_active)?;
+        writeln!(
+            spike_file,
+            "{},{},{:.3},{:.3},{:.3},{:.4},{:.1},{}",
+            spike.timestep,
+            spike.voxel_idx,
+            spike.position[0],
+            spike.position[1],
+            spike.position[2],
+            spike.intensity,
+            spike.temperature,
+            spike.uv_burst_active
+        )?;
     }
     log::info!("  Wrote: {}", spike_path.display());
 
@@ -331,7 +370,10 @@ fn run_guided_stage2(args: &Args, hotspots: &[Hotspot]) -> Result<()> {
     fs::write(&summary_path, serde_json::to_string_pretty(&summary_json)?)?;
     log::info!("  Wrote: {}", summary_path.display());
 
-    log::info!("\n✓ Stage 2 complete in {:.1}s", total_start.elapsed().as_secs_f64());
+    log::info!(
+        "\n✓ Stage 2 complete in {:.1}s",
+        total_start.elapsed().as_secs_f64()
+    );
 
     Ok(())
 }
@@ -401,25 +443,34 @@ fn write_ensemble_pdb(
             let y = positions[i * 3 + 1];
             let z = positions[i * 3 + 2];
 
-            let atom_name = topology.atom_names.get(i)
+            let atom_name = topology
+                .atom_names
+                .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or("CA");
-            let residue_name = topology.residue_names.get(i)
+            let residue_name = topology
+                .residue_names
+                .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or("UNK");
             let residue_id = topology.residue_ids.get(i).copied().unwrap_or(1);
-            let chain_id = topology.chain_ids.get(i)
+            let chain_id = topology
+                .chain_ids
+                .get(i)
                 .map(|s| s.chars().next().unwrap_or('A'))
                 .unwrap_or('A');
 
-            writeln!(file,
+            writeln!(
+                file,
                 "ATOM  {:>5} {:>4} {:>3} {}{:>4}    {:>8.3}{:>8.3}{:>8.3}  1.00  0.00",
                 (i + 1) % 100000,
                 atom_name,
                 residue_name,
                 chain_id,
                 residue_id % 10000,
-                x, y, z
+                x,
+                y,
+                z
             )?;
         }
 

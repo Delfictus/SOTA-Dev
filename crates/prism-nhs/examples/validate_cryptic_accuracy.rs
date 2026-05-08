@@ -11,15 +11,15 @@
 //! This gives CLIENT-FACING metrics for sales/evaluation.
 
 use anyhow::{bail, Context, Result};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, CryoUvProtocol, GpuSpikeEvent};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{CryoUvProtocol, GpuSpikeEvent, NhsAmberFusedEngine};
 
 /// Ground truth binding site from holo structure
 #[derive(Debug, Clone)]
@@ -49,13 +49,13 @@ struct PredictedSite {
 #[derive(Debug, Clone)]
 struct SiteOverlap {
     predicted_rank: usize,
-    true_positives: usize,      // Residues in both prediction and truth
-    false_positives: usize,     // Residues in prediction but not truth
-    false_negatives: usize,     // Residues in truth but not prediction
-    precision: f32,             // TP / (TP + FP)
-    recall: f32,                // TP / (TP + FN)
-    f1: f32,                    // 2 * P * R / (P + R)
-    jaccard: f32,               // TP / (TP + FP + FN)
+    true_positives: usize,  // Residues in both prediction and truth
+    false_positives: usize, // Residues in prediction but not truth
+    false_negatives: usize, // Residues in truth but not prediction
+    precision: f32,         // TP / (TP + FP)
+    recall: f32,            // TP / (TP + FN)
+    f1: f32,                // 2 * P * R / (P + R)
+    jaccard: f32,           // TP / (TP + FP + FN)
 }
 
 impl SiteOverlap {
@@ -121,10 +121,10 @@ struct TargetValidation {
     best_rank: Option<usize>,
 
     // Top-K metrics
-    hit_at_1: bool,    // Is rank 1 site the correct one?
-    hit_at_3: bool,    // Is correct site in top 3?
-    hit_at_5: bool,    // Is correct site in top 5?
-    hit_at_10: bool,   // Is correct site in top 10?
+    hit_at_1: bool,  // Is rank 1 site the correct one?
+    hit_at_3: bool,  // Is correct site in top 3?
+    hit_at_5: bool,  // Is correct site in top 5?
+    hit_at_10: bool, // Is correct site in top 10?
 
     // Best F1/Precision/Recall
     best_f1: f32,
@@ -185,7 +185,7 @@ fn extract_predicted_sites(
 
     // Create sites by grouping top residues
     let mut sites = Vec::new();
-    let residues_per_site = 15;  // Typical binding site size
+    let residues_per_site = 15; // Typical binding site size
 
     for site_idx in 0..n_top_sites {
         let start = site_idx * residues_per_site;
@@ -202,7 +202,8 @@ fn extract_predicted_sites(
 
         // Calculate aromatic enrichment for this site
         let aromatic_set: HashSet<i32> = aromatic_ids.iter().cloned().collect();
-        let aromatic_in_site = site_residues.iter()
+        let aromatic_in_site = site_residues
+            .iter()
             .filter(|r| aromatic_set.contains(r))
             .count();
         let aromatic_enrichment = aromatic_in_site as f32 / site_residues.len().max(1) as f32;
@@ -344,11 +345,20 @@ fn validate_target(
         }
 
         // Check Hit@K
-        if overlap.f1 > 0.3 {  // F1 > 0.3 counts as a "hit"
-            if site.rank == 1 { result.hit_at_1 = true; }
-            if site.rank <= 3 { result.hit_at_3 = true; }
-            if site.rank <= 5 { result.hit_at_5 = true; }
-            if site.rank <= 10 { result.hit_at_10 = true; }
+        if overlap.f1 > 0.3 {
+            // F1 > 0.3 counts as a "hit"
+            if site.rank == 1 {
+                result.hit_at_1 = true;
+            }
+            if site.rank <= 3 {
+                result.hit_at_3 = true;
+            }
+            if site.rank <= 5 {
+                result.hit_at_5 = true;
+            }
+            if site.rank <= 10 {
+                result.hit_at_10 = true;
+            }
         }
     }
 
@@ -405,22 +415,34 @@ impl AggregateMetrics {
             if r.status == "complete" {
                 metrics.n_completed += 1;
 
-                if r.hit_at_1 { metrics.hit_at_1_count += 1; }
-                if r.hit_at_3 { metrics.hit_at_3_count += 1; }
-                if r.hit_at_5 { metrics.hit_at_5_count += 1; }
-                if r.hit_at_10 { metrics.hit_at_10_count += 1; }
+                if r.hit_at_1 {
+                    metrics.hit_at_1_count += 1;
+                }
+                if r.hit_at_3 {
+                    metrics.hit_at_3_count += 1;
+                }
+                if r.hit_at_5 {
+                    metrics.hit_at_5_count += 1;
+                }
+                if r.hit_at_10 {
+                    metrics.hit_at_10_count += 1;
+                }
 
                 metrics.best_f1_sum += r.best_f1;
                 metrics.best_f1_min = metrics.best_f1_min.min(r.best_f1);
                 metrics.best_f1_max = metrics.best_f1_max.max(r.best_f1);
 
                 // Precision@K calculation (count true positives in top K)
-                let top_5_residues: HashSet<i32> = r.predicted_sites.iter()
+                let top_5_residues: HashSet<i32> = r
+                    .predicted_sites
+                    .iter()
                     .filter(|s| s.rank <= 5)
                     .flat_map(|s| s.residues.iter())
                     .cloned()
                     .collect();
-                let top_10_residues: HashSet<i32> = r.predicted_sites.iter()
+                let top_10_residues: HashSet<i32> = r
+                    .predicted_sites
+                    .iter()
                     .filter(|s| s.rank <= 10)
                     .flat_map(|s| s.residues.iter())
                     .cloned()
@@ -448,7 +470,10 @@ impl AggregateMetrics {
         println!("║              CRYPTIC SITE DETECTION ACCURACY METRICS                      ║");
         println!("╚══════════════════════════════════════════════════════════════════════════╝");
         println!();
-        println!("  Targets: {} (completed: {}, failed: {})", self.n_targets, self.n_completed, self.n_failed);
+        println!(
+            "  Targets: {} (completed: {}, failed: {})",
+            self.n_targets, self.n_completed, self.n_failed
+        );
         println!();
 
         if self.n_completed == 0 {
@@ -460,23 +485,39 @@ impl AggregateMetrics {
         println!("  │  PRIMARY METRICS (What Clients Care About)                  │");
         println!("  └─────────────────────────────────────────────────────────────┘");
         println!();
-        println!("  Hit@1:         {}/{} ({:.1}%)  ← Is #1 site correct?",
-            self.hit_at_1_count, self.n_completed,
-            100.0 * self.hit_at_1_count as f32 / completed);
-        println!("  Hit@3:         {}/{} ({:.1}%)  ← Is correct site in top 3?",
-            self.hit_at_3_count, self.n_completed,
-            100.0 * self.hit_at_3_count as f32 / completed);
-        println!("  Hit@5:         {}/{} ({:.1}%)",
-            self.hit_at_5_count, self.n_completed,
-            100.0 * self.hit_at_5_count as f32 / completed);
-        println!("  Hit@10:        {}/{} ({:.1}%)",
-            self.hit_at_10_count, self.n_completed,
-            100.0 * self.hit_at_10_count as f32 / completed);
+        println!(
+            "  Hit@1:         {}/{} ({:.1}%)  ← Is #1 site correct?",
+            self.hit_at_1_count,
+            self.n_completed,
+            100.0 * self.hit_at_1_count as f32 / completed
+        );
+        println!(
+            "  Hit@3:         {}/{} ({:.1}%)  ← Is correct site in top 3?",
+            self.hit_at_3_count,
+            self.n_completed,
+            100.0 * self.hit_at_3_count as f32 / completed
+        );
+        println!(
+            "  Hit@5:         {}/{} ({:.1}%)",
+            self.hit_at_5_count,
+            self.n_completed,
+            100.0 * self.hit_at_5_count as f32 / completed
+        );
+        println!(
+            "  Hit@10:        {}/{} ({:.1}%)",
+            self.hit_at_10_count,
+            self.n_completed,
+            100.0 * self.hit_at_10_count as f32 / completed
+        );
         println!();
-        println!("  Precision@5:   {:.1}%  ← Accuracy in top 5 predictions",
-            100.0 * self.precision_at_5_sum / completed);
-        println!("  Precision@10:  {:.1}%  ← Accuracy in top 10 predictions",
-            100.0 * self.precision_at_10_sum / completed);
+        println!(
+            "  Precision@5:   {:.1}%  ← Accuracy in top 5 predictions",
+            100.0 * self.precision_at_5_sum / completed
+        );
+        println!(
+            "  Precision@10:  {:.1}%  ← Accuracy in top 10 predictions",
+            100.0 * self.precision_at_10_sum / completed
+        );
         println!();
 
         println!("  ┌─────────────────────────────────────────────────────────────┐");
@@ -484,8 +525,14 @@ impl AggregateMetrics {
         println!("  └─────────────────────────────────────────────────────────────┘");
         println!();
         println!("  Average F1:    {:.3}", self.best_f1_sum / completed);
-        println!("  F1 Range:      {:.3} - {:.3}", self.best_f1_min, self.best_f1_max);
-        println!("  Avg Time:      {:.1}s per target", self.total_time_seconds / completed as f64);
+        println!(
+            "  F1 Range:      {:.3} - {:.3}",
+            self.best_f1_min, self.best_f1_max
+        );
+        println!(
+            "  Avg Time:      {:.1}s per target",
+            self.total_time_seconds / completed as f64
+        );
         println!();
 
         println!("  ┌─────────────────────────────────────────────────────────────┐");
@@ -496,10 +543,12 @@ impl AggregateMetrics {
         println!("  Schrödinger SiteMap  ~60%     ~80%      ~72%");
         println!("  Fpocket (free)       ~35%     ~55%      ~48%");
         println!("  P2Rank              ~45%     ~65%      ~58%");
-        println!("  PRISM4D UV-LIF      {:.1}%    {:.1}%     {:.1}%",
+        println!(
+            "  PRISM4D UV-LIF      {:.1}%    {:.1}%     {:.1}%",
             100.0 * self.hit_at_1_count as f32 / completed,
             100.0 * self.hit_at_3_count as f32 / completed,
-            100.0 * self.precision_at_10_sum / completed);
+            100.0 * self.precision_at_10_sum / completed
+        );
         println!();
 
         // Verdict
@@ -549,7 +598,7 @@ fn main() -> Result<()> {
         ),
     ];
 
-    let n_steps = 10000;  // Standard benchmark protocol
+    let n_steps = 10000; // Standard benchmark protocol
     let mut results = Vec::new();
 
     for (name, apo, holo, topo_path, truth_path) in test_cases {
@@ -577,18 +626,29 @@ fn main() -> Result<()> {
             println!("\n  Results:");
             println!("    Sites predicted: {}", result.n_sites_predicted);
             println!("    Truth residues: {}", result.n_truth_residues);
-            println!("    Best match: Rank {} (F1={:.3}, Precision={:.3}, Recall={:.3})",
+            println!(
+                "    Best match: Rank {} (F1={:.3}, Precision={:.3}, Recall={:.3})",
                 result.best_rank.unwrap_or(0),
                 result.best_f1,
                 result.best_precision,
-                result.best_recall);
-            println!("    Hit@1: {}, Hit@3: {}, Hit@10: {}",
+                result.best_recall
+            );
+            println!(
+                "    Hit@1: {}, Hit@3: {}, Hit@10: {}",
                 if result.hit_at_1 { "✓" } else { "✗" },
                 if result.hit_at_3 { "✓" } else { "✗" },
-                if result.hit_at_10 { "✓" } else { "✗" });
-            println!("    Time: {:.1}s, Events: {}", result.time_seconds, result.total_events);
+                if result.hit_at_10 { "✓" } else { "✗" }
+            );
+            println!(
+                "    Time: {:.1}s, Events: {}",
+                result.time_seconds, result.total_events
+            );
         } else {
-            println!("\n  [{}] {}", result.status.to_uppercase(), result.error.as_deref().unwrap_or("Unknown error"));
+            println!(
+                "\n  [{}] {}",
+                result.status.to_uppercase(),
+                result.error.as_deref().unwrap_or("Unknown error")
+            );
         }
 
         results.push(result);

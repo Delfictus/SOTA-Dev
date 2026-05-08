@@ -35,7 +35,7 @@ use crate::input::PrismPrepTopology;
 use crate::persistent_engine::ClusteredBindingSite;
 
 // Re-exports from the sdst crate that we need
-use sdst::{Sdst, SdstConfig, CcnsResult, HysteresisResult, SpatialRegion, CcnsClass};
+use sdst::{CcnsClass, CcnsResult, HysteresisResult, Sdst, SdstConfig, SpatialRegion};
 
 const GRID_DIM: usize = 128;
 const GRID_SPACING: f32 = 0.75;
@@ -101,10 +101,10 @@ pub enum ThermClass {
 impl std::fmt::Display for ThermClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ThermClass::Cryptic    => write!(f, "CRYPTIC"),
-            ThermClass::Dynamic    => write!(f, "DYNAMIC"),
+            ThermClass::Cryptic => write!(f, "CRYPTIC"),
+            ThermClass::Dynamic => write!(f, "DYNAMIC"),
             ThermClass::Responsive => write!(f, "RESPONSIVE"),
-            ThermClass::Inert      => write!(f, "INERT"),
+            ThermClass::Inert => write!(f, "INERT"),
         }
     }
 }
@@ -141,7 +141,7 @@ pub struct PrismThermSiteResult {
 /// One globally-detected hysteretic pocket (from SDST's own scan).
 #[derive(Debug, Clone, Serialize)]
 pub struct PrismThermGlobalPocket {
-    pub grid_region: [u32; 6],  // [x_min, x_max, y_min, y_max, z_min, z_max]
+    pub grid_region: [u32; 6], // [x_min, x_max, y_min, y_max, z_min, z_max]
     pub tau: f32,
     pub ccns_classification: String,
     pub druggability: f32,
@@ -200,15 +200,18 @@ impl SdstBridge {
         let grid_origin = topology.grid_origin(GRID_PADDING);
         let config = Self::make_config(protocol, expected_spike_count);
 
-        let sdst = Sdst::new(&config)
-            .map_err(|e| anyhow::anyhow!("SDST create failed: {:?}", e))?;
+        let sdst =
+            Sdst::new(&config).map_err(|e| anyhow::anyhow!("SDST create failed: {:?}", e))?;
 
         let residue_map = Self::build_residue_map(topology, &grid_origin);
         let n_residues = topology.n_residues as u32;
 
         let mapped_count = residue_map.iter().filter(|&&v| v != u32::MAX).count();
-        log::info!("  PRISM-Therm: residue map built — {} voxels mapped ({} residues)",
-            mapped_count, n_residues);
+        log::info!(
+            "  PRISM-Therm: residue map built — {} voxels mapped ({} residues)",
+            mapped_count,
+            n_residues
+        );
 
         Ok(Self {
             sdst,
@@ -244,9 +247,7 @@ impl SdstBridge {
 
         // Event buffer: scale to actual spike count. At 36 bytes/event,
         // 42M events = 1.5GB -- safe ceiling for 16GB VRAM.
-        cfg.max_spike_events = (expected_spike_count as u32)
-            .max(1_000_000)
-            .min(42_000_000);
+        cfg.max_spike_events = (expected_spike_count as u32).max(1_000_000).min(42_000_000);
 
         cfg
     }
@@ -282,13 +283,19 @@ impl SdstBridge {
             // Paint a (2r+1)³ cube, keeping only the closest atom per voxel
             for dz in -r..=r {
                 let nz = vz + dz;
-                if nz < 0 || nz >= dim as i32 { continue; }
+                if nz < 0 || nz >= dim as i32 {
+                    continue;
+                }
                 for dy in -r..=r {
                     let ny = vy + dy;
-                    if ny < 0 || ny >= dim as i32 { continue; }
+                    if ny < 0 || ny >= dim as i32 {
+                        continue;
+                    }
                     for dx in -r..=r {
                         let nx = vx + dx;
-                        if nx < 0 || nx >= dim as i32 { continue; }
+                        if nx < 0 || nx >= dim as i32 {
+                            continue;
+                        }
 
                         let linear = nx as usize + ny as usize * dim + nz as usize * dim * dim;
 
@@ -326,21 +333,27 @@ impl SdstBridge {
     /// **VRAM cap**: 1.5GB / 36 bytes ≈ 27.7M events. Beyond that, stride-sample.
     pub fn ingest_all_spikes(&self, spikes: &[GpuSpikeEvent]) -> Result<u32> {
         if spikes.is_empty() {
-            return self.sdst.event_count()
+            return self
+                .sdst
+                .event_count()
                 .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e));
         }
 
         const NHS_STRIDE: usize = std::mem::size_of::<GpuSpikeEvent>(); // 92
-        // Must match the max_spike_events cap in build_config() to prevent
-        // ErrorTableFull: 42M events × 36 bytes = 1.51 GB VRAM.
+                                                                        // Must match the max_spike_events cap in build_config() to prevent
+                                                                        // ErrorTableFull: 42M events × 36 bytes = 1.51 GB VRAM.
         const ABSOLUTE_MAX_EVENTS: usize = 42_000_000;
 
         // Sort by timestep on CPU (required for temporal batching in the C API)
         let mut sorted: Vec<GpuSpikeEvent> = if spikes.len() > ABSOLUTE_MAX_EVENTS {
             let stride = spikes.len() / ABSOLUTE_MAX_EVENTS;
-            log::warn!("  PRISM-Therm: {} spikes exceeds 1GB cap, stride-sampling to {}",
-                        spikes.len(), ABSOLUTE_MAX_EVENTS);
-            let mut sampled: Vec<GpuSpikeEvent> = spikes.iter()
+            log::warn!(
+                "  PRISM-Therm: {} spikes exceeds 1GB cap, stride-sampling to {}",
+                spikes.len(),
+                ABSOLUTE_MAX_EVENTS
+            );
+            let mut sampled: Vec<GpuSpikeEvent> = spikes
+                .iter()
                 .step_by(stride)
                 .take(ABSOLUTE_MAX_EVENTS)
                 .copied()
@@ -348,7 +361,10 @@ impl SdstBridge {
             sampled.sort_unstable_by_key(|s| s.timestep);
             sampled
         } else {
-            log::info!("  PRISM-Therm: ingesting all {} spikes into SDST (GPU-native)", spikes.len());
+            log::info!(
+                "  PRISM-Therm: ingesting all {} spikes into SDST (GPU-native)",
+                spikes.len()
+            );
             let mut v: Vec<GpuSpikeEvent> = spikes.to_vec();
             v.sort_unstable_by_key(|s| s.timestep);
             v
@@ -356,34 +372,34 @@ impl SdstBridge {
 
         // Reinterpret as raw bytes for the C API (GpuSpikeEvent is repr(C), 92 bytes)
         let raw_bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(
-                sorted.as_ptr() as *const u8,
-                sorted.len() * NHS_STRIDE,
-            )
+            std::slice::from_raw_parts(sorted.as_ptr() as *const u8, sorted.len() * NHS_STRIDE)
         };
 
         // Protocol parameters for GPU-side phase/temperature computation
         let p = &self.protocol;
         let cold_hold = p.cold_hold_steps.max(0) as u32;
-        let ramp_up   = p.ramp_steps.max(0) as u32;
+        let ramp_up = p.ramp_steps.max(0) as u32;
         let warm_hold = p.warm_hold_steps.max(0) as u32;
         let ramp_down = p.ramp_down_steps.max(0) as u32;
 
-        self.sdst.insert_from_nhs_buffer(
-            raw_bytes,
-            NHS_STRIDE as u32,
-            p.start_temp,
-            p.end_temp,
-            cold_hold,
-            ramp_up,
-            warm_hold,
-            ramp_down,
-        ).map_err(|e| anyhow::anyhow!("SDST insert_from_nhs_buffer failed: {:?}", e))?;
+        self.sdst
+            .insert_from_nhs_buffer(
+                raw_bytes,
+                NHS_STRIDE as u32,
+                p.start_temp,
+                p.end_temp,
+                cold_hold,
+                ramp_up,
+                warm_hold,
+                ramp_down,
+            )
+            .map_err(|e| anyhow::anyhow!("SDST insert_from_nhs_buffer failed: {:?}", e))?;
 
         // Free the sorted vec before analysis
         drop(sorted);
 
-        self.sdst.event_count()
+        self.sdst
+            .event_count()
             .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e))
     }
 
@@ -394,11 +410,10 @@ impl SdstBridge {
     /// 3. Global:   `ccns_all_pockets` finds pockets SDST detected independently
     ///              (may reveal cryptic sites NHS missed or confirm NHS results)
     /// 4. Avalanche statistics summary
-    pub fn analyze(
-        &self,
-        sites: &[ClusteredBindingSite],
-    ) -> Result<PrismThermAnalysis> {
-        let event_count = self.sdst.event_count()
+    pub fn analyze(&self, sites: &[ClusteredBindingSite]) -> Result<PrismThermAnalysis> {
+        let event_count = self
+            .sdst
+            .event_count()
             .map_err(|e| anyhow::anyhow!("SDST event_count: {:?}", e))?;
 
         // Collect all site regions for batched GPU CCNS. PRISM-Therm
@@ -408,7 +423,8 @@ impl SdstBridge {
         // driver, hot/cold phase) represent different physical
         // neighborhoods; if we later want CCNS at those, the call
         // must pass the view explicitly.
-        let regions: Vec<SpatialRegion> = sites.iter()
+        let regions: Vec<SpatialRegion> = sites
+            .iter()
             .map(|site| {
                 let gvm = site
                     .view(crate::spatial_view::SpatialView::GeometricVoxelMass)
@@ -418,73 +434,108 @@ impl SdstBridge {
             .collect();
 
         // One batched GPU call for all per-site CCNS (CSN estimator, not Hill MLE)
-        let ccns_results = self.sdst
-            .ccns_for_regions(&regions)
-            .unwrap_or_else(|e| {
-                log::warn!("  PRISM-Therm: batched ccns_for_regions failed: {:?}, falling back to defaults", e);
-                vec![CcnsResult::default(); regions.len()]
-            });
+        let ccns_results = self.sdst.ccns_for_regions(&regions).unwrap_or_else(|e| {
+            log::warn!(
+                "  PRISM-Therm: batched ccns_for_regions failed: {:?}, falling back to defaults",
+                e
+            );
+            vec![CcnsResult::default(); regions.len()]
+        });
 
         // Per-site analysis (hysteresis + TIDE) with pre-computed CCNS
-        let mut site_results: Vec<PrismThermSiteResult> = sites.iter()
+        let mut site_results: Vec<PrismThermSiteResult> = sites
+            .iter()
             .enumerate()
-            .map(|(i, site)| {
-                self.analyze_site(site.cluster_id, &regions[i], &ccns_results[i])
-            })
+            .map(|(i, site)| self.analyze_site(site.cluster_id, &regions[i], &ccns_results[i]))
             .collect();
 
         // Multi-signal thermodynamic classification (z-score normalized)
         let asymmetries: Vec<f32> = site_results.iter().map(|r| r.asymmetry_score).collect();
         let n = asymmetries.len() as f32;
-        let mean_asym = if n > 0.0 { asymmetries.iter().sum::<f32>() / n } else { 0.0 };
+        let mean_asym = if n > 0.0 {
+            asymmetries.iter().sum::<f32>() / n
+        } else {
+            0.0
+        };
         let var_asym = if n > 1.0 {
-            asymmetries.iter().map(|a| (a - mean_asym).powi(2)).sum::<f32>() / (n - 1.0)
-        } else { 0.01 };
+            asymmetries
+                .iter()
+                .map(|a| (a - mean_asym).powi(2))
+                .sum::<f32>()
+                / (n - 1.0)
+        } else {
+            0.01
+        };
         let std_asym = var_asym.sqrt().max(0.001);
 
         // NaN-safe median: TE may be NaN (kernel marks "not honestly computable"
         // when source/target trains saturate). Drop NaN before sorting so the
         // median lands on a real value.
-        let mut all_te: Vec<f32> = site_results.iter()
+        let mut all_te: Vec<f32> = site_results
+            .iter()
             .flat_map(|r| r.tide_decomposition.iter().map(|t| t.transfer_entropy))
             .filter(|te| te.is_finite())
             .collect();
         all_te.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let median_te = if all_te.is_empty() { 0.0 } else { all_te[all_te.len() / 2] };
+        let median_te = if all_te.is_empty() {
+            0.0
+        } else {
+            all_te[all_te.len() / 2]
+        };
 
         for sr in site_results.iter_mut() {
             let z = (sr.asymmetry_score - mean_asym) / std_asym;
             sr.relative_asymmetry = z;
             // NaN-safe top_te: 0.0 fallback collapses tide_enriched to false honestly.
-            let top_te = sr.tide_decomposition.first()
+            let top_te = sr
+                .tide_decomposition
+                .first()
                 .map(|t| t.transfer_entropy)
                 .filter(|te| te.is_finite())
                 .unwrap_or(0.0);
             let tide_enriched = median_te > 0.0 && top_te > 2.0 * median_te;
             let is_soc = sr.tau > 0.0 && sr.tau < 1.5;
-            sr.therm_class = if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
-                ThermClass::Cryptic
-            } else if z > 0.5 {
-                ThermClass::Dynamic
-            } else if z > -0.5 {
-                ThermClass::Responsive
-            } else {
-                ThermClass::Inert
-            };
+            sr.therm_class =
+                if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4)
+                {
+                    ThermClass::Cryptic
+                } else if z > 0.5 {
+                    ThermClass::Dynamic
+                } else if z > -0.5 {
+                    ThermClass::Responsive
+                } else {
+                    ThermClass::Inert
+                };
         }
 
-        log::info!("  PRISM-Therm classification: mean_asym={:.4}, std={:.4}, median_TE={:.5}",
-            mean_asym, std_asym, median_te);
+        log::info!(
+            "  PRISM-Therm classification: mean_asym={:.4}, std={:.4}, median_TE={:.5}",
+            mean_asym,
+            std_asym,
+            median_te
+        );
         for sr in &site_results {
             // Log "n/a" when TE is honestly undefined; never fabricate a 0.0.
-            let top_te_str = sr.tide_decomposition.first()
-                .and_then(|t| if t.transfer_entropy.is_finite() {
-                    Some(format!("{:.4}", t.transfer_entropy))
-                } else { None })
+            let top_te_str = sr
+                .tide_decomposition
+                .first()
+                .and_then(|t| {
+                    if t.transfer_entropy.is_finite() {
+                        Some(format!("{:.4}", t.transfer_entropy))
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_else(|| "n/a".to_string());
-            log::info!("    Site {}: z={:+.2} -> {}  (asym={:.4}, tau={:.2}, topTE={})",
-                sr.site_id, sr.relative_asymmetry, sr.therm_class,
-                sr.asymmetry_score, sr.tau, top_te_str);
+            log::info!(
+                "    Site {}: z={:+.2} -> {}  (asym={:.4}, tau={:.2}, topTE={})",
+                sr.site_id,
+                sr.relative_asymmetry,
+                sr.therm_class,
+                sr.asymmetry_score,
+                sr.tau,
+                top_te_str
+            );
         }
 
         let hysteretic_count = site_results.iter().filter(|r| r.is_hysteretic).count();
@@ -494,10 +545,23 @@ impl SdstBridge {
             if !sr.tide_decomposition.is_empty() {
                 let te = sr.tide_decomposition[0].transfer_entropy;
                 let dg = sr.tide_decomposition[0].causal_dg;
-                let te_s = if te.is_finite() { format!("{:.4}", te) } else { "n/a".into() };
-                let dg_s = if dg.is_finite() { format!("{:.3}", dg) } else { "n/a".into() };
-                log::info!("  TIDE Site {}: {} active residues, top TE={}, top dG={}",
-                    sr.site_id, sr.tide_decomposition.len(), te_s, dg_s);
+                let te_s = if te.is_finite() {
+                    format!("{:.4}", te)
+                } else {
+                    "n/a".into()
+                };
+                let dg_s = if dg.is_finite() {
+                    format!("{:.3}", dg)
+                } else {
+                    "n/a".into()
+                };
+                log::info!(
+                    "  TIDE Site {}: {} active residues, top TE={}, top dG={}",
+                    sr.site_id,
+                    sr.tide_decomposition.len(),
+                    te_s,
+                    dg_s
+                );
             }
         }
 
@@ -506,9 +570,7 @@ impl SdstBridge {
         let global_pockets = self.run_global_scan();
 
         // Avalanche count: proxy for total observed conformational events
-        let total_avalanches = self.sdst.avalanche_stats(-1)
-            .map(|v| v.len())
-            .unwrap_or(0);
+        let total_avalanches = self.sdst.avalanche_stats(-1).map(|v| v.len()).unwrap_or(0);
 
         let mapped = self.residue_map.iter().filter(|&&v| v != u32::MAX).count();
 
@@ -573,7 +635,10 @@ pub fn merge_per_group_analyses(
     analyses: &[PrismThermAnalysis],
     sites: &[ClusteredBindingSite],
 ) -> PrismThermAnalysis {
-    assert!(!analyses.is_empty(), "merge_per_group_analyses: analyses must be non-empty");
+    assert!(
+        !analyses.is_empty(),
+        "merge_per_group_analyses: analyses must be non-empty"
+    );
 
     // Step 1: for each site, pick the per-group result with MAX asymmetry_score.
     let mut merged_sites: Vec<PrismThermSiteResult> = Vec::with_capacity(sites.len());
@@ -605,46 +670,69 @@ pub fn merge_per_group_analyses(
     // Mirrors the classifier in SdstBridge::analyze:425-455 exactly.
     let asymmetries: Vec<f32> = merged_sites.iter().map(|r| r.asymmetry_score).collect();
     let n = asymmetries.len() as f32;
-    let mean_asym = if n > 0.0 { asymmetries.iter().sum::<f32>() / n } else { 0.0 };
+    let mean_asym = if n > 0.0 {
+        asymmetries.iter().sum::<f32>() / n
+    } else {
+        0.0
+    };
     let var_asym = if n > 1.0 {
-        asymmetries.iter().map(|a| (a - mean_asym).powi(2)).sum::<f32>() / (n - 1.0)
-    } else { 0.01 };
+        asymmetries
+            .iter()
+            .map(|a| (a - mean_asym).powi(2))
+            .sum::<f32>()
+            / (n - 1.0)
+    } else {
+        0.01
+    };
     let std_asym = var_asym.sqrt().max(0.001);
 
     // NaN-safe median: drop NaN before sorting (TE may be NaN per producer-repair).
-    let mut all_te: Vec<f32> = merged_sites.iter()
+    let mut all_te: Vec<f32> = merged_sites
+        .iter()
         .flat_map(|r| r.tide_decomposition.iter().map(|t| t.transfer_entropy))
         .filter(|te| te.is_finite())
         .collect();
     all_te.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let median_te = if all_te.is_empty() { 0.0 } else { all_te[all_te.len() / 2] };
+    let median_te = if all_te.is_empty() {
+        0.0
+    } else {
+        all_te[all_te.len() / 2]
+    };
 
     let mut hysteretic_count = 0usize;
     for sr in merged_sites.iter_mut() {
         let z = (sr.asymmetry_score - mean_asym) / std_asym;
         sr.relative_asymmetry = z;
-        let top_te = sr.tide_decomposition.first()
+        let top_te = sr
+            .tide_decomposition
+            .first()
             .map(|t| t.transfer_entropy)
             .filter(|te| te.is_finite())
             .unwrap_or(0.0);
         let tide_enriched = median_te > 0.0 && top_te > 2.0 * median_te;
         let is_soc = sr.tau > 0.0 && sr.tau < 1.5;
-        sr.therm_class = if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
-            ThermClass::Cryptic
-        } else if z > 0.5 {
-            ThermClass::Dynamic
-        } else if z > -0.5 {
-            ThermClass::Responsive
-        } else {
-            ThermClass::Inert
-        };
+        sr.therm_class =
+            if z > 1.5 && sr.tau > 0.0 && (is_soc || tide_enriched || sr.asymmetry_score > 0.4) {
+                ThermClass::Cryptic
+            } else if z > 0.5 {
+                ThermClass::Dynamic
+            } else if z > -0.5 {
+                ThermClass::Responsive
+            } else {
+                ThermClass::Inert
+            };
         if sr.is_hysteretic {
             hysteretic_count += 1;
         }
     }
 
-    log::info!("  PRISM-Therm merged ({} groups): mean_asym={:.4}, std={:.4}, median_TE={:.5}",
-        analyses.len(), mean_asym, std_asym, median_te);
+    log::info!(
+        "  PRISM-Therm merged ({} groups): mean_asym={:.4}, std={:.4}, median_TE={:.5}",
+        analyses.len(),
+        mean_asym,
+        std_asym,
+        median_te
+    );
 
     // Step 3: union global_pockets across groups. Dedupe by grid_region.
     let mut merged_global: Vec<PrismThermGlobalPocket> = Vec::new();
@@ -660,7 +748,8 @@ pub fn merge_per_group_analyses(
     // Step 4: sum event counts + avalanches + pick max tide_residues_mapped.
     let sdst_event_count: u32 = analyses.iter().map(|a| a.sdst_event_count).sum();
     let total_avalanches: usize = analyses.iter().map(|a| a.total_avalanches).sum();
-    let tide_residues_mapped: usize = analyses.iter()
+    let tide_residues_mapped: usize = analyses
+        .iter()
         .map(|a| a.tide_residues_mapped)
         .max()
         .unwrap_or(0);
@@ -678,7 +767,6 @@ pub fn merge_per_group_analyses(
 
 // (SdstBridge impl continues below with the remaining helper methods)
 impl SdstBridge {
-
     /// Convert one `GpuSpikeEvent` to `SpikeInput` for SDST ingestion.
     fn convert_spike(&self, s: &GpuSpikeEvent) -> sdst::SpikeInput {
         let ts = s.timestep.max(0) as u32;
@@ -712,11 +800,11 @@ impl SdstBridge {
             voxel_y: vy.min(dim),
             voxel_z: vz.min(dim),
             timestamp: ts,
-            amplitude:        s.intensity,
-            local_temp:       local_temp,
-            energy_gradient:  s.wd_change,       // |∂WD/∂t| from kernel
-            solvent_exposure: s.water_density,   // NHS water density field
-            phase_id:         self.phase_at(ts),
+            amplitude: s.intensity,
+            local_temp: local_temp,
+            energy_gradient: s.wd_change,      // |∂WD/∂t| from kernel
+            solvent_exposure: s.water_density, // NHS water density field
+            phase_id: self.phase_at(ts),
         }
     }
 
@@ -727,11 +815,17 @@ impl SdstBridge {
         let p2 = p1 + p.ramp_steps.max(0) as u32;
         let p3 = p2 + p.warm_hold_steps.max(0) as u32;
         let p4 = p3 + p.ramp_down_steps.max(0) as u32;
-        if step < p1 { 0 }
-        else if step < p2 { 1 }
-        else if step < p3 { 2 }
-        else if step < p4 { 3 }
-        else { 4 }
+        if step < p1 {
+            0
+        } else if step < p2 {
+            1
+        } else if step < p3 {
+            2
+        } else if step < p4 {
+            3
+        } else {
+            4
+        }
     }
 
     /// Interpolate the protocol temperature (K) at a given timestep.
@@ -787,8 +881,14 @@ impl SdstBridge {
 
     /// Analyze one NHS binding site: hysteresis + TIDE.
     /// CCNS is pre-computed via batched `ccns_for_regions()` (GPU CSN estimator).
-    fn analyze_site(&self, site_id: i32, region: &SpatialRegion, ccns: &CcnsResult) -> PrismThermSiteResult {
-        let hyst = self.sdst
+    fn analyze_site(
+        &self,
+        site_id: i32,
+        region: &SpatialRegion,
+        ccns: &CcnsResult,
+    ) -> PrismThermSiteResult {
+        let hyst = self
+            .sdst
             .hysteresis_region(region, HYSTERESIS_THRESHOLD)
             .unwrap_or_else(|_| HysteresisResult {
                 heating_spike_rate: 0.0,
@@ -806,20 +906,20 @@ impl SdstBridge {
 
         PrismThermSiteResult {
             site_id,
-            asymmetry_score:     hyst.asymmetry_score,
-            is_hysteretic:       hyst.is_hysteretic,
-            heating_spike_rate:  hyst.heating_spike_rate,
-            cooling_spike_rate:  hyst.cooling_spike_rate,
+            asymmetry_score: hyst.asymmetry_score,
+            is_hysteretic: hyst.is_hysteretic,
+            heating_spike_rate: hyst.heating_spike_rate,
+            cooling_spike_rate: hyst.cooling_spike_rate,
             heating_spike_count: hyst.heating_spike_count,
             cooling_spike_count: hyst.cooling_spike_count,
-            tau:                 ccns.tau,
-            tau_stderr:          ccns.tau_stderr,
+            tau: ccns.tau,
+            tau_stderr: ccns.tau_stderr,
             ccns_classification: ccns_class_name(ccns.classification).to_string(),
-            druggability:        ccns.druggability,
-            n_avalanches:        ccns.n_avalanches,
-            tide_decomposition:  tide,
-            relative_asymmetry:  0.0,
-            therm_class:         ThermClass::Responsive,
+            druggability: ccns.druggability,
+            n_avalanches: ccns.n_avalanches,
+            tide_decomposition: tide,
+            relative_asymmetry: 0.0,
+            therm_class: ThermClass::Responsive,
         }
     }
 
@@ -829,11 +929,10 @@ impl SdstBridge {
     /// entropy descending. These are the residues with strongest causal
     /// influence on the pocket — the drug design leverage points.
     fn run_tide(&self, region: &SpatialRegion) -> Vec<TideResidueResult> {
-        let decomp = match self.sdst.tide_decomposition(
-            region,
-            &self.residue_map,
-            self.n_residues,
-        ) {
+        let decomp = match self
+            .sdst
+            .tide_decomposition(region, &self.residue_map, self.n_residues)
+        {
             Ok(d) => d,
             Err(e) => {
                 log::debug!("  TIDE: decomposition failed: {:?}", e);
@@ -852,9 +951,12 @@ impl SdstBridge {
         // TE=NaN but n_causal_spikes>0 are preserved — the residue has
         // pocket activity even if the binned TE collapsed under
         // saturation (downstream consumer maps NaN to null).
-        let mut results: Vec<TideResidueResult> = decomp.into_iter()
-            .filter(|d| (d.transfer_entropy.is_finite() && d.transfer_entropy > 0.0)
-                       || d.n_causal_spikes > 0)
+        let mut results: Vec<TideResidueResult> = decomp
+            .into_iter()
+            .filter(|d| {
+                (d.transfer_entropy.is_finite() && d.transfer_entropy > 0.0)
+                    || d.n_causal_spikes > 0
+            })
             .map(|d| TideResidueResult {
                 residue_id: d.residue_id,
                 causal_dg: d.causal_dg,
@@ -868,9 +970,14 @@ impl SdstBridge {
         // NaN-aware descending sort: NaN entries sort to the end (least
         // informative), finite entries sort by TE descending.
         results.sort_unstable_by(|a, b| {
-            match (a.transfer_entropy.is_finite(), b.transfer_entropy.is_finite()) {
-                (true, true)  => b.transfer_entropy.partial_cmp(&a.transfer_entropy)
-                                    .unwrap_or(std::cmp::Ordering::Equal),
+            match (
+                a.transfer_entropy.is_finite(),
+                b.transfer_entropy.is_finite(),
+            ) {
+                (true, true) => b
+                    .transfer_entropy
+                    .partial_cmp(&a.transfer_entropy)
+                    .unwrap_or(std::cmp::Ordering::Equal),
                 (true, false) => std::cmp::Ordering::Less,
                 (false, true) => std::cmp::Ordering::Greater,
                 (false, false) => std::cmp::Ordering::Equal,
@@ -898,15 +1005,21 @@ impl SdstBridge {
             .take(50) // Limit to top 50 for JSON size
             .map(|(ccns, region)| {
                 // Approximate centroid in Å
-                let cx = ((region.x_min + region.x_max) as f32 / 2.0) * GRID_SPACING + self.grid_origin[0];
-                let cy = ((region.y_min + region.y_max) as f32 / 2.0) * GRID_SPACING + self.grid_origin[1];
-                let cz = ((region.z_min + region.z_max) as f32 / 2.0) * GRID_SPACING + self.grid_origin[2];
+                let cx = ((region.x_min + region.x_max) as f32 / 2.0) * GRID_SPACING
+                    + self.grid_origin[0];
+                let cy = ((region.y_min + region.y_max) as f32 / 2.0) * GRID_SPACING
+                    + self.grid_origin[1];
+                let cz = ((region.z_min + region.z_max) as f32 / 2.0) * GRID_SPACING
+                    + self.grid_origin[2];
 
                 PrismThermGlobalPocket {
                     grid_region: [
-                        region.x_min, region.x_max,
-                        region.y_min, region.y_max,
-                        region.z_min, region.z_max,
+                        region.x_min,
+                        region.x_max,
+                        region.y_min,
+                        region.y_max,
+                        region.z_min,
+                        region.z_max,
                     ],
                     tau: ccns.tau,
                     ccns_classification: ccns_class_name(ccns.classification).to_string(),

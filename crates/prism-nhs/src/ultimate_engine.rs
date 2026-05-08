@@ -25,8 +25,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
-    CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
-    LaunchConfig, PushKernelArg, DevicePtrMut, DevicePtr,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtr, DevicePtrMut,
+    LaunchConfig, PushKernelArg,
 };
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
@@ -82,9 +82,9 @@ impl Default for UltimateEngineConfig {
 #[derive(Debug, Clone, Copy)]
 pub struct SimulationParams {
     // Physical constants
-    pub coulomb_const: f32,      // 332.0636 kcal*Å/(mol*e²)
-    pub kb: f32,                 // 0.001987204 kcal/(mol*K)
-    pub force_to_accel: f32,     // 4.184e-4 (AKMA units)
+    pub coulomb_const: f32,  // 332.0636 kcal*Å/(mol*e²)
+    pub kb: f32,             // 0.001987204 kcal/(mol*K)
+    pub force_to_accel: f32, // 4.184e-4 (AKMA units)
 
     // Cutoffs
     pub nb_cutoff: f32,          // 12.0 Å
@@ -94,23 +94,23 @@ pub struct SimulationParams {
     pub soft_core_delta_sq: f32, // 0.01 Å²
 
     // Implicit solvent
-    pub dielectric_scale: f32,   // 0.25 (ε=4r)
+    pub dielectric_scale: f32, // 0.25 (ε=4r)
 
     // Integration
-    pub dt: f32,                 // Timestep (fs)
-    pub half_dt: f32,            // dt/2
-    pub temperature: f32,        // Target temperature (K)
-    pub gamma: f32,              // Langevin friction coefficient
-    pub noise_scale: f32,        // sqrt(2*gamma*kT*dt)
+    pub dt: f32,          // Timestep (fs)
+    pub half_dt: f32,     // dt/2
+    pub temperature: f32, // Target temperature (K)
+    pub gamma: f32,       // Langevin friction coefficient
+    pub noise_scale: f32, // sqrt(2*gamma*kT*dt)
 
     // Limits
-    pub max_velocity: f32,       // 0.2 Å/fs
-    pub max_force: f32,          // 300 kcal/(mol*Å)
+    pub max_velocity: f32, // 0.2 Å/fs
+    pub max_force: f32,    // 300 kcal/(mol*Å)
 
     // Grid dimensions
-    pub grid_dim: i32,           // Voxel grid dimension
-    pub grid_spacing: f32,       // Å per voxel
-    pub grid_origin: [f32; 3],   // Grid origin coordinates
+    pub grid_dim: i32,         // Voxel grid dimension
+    pub grid_spacing: f32,     // Å per voxel
+    pub grid_origin: [f32; 3], // Grid origin coordinates
 
     // System size
     pub n_atoms: i32,
@@ -234,7 +234,10 @@ impl UltimateEngine {
         topology: &PrismPrepTopology,
         config: UltimateEngineConfig,
     ) -> Result<Self> {
-        log::info!("Creating Ultimate Hyperoptimized Engine: {} atoms", topology.n_atoms);
+        log::info!(
+            "Creating Ultimate Hyperoptimized Engine: {} atoms",
+            topology.n_atoms
+        );
 
         let stream = context.default_stream();
         let n_atoms = topology.n_atoms;
@@ -337,7 +340,8 @@ impl UltimateEngine {
             let path_str = ptx_path.display().to_string();
 
             if ptx_path.exists() {
-                let module = context.load_module(Ptx::from_file(&path_str))
+                let module = context
+                    .load_module(Ptx::from_file(&path_str))
                     .with_context(|| format!("Failed to load ultimate_md.ptx from {}", path_str))?;
                 return Ok((module, path_str));
             }
@@ -355,7 +359,9 @@ impl UltimateEngine {
 
         ptx_paths.push(std::path::PathBuf::from("target/ptx/ultimate_md.ptx"));
         ptx_paths.push(std::path::PathBuf::from("../../target/ptx/ultimate_md.ptx"));
-        ptx_paths.push(std::path::PathBuf::from("crates/prism-gpu/src/kernels/ultimate_md.ptx"));
+        ptx_paths.push(std::path::PathBuf::from(
+            "crates/prism-gpu/src/kernels/ultimate_md.ptx",
+        ));
 
         for path in &ptx_paths {
             let path_str = path.display().to_string();
@@ -387,8 +393,16 @@ impl UltimateEngine {
         self.stream.memcpy_htod(&pos_z, &mut self.d_pos_z)?;
 
         // Upload parameters
-        let sigma: Vec<f32> = topology.lj_params.iter().map(|lj| lj.sigma as f32).collect();
-        let epsilon: Vec<f32> = topology.lj_params.iter().map(|lj| lj.epsilon as f32).collect();
+        let sigma: Vec<f32> = topology
+            .lj_params
+            .iter()
+            .map(|lj| lj.sigma as f32)
+            .collect();
+        let epsilon: Vec<f32> = topology
+            .lj_params
+            .iter()
+            .map(|lj| lj.epsilon as f32)
+            .collect();
         let charge: Vec<f32> = topology.charges.iter().map(|&c| c as f32).collect();
         let mass: Vec<f32> = topology.masses.iter().map(|&m| m as f32).collect();
 
@@ -627,7 +641,10 @@ mod tests {
     fn test_simulation_params_size() {
         // Ensure struct matches CUDA constant memory layout
         let size = std::mem::size_of::<SimulationParams>();
-        assert!(size < 64 * 1024, "SimulationParams must fit in constant memory");
+        assert!(
+            size < 64 * 1024,
+            "SimulationParams must fit in constant memory"
+        );
     }
 
     #[test]

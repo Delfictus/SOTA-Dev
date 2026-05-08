@@ -17,13 +17,13 @@
 //! - Parallel (AmberSimdBatch): ~1.2T time (near-linear scaling)
 
 use anyhow::{bail, Result};
-use std::sync::Arc;
 use cudarc::driver::{CudaContext, CudaStream};
 use prism_gpu::amber_simd_batch::{AmberSimdBatch, OptimizationConfig, ReplicaFrame};
+use std::sync::Arc;
 
+use crate::fused_engine::CryoUvProtocol;
 use crate::input::PrismPrepTopology;
 use crate::simd_batch_integration::convert_to_structure_topology;
-use crate::fused_engine::CryoUvProtocol;
 
 /// Spike event detected during parallel replica execution
 #[derive(Debug, Clone)]
@@ -85,8 +85,11 @@ impl ParallelReplicaEngine {
             bail!("At least 1 replica required");
         }
 
-        log::info!("Creating ParallelReplicaEngine: {} replicas × {} atoms",
-            n_replicas, topology.n_atoms);
+        log::info!(
+            "Creating ParallelReplicaEngine: {} replicas × {} atoms",
+            n_replicas,
+            topology.n_atoms
+        );
 
         // Create CUDA context
         let context = CudaContext::new(0)?;
@@ -115,8 +118,10 @@ impl ParallelReplicaEngine {
 
         // Extract aromatic atom indices for UV bursts
         let aromatic_residue_ids = topology.aromatic_residues();
-        let aromatic_residues: std::collections::HashSet<usize> = aromatic_residue_ids.into_iter().collect();
-        let aromatic_indices: Vec<usize> = topology.residue_ids
+        let aromatic_residues: std::collections::HashSet<usize> =
+            aromatic_residue_ids.into_iter().collect();
+        let aromatic_indices: Vec<usize> = topology
+            .residue_ids
             .iter()
             .enumerate()
             .filter(|(_, &res_id)| aromatic_residues.contains(&res_id))
@@ -158,7 +163,11 @@ impl ParallelReplicaEngine {
     ///
     /// # Returns
     /// Aggregated results from all replicas
-    pub fn run(&mut self, total_steps: usize, frame_interval: usize) -> Result<ParallelReplicaResult> {
+    pub fn run(
+        &mut self,
+        total_steps: usize,
+        frame_interval: usize,
+    ) -> Result<ParallelReplicaResult> {
         if !self.finalized {
             self.finalize()?;
         }
@@ -167,8 +176,11 @@ impl ParallelReplicaEngine {
         let dt = 0.002; // 2 fs timestep
         let gamma = 1.0; // Langevin friction
 
-        log::info!("Running parallel replicas: {} steps × {} replicas",
-            total_steps, self.n_replicas);
+        log::info!(
+            "Running parallel replicas: {} steps × {} replicas",
+            total_steps,
+            self.n_replicas
+        );
 
         // Determine simulation phases based on protocol
         let cold_hold = self.protocol.cold_hold_steps as usize;
@@ -187,15 +199,22 @@ impl ParallelReplicaEngine {
         let ramp_steps = ((ramp as f64 * scale) as usize).max(100);
         let warm_steps = total_steps.saturating_sub(cold_steps + ramp_steps);
 
-        log::info!("  Protocol phases: cold={}, ramp={}, warm={}",
-            cold_steps, ramp_steps, warm_steps);
+        log::info!(
+            "  Protocol phases: cold={}, ramp={}, warm={}",
+            cold_steps,
+            ramp_steps,
+            warm_steps
+        );
 
         let mut all_spikes = Vec::new();
         let mut current_step = 0usize;
 
         // Phase 1: Cold hold
-        log::info!("  [1/3] Cold hold at {:.0}K ({} steps)...",
-            self.protocol.start_temp, cold_steps);
+        log::info!(
+            "  [1/3] Cold hold at {:.0}K ({} steps)...",
+            self.protocol.start_temp,
+            cold_steps
+        );
         let cold_spikes = self.run_phase(
             cold_steps,
             frame_interval,
@@ -207,8 +226,12 @@ impl ParallelReplicaEngine {
         all_spikes.extend(cold_spikes);
 
         // Phase 2: Temperature ramp
-        log::info!("  [2/3] Ramping {:.0}K → {:.0}K ({} steps)...",
-            self.protocol.start_temp, self.protocol.end_temp, ramp_steps);
+        log::info!(
+            "  [2/3] Ramping {:.0}K → {:.0}K ({} steps)...",
+            self.protocol.start_temp,
+            self.protocol.end_temp,
+            ramp_steps
+        );
         let ramp_spikes = self.run_ramp_phase(
             ramp_steps,
             frame_interval,
@@ -222,8 +245,11 @@ impl ParallelReplicaEngine {
 
         // Phase 3: Warm hold
         if warm_steps > 0 {
-            log::info!("  [3/3] Warm hold at {:.0}K ({} steps)...",
-                self.protocol.end_temp, warm_steps);
+            log::info!(
+                "  [3/3] Warm hold at {:.0}K ({} steps)...",
+                self.protocol.end_temp,
+                warm_steps
+            );
             let warm_spikes = self.run_phase(
                 warm_steps,
                 frame_interval,
@@ -242,8 +268,12 @@ impl ParallelReplicaEngine {
         let total_replica_steps = total_steps * self.n_replicas;
         let throughput = total_replica_steps as f64 / elapsed;
 
-        log::info!("  ✓ Complete: {} spikes detected, {:.1}s ({:.0} steps/sec)",
-            all_spikes.len(), elapsed, throughput);
+        log::info!(
+            "  ✓ Complete: {} spikes detected, {:.1}s ({:.0} steps/sec)",
+            all_spikes.len(),
+            elapsed,
+            throughput
+        );
 
         Ok(ParallelReplicaResult {
             steps_per_replica: total_steps,
@@ -350,8 +380,10 @@ impl ParallelReplicaEngine {
                 let base = offset + atom_idx * 3;
                 if base + 2 < velocities.len() {
                     // Add random direction burst
-                    let theta = (replica_idx as f32 * 0.7 + atom_idx as f32 * 1.3) % std::f32::consts::TAU;
-                    let phi = (replica_idx as f32 * 1.1 + atom_idx as f32 * 0.9) % std::f32::consts::PI;
+                    let theta =
+                        (replica_idx as f32 * 0.7 + atom_idx as f32 * 1.3) % std::f32::consts::TAU;
+                    let phi =
+                        (replica_idx as f32 * 1.1 + atom_idx as f32 * 0.9) % std::f32::consts::PI;
                     velocities[base] += velocity_boost * theta.sin() * phi.cos();
                     velocities[base + 1] += velocity_boost * theta.sin() * phi.sin();
                     velocities[base + 2] += velocity_boost * theta.cos();

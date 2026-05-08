@@ -244,10 +244,7 @@ pub fn log_sum_exp(log_values: &[f64]) -> f64 {
     if log_values.is_empty() {
         return f64::NEG_INFINITY;
     }
-    let max = log_values
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let max = log_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     if !max.is_finite() {
         return max;
     }
@@ -327,8 +324,7 @@ impl<H: HazardFn> BocpdState<H> {
         // Growth: r' = r + 1
         // log P(r_{t+1} = r+1) = log(1-h(r)) + log_pred(r) + log P(r_t = r)
         for r in 0..n_existing.min(new_len - 1) {
-            new_log_dist[r + 1] =
-                log_one_minus_h[r] + log_pred[r] + self.log_run_length_dist[r];
+            new_log_dist[r + 1] = log_one_minus_h[r] + log_pred[r] + self.log_run_length_dist[r];
         }
 
         // Reset: r' = 0
@@ -430,7 +426,9 @@ impl<H: HazardFn> BocpdState<H> {
     /// the changepoint hypothesis. Threshold of 0 bits is the canonical
     /// "indifferent" decision boundary.
     pub fn recent_changepoint_log_odds_bits(&self, horizon: usize) -> f64 {
-        let p = self.recent_changepoint_probability(horizon).clamp(1e-9, 1.0 - 1e-9);
+        let p = self
+            .recent_changepoint_probability(horizon)
+            .clamp(1e-9, 1.0 - 1e-9);
         (p / (1.0 - p)).log2()
     }
 }
@@ -452,11 +450,7 @@ mod tests {
         // After 30 identical observations, the most likely run length
         // should be near 30 (the model has high confidence no changepoint
         // has occurred).
-        assert!(
-            best_r >= 25,
-            "expected run length near 30, got {}",
-            best_r
-        );
+        assert!(best_r >= 25, "expected run length near 30, got {}", best_r);
         // P(reset) should be very small.
         assert!(
             state.reset_probability() < 0.05,
@@ -520,7 +514,7 @@ mod tests {
         let cold = h.hazard(0, 5000); // mid cold_hold
         let ramp = h.hazard(0, 17000); // mid ramp
         let warm = h.hazard(0, 22000); // warm_hold
-        // Warm should have higher hazard than cold (shorter expected runs).
+                                       // Warm should have higher hazard than cold (shorter expected runs).
         assert!(
             warm > cold,
             "warm hazard ({}) should exceed cold hazard ({})",
@@ -528,8 +522,18 @@ mod tests {
             cold
         );
         // Ramp should be between.
-        assert!(ramp > cold, "ramp hazard ({}) should exceed cold ({})", ramp, cold);
-        assert!(ramp < warm, "ramp hazard ({}) should be less than warm ({})", ramp, warm);
+        assert!(
+            ramp > cold,
+            "ramp hazard ({}) should exceed cold ({})",
+            ramp,
+            cold
+        );
+        assert!(
+            ramp < warm,
+            "ramp hazard ({}) should be less than warm ({})",
+            ramp,
+            warm
+        );
     }
 
     #[test]

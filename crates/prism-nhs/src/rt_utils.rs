@@ -49,7 +49,10 @@ pub fn get_compute_capability() -> Result<(u32, u32), String> {
         );
 
         if result_major != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-            return Err(format!("Failed to get compute capability major: {:?}", result_major));
+            return Err(format!(
+                "Failed to get compute capability major: {:?}",
+                result_major
+            ));
         }
 
         let result_minor = cuDeviceGetAttribute(
@@ -59,7 +62,10 @@ pub fn get_compute_capability() -> Result<(u32, u32), String> {
         );
 
         if result_minor != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-            return Err(format!("Failed to get compute capability minor: {:?}", result_minor));
+            return Err(format!(
+                "Failed to get compute capability minor: {:?}",
+                result_minor
+            ));
         }
 
         Ok((major as u32, minor as u32))
@@ -116,7 +122,7 @@ pub struct RtClusteringConfig {
 impl Default for RtClusteringConfig {
     fn default() -> Self {
         Self {
-            enabled: true,  // Enable by default, will fallback if no RT cores
+            enabled: true, // Enable by default, will fallback if no RT cores
             epsilon: 5.0,
             min_points: 3,
             min_cluster_size: 100,

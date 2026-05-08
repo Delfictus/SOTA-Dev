@@ -7,8 +7,8 @@
 //! 4. Multi-structure concurrent execution
 //! 5. Physics correctness vs single-stream baseline
 
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 use std::time::Instant;
 
 /// Simple PDB parser for test structures (minimal, just for testing)

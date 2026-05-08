@@ -29,8 +29,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
-    CudaContext, CudaSlice, CudaStream, CudaFunction, CudaModule,
-    LaunchConfig, PushKernelArg, DevicePtrMut, DevicePtr,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DevicePtr, DevicePtrMut,
+    LaunchConfig, PushKernelArg,
 };
 #[cfg(feature = "gpu")]
 use cudarc::nvrtc::Ptx;
@@ -152,7 +152,11 @@ impl Float3 {
     }
 
     pub fn from_array(arr: [f32; 3]) -> Self {
-        Self { x: arr[0], y: arr[1], z: arr[2] }
+        Self {
+            x: arr[0],
+            y: arr[1],
+            z: arr[2],
+        }
     }
 
     pub fn to_array(&self) -> [f32; 3] {
@@ -536,7 +540,7 @@ pub struct ActiveSensingEngine {
     // GPU buffers - Probe state
     d_current_probe: CudaSlice<u8>,
     d_probe_response: CudaSlice<u8>,
-    d_probes: CudaSlice<u8>,  // Array for batch mode
+    d_probes: CudaSlice<u8>, // Array for batch mode
 
     // GPU buffers - Aromatic data
     d_aromatic_groups: CudaSlice<u8>,
@@ -603,7 +607,10 @@ impl ActiveSensingEngine {
 
         log::info!(
             "Creating ActiveSensingEngine: grid {}³ = {} voxels, {} aromatics, batch_size={}",
-            grid_dim, n_voxels, n_aromatics, batch_size
+            grid_dim,
+            n_voxels,
+            n_aromatics,
+            batch_size
         );
 
         // Load PTX module
@@ -641,12 +648,14 @@ impl ActiveSensingEngine {
 
         // Allocate GPU buffers using stream (async-friendly)
         let d_spike_histories: CudaSlice<u8> = stream.alloc_zeros(n_voxels * spike_history_size)?;
-        let d_inhibition_states: CudaSlice<u8> = stream.alloc_zeros(n_voxels * inhibition_state_size)?;
+        let d_inhibition_states: CudaSlice<u8> =
+            stream.alloc_zeros(n_voxels * inhibition_state_size)?;
         let d_lif_potential: CudaSlice<f32> = stream.alloc_zeros(n_voxels)?;
         let d_spike_grid: CudaSlice<i32> = stream.alloc_zeros(n_voxels)?;
         let d_spike_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
 
-        let d_sequence_detectors: CudaSlice<u8> = stream.alloc_zeros(max_detectors * sequence_detector_size)?;
+        let d_sequence_detectors: CudaSlice<u8> =
+            stream.alloc_zeros(max_detectors * sequence_detector_size)?;
         let d_detection_scores: CudaSlice<f32> = stream.alloc_zeros(max_detectors)?;
         let d_n_detectors: CudaSlice<i32> = stream.alloc_zeros(1)?;
 
@@ -659,7 +668,8 @@ impl ActiveSensingEngine {
         let d_probe_response: CudaSlice<u8> = stream.alloc_zeros(response_size)?;
         let d_probes: CudaSlice<u8> = stream.alloc_zeros(batch_size * probe_size)?;
 
-        let d_aromatic_groups: CudaSlice<u8> = stream.alloc_zeros(MAX_PROBE_GROUPS * aromatic_group_size)?;
+        let d_aromatic_groups: CudaSlice<u8> =
+            stream.alloc_zeros(MAX_PROBE_GROUPS * aromatic_group_size)?;
         let d_n_groups: CudaSlice<i32> = stream.alloc_zeros(1)?;
         let d_aromatic_centroids: CudaSlice<f32> = stream.alloc_zeros(n_aromatics.max(1) * 3)?;
         let d_aromatic_absorptions: CudaSlice<f32> = stream.alloc_zeros(n_aromatics.max(1))?;
@@ -784,27 +794,23 @@ impl ActiveSensingEngine {
     }
 
     /// Setup aromatic data and cluster into groups
-    pub fn setup_aromatics(
-        &mut self,
-        centroids: &[[f32; 3]],
-        absorptions: &[f32],
-    ) -> Result<i32> {
+    pub fn setup_aromatics(&mut self, centroids: &[[f32; 3]], absorptions: &[f32]) -> Result<i32> {
         if centroids.len() != self.n_aromatics {
             bail!(
                 "Centroid count mismatch: expected {}, got {}",
-                self.n_aromatics, centroids.len()
+                self.n_aromatics,
+                centroids.len()
             );
         }
 
         // Flatten centroids
-        let flat_centroids: Vec<f32> = centroids
-            .iter()
-            .flat_map(|c| c.iter().copied())
-            .collect();
+        let flat_centroids: Vec<f32> = centroids.iter().flat_map(|c| c.iter().copied()).collect();
 
         // Upload to GPU
-        self.stream.memcpy_htod(&flat_centroids, &mut self.d_aromatic_centroids)?;
-        self.stream.memcpy_htod(absorptions, &mut self.d_aromatic_absorptions)?;
+        self.stream
+            .memcpy_htod(&flat_centroids, &mut self.d_aromatic_centroids)?;
+        self.stream
+            .memcpy_htod(absorptions, &mut self.d_aromatic_absorptions)?;
 
         // Launch clustering kernel
         let target_n_groups = self.config.target_n_groups as i32;
@@ -835,7 +841,11 @@ impl ActiveSensingEngine {
         self.stream.memcpy_dtoh(&self.d_n_groups, &mut n_groups)?;
         self.n_groups = n_groups[0];
 
-        log::info!("Clustered {} aromatics into {} groups", self.n_aromatics, self.n_groups);
+        log::info!(
+            "Clustered {} aromatics into {} groups",
+            self.n_aromatics,
+            self.n_groups
+        );
 
         Ok(self.n_groups)
     }
@@ -870,7 +880,8 @@ impl ActiveSensingEngine {
 
         // Read back detector count
         let mut n_detectors = [0i32];
-        self.stream.memcpy_dtoh(&self.d_n_detectors, &mut n_detectors)?;
+        self.stream
+            .memcpy_dtoh(&self.d_n_detectors, &mut n_detectors)?;
         self.n_detectors = n_detectors[0];
 
         log::info!("Built {} sequence detectors", self.n_detectors);
@@ -894,7 +905,8 @@ impl ActiveSensingEngine {
         // Upload probe
         let gpu_probe = self.probe_to_gpu(probe);
         let probe_bytes = Self::struct_to_bytes(&gpu_probe);
-        self.stream.memcpy_htod(&probe_bytes, &mut self.d_current_probe)?;
+        self.stream
+            .memcpy_htod(&probe_bytes, &mut self.d_current_probe)?;
 
         let n_groups = probe.groups.len().min(MAX_PROBE_GROUPS) as i32;
         if n_groups == 0 {
@@ -903,7 +915,7 @@ impl ActiveSensingEngine {
 
         let cfg = LaunchConfig {
             grid_dim: (n_groups as u32, 1, 1),
-            block_dim: (32, 1, 1),  // One warp per group
+            block_dim: (32, 1, 1), // One warp per group
             shared_mem_bytes: 0,
         };
 
@@ -973,7 +985,8 @@ impl ActiveSensingEngine {
 
         // Read spike count
         let mut spike_count = [0i32];
-        self.stream.memcpy_dtoh(&self.d_spike_count, &mut spike_count)?;
+        self.stream
+            .memcpy_dtoh(&self.d_spike_count, &mut spike_count)?;
 
         self.current_time_ps += dt_ps;
         self.accumulated_results.total_spikes += spike_count[0];
@@ -1021,7 +1034,11 @@ impl ActiveSensingEngine {
     }
 
     /// Update resonance spectrum for frequency sweep
-    pub fn update_resonance(&mut self, probe_frequency_thz: f32, probe_period_ps: f32) -> Result<()> {
+    pub fn update_resonance(
+        &mut self,
+        probe_frequency_thz: f32,
+        probe_period_ps: f32,
+    ) -> Result<()> {
         let cfg = LaunchConfig {
             grid_dim: (1, 1, 1),
             block_dim: (1, 1, 1),
@@ -1063,11 +1080,11 @@ impl ActiveSensingEngine {
 
         // Read back resonance detector
         let mut detector_bytes = vec![0u8; self.resonance_detector_size];
-        self.stream.memcpy_dtoh(&self.d_resonance_detector, &mut detector_bytes)?;
+        self.stream
+            .memcpy_dtoh(&self.d_resonance_detector, &mut detector_bytes)?;
 
-        let detector: GpuResonanceDetector = unsafe {
-            std::ptr::read_unaligned(detector_bytes.as_ptr() as *const _)
-        };
+        let detector: GpuResonanceDetector =
+            unsafe { std::ptr::read_unaligned(detector_bytes.as_ptr() as *const _) };
 
         let mut peaks = Vec::new();
         for i in 0..detector.n_resonances as usize {
@@ -1115,11 +1132,11 @@ impl ActiveSensingEngine {
 
         // Read response
         let mut response_bytes = vec![0u8; self.response_size];
-        self.stream.memcpy_dtoh(&self.d_probe_response, &mut response_bytes)?;
+        self.stream
+            .memcpy_dtoh(&self.d_probe_response, &mut response_bytes)?;
 
-        let gpu_response: GpuProbeResponse = unsafe {
-            std::ptr::read_unaligned(response_bytes.as_ptr() as *const _)
-        };
+        let gpu_response: GpuProbeResponse =
+            unsafe { std::ptr::read_unaligned(response_bytes.as_ptr() as *const _) };
 
         self.host_response = ProbeResponse {
             total_spikes: gpu_response.total_spikes,
@@ -1162,7 +1179,8 @@ impl ActiveSensingEngine {
 
         // Read next probe
         let mut next_idx = [0i32];
-        self.stream.memcpy_dtoh(&self.d_next_probe_idx, &mut next_idx)?;
+        self.stream
+            .memcpy_dtoh(&self.d_next_probe_idx, &mut next_idx)?;
 
         self.accumulated_results.total_probes += 1;
 
@@ -1211,7 +1229,8 @@ impl ActiveSensingEngine {
         // Read results
         let mut differential = [0.0f32];
         let mut confidence = [0.0f32];
-        self.stream.memcpy_dtoh(&d_differential, &mut differential)?;
+        self.stream
+            .memcpy_dtoh(&d_differential, &mut differential)?;
         self.stream.memcpy_dtoh(&d_confidence, &mut confidence)?;
 
         if differential[0] > self.accumulated_results.best_differential_score {
@@ -1316,7 +1335,9 @@ impl ActiveSensingEngine {
 
         // Read all responses
         let mut response_bytes = vec![0u8; actual_batch * self.response_size];
-        let slice = self.d_batch_responses.slice(..actual_batch * self.response_size);
+        let slice = self
+            .d_batch_responses
+            .slice(..actual_batch * self.response_size);
         self.stream.memcpy_dtoh(&slice, &mut response_bytes)?;
 
         let mut responses = Vec::with_capacity(actual_batch);
@@ -1393,20 +1414,36 @@ impl ActiveSensingEngine {
         gpu.probe_type = probe.probe_type as i32;
 
         for (i, group) in probe.groups.iter().take(MAX_PROBE_GROUPS).enumerate() {
-            gpu.groups[i].n_aromatics = group.aromatic_indices.len().min(MAX_AROMATICS_PER_GROUP) as i32;
+            gpu.groups[i].n_aromatics =
+                group.aromatic_indices.len().min(MAX_AROMATICS_PER_GROUP) as i32;
             gpu.groups[i].centroid = group.centroid.to_array();
             gpu.groups[i].total_absorption = group.total_absorption;
 
-            for (j, &idx) in group.aromatic_indices.iter().take(MAX_AROMATICS_PER_GROUP).enumerate() {
+            for (j, &idx) in group
+                .aromatic_indices
+                .iter()
+                .take(MAX_AROMATICS_PER_GROUP)
+                .enumerate()
+            {
                 gpu.groups[i].aromatic_indices[j] = idx as i32;
             }
         }
 
-        for (i, &delay) in probe.phase_delays_fs.iter().take(MAX_PROBE_GROUPS).enumerate() {
+        for (i, &delay) in probe
+            .phase_delays_fs
+            .iter()
+            .take(MAX_PROBE_GROUPS)
+            .enumerate()
+        {
             gpu.phase_delays_fs[i] = delay;
         }
 
-        for (i, &energy) in probe.energy_per_group.iter().take(MAX_PROBE_GROUPS).enumerate() {
+        for (i, &energy) in probe
+            .energy_per_group
+            .iter()
+            .take(MAX_PROBE_GROUPS)
+            .enumerate()
+        {
             gpu.energy_per_group[i] = energy;
         }
 
@@ -1434,11 +1471,7 @@ impl ActiveSensingEngine {
         let size = std::mem::size_of::<T>();
         let mut bytes = vec![0u8; size];
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                s as *const T as *const u8,
-                bytes.as_mut_ptr(),
-                size,
-            );
+            std::ptr::copy_nonoverlapping(s as *const T as *const u8, bytes.as_mut_ptr(), size);
         }
         bytes
     }
@@ -1468,7 +1501,9 @@ pub struct ActiveSensingBuilder;
 
 #[cfg(not(feature = "gpu"))]
 impl ActiveSensingBuilder {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
     pub fn build(self) -> Result<ActiveSensingEngine> {
         bail!("ActiveSensingEngine requires GPU")
     }

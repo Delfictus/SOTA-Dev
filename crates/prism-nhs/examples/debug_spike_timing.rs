@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<()> {
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -71,7 +71,10 @@ fn main() -> Result<()> {
 
     // Get accumulated spike events (collected during each sync interval)
     let spikes = engine.get_accumulated_spikes().to_vec();
-    println!("Accumulated {} spike events across all sync intervals\n", spikes.len());
+    println!(
+        "Accumulated {} spike events across all sync intervals\n",
+        spikes.len()
+    );
 
     if spikes.is_empty() {
         println!("No spikes to analyze!");
@@ -97,7 +100,10 @@ fn main() -> Result<()> {
 
     // Print histogram
     println!("\nPhase distribution (mod {} steps):", burst_interval);
-    println!("{:>6} {:>8} {:>10} {:>50}", "Phase", "Count", "Intensity", "Bar");
+    println!(
+        "{:>6} {:>8} {:>10} {:>50}",
+        "Phase", "Count", "Intensity", "Bar"
+    );
     println!("{}", "-".repeat(80));
 
     let max_count = *phase_counts.values().max().unwrap_or(&1);
@@ -105,16 +111,30 @@ fn main() -> Result<()> {
     for phase in 0..burst_interval {
         let count = *phase_counts.get(&phase).unwrap_or(&0);
         let intensity = *intensity_sum.get(&phase).unwrap_or(&0.0);
-        let avg_intensity = if count > 0 { intensity / count as f32 } else { 0.0 };
+        let avg_intensity = if count > 0 {
+            intensity / count as f32
+        } else {
+            0.0
+        };
 
-        let bar_len = if max_count > 0 { (count * 40) / max_count } else { 0 };
+        let bar_len = if max_count > 0 {
+            (count * 40) / max_count
+        } else {
+            0
+        };
         let bar = "█".repeat(bar_len);
 
-        let uv_marker = if phase < burst_duration { " ← UV" } else { "" };
+        let uv_marker = if phase < burst_duration {
+            " ← UV"
+        } else {
+            ""
+        };
 
         if count > 0 || phase < burst_duration || phase >= burst_interval - 5 {
-            println!("{:>6} {:>8} {:>10.3} {:>50}{}",
-                     phase, count, avg_intensity, bar, uv_marker);
+            println!(
+                "{:>6} {:>8} {:>10.3} {:>50}{}",
+                phase, count, avg_intensity, bar, uv_marker
+            );
         }
     }
 
@@ -123,18 +143,38 @@ fn main() -> Result<()> {
     println!("TIMING ANALYSIS");
     println!("═══════════════════════════════════════════════════════════════════════");
 
-    let during_uv: usize = (0..burst_duration).map(|p| phase_counts.get(&p).unwrap_or(&0)).sum();
-    let after_uv: usize = (burst_duration..(burst_duration + 50)).map(|p| phase_counts.get(&p).unwrap_or(&0)).sum();
-    let between: usize = ((burst_duration + 50)..burst_interval).map(|p| phase_counts.get(&p).unwrap_or(&0)).sum();
+    let during_uv: usize = (0..burst_duration)
+        .map(|p| phase_counts.get(&p).unwrap_or(&0))
+        .sum();
+    let after_uv: usize = (burst_duration..(burst_duration + 50))
+        .map(|p| phase_counts.get(&p).unwrap_or(&0))
+        .sum();
+    let between: usize = ((burst_duration + 50)..burst_interval)
+        .map(|p| phase_counts.get(&p).unwrap_or(&0))
+        .sum();
     let total = spikes.len();
 
     println!("\nSpike timing categories:");
-    println!("  During UV (phase 0-{}):       {:>6} ({:>5.1}%)",
-             burst_duration - 1, during_uv, 100.0 * during_uv as f32 / total as f32);
-    println!("  Post-UV (phase {}-{}):       {:>6} ({:>5.1}%)",
-             burst_duration, burst_duration + 49, after_uv, 100.0 * after_uv as f32 / total as f32);
-    println!("  Between bursts (phase {}-{}): {:>6} ({:>5.1}%)",
-             burst_duration + 50, burst_interval - 1, between, 100.0 * between as f32 / total as f32);
+    println!(
+        "  During UV (phase 0-{}):       {:>6} ({:>5.1}%)",
+        burst_duration - 1,
+        during_uv,
+        100.0 * during_uv as f32 / total as f32
+    );
+    println!(
+        "  Post-UV (phase {}-{}):       {:>6} ({:>5.1}%)",
+        burst_duration,
+        burst_duration + 49,
+        after_uv,
+        100.0 * after_uv as f32 / total as f32
+    );
+    println!(
+        "  Between bursts (phase {}-{}): {:>6} ({:>5.1}%)",
+        burst_duration + 50,
+        burst_interval - 1,
+        between,
+        100.0 * between as f32 / total as f32
+    );
 
     // UV correlation metric
     let uv_related = during_uv + after_uv;
@@ -159,7 +199,13 @@ fn main() -> Result<()> {
     println!("INTENSITY ANALYSIS");
     println!("═══════════════════════════════════════════════════════════════════════");
 
-    let intensities: Vec<f32> = spikes.iter().map(|s| { let i = s.intensity; i }).collect();
+    let intensities: Vec<f32> = spikes
+        .iter()
+        .map(|s| {
+            let i = s.intensity;
+            i
+        })
+        .collect();
     let avg_intensity = intensities.iter().sum::<f32>() / intensities.len() as f32;
     let max_intensity = intensities.iter().cloned().fold(0.0f32, f32::max);
     let min_intensity = intensities.iter().cloned().fold(f32::MAX, f32::min);
@@ -169,13 +215,21 @@ fn main() -> Result<()> {
     println!("  Min: {:.4}", min_intensity);
     println!("  Max: {:.4}", max_intensity);
     println!("  Avg: {:.4}", avg_intensity);
-    println!("  Non-zero: {}/{} ({:.1}%)", nonzero, total, 100.0 * nonzero as f32 / total as f32);
+    println!(
+        "  Non-zero: {}/{} ({:.1}%)",
+        nonzero,
+        total,
+        100.0 * nonzero as f32 / total as f32
+    );
 
     // Sample some spikes
     println!("\n═══════════════════════════════════════════════════════════════════════");
     println!("SAMPLE SPIKES (first 20)");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>6} {:>8} {:>10} {:>8}", "Index", "Timestep", "Phase", "Intensity");
+    println!(
+        "{:>6} {:>8} {:>10} {:>8}",
+        "Index", "Timestep", "Phase", "Intensity"
+    );
     println!("{}", "-".repeat(40));
 
     for (i, spike) in spikes.iter().take(20).enumerate() {
@@ -183,9 +237,15 @@ fn main() -> Result<()> {
         let ts = spike.timestep;
         let intensity = spike.intensity;
         let phase = ts % burst_interval;
-        let uv_marker = if phase < burst_duration { " ← UV" } else { "" };
-        println!("{:>6} {:>8} {:>10} {:>8.4}{}",
-                 i, ts, phase, intensity, uv_marker);
+        let uv_marker = if phase < burst_duration {
+            " ← UV"
+        } else {
+            ""
+        };
+        println!(
+            "{:>6} {:>8} {:>10} {:>8.4}{}",
+            i, ts, phase, intensity, uv_marker
+        );
     }
 
     Ok(())

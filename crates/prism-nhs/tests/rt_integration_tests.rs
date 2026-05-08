@@ -50,16 +50,104 @@ fn create_realistic_protein() -> PrismPrepTopology {
 
     // 10 residues: ALA, PHE, TYR, GLY, ALA, TRP, HIS, ALA, GLY, ALA
     let residues = vec![
-        ("ALA", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("C", "C", 12.0, 0.5), ("O", "O", 16.0, -0.5), ("CB", "C", 12.0, 0.0)]),
-        ("PHE", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("CG", "C", 12.0, 0.0), ("CD1", "C", 12.0, 0.0), ("CE1", "C", 12.0, 0.0)]),
-        ("TYR", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("CG", "C", 12.0, 0.0), ("CD1", "C", 12.0, 0.0), ("OH", "O", 16.0, -0.5)]),
-        ("GLY", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("C", "C", 12.0, 0.5), ("O", "O", 16.0, -0.5)]),
-        ("ALA", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("C", "C", 12.0, 0.5), ("O", "O", 16.0, -0.5), ("CB", "C", 12.0, 0.0)]),
-        ("TRP", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("CG", "C", 12.0, 0.0), ("CD1", "C", 12.0, 0.0), ("NE1", "N", 14.0, -0.3)]),
-        ("HIS", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("CG", "C", 12.0, 0.0), ("ND1", "N", 14.0, -0.3), ("CE1", "C", 12.0, 0.0)]),
-        ("ALA", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("C", "C", 12.0, 0.5), ("O", "O", 16.0, -0.5), ("CB", "C", 12.0, 0.0)]),
-        ("GLY", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("C", "C", 12.0, 0.5), ("O", "O", 16.0, -0.5)]),
-        ("ALA", vec![("N", "N", 14.0, -0.4), ("CA", "C", 12.0, 0.1), ("C", "C", 12.0, 0.5), ("O", "O", 16.0, -0.5), ("CB", "C", 12.0, 0.0)]),
+        (
+            "ALA",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("C", "C", 12.0, 0.5),
+                ("O", "O", 16.0, -0.5),
+                ("CB", "C", 12.0, 0.0),
+            ],
+        ),
+        (
+            "PHE",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("CG", "C", 12.0, 0.0),
+                ("CD1", "C", 12.0, 0.0),
+                ("CE1", "C", 12.0, 0.0),
+            ],
+        ),
+        (
+            "TYR",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("CG", "C", 12.0, 0.0),
+                ("CD1", "C", 12.0, 0.0),
+                ("OH", "O", 16.0, -0.5),
+            ],
+        ),
+        (
+            "GLY",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("C", "C", 12.0, 0.5),
+                ("O", "O", 16.0, -0.5),
+            ],
+        ),
+        (
+            "ALA",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("C", "C", 12.0, 0.5),
+                ("O", "O", 16.0, -0.5),
+                ("CB", "C", 12.0, 0.0),
+            ],
+        ),
+        (
+            "TRP",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("CG", "C", 12.0, 0.0),
+                ("CD1", "C", 12.0, 0.0),
+                ("NE1", "N", 14.0, -0.3),
+            ],
+        ),
+        (
+            "HIS",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("CG", "C", 12.0, 0.0),
+                ("ND1", "N", 14.0, -0.3),
+                ("CE1", "C", 12.0, 0.0),
+            ],
+        ),
+        (
+            "ALA",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("C", "C", 12.0, 0.5),
+                ("O", "O", 16.0, -0.5),
+                ("CB", "C", 12.0, 0.0),
+            ],
+        ),
+        (
+            "GLY",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("C", "C", 12.0, 0.5),
+                ("O", "O", 16.0, -0.5),
+            ],
+        ),
+        (
+            "ALA",
+            vec![
+                ("N", "N", 14.0, -0.4),
+                ("CA", "C", 12.0, 0.1),
+                ("C", "C", 12.0, 0.5),
+                ("O", "O", 16.0, -0.5),
+                ("CB", "C", 12.0, 0.0),
+            ],
+        ),
     ];
 
     let mut atom_idx = 0;
@@ -130,7 +218,10 @@ fn test_full_pipeline_implicit_mode() {
 
     // Step 1: Create realistic protein
     let topology = create_realistic_protein();
-    println!("Created test protein: {} atoms, {} residues", topology.n_atoms, topology.n_residues);
+    println!(
+        "Created test protein: {} atoms, {} residues",
+        topology.n_atoms, topology.n_residues
+    );
 
     // Step 2: Configure implicit solvent mode
     let solvent_mode = SolventMode::Implicit;
@@ -142,7 +233,8 @@ fn test_full_pipeline_implicit_mode() {
         0.5,  // grid_spacing
         10.0, // padding
         &solvent_mode,
-    ).expect("Failed to prepare input");
+    )
+    .expect("Failed to prepare input");
 
     println!("\n--- Prepared System ---");
     println!("Total atoms: {}", prepared.total_atoms);
@@ -151,21 +243,39 @@ fn test_full_pipeline_implicit_mode() {
     println!("{}", prepared.rt_targets.summary());
 
     // VALIDATION: Implicit mode should have NO waters
-    assert!(prepared.water_atoms.is_none(), "Implicit mode should have no waters");
-    assert_eq!(prepared.total_atoms, topology.n_atoms, "Total atoms should equal protein atoms");
+    assert!(
+        prepared.water_atoms.is_none(),
+        "Implicit mode should have no waters"
+    );
+    assert_eq!(
+        prepared.total_atoms, topology.n_atoms,
+        "Total atoms should equal protein atoms"
+    );
 
     // VALIDATION: RT targets should have protein atoms only (no waters)
-    assert!(prepared.rt_targets.water_atoms.is_none(), "RT targets should have no water atoms");
-    assert!(!prepared.rt_targets.protein_atoms.is_empty(), "RT targets must have protein atoms");
+    assert!(
+        prepared.rt_targets.water_atoms.is_none(),
+        "RT targets should have no water atoms"
+    );
+    assert!(
+        !prepared.rt_targets.protein_atoms.is_empty(),
+        "RT targets must have protein atoms"
+    );
 
     // VALIDATION: Aromatic centers should be detected (PHE, TYR, TRP, HIS present)
-    assert!(prepared.rt_targets.aromatic_centers.len() >= 4,
+    assert!(
+        prepared.rt_targets.aromatic_centers.len() >= 4,
         "Should detect at least 4 aromatic residues (PHE, TYR, TRP, HIS), found {}",
-        prepared.rt_targets.aromatic_centers.len());
+        prepared.rt_targets.aromatic_centers.len()
+    );
 
     // VALIDATION: Total target count should be protein + aromatics (no waters)
-    let expected_total = prepared.rt_targets.protein_atoms.len() + prepared.rt_targets.aromatic_centers.len();
-    assert_eq!(prepared.rt_targets.total_targets, expected_total, "Total target count mismatch");
+    let expected_total =
+        prepared.rt_targets.protein_atoms.len() + prepared.rt_targets.aromatic_centers.len();
+    assert_eq!(
+        prepared.rt_targets.total_targets, expected_total,
+        "Total target count mismatch"
+    );
 
     println!("\n✅ PASS: Implicit mode pipeline validated");
 }
@@ -180,10 +290,15 @@ fn test_full_pipeline_explicit_mode() {
 
     // Step 1: Create realistic protein
     let topology = create_realistic_protein();
-    println!("Created test protein: {} atoms, {} residues", topology.n_atoms, topology.n_residues);
+    println!(
+        "Created test protein: {} atoms, {} residues",
+        topology.n_atoms, topology.n_residues
+    );
 
     // Step 2: Configure explicit solvent mode (10Å padding)
-    let solvent_mode = SolventMode::Explicit { padding_angstroms: 10.0 };
+    let solvent_mode = SolventMode::Explicit {
+        padding_angstroms: 10.0,
+    };
     println!("Solvent mode: {:?}", solvent_mode);
 
     // Step 3: Prepare system (full pipeline with solvation)
@@ -193,7 +308,8 @@ fn test_full_pipeline_explicit_mode() {
         0.5,  // grid_spacing
         10.0, // padding
         &solvent_mode,
-    ).expect("Failed to prepare input");
+    )
+    .expect("Failed to prepare input");
     let prep_time = start_time.elapsed();
 
     println!("\n--- Prepared System ---");
@@ -208,7 +324,10 @@ fn test_full_pipeline_explicit_mode() {
     println!("{}", prepared.rt_targets.summary());
 
     // VALIDATION: Explicit mode MUST have waters
-    assert!(prepared.water_atoms.is_some(), "Explicit mode must have waters");
+    assert!(
+        prepared.water_atoms.is_some(),
+        "Explicit mode must have waters"
+    );
     let n_waters = prepared.water_atoms.as_ref().unwrap().len();
     assert!(n_waters > 0, "Must add at least some waters");
 
@@ -218,33 +337,63 @@ fn test_full_pipeline_explicit_mode() {
     // Allow 500-3000 range (generous for test)
     assert!(n_waters >= 500, "Too few waters added: {}", n_waters);
     assert!(n_waters <= 3000, "Too many waters added: {}", n_waters);
-    println!("Water count validation: {} waters (expected 500-3000) ✓", n_waters);
+    println!(
+        "Water count validation: {} waters (expected 500-3000) ✓",
+        n_waters
+    );
 
     // VALIDATION: Total atoms = protein + waters
-    assert_eq!(prepared.total_atoms, topology.n_atoms + n_waters,
+    assert_eq!(
+        prepared.total_atoms,
+        topology.n_atoms + n_waters,
         "Total atoms mismatch: {} != {} + {}",
-        prepared.total_atoms, topology.n_atoms, n_waters);
+        prepared.total_atoms,
+        topology.n_atoms,
+        n_waters
+    );
 
     // VALIDATION: RT targets should include water atoms
-    assert!(prepared.rt_targets.water_atoms.is_some(), "RT targets must include water atoms");
-    assert_eq!(prepared.rt_targets.water_atoms.as_ref().unwrap().len(), n_waters,
-        "RT water target count mismatch");
+    assert!(
+        prepared.rt_targets.water_atoms.is_some(),
+        "RT targets must include water atoms"
+    );
+    assert_eq!(
+        prepared.rt_targets.water_atoms.as_ref().unwrap().len(),
+        n_waters,
+        "RT water target count mismatch"
+    );
 
     // VALIDATION: Aromatic centers still detected
-    assert!(prepared.rt_targets.aromatic_centers.len() >= 4,
-        "Should still detect aromatic residues in explicit mode");
+    assert!(
+        prepared.rt_targets.aromatic_centers.len() >= 4,
+        "Should still detect aromatic residues in explicit mode"
+    );
 
     // VALIDATION: Performance target (<5s for solvation)
-    assert!(prep_time.as_secs_f64() < 5.0,
-        "Preparation time {} exceeds 5s target", prep_time.as_secs_f64());
-    println!("Performance validation: {:.3}s < 5.0s ✓", prep_time.as_secs_f64());
+    assert!(
+        prep_time.as_secs_f64() < 5.0,
+        "Preparation time {} exceeds 5s target",
+        prep_time.as_secs_f64()
+    );
+    println!(
+        "Performance validation: {:.3}s < 5.0s ✓",
+        prep_time.as_secs_f64()
+    );
 
     // VALIDATION: Water metadata in topology
     let protein_start = topology.n_atoms;
     for water_idx in prepared.water_atoms.as_ref().unwrap().iter().take(5) {
-        assert!(*water_idx >= protein_start, "Water index {} should be >= protein count {}", water_idx, protein_start);
+        assert!(
+            *water_idx >= protein_start,
+            "Water index {} should be >= protein count {}",
+            water_idx,
+            protein_start
+        );
     }
-    println!("Water metadata validation: indices start at {} ✓", protein_start);
+    println!(
+        "Water metadata validation: indices start at {} ✓",
+        protein_start
+    );
 
     println!("\n✅ PASS: Explicit mode pipeline validated");
 }
@@ -258,7 +407,10 @@ fn test_full_pipeline_hybrid_mode() {
     println!("\n=== INTEGRATION TEST: Full Pipeline - Hybrid Mode ===\n");
 
     let topology = create_realistic_protein();
-    println!("Created test protein: {} atoms, {} residues", topology.n_atoms, topology.n_residues);
+    println!(
+        "Created test protein: {} atoms, {} residues",
+        topology.n_atoms, topology.n_residues
+    );
 
     // Hybrid mode: starts implicit, switches to explicit during simulation
     let solvent_mode = SolventMode::Hybrid {
@@ -269,12 +421,8 @@ fn test_full_pipeline_hybrid_mode() {
     println!("Solvent mode: {:?}", solvent_mode);
 
     // For Stage 1 (PREP), hybrid starts as implicit
-    let prepared = NhsPreparedInput::from_topology(
-        topology.clone(),
-        0.5,
-        10.0,
-        &solvent_mode,
-    ).expect("Failed to prepare input");
+    let prepared = NhsPreparedInput::from_topology(topology.clone(), 0.5, 10.0, &solvent_mode)
+        .expect("Failed to prepare input");
 
     println!("\n--- Prepared System (Hybrid Start) ---");
     println!("Total atoms: {}", prepared.total_atoms);
@@ -283,11 +431,18 @@ fn test_full_pipeline_hybrid_mode() {
 
     // VALIDATION: Hybrid starts implicit (no waters initially)
     // Waters will be added dynamically during Stage 2b when pockets detected
-    assert!(prepared.water_atoms.is_none() || prepared.water_atoms.as_ref().unwrap().is_empty(),
-        "Hybrid mode should start without explicit waters");
+    assert!(
+        prepared.water_atoms.is_none() || prepared.water_atoms.as_ref().unwrap().is_empty(),
+        "Hybrid mode should start without explicit waters"
+    );
 
     // VALIDATION: Configuration preserved for later explicit switch
-    if let SolventMode::Hybrid { exploration_steps, characterization_steps, switch_threshold } = prepared.solvent_mode {
+    if let SolventMode::Hybrid {
+        exploration_steps,
+        characterization_steps,
+        switch_threshold,
+    } = prepared.solvent_mode
+    {
         assert_eq!(exploration_steps, 1000);
         assert_eq!(characterization_steps, 5000);
         assert!((switch_threshold - 0.6).abs() < 0.001);
@@ -307,14 +462,12 @@ fn test_water_density_validation() {
     println!("\n=== INTEGRATION TEST: Water Density Validation ===\n");
 
     let topology = create_realistic_protein();
-    let solvent_mode = SolventMode::Explicit { padding_angstroms: 15.0 };
+    let solvent_mode = SolventMode::Explicit {
+        padding_angstroms: 15.0,
+    };
 
-    let prepared = NhsPreparedInput::from_topology(
-        topology.clone(),
-        0.5,
-        15.0,
-        &solvent_mode,
-    ).expect("Failed to prepare input");
+    let prepared = NhsPreparedInput::from_topology(topology.clone(), 0.5, 15.0, &solvent_mode)
+        .expect("Failed to prepare input");
 
     let n_waters = prepared.water_atoms.as_ref().unwrap().len();
 
@@ -340,8 +493,11 @@ fn test_water_density_validation() {
     // but spherical packing can increase local density (1.0-1.5x)
     // Real systems vary based on protein topology and packing geometry
     let density_ratio = actual_density / 0.0334;
-    assert!(density_ratio >= 0.4 && density_ratio <= 1.6,
-        "Water density ratio {:.2} outside acceptable range [0.4, 1.6]", density_ratio);
+    assert!(
+        density_ratio >= 0.4 && density_ratio <= 1.6,
+        "Water density ratio {:.2} outside acceptable range [0.4, 1.6]",
+        density_ratio
+    );
 
     println!("Density ratio: {:.2} (target: 1.0) ✓", density_ratio);
     println!("\n✅ PASS: Water density within acceptable range");
@@ -358,28 +514,35 @@ fn test_aromatic_center_accuracy() {
     let topology = create_realistic_protein();
     let solvent_mode = SolventMode::Implicit;
 
-    let prepared = NhsPreparedInput::from_topology(
-        topology.clone(),
-        0.5,
-        10.0,
-        &solvent_mode,
-    ).expect("Failed to prepare input");
+    let prepared = NhsPreparedInput::from_topology(topology.clone(), 0.5, 10.0, &solvent_mode)
+        .expect("Failed to prepare input");
 
     let aromatics = &prepared.rt_targets.aromatic_centers;
     println!("Detected {} aromatic centers", aromatics.len());
 
     // VALIDATION: Should detect PHE, TYR, TRP, HIS (4 aromatic residues)
-    assert_eq!(aromatics.len(), 4, "Should detect exactly 4 aromatic residues");
+    assert_eq!(
+        aromatics.len(),
+        4,
+        "Should detect exactly 4 aromatic residues"
+    );
 
     // VALIDATION: Each center should be within protein bounds
     // Protein is in sphere of radius ~15Å centered at origin
     for (i, center) in aromatics.iter().enumerate() {
-        let distance_from_origin = (center[0].powi(2) + center[1].powi(2) + center[2].powi(2)).sqrt();
-        println!("Aromatic {}: [{:.2}, {:.2}, {:.2}] distance from origin: {:.2}Å",
-            i, center[0], center[1], center[2], distance_from_origin);
+        let distance_from_origin =
+            (center[0].powi(2) + center[1].powi(2) + center[2].powi(2)).sqrt();
+        println!(
+            "Aromatic {}: [{:.2}, {:.2}, {:.2}] distance from origin: {:.2}Å",
+            i, center[0], center[1], center[2], distance_from_origin
+        );
 
-        assert!(distance_from_origin < 20.0,
-            "Aromatic center {} at {:.2}Å is outside protein bounds", i, distance_from_origin);
+        assert!(
+            distance_from_origin < 20.0,
+            "Aromatic center {} at {:.2}Å is outside protein bounds",
+            i,
+            distance_from_origin
+        );
     }
 
     println!("\n✅ PASS: Aromatic centers within protein bounds");
@@ -398,16 +561,17 @@ fn test_rt_target_count_validation() {
     // Test both implicit and explicit modes
     for (mode_name, solvent_mode) in &[
         ("Implicit", SolventMode::Implicit),
-        ("Explicit", SolventMode::Explicit { padding_angstroms: 10.0 }),
+        (
+            "Explicit",
+            SolventMode::Explicit {
+                padding_angstroms: 10.0,
+            },
+        ),
     ] {
         println!("\n--- Testing {} Mode ---", mode_name);
 
-        let prepared = NhsPreparedInput::from_topology(
-            topology.clone(),
-            0.5,
-            10.0,
-            solvent_mode,
-        ).expect("Failed to prepare input");
+        let prepared = NhsPreparedInput::from_topology(topology.clone(), 0.5, 10.0, solvent_mode)
+            .expect("Failed to prepare input");
 
         let targets = &prepared.rt_targets;
 
@@ -416,11 +580,17 @@ fn test_rt_target_count_validation() {
             + targets.water_atoms.as_ref().map_or(0, |w| w.len())
             + targets.aromatic_centers.len();
 
-        assert_eq!(targets.total_targets, manual_total,
-            "{} mode: total_targets mismatch", mode_name);
+        assert_eq!(
+            targets.total_targets, manual_total,
+            "{} mode: total_targets mismatch",
+            mode_name
+        );
 
         println!("Protein atoms: {}", targets.protein_atoms.len());
-        println!("Water atoms: {}", targets.water_atoms.as_ref().map_or(0, |w| w.len()));
+        println!(
+            "Water atoms: {}",
+            targets.water_atoms.as_ref().map_or(0, |w| w.len())
+        );
         println!("Aromatic centers: {}", targets.aromatic_centers.len());
         println!("Total: {} ✓", targets.total_targets);
     }
@@ -444,7 +614,9 @@ fn test_error_handling_validation() {
         topology.clone(),
         0.5,
         10.0,
-        &SolventMode::Explicit { padding_angstroms: -5.0 },
+        &SolventMode::Explicit {
+            padding_angstroms: -5.0,
+        },
     );
     assert!(result.is_err(), "Should reject negative padding");
     println!("✓ Correctly rejected negative padding");
@@ -455,7 +627,9 @@ fn test_error_handling_validation() {
         topology.clone(),
         0.5,
         10.0,
-        &SolventMode::Explicit { padding_angstroms: 0.0 },
+        &SolventMode::Explicit {
+            padding_angstroms: 0.0,
+        },
     );
     assert!(result.is_err(), "Should reject zero padding");
     println!("✓ Correctly rejected zero padding");
@@ -467,7 +641,10 @@ fn test_error_handling_validation() {
         characterization_steps: 1000,
         switch_threshold: 0.6,
     };
-    assert!(invalid_hybrid.validate().is_err(), "Should reject negative steps");
+    assert!(
+        invalid_hybrid.validate().is_err(),
+        "Should reject negative steps"
+    );
     println!("✓ Correctly rejected negative steps");
 
     // Test 4: Invalid threshold (> 1.0)
@@ -477,7 +654,10 @@ fn test_error_handling_validation() {
         characterization_steps: 1000,
         switch_threshold: 1.5,
     };
-    assert!(invalid_threshold.validate().is_err(), "Should reject threshold > 1.0");
+    assert!(
+        invalid_threshold.validate().is_err(),
+        "Should reject threshold > 1.0"
+    );
     println!("✓ Correctly rejected invalid threshold");
 
     println!("\n✅ PASS: Error handling validated");
@@ -495,14 +675,14 @@ fn test_performance_regression() {
 
     // Baseline: Implicit mode (no solvation overhead)
     let start_implicit = std::time::Instant::now();
-    let _prepared_implicit = NhsPreparedInput::from_topology(
-        topology.clone(),
-        0.5,
-        10.0,
-        &SolventMode::Implicit,
-    ).expect("Failed to prepare implicit");
+    let _prepared_implicit =
+        NhsPreparedInput::from_topology(topology.clone(), 0.5, 10.0, &SolventMode::Implicit)
+            .expect("Failed to prepare implicit");
     let time_implicit = start_implicit.elapsed();
-    println!("Implicit mode prep time: {:.3}s", time_implicit.as_secs_f64());
+    println!(
+        "Implicit mode prep time: {:.3}s",
+        time_implicit.as_secs_f64()
+    );
 
     // With solvation: Explicit mode
     let start_explicit = std::time::Instant::now();
@@ -510,21 +690,34 @@ fn test_performance_regression() {
         topology.clone(),
         0.5,
         10.0,
-        &SolventMode::Explicit { padding_angstroms: 10.0 },
-    ).expect("Failed to prepare explicit");
+        &SolventMode::Explicit {
+            padding_angstroms: 10.0,
+        },
+    )
+    .expect("Failed to prepare explicit");
     let time_explicit = start_explicit.elapsed();
-    println!("Explicit mode prep time: {:.3}s", time_explicit.as_secs_f64());
+    println!(
+        "Explicit mode prep time: {:.3}s",
+        time_explicit.as_secs_f64()
+    );
 
     // VALIDATION: Explicit overhead should be <5s absolute
-    assert!(time_explicit.as_secs_f64() < 5.0,
-        "Explicit mode prep time {:.3}s exceeds 5s target", time_explicit.as_secs_f64());
+    assert!(
+        time_explicit.as_secs_f64() < 5.0,
+        "Explicit mode prep time {:.3}s exceeds 5s target",
+        time_explicit.as_secs_f64()
+    );
 
     // Calculate overhead
     let overhead = time_explicit.as_secs_f64() - time_implicit.as_secs_f64();
     println!("Solvation overhead: {:.3}s", overhead);
 
     // VALIDATION: Overhead should be reasonable (<5s)
-    assert!(overhead < 5.0, "Solvation overhead {:.3}s exceeds 5s", overhead);
+    assert!(
+        overhead < 5.0,
+        "Solvation overhead {:.3}s exceeds 5s",
+        overhead
+    );
 
     println!("\n✅ PASS: Performance targets met");
 }

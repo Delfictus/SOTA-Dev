@@ -20,8 +20,8 @@ use anyhow::{Context, Result};
 use cudarc::driver::CudaContext;
 #[cfg(feature = "gpu")]
 use prism_nhs::{
+    fused_engine::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig},
     input::PrismPrepTopology,
-    fused_engine::{NhsAmberFusedEngine, UvProbeConfig, TemperatureProtocol},
 };
 
 fn main() -> Result<()> {
@@ -50,19 +50,18 @@ fn run_gpu_test() -> Result<()> {
     let topology_path = "data/curated_14/topologies/1L2Y_topology.json";
     println!("Loading topology: {}", topology_path);
     let topology: PrismPrepTopology = serde_json::from_str(
-        &std::fs::read_to_string(topology_path)
-            .context("Failed to read topology file")?
-    ).context("Failed to parse topology")?;
+        &std::fs::read_to_string(topology_path).context("Failed to read topology file")?,
+    )
+    .context("Failed to parse topology")?;
     println!("  Atoms: {}", topology.n_atoms);
     println!("  Residues: {}", topology.n_residues);
 
     // Create engine
     let mut engine = NhsAmberFusedEngine::new(
-        ctx,
-        &topology,
-        32, // grid_dim
+        ctx, &topology, 32,  // grid_dim
         1.5, // grid_spacing
-    ).context("Failed to create engine")?;
+    )
+    .context("Failed to create engine")?;
     println!("Engine created");
     println!("  Aromatics detected: {}", engine.n_aromatics());
 
@@ -83,10 +82,10 @@ fn run_gpu_test() -> Result<()> {
     println!("\n=== TEST 1: 280nm wavelength (TRP peak) ===");
     let uv_config_280 = UvProbeConfig {
         burst_energy: 5.0,
-        burst_interval: 1,  // Burst every step for testing
+        burst_interval: 1, // Burst every step for testing
         burst_duration: 1,
         frequency_hopping_enabled: true,
-        scan_wavelengths: vec![280.0],  // Fixed at 280nm
+        scan_wavelengths: vec![280.0], // Fixed at 280nm
         current_wavelength_idx: 0,
         dwell_steps: 1000,
         ..Default::default()
@@ -97,7 +96,10 @@ fn run_gpu_test() -> Result<()> {
     // Run one step with UV burst to excite
     println!("\nRunning 1 step with UV burst at 280nm:");
     let result = engine.step()?;
-    println!("  Step result: temp={:.1}K, burst={}", result.temperature, result.uv_burst_active);
+    println!(
+        "  Step result: temp={:.1}K, burst={}",
+        result.temperature, result.uv_burst_active
+    );
 
     // Read back vibrational energy from GPU
     let energy_280 = engine.get_vibrational_energy()?;
@@ -112,12 +114,8 @@ fn run_gpu_test() -> Result<()> {
     drop(engine);
 
     let ctx = CudaContext::new(0).context("Failed to create CUDA context")?;
-    let mut engine = NhsAmberFusedEngine::new(
-        ctx,
-        &topology,
-        32,
-        1.5,
-    ).context("Failed to create engine")?;
+    let mut engine =
+        NhsAmberFusedEngine::new(ctx, &topology, 32, 1.5).context("Failed to create engine")?;
     let _ = engine.set_temperature_protocol(TemperatureProtocol {
         start_temp: 300.0,
         end_temp: 300.0,
@@ -136,7 +134,7 @@ fn run_gpu_test() -> Result<()> {
         burst_interval: 1,
         burst_duration: 1,
         frequency_hopping_enabled: true,
-        scan_wavelengths: vec![258.0],  // Fixed at 258nm
+        scan_wavelengths: vec![258.0], // Fixed at 258nm
         current_wavelength_idx: 0,
         dwell_steps: 1000,
         ..Default::default()
@@ -147,7 +145,10 @@ fn run_gpu_test() -> Result<()> {
     // Run one step with UV burst to excite
     println!("\nRunning 1 step with UV burst at 258nm:");
     let result = engine.step()?;
-    println!("  Step result: temp={:.1}K, burst={}", result.temperature, result.uv_burst_active);
+    println!(
+        "  Step result: temp={:.1}K, burst={}",
+        result.temperature, result.uv_burst_active
+    );
 
     // Read back vibrational energy from GPU
     let energy_258 = engine.get_vibrational_energy()?;
@@ -172,14 +173,19 @@ fn run_gpu_test() -> Result<()> {
         println!("  258nm: {:.4} kcal/mol", e258_sum);
 
         if e280_sum > e258_sum * 2.0 {
-            println!("\n✓ PASS: Energy at 280nm ({:.4}) > 2× energy at 258nm ({:.4})",
-                     e280_sum, e258_sum);
+            println!(
+                "\n✓ PASS: Energy at 280nm ({:.4}) > 2× energy at 258nm ({:.4})",
+                e280_sum, e258_sum
+            );
             println!("  This confirms wavelength-dependent σ(λ) is working on GPU.");
         } else if (e280_sum - e258_sum).abs() < 0.001 {
             println!("\n✗ FAIL: Energies are identical - wavelength NOT affecting GPU!");
         } else {
             println!("\nINFO: Energies differ but ratio may not be as expected.");
-            println!("  280nm/258nm ratio: {:.2}x", e280_sum / e258_sum.max(0.0001));
+            println!(
+                "  280nm/258nm ratio: {:.2}x",
+                e280_sum / e258_sum.max(0.0001)
+            );
         }
     }
 

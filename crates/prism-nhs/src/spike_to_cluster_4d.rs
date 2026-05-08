@@ -282,8 +282,7 @@ pub struct ManifoldViewAabbFfi {
 /// audit record and every violation emitted by the M1 lane's
 /// `AuditedTransform::verify` impl. The transform impl lands in a
 /// subsequent M1.2.x commit alongside the real CUDA kernel.
-pub const TRANSFORM_M1_SPIKE_TO_CLUSTER_4D: TransformId =
-    TransformId("m1_spike_to_cluster_4d");
+pub const TRANSFORM_M1_SPIKE_TO_CLUSTER_4D: TransformId = TransformId("m1_spike_to_cluster_4d");
 
 /// M1 algebraic conservation-of-mass law:
 ///
@@ -541,15 +540,15 @@ impl M1ProducerGraph {
             let raw_stream_usize = stream.cu_stream() as usize;
             let rc = unsafe {
                 ffi::prism_m1_spike_to_cluster_4d_run(
-                    positions_dev          as *const f32,
+                    positions_dev as *const f32,
                     num_spikes,
                     h_params,
                     raw_stream_usize,
-                    cluster_ids_dev        as *mut u32,
-                    per_cluster_count_dev  as *mut u64,
-                    total_attributed_dev   as *mut u64,
-                    background_count_dev   as *mut u64,
-                    per_cluster_aabb_dev   as *mut Aabb,
+                    cluster_ids_dev as *mut u32,
+                    per_cluster_count_dev as *mut u64,
+                    total_attributed_dev as *mut u64,
+                    background_count_dev as *mut u64,
+                    per_cluster_aabb_dev as *mut Aabb,
                     num_clusters,
                 )
             };
@@ -677,17 +676,16 @@ impl std::error::Error for CapturedGraphError {}
 #[cfg(feature = "gpu")]
 mod m1_2_5 {
     use super::{
-        ffi, ConservationScalars, M1ProducerGraph, SpikeToCluster4D,
-        SpikeToCluster4DOutput, DECLARED_LAWS_M1, LAW_M1_CONSERVATION_OF_MASS,
-        TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
+        ffi, ConservationScalars, M1ProducerGraph, SpikeToCluster4D, SpikeToCluster4DOutput,
+        DECLARED_LAWS_M1, LAW_M1_CONSERVATION_OF_MASS, TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
     };
     use crate::entangled_manifold::{
         Aabb, CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
         LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy, ViewProvenance,
     };
     use crate::transform::{
-        AuditOutcome, AuditRouting, AuditedTransform, DeterminismClass, LawId,
-        TolerancePolicy, TransformId, TransformViolation, ViolationEvidence,
+        AuditOutcome, AuditRouting, AuditedTransform, DeterminismClass, LawId, TolerancePolicy,
+        TransformId, TransformViolation, ViolationEvidence,
     };
     use cudarc::driver::{CudaSlice, CudaStream, DevicePtr};
     use std::sync::Arc;
@@ -737,7 +735,10 @@ mod m1_2_5 {
     }
 
     impl AuditedTransform for SpikeToCluster4D {
-        type Input<'a> = SpikeToCluster4DGpuInput<'a> where Self: 'a;
+        type Input<'a>
+            = SpikeToCluster4DGpuInput<'a>
+        where
+            Self: 'a;
         type Output = SpikeToCluster4DOutput;
 
         fn identity(&self) -> TransformId {
@@ -803,10 +804,7 @@ mod m1_2_5 {
                 return abort_with_sync_error(format!("dtoh total: {:?}", e), input.num_spikes);
             }
             let mut bg = vec![0u64; 1];
-            if let Err(e) = input
-                .stream
-                .memcpy_dtoh(input.d_background_count, &mut bg)
-            {
+            if let Err(e) = input.stream.memcpy_dtoh(input.d_background_count, &mut bg) {
                 return abort_with_sync_error(format!("dtoh bg: {:?}", e), input.num_spikes);
             }
             let mut counts = vec![0u64; input.num_clusters as usize];
@@ -858,15 +856,17 @@ mod m1_2_5 {
                             transform: TRANSFORM_M1_SPIKE_TO_CLUSTER_4D,
                             law: LAW_M1_CONSERVATION_OF_MASS,
                             routing: AuditRouting::Abort,
-                            evidence: ViolationEvidence::SyntheticForTesting {
-                                tag: reason,
-                            },
+                            evidence: ViolationEvidence::SyntheticForTesting { tag: reason },
                         }],
                     };
                 }
             };
 
-            let output = SpikeToCluster4DOutput { manifold, conservation, site_manifest_ffi: None };
+            let output = SpikeToCluster4DOutput {
+                manifold,
+                conservation,
+                site_manifest_ffi: None,
+            };
 
             // ---- 4. Adjudicate via the trait's default impl, which
             //         calls `verify` and routes to Accepted / Aborted.
@@ -963,7 +963,9 @@ mod m1_2_5 {
 
         let provenance = ViewProvenance {
             signal: CausalSignal::SpikeAttributionCount,
-            selection: SelectionPolicy::TopK { k: support.len() as u32 },
+            selection: SelectionPolicy::TopK {
+                k: support.len() as u32,
+            },
             tie_breaker: TieBreakerPolicy::CausalThenResid,
             frame,
         };
@@ -985,16 +987,11 @@ mod m1_2_5 {
             provenance.clone(),
         )
         .map_err(|_| "lining_view_construction_failed")?;
-        let localized = LocalizedSubclusterView::new(
-            &synthetic_coords,
-            support,
-            causal_values,
-            provenance,
-        )
-        .map_err(|_| "localized_view_construction_failed")?;
+        let localized =
+            LocalizedSubclusterView::new(&synthetic_coords, support, causal_values, provenance)
+                .map_err(|_| "localized_view_construction_failed")?;
 
-        EntangledManifold::new(driver, lining, localized)
-            .map_err(|_| "manifold_frame_mismatch")
+        EntangledManifold::new(driver, lining, localized).map_err(|_| "manifold_frame_mismatch")
     }
 
     // ------------------------------------------------------------------------
@@ -1109,14 +1106,12 @@ pub use m1_2_5::SpikeToCluster4DGpuInput;
 // production builds can opt out.
 #[cfg(all(feature = "gpu", feature = "diagnostic"))]
 pub mod side_channel {
-    use super::{
-        M1ProducerGraph, SpatialHashParams, SpikeToCluster4D, SpikeToCluster4DGpuInput,
+    use super::{M1ProducerGraph, SpatialHashParams, SpikeToCluster4D, SpikeToCluster4DGpuInput};
+    use crate::diagnostic::m1_differential::{
+        compute_differential, AnchorSite, DifferentialTolerance, LegacySnapshot, M1Differential,
+        M1TypedSnapshot,
     };
     use crate::entangled_manifold::Aabb;
-    use crate::diagnostic::m1_differential::{
-        compute_differential, AnchorSite, DifferentialTolerance, LegacySnapshot,
-        M1Differential, M1TypedSnapshot,
-    };
     use crate::persistent_engine::ClusteredBindingSite;
     use crate::rt_clustering::RtClusteringResult;
     use crate::transform::{AuditOutcome, AuditedTransform};
@@ -1205,10 +1200,7 @@ pub mod side_channel {
         legacy_sites: &[ClusteredBindingSite],
     ) -> LegacySnapshot {
         let total_input = num_spikes as u64;
-        let total_attributed: u64 = legacy_sites
-            .iter()
-            .map(|s| s.spike_count as u64)
-            .sum();
+        let total_attributed: u64 = legacy_sites.iter().map(|s| s.spike_count as u64).sum();
         let background_count = total_input.saturating_sub(total_attributed);
         let num_clusters_attributed = legacy_sites.len() as u32;
 
@@ -1423,13 +1415,9 @@ pub mod side_channel {
         // returned (placeholder values for Aborted are well-defined:
         // total_attributed=0, background_count=0, manifold absent).
         let m1_typed = match &outcome {
-            AuditOutcome::Accepted { output, .. }
-            | AuditOutcome::Quarantined { output, .. } => build_m1_typed_snapshot(
-                &output.conservation,
-                &output.manifold,
-                &counts_h,
-                &aabb_h,
-            ),
+            AuditOutcome::Accepted { output, .. } | AuditOutcome::Quarantined { output, .. } => {
+                build_m1_typed_snapshot(&output.conservation, &output.manifold, &counts_h, &aabb_h)
+            }
             AuditOutcome::Aborted { .. } => {
                 // Synthetic placeholder snapshot when apply aborted —
                 // the differential's BlockingDivergence will fire on
@@ -1452,7 +1440,8 @@ pub mod side_channel {
         };
 
         let legacy = build_legacy_snapshot(num_spikes, legacy_result, legacy_sites);
-        let record = compute_differential(frame, stream_id, anchor_site, legacy, m1_typed, tolerance);
+        let record =
+            compute_differential(frame, stream_id, anchor_site, legacy, m1_typed, tolerance);
         let m1_wall_ms = start.elapsed().as_secs_f64() * 1000.0;
         Ok((record, m1_wall_ms))
     }
@@ -1658,8 +1647,7 @@ mod tests {
 
     use crate::entangled_manifold::{
         CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
-        LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy,
-        ViewProvenance,
+        LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy, ViewProvenance,
     };
 
     #[allow(deprecated)]
@@ -1674,13 +1662,8 @@ mod tests {
 
     fn build_manifold(frame: u64) -> EntangledManifold {
         let coords = vec![[0.0f32; 3]; 8];
-        let driver = CausalDriverView::new(
-            &coords,
-            vec![0, 1],
-            vec![10.0, 9.0],
-            provenance(frame),
-        )
-        .unwrap();
+        let driver =
+            CausalDriverView::new(&coords, vec![0, 1], vec![10.0, 9.0], provenance(frame)).unwrap();
         let lining = LiningContactView::new(
             &coords,
             vec![2, 3, 4],
@@ -1688,13 +1671,8 @@ mod tests {
             provenance(frame),
         )
         .unwrap();
-        let localized = LocalizedSubclusterView::new(
-            &coords,
-            vec![5],
-            vec![1.0],
-            provenance(frame),
-        )
-        .unwrap();
+        let localized =
+            LocalizedSubclusterView::new(&coords, vec![5], vec![1.0], provenance(frame)).unwrap();
         EntangledManifold::new(driver, lining, localized).unwrap()
     }
 
@@ -1723,15 +1701,16 @@ mod tests {
     fn prism_get_causal_driver_aabb_reads_from_manifold() {
         let m = build_manifold(7);
         let mut out = ManifoldViewAabbFfi {
-            aabb: Aabb { min: [-1.0; 3], max: [-1.0; 3] },
+            aabb: Aabb {
+                min: [-1.0; 3],
+                max: [-1.0; 3],
+            },
             support_count: 999,
             frame: 999,
         };
-        let rc = unsafe {
-            super::prism_get_causal_driver_aabb(&m as *const _, &mut out as *mut _)
-        };
+        let rc = unsafe { super::prism_get_causal_driver_aabb(&m as *const _, &mut out as *mut _) };
         assert_eq!(rc, super::PRISM_AABB_OK);
-        assert_eq!(out.support_count, 2);   // driver: 2 residues
+        assert_eq!(out.support_count, 2); // driver: 2 residues
         assert_eq!(out.frame, 7);
     }
 
@@ -1739,15 +1718,17 @@ mod tests {
     fn prism_get_lining_contact_aabb_reads_from_manifold() {
         let m = build_manifold(7);
         let mut out = ManifoldViewAabbFfi {
-            aabb: Aabb { min: [-1.0; 3], max: [-1.0; 3] },
+            aabb: Aabb {
+                min: [-1.0; 3],
+                max: [-1.0; 3],
+            },
             support_count: 999,
             frame: 999,
         };
-        let rc = unsafe {
-            super::prism_get_lining_contact_aabb(&m as *const _, &mut out as *mut _)
-        };
+        let rc =
+            unsafe { super::prism_get_lining_contact_aabb(&m as *const _, &mut out as *mut _) };
         assert_eq!(rc, super::PRISM_AABB_OK);
-        assert_eq!(out.support_count, 3);   // lining: 3 residues
+        assert_eq!(out.support_count, 3); // lining: 3 residues
         assert_eq!(out.frame, 7);
     }
 
@@ -1755,7 +1736,10 @@ mod tests {
     fn prism_get_localized_subcluster_aabb_reads_from_manifold() {
         let m = build_manifold(7);
         let mut out = ManifoldViewAabbFfi {
-            aabb: Aabb { min: [-1.0; 3], max: [-1.0; 3] },
+            aabb: Aabb {
+                min: [-1.0; 3],
+                max: [-1.0; 3],
+            },
             support_count: 999,
             frame: 999,
         };
@@ -1763,7 +1747,7 @@ mod tests {
             super::prism_get_localized_subcluster_aabb(&m as *const _, &mut out as *mut _)
         };
         assert_eq!(rc, super::PRISM_AABB_OK);
-        assert_eq!(out.support_count, 1);   // localized: 1 residue
+        assert_eq!(out.support_count, 1); // localized: 1 residue
         assert_eq!(out.frame, 7);
     }
 
@@ -1771,7 +1755,10 @@ mod tests {
     fn prism_get_aabb_accessors_reject_null_pointers() {
         let m = build_manifold(7);
         let mut out = ManifoldViewAabbFfi {
-            aabb: Aabb { min: [0.0; 3], max: [0.0; 3] },
+            aabb: Aabb {
+                min: [0.0; 3],
+                max: [0.0; 3],
+            },
             support_count: 0,
             frame: 0,
         };
@@ -1805,7 +1792,10 @@ mod tests {
         let f: u64 = (u32::MAX as u64) + 1;
         let m = build_manifold(f);
         let mut out = ManifoldViewAabbFfi {
-            aabb: Aabb { min: [0.0; 3], max: [0.0; 3] },
+            aabb: Aabb {
+                min: [0.0; 3],
+                max: [0.0; 3],
+            },
             support_count: 0,
             frame: 0,
         };
@@ -1974,12 +1964,12 @@ mod tests {
 
         // Raw stream + raw device pointers for the C ABI.
         let raw_stream = stream.cu_stream() as usize;
-        let (positions_dev,    _g_pos)  = d_positions.device_ptr(&stream);
-        let (cluster_ids_dev,  _g_cid)  = d_cluster_ids.device_ptr(&stream);
-        let (count_dev,        _g_cnt)  = d_per_cluster_count.device_ptr(&stream);
-        let (total_dev,        _g_tot)  = d_total_attributed.device_ptr(&stream);
-        let (bg_dev,           _g_bg)   = d_background_count.device_ptr(&stream);
-        let (aabb_dev,         _g_aabb) = d_per_cluster_aabb.device_ptr(&stream);
+        let (positions_dev, _g_pos) = d_positions.device_ptr(&stream);
+        let (cluster_ids_dev, _g_cid) = d_cluster_ids.device_ptr(&stream);
+        let (count_dev, _g_cnt) = d_per_cluster_count.device_ptr(&stream);
+        let (total_dev, _g_tot) = d_total_attributed.device_ptr(&stream);
+        let (bg_dev, _g_bg) = d_background_count.device_ptr(&stream);
+        let (aabb_dev, _g_aabb) = d_per_cluster_aabb.device_ptr(&stream);
 
         // SAFETY: every pointer was obtained from a live CudaSlice whose
         // _g_* guards are held until end of function; raw_stream is the
@@ -1990,15 +1980,15 @@ mod tests {
         // before any guard drops).
         let rc = unsafe {
             ffi::prism_m1_spike_to_cluster_4d_run(
-                positions_dev   as *const f32,
+                positions_dev as *const f32,
                 NUM_SPIKES,
                 &params as *const ffi::SpatialHashParams,
                 raw_stream,
                 cluster_ids_dev as *mut u32,
-                count_dev       as *mut u64,
-                total_dev       as *mut u64,
-                bg_dev          as *mut u64,
-                aabb_dev        as *mut Aabb,
+                count_dev as *mut u64,
+                total_dev as *mut u64,
+                bg_dev as *mut u64,
+                aabb_dev as *mut Aabb,
                 NUM_CLUSTERS,
             )
         };
@@ -2051,8 +2041,7 @@ mod tests {
         // M1.2.3 wires cub::DeviceReduce::Sum on per_cluster_count,
         // replacing the M1.2.2 placeholder of zero.
         assert_eq!(
-            out_total_attributed[0],
-            NUM_INBOUND as u64,
+            out_total_attributed[0], NUM_INBOUND as u64,
             "M1.2.3: total_attributed_scalar should equal Σ per_cluster_count"
         );
 
@@ -2076,18 +2065,42 @@ mod tests {
             let ex = cx as f32 + 0.5;
             let ey = cy as f32 + 0.5;
             let ez = cz as f32 + 0.5;
-            assert_eq!(out_aabb_flat[c * 6 + 0], ex,
-                "M1.2.3: AABB.min[0] cluster {} mismatch", c);
-            assert_eq!(out_aabb_flat[c * 6 + 1], ey,
-                "M1.2.3: AABB.min[1] cluster {} mismatch", c);
-            assert_eq!(out_aabb_flat[c * 6 + 2], ez,
-                "M1.2.3: AABB.min[2] cluster {} mismatch", c);
-            assert_eq!(out_aabb_flat[c * 6 + 3], ex,
-                "M1.2.3: AABB.max[0] cluster {} mismatch", c);
-            assert_eq!(out_aabb_flat[c * 6 + 4], ey,
-                "M1.2.3: AABB.max[1] cluster {} mismatch", c);
-            assert_eq!(out_aabb_flat[c * 6 + 5], ez,
-                "M1.2.3: AABB.max[2] cluster {} mismatch", c);
+            assert_eq!(
+                out_aabb_flat[c * 6 + 0],
+                ex,
+                "M1.2.3: AABB.min[0] cluster {} mismatch",
+                c
+            );
+            assert_eq!(
+                out_aabb_flat[c * 6 + 1],
+                ey,
+                "M1.2.3: AABB.min[1] cluster {} mismatch",
+                c
+            );
+            assert_eq!(
+                out_aabb_flat[c * 6 + 2],
+                ez,
+                "M1.2.3: AABB.min[2] cluster {} mismatch",
+                c
+            );
+            assert_eq!(
+                out_aabb_flat[c * 6 + 3],
+                ex,
+                "M1.2.3: AABB.max[0] cluster {} mismatch",
+                c
+            );
+            assert_eq!(
+                out_aabb_flat[c * 6 + 4],
+                ey,
+                "M1.2.3: AABB.max[1] cluster {} mismatch",
+                c
+            );
+            assert_eq!(
+                out_aabb_flat[c * 6 + 5],
+                ez,
+                "M1.2.3: AABB.max[2] cluster {} mismatch",
+                c
+            );
         }
     }
 
@@ -2191,12 +2204,12 @@ mod tests {
             num_cells: NUM_CLUSTERS,
         };
 
-        let (positions_dev,    _g_pos)  = d_positions.device_ptr(&stream);
-        let (cluster_ids_dev,  _g_cid)  = d_cluster_ids.device_ptr(&stream);
-        let (count_dev,        _g_cnt)  = d_per_cluster_count.device_ptr(&stream);
-        let (total_dev,        _g_tot)  = d_total_attributed.device_ptr(&stream);
-        let (bg_dev,           _g_bg)   = d_background_count.device_ptr(&stream);
-        let (aabb_dev,         _g_aabb) = d_per_cluster_aabb.device_ptr(&stream);
+        let (positions_dev, _g_pos) = d_positions.device_ptr(&stream);
+        let (cluster_ids_dev, _g_cid) = d_cluster_ids.device_ptr(&stream);
+        let (count_dev, _g_cnt) = d_per_cluster_count.device_ptr(&stream);
+        let (total_dev, _g_tot) = d_total_attributed.device_ptr(&stream);
+        let (bg_dev, _g_bg) = d_background_count.device_ptr(&stream);
+        let (aabb_dev, _g_aabb) = d_per_cluster_aabb.device_ptr(&stream);
 
         // Helper: run the producer through the graph wrapper and dtoh
         // every output buffer. Returns (cluster_ids, per_cluster_count,
@@ -2221,65 +2234,112 @@ mod tests {
             stream.synchronize().expect("stream sync");
 
             let mut cluster_ids = vec![0u32; NUM_SPIKES as usize];
-            stream.memcpy_dtoh(&d_cluster_ids, &mut cluster_ids).expect("dtoh cid");
+            stream
+                .memcpy_dtoh(&d_cluster_ids, &mut cluster_ids)
+                .expect("dtoh cid");
             let mut count = vec![0u64; NUM_CLUSTERS as usize];
-            stream.memcpy_dtoh(&d_per_cluster_count, &mut count).expect("dtoh count");
+            stream
+                .memcpy_dtoh(&d_per_cluster_count, &mut count)
+                .expect("dtoh count");
             let mut total = vec![0u64; 1];
-            stream.memcpy_dtoh(&d_total_attributed, &mut total).expect("dtoh total");
+            stream
+                .memcpy_dtoh(&d_total_attributed, &mut total)
+                .expect("dtoh total");
             let mut bg = vec![0u64; 1];
-            stream.memcpy_dtoh(&d_background_count, &mut bg).expect("dtoh bg");
+            stream
+                .memcpy_dtoh(&d_background_count, &mut bg)
+                .expect("dtoh bg");
             let mut aabb = vec![0.0f32; NUM_CLUSTERS as usize * 6];
-            stream.memcpy_dtoh(&d_per_cluster_aabb, &mut aabb).expect("dtoh aabb");
+            stream
+                .memcpy_dtoh(&d_per_cluster_aabb, &mut aabb)
+                .expect("dtoh aabb");
             (cluster_ids, count, total[0], bg[0], aabb)
         };
 
         // Pre-capture: cache empty.
-        assert_eq!(graph.cached_shape(), None,
-            "M1.2.4: cache should be empty before first invocation");
+        assert_eq!(
+            graph.cached_shape(),
+            None,
+            "M1.2.4: cache should be empty before first invocation"
+        );
 
         // (a) First invocation — captures.
         let outputs_first = invoke(&mut graph);
-        assert_eq!(graph.cached_shape(), Some((NUM_SPIKES, NUM_CLUSTERS)),
-            "M1.2.4: cache should hold the captured shape after first invocation");
+        assert_eq!(
+            graph.cached_shape(),
+            Some((NUM_SPIKES, NUM_CLUSTERS)),
+            "M1.2.4: cache should hold the captured shape after first invocation"
+        );
 
         // First-invocation correctness vs CPU reference.
-        assert_eq!(outputs_first.0, cpu_cluster_ids,
-            "M1.2.4: first capture cluster_ids differ from CPU reference");
-        assert_eq!(outputs_first.2, NUM_INBOUND as u64,
-            "M1.2.4: first capture total_attributed != NUM_INBOUND");
-        assert_eq!(outputs_first.3, NUM_BACKGROUND as u64,
-            "M1.2.4: first capture background_count != NUM_BACKGROUND");
+        assert_eq!(
+            outputs_first.0, cpu_cluster_ids,
+            "M1.2.4: first capture cluster_ids differ from CPU reference"
+        );
+        assert_eq!(
+            outputs_first.2, NUM_INBOUND as u64,
+            "M1.2.4: first capture total_attributed != NUM_INBOUND"
+        );
+        assert_eq!(
+            outputs_first.3, NUM_BACKGROUND as u64,
+            "M1.2.4: first capture background_count != NUM_BACKGROUND"
+        );
 
         // (b) Cached-replay — same shape, same buffers; replays cached graph.
         let outputs_replay = invoke(&mut graph);
-        assert_eq!(graph.cached_shape(), Some((NUM_SPIKES, NUM_CLUSTERS)),
-            "M1.2.4: cache should be unchanged after a same-shape replay");
+        assert_eq!(
+            graph.cached_shape(),
+            Some((NUM_SPIKES, NUM_CLUSTERS)),
+            "M1.2.4: cache should be unchanged after a same-shape replay"
+        );
 
-        assert_eq!(outputs_replay.0, outputs_first.0,
-            "M1.2.4: cached replay cluster_ids differ from first capture");
-        assert_eq!(outputs_replay.1, outputs_first.1,
-            "M1.2.4: cached replay per_cluster_count differs (BitExact violation)");
-        assert_eq!(outputs_replay.2, outputs_first.2,
-            "M1.2.4: cached replay total_attributed differs");
-        assert_eq!(outputs_replay.3, outputs_first.3,
-            "M1.2.4: cached replay background_count differs");
-        assert_eq!(outputs_replay.4, outputs_first.4,
-            "M1.2.4: cached replay per_cluster_aabb differs (deterministic-min/max violation)");
+        assert_eq!(
+            outputs_replay.0, outputs_first.0,
+            "M1.2.4: cached replay cluster_ids differ from first capture"
+        );
+        assert_eq!(
+            outputs_replay.1, outputs_first.1,
+            "M1.2.4: cached replay per_cluster_count differs (BitExact violation)"
+        );
+        assert_eq!(
+            outputs_replay.2, outputs_first.2,
+            "M1.2.4: cached replay total_attributed differs"
+        );
+        assert_eq!(
+            outputs_replay.3, outputs_first.3,
+            "M1.2.4: cached replay background_count differs"
+        );
+        assert_eq!(
+            outputs_replay.4, outputs_first.4,
+            "M1.2.4: cached replay per_cluster_aabb differs (deterministic-min/max violation)"
+        );
 
         // (c) Re-capture after explicit invalidate.
         graph.invalidate();
-        assert_eq!(graph.cached_shape(), None,
-            "M1.2.4: invalidate() should drop the cached graph");
+        assert_eq!(
+            graph.cached_shape(),
+            None,
+            "M1.2.4: invalidate() should drop the cached graph"
+        );
 
         let outputs_recapture = invoke(&mut graph);
-        assert_eq!(graph.cached_shape(), Some((NUM_SPIKES, NUM_CLUSTERS)),
-            "M1.2.4: recapture should refill the cache");
-        assert_eq!(outputs_recapture.0, outputs_first.0,
-            "M1.2.4: recapture cluster_ids differ from first capture");
-        assert_eq!(outputs_recapture.1, outputs_first.1,
-            "M1.2.4: recapture per_cluster_count differs");
-        assert_eq!(outputs_recapture.4, outputs_first.4,
-            "M1.2.4: recapture per_cluster_aabb differs");
+        assert_eq!(
+            graph.cached_shape(),
+            Some((NUM_SPIKES, NUM_CLUSTERS)),
+            "M1.2.4: recapture should refill the cache"
+        );
+        assert_eq!(
+            outputs_recapture.0, outputs_first.0,
+            "M1.2.4: recapture cluster_ids differ from first capture"
+        );
+        assert_eq!(
+            outputs_recapture.1, outputs_first.1,
+            "M1.2.4: recapture per_cluster_count differs"
+        );
+        assert_eq!(
+            outputs_recapture.4, outputs_first.4,
+            "M1.2.4: recapture per_cluster_aabb differs"
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -2290,7 +2350,10 @@ mod tests {
         let ctx = match CudaContext::new(0) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[m1_2_4-shape] CUDA context creation failed: {:?} — skipping", e);
+                eprintln!(
+                    "[m1_2_4-shape] CUDA context creation failed: {:?} — skipping",
+                    e
+                );
                 return;
             }
         };
@@ -2301,9 +2364,7 @@ mod tests {
         // Run twice with two different shapes. Same M1ProducerGraph
         // instance — the second invocation must auto-detect the shape
         // change and re-capture.
-        let run_once = |graph: &mut super::M1ProducerGraph,
-                        n_spikes: u32,
-                        grid_dim: [i32; 3]| {
+        let run_once = |graph: &mut super::M1ProducerGraph, n_spikes: u32, grid_dim: [i32; 3]| {
             let num_clusters = (grid_dim[0] * grid_dim[1] * grid_dim[2]) as u32;
             let bbox_min = [0.0f32, 0.0, 0.0];
             let bbox_max = [grid_dim[0] as f32, grid_dim[1] as f32, grid_dim[2] as f32];
@@ -2311,9 +2372,7 @@ mod tests {
             // Synthetic positions: every spike at the (0,0,0) cell center
             // for simplicity — only the (n_spikes, num_clusters) shape
             // matters for the capture-key test, not output values.
-            let positions: Vec<f32> = (0..n_spikes)
-                .flat_map(|_| [0.5f32, 0.5, 0.5])
-                .collect();
+            let positions: Vec<f32> = (0..n_spikes).flat_map(|_| [0.5f32, 0.5, 0.5]).collect();
 
             let mut d_positions = stream
                 .alloc_zeros::<f32>(positions.len())
@@ -2342,12 +2401,12 @@ mod tests {
                 num_cells: num_clusters,
             };
 
-            let (positions_dev, _g_pos)    = d_positions.device_ptr(&stream);
-            let (cluster_ids_dev, _g_cid)  = d_cluster_ids.device_ptr(&stream);
-            let (count_dev, _g_cnt)        = d_per_cluster_count.device_ptr(&stream);
-            let (total_dev, _g_tot)        = d_total_attributed.device_ptr(&stream);
-            let (bg_dev, _g_bg)            = d_background_count.device_ptr(&stream);
-            let (aabb_dev, _g_aabb)        = d_per_cluster_aabb.device_ptr(&stream);
+            let (positions_dev, _g_pos) = d_positions.device_ptr(&stream);
+            let (cluster_ids_dev, _g_cid) = d_cluster_ids.device_ptr(&stream);
+            let (count_dev, _g_cnt) = d_per_cluster_count.device_ptr(&stream);
+            let (total_dev, _g_tot) = d_total_attributed.device_ptr(&stream);
+            let (bg_dev, _g_bg) = d_background_count.device_ptr(&stream);
+            let (aabb_dev, _g_aabb) = d_per_cluster_aabb.device_ptr(&stream);
 
             unsafe {
                 graph.run_or_replay(
@@ -2379,17 +2438,27 @@ mod tests {
 
         // Shape A: 50 spikes on a 3×3×3 grid (27 clusters).
         let total_a = run_once(&mut graph, 50, [3, 3, 3]);
-        assert_eq!(graph.cached_shape(), Some((50, 27)),
-            "M1.2.4: cache should hold shape A after first invocation");
-        assert_eq!(total_a, 50,
-            "M1.2.4 shape A: all spikes at (0.5,0.5,0.5) ∈ cell 0 ⇒ all attributed");
+        assert_eq!(
+            graph.cached_shape(),
+            Some((50, 27)),
+            "M1.2.4: cache should hold shape A after first invocation"
+        );
+        assert_eq!(
+            total_a, 50,
+            "M1.2.4 shape A: all spikes at (0.5,0.5,0.5) ∈ cell 0 ⇒ all attributed"
+        );
 
         // Shape B: 200 spikes on a 5×5×5 grid (125 clusters).
         let total_b = run_once(&mut graph, 200, [5, 5, 5]);
-        assert_eq!(graph.cached_shape(), Some((200, 125)),
-            "M1.2.4: shape change should auto-invalidate the cache and re-capture");
-        assert_eq!(total_b, 200,
-            "M1.2.4 shape B: all spikes at (0.5,0.5,0.5) ∈ cell 0 ⇒ all attributed");
+        assert_eq!(
+            graph.cached_shape(),
+            Some((200, 125)),
+            "M1.2.4: shape change should auto-invalidate the cache and re-capture"
+        );
+        assert_eq!(
+            total_b, 200,
+            "M1.2.4 shape B: all spikes at (0.5,0.5,0.5) ∈ cell 0 ⇒ all attributed"
+        );
     }
 
     // ========================================================================
@@ -2414,9 +2483,7 @@ mod tests {
             CausalDriverView, CausalSignal, EntangledManifold, LiningContactView,
             LocalizedSubclusterView, SelectionPolicy, TieBreakerPolicy, ViewProvenance,
         };
-        use crate::transform::{
-            AuditRouting, AuditedTransform, ViolationEvidence,
-        };
+        use crate::transform::{AuditRouting, AuditedTransform, ViolationEvidence};
 
         // Build a placeholder manifold (single cluster). The shape of
         // the manifold does not matter for the verify-only test —
@@ -2428,12 +2495,9 @@ mod tests {
             tie_breaker: TieBreakerPolicy::CausalThenResid,
             frame: 0,
         };
-        let driver =
-            CausalDriverView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
-        let lining =
-            LiningContactView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
-        let localized =
-            LocalizedSubclusterView::new(&coords, vec![0i32], vec![1.0], prov).unwrap();
+        let driver = CausalDriverView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let lining = LiningContactView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let localized = LocalizedSubclusterView::new(&coords, vec![0i32], vec![1.0], prov).unwrap();
         let manifold = EntangledManifold::new(driver, lining, localized).unwrap();
 
         // Inject the violation: 100 input spikes, but only 60
@@ -2443,24 +2507,42 @@ mod tests {
             total_attributed: 60,
             background_count: 30,
         };
-        let output = SpikeToCluster4DOutput { manifold, conservation, site_manifest_ffi: None };
+        let output = SpikeToCluster4DOutput {
+            manifold,
+            conservation,
+            site_manifest_ffi: None,
+        };
 
         let producer = SpikeToCluster4D::new();
         let violations = producer.verify(&output);
 
-        assert_eq!(violations.len(), 1, "M1.2.5: expected exactly one violation");
+        assert_eq!(
+            violations.len(),
+            1,
+            "M1.2.5: expected exactly one violation"
+        );
         let v = &violations[0];
         assert_eq!(v.transform, TRANSFORM_M1_SPIKE_TO_CLUSTER_4D);
         assert_eq!(v.law, LAW_M1_CONSERVATION_OF_MASS);
-        assert_eq!(v.routing, AuditRouting::Abort,
-            "M1.2.5: Conservation-of-Mass violations route Abort per §2 doctrine");
+        assert_eq!(
+            v.routing,
+            AuditRouting::Abort,
+            "M1.2.5: Conservation-of-Mass violations route Abort per §2 doctrine"
+        );
         match &v.evidence {
-            ViolationEvidence::ConservationOfMassViolation { expected, got, delta } => {
+            ViolationEvidence::ConservationOfMassViolation {
+                expected,
+                got,
+                delta,
+            } => {
                 assert_eq!(*expected, 100);
-                assert_eq!(*got, 90);  // 60 + 30
+                assert_eq!(*got, 90); // 60 + 30
                 assert_eq!(*delta, -10); // got - expected
             }
-            other => panic!("M1.2.5: expected ConservationOfMassViolation, got {:?}", other),
+            other => panic!(
+                "M1.2.5: expected ConservationOfMassViolation, got {:?}",
+                other
+            ),
         }
     }
 
@@ -2479,12 +2561,9 @@ mod tests {
             tie_breaker: TieBreakerPolicy::CausalThenResid,
             frame: 0,
         };
-        let driver =
-            CausalDriverView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
-        let lining =
-            LiningContactView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
-        let localized =
-            LocalizedSubclusterView::new(&coords, vec![0i32], vec![1.0], prov).unwrap();
+        let driver = CausalDriverView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let lining = LiningContactView::new(&coords, vec![0i32], vec![1.0], prov.clone()).unwrap();
+        let localized = LocalizedSubclusterView::new(&coords, vec![0i32], vec![1.0], prov).unwrap();
         let manifold = EntangledManifold::new(driver, lining, localized).unwrap();
 
         let conservation = ConservationScalars {
@@ -2492,12 +2571,18 @@ mod tests {
             total_attributed: 70,
             background_count: 30,
         };
-        let output = SpikeToCluster4DOutput { manifold, conservation, site_manifest_ffi: None };
+        let output = SpikeToCluster4DOutput {
+            manifold,
+            conservation,
+            site_manifest_ffi: None,
+        };
 
         let producer = SpikeToCluster4D::new();
         let violations = producer.verify(&output);
-        assert!(violations.is_empty(),
-            "M1.2.5: conserved output should produce no violations");
+        assert!(
+            violations.is_empty(),
+            "M1.2.5: conserved output should produce no violations"
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -2509,7 +2594,10 @@ mod tests {
         let ctx = match CudaContext::new(0) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[m1_2_5-apply] CUDA context creation failed: {:?} — skipping", e);
+                eprintln!(
+                    "[m1_2_5-apply] CUDA context creation failed: {:?} — skipping",
+                    e
+                );
                 return;
             }
         };
@@ -2547,11 +2635,17 @@ mod tests {
             .memcpy_htod(&positions, &mut d_positions)
             .expect("htod positions");
 
-        let d_cluster_ids       = stream.alloc_zeros::<u32>(NUM_SPIKES as usize).expect("alloc cid");
-        let d_per_cluster_count = stream.alloc_zeros::<u64>(NUM_CLUSTERS as usize).expect("alloc count");
-        let d_total_attributed  = stream.alloc_zeros::<u64>(1).expect("alloc total");
-        let d_background_count  = stream.alloc_zeros::<u64>(1).expect("alloc bg");
-        let d_per_cluster_aabb  = stream.alloc_zeros::<f32>(NUM_CLUSTERS as usize * 6).expect("alloc aabb");
+        let d_cluster_ids = stream
+            .alloc_zeros::<u32>(NUM_SPIKES as usize)
+            .expect("alloc cid");
+        let d_per_cluster_count = stream
+            .alloc_zeros::<u64>(NUM_CLUSTERS as usize)
+            .expect("alloc count");
+        let d_total_attributed = stream.alloc_zeros::<u64>(1).expect("alloc total");
+        let d_background_count = stream.alloc_zeros::<u64>(1).expect("alloc bg");
+        let d_per_cluster_aabb = stream
+            .alloc_zeros::<f32>(NUM_CLUSTERS as usize * 6)
+            .expect("alloc aabb");
 
         let params = ffi::SpatialHashParams {
             bbox_min: [0.0, 0.0, 0.0],
@@ -2596,11 +2690,17 @@ mod tests {
                 let lining_data = output.manifold.lining.data();
                 let localized_data = output.manifold.localized.data();
 
-                assert_eq!(driver_data.support.len(), NUM_CLUSTERS as usize,
-                    "M1.2.5: driver support should cover all 64 clusters with ≥1 spike");
+                assert_eq!(
+                    driver_data.support.len(),
+                    NUM_CLUSTERS as usize,
+                    "M1.2.5: driver support should cover all 64 clusters with ≥1 spike"
+                );
                 assert_eq!(driver_data.support.len(), driver_data.causal_values.len());
                 assert_eq!(lining_data.support.len(), lining_data.causal_values.len());
-                assert_eq!(localized_data.support.len(), localized_data.causal_values.len());
+                assert_eq!(
+                    localized_data.support.len(),
+                    localized_data.causal_values.len()
+                );
 
                 // Frame stamped correctly.
                 assert_eq!(driver_data.provenance.frame, FRAME);

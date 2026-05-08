@@ -7,7 +7,10 @@ use std::sync::Arc;
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(name = "pharmacophore_gpu", about = "GPU-accelerated pharmacophore hotspot extraction")]
+#[command(
+    name = "pharmacophore_gpu",
+    about = "GPU-accelerated pharmacophore hotspot extraction"
+)]
 struct Args {
     /// Path to spike_events.json
     spike_events: PathBuf,
@@ -35,8 +38,14 @@ fn main() -> anyhow::Result<()> {
     // Load spike events from JSON
     let (spikes, centroid, site_id) =
         prism_nhs::pharmacophore_gpu::SpikeData::from_json(&args.spike_events)?;
-    log::info!("  Loaded {} spikes, site {} @ [{:.1}, {:.1}, {:.1}]",
-        spikes.len(), site_id, centroid[0], centroid[1], centroid[2]);
+    log::info!(
+        "  Loaded {} spikes, site {} @ [{:.1}, {:.1}, {:.1}]",
+        spikes.len(),
+        site_id,
+        centroid[0],
+        centroid[1],
+        centroid[2]
+    );
 
     // Init CUDA
     let context = cudarc::driver::CudaContext::new(0)?;
@@ -44,13 +53,18 @@ fn main() -> anyhow::Result<()> {
 
     // Build engine
     let engine = prism_nhs::pharmacophore_gpu::PharmacophoreGpu::new(
-        Arc::clone(&context), Arc::clone(&stream),
+        Arc::clone(&context),
+        Arc::clone(&stream),
     )?;
 
     // Run full pipeline
     prism_nhs::pharmacophore_gpu::extract_pharmacophore_gpu(
-        &engine, &spikes, centroid, site_id,
-        &args.output_dir, &args.receptor,
+        &engine,
+        &spikes,
+        centroid,
+        site_id,
+        &args.output_dir,
+        &args.receptor,
     )?;
 
     log::info!("Done. View in PyMOL:");

@@ -9,10 +9,7 @@ use std::path::PathBuf;
 #[cfg(feature = "gpu")]
 use cudarc::driver::CudaContext;
 #[cfg(feature = "gpu")]
-use prism_nhs::{
-    input::PrismPrepTopology,
-    fused_engine::NhsAmberFusedEngine,
-};
+use prism_nhs::{fused_engine::NhsAmberFusedEngine, input::PrismPrepTopology};
 
 #[derive(Parser, Debug)]
 #[command(name = "nhs-diagnose")]
@@ -37,14 +34,20 @@ fn count_nan(values: &[f32], label: &str) -> usize {
     let total = values.len();
 
     if nan_count > 0 || inf_count > 0 {
-        println!("  {} NaN: {}/{}, Inf: {}/{}", label, nan_count, total, inf_count, total);
+        println!(
+            "  {} NaN: {}/{}, Inf: {}/{}",
+            label, nan_count, total, inf_count, total
+        );
 
         // Find first NaN/Inf index
         for (i, &v) in values.iter().enumerate() {
             if v.is_nan() || v.is_infinite() {
                 let atom_idx = i / 3;
                 let component = ["X", "Y", "Z"][i % 3];
-                println!("    First bad value at atom {} component {}: {}", atom_idx, component, v);
+                println!(
+                    "    First bad value at atom {} component {}: {}",
+                    atom_idx, component, v
+                );
                 break;
             }
         }
@@ -63,8 +66,13 @@ fn check_masses(masses: &[f32]) -> bool {
     let negative_count = masses.iter().filter(|&&m| m < 0.0).count();
     let nan_count = masses.iter().filter(|&&m| m.is_nan()).count();
 
-    println!("  Masses: {} atoms, {} zeros, {} negative, {} NaN",
-             masses.len(), zero_count, negative_count, nan_count);
+    println!(
+        "  Masses: {} atoms, {} zeros, {} negative, {} NaN",
+        masses.len(),
+        zero_count,
+        negative_count,
+        nan_count
+    );
 
     if zero_count > 0 {
         // Find first zero mass
@@ -85,8 +93,7 @@ fn run_diagnostic(args: Args) -> Result<()> {
 
     // Load topology
     println!("Loading topology: {:?}", args.input);
-    let topology = PrismPrepTopology::load(&args.input)
-        .context("Failed to load topology")?;
+    let topology = PrismPrepTopology::load(&args.input).context("Failed to load topology")?;
 
     let n_atoms = topology.n_atoms;
     println!("  Atoms: {}", n_atoms);
@@ -118,7 +125,8 @@ fn run_diagnostic(args: Args) -> Result<()> {
         &topology,
         args.grid_dim,
         1.5, // grid_spacing
-    ).context("Failed to create NHS engine")?;
+    )
+    .context("Failed to create NHS engine")?;
 
     println!("  Engine created successfully");
 
@@ -190,7 +198,10 @@ fn run_diagnostic(args: Args) -> Result<()> {
         }
     }
 
-    println!("\n[SUCCESS] No NaN/Inf values detected after {} steps!", args.steps);
+    println!(
+        "\n[SUCCESS] No NaN/Inf values detected after {} steps!",
+        args.steps
+    );
 
     // Print summary
     let pos_final = engine.get_positions()?;

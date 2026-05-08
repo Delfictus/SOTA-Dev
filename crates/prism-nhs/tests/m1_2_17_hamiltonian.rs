@@ -23,20 +23,17 @@ use std::ffi::c_void;
 use prism_nhs::gearbox::ChronometricStateTensor as _ForceLinkage;
 
 extern "C" {
-    fn prism_energy_monitor_temp_storage_bytes(
-        n:              u32,
-        out_temp_bytes: *mut usize,
-    ) -> i32;
+    fn prism_energy_monitor_temp_storage_bytes(n: u32, out_temp_bytes: *mut usize) -> i32;
 
     fn prism_energy_monitor_launch_reduce(
-        d_pe_components:    *const f64,
-        n:                  u32,
-        d_temp_storage:     *mut c_void,
+        d_pe_components: *const f64,
+        n: u32,
+        d_temp_storage: *mut c_void,
         temp_storage_bytes: usize,
-        d_pe_scalar:        *mut f64,
-        d_energy_window:    *mut c_void,
-        d_adj_pe_target:    *mut f64,
-        stream:             *mut c_void,
+        d_pe_scalar: *mut f64,
+        d_energy_window: *mut c_void,
+        d_adj_pe_target: *mut f64,
+        stream: *mut c_void,
     ) -> i32;
 }
 
@@ -64,9 +61,7 @@ fn m1217_energy_monitor_sum_1_to_n_is_n_n_plus_1_div_2() {
 
     // Query CUB temp storage size.
     let mut temp_bytes: usize = 0;
-    let rc = unsafe {
-        prism_energy_monitor_temp_storage_bytes(N, &mut temp_bytes as *mut usize)
-    };
+    let rc = unsafe { prism_energy_monitor_temp_storage_bytes(N, &mut temp_bytes as *mut usize) };
     assert_eq!(rc, 0, "temp_storage_bytes rc={}", rc);
     assert!(temp_bytes > 0, "CUB returned zero temp storage size");
 
@@ -90,13 +85,13 @@ fn m1217_energy_monitor_sum_1_to_n_is_n_n_plus_1_div_2() {
 
     let rc = unsafe {
         prism_energy_monitor_launch_reduce(
-            d_pe_addr     as *const f64,
+            d_pe_addr as *const f64,
             N,
-            d_temp_addr   as *mut c_void,
+            d_temp_addr as *mut c_void,
             temp_bytes,
             d_scalar_addr as *mut f64,
             d_window_addr as *mut c_void,
-            d_adj_addr    as *mut f64,
+            d_adj_addr as *mut f64,
             raw_stream,
         )
     };
@@ -105,30 +100,50 @@ fn m1217_energy_monitor_sum_1_to_n_is_n_n_plus_1_div_2() {
 
     // Read scalar back.
     let mut readback = [0.0f64; 1];
-    stream.memcpy_dtoh(&d_pe_scalar, &mut readback).expect("dtoh scalar");
+    stream
+        .memcpy_dtoh(&d_pe_scalar, &mut readback)
+        .expect("dtoh scalar");
     eprintln!(
         "[M1.2.17 H] CUB reduce on 1..{} → V_t = {} (expected {})",
         N, readback[0], expected_sum
     );
-    assert!((readback[0] - expected_sum).abs() < 1e-6,
+    assert!(
+        (readback[0] - expected_sum).abs() < 1e-6,
         "CUB reduce sum mismatch: got {}, expected {}",
-        readback[0], expected_sum);
+        readback[0],
+        expected_sum
+    );
 
     // EnergyWindow: prev = 0.0 (first launch), cur = V_t.
     let mut window_back = [0u8; 16];
-    stream.memcpy_dtoh(&d_window, &mut window_back).expect("dtoh window");
+    stream
+        .memcpy_dtoh(&d_window, &mut window_back)
+        .expect("dtoh window");
     let prev = f64::from_le_bytes(window_back[0..8].try_into().unwrap());
-    let cur  = f64::from_le_bytes(window_back[8..16].try_into().unwrap());
-    assert_eq!(prev, 0.0, "first launch: window.prev MUST be 0.0; got {}", prev);
-    assert!((cur - expected_sum).abs() < 1e-6,
-        "window.cur mismatch: got {}, expected {}", cur, expected_sum);
+    let cur = f64::from_le_bytes(window_back[8..16].try_into().unwrap());
+    assert_eq!(
+        prev, 0.0,
+        "first launch: window.prev MUST be 0.0; got {}",
+        prev
+    );
+    assert!(
+        (cur - expected_sum).abs() < 1e-6,
+        "window.cur mismatch: got {}, expected {}",
+        cur,
+        expected_sum
+    );
 
     // adj.d_potential_energy target should also hold V_t.
     let mut adj_back = [0.0f64; 1];
-    stream.memcpy_dtoh(&d_adj_pe, &mut adj_back).expect("dtoh adj");
-    assert!((adj_back[0] - expected_sum).abs() < 1e-6,
+    stream
+        .memcpy_dtoh(&d_adj_pe, &mut adj_back)
+        .expect("dtoh adj");
+    assert!(
+        (adj_back[0] - expected_sum).abs() < 1e-6,
         "adj.d_potential_energy mismatch: got {}, expected {}",
-        adj_back[0], expected_sum);
+        adj_back[0],
+        expected_sum
+    );
 
     eprintln!(
         "[M1.2.17 H GATE PASS] CUB f64 reduce {} = {} bit-exact; \
@@ -180,23 +195,29 @@ fn m1217_energy_monitor_two_pass_window_roll() {
 
     // Pass 1: PE = all 1.0 → sum = 10.0.
     let pass1_pe: Vec<f64> = vec![1.0; N as usize];
-    stream.memcpy_htod(&pass1_pe, &mut d_pe).expect("htod pe pass 1");
+    stream
+        .memcpy_htod(&pass1_pe, &mut d_pe)
+        .expect("htod pe pass 1");
     unsafe {
         prism_energy_monitor_launch_reduce(
-            d_pe_addr as *const f64, N,
-            d_temp_addr as *mut c_void, temp_bytes,
+            d_pe_addr as *const f64,
+            N,
+            d_temp_addr as *mut c_void,
+            temp_bytes,
             d_scalar_addr as *mut f64,
             d_window_addr as *mut c_void,
-            d_adj_addr    as *mut f64,
+            d_adj_addr as *mut f64,
             raw_stream,
         );
     }
     stream.synchronize().expect("pass 1 sync");
 
     let mut window_pass1 = [0u8; 16];
-    stream.memcpy_dtoh(&d_window, &mut window_pass1).expect("dtoh window 1");
+    stream
+        .memcpy_dtoh(&d_window, &mut window_pass1)
+        .expect("dtoh window 1");
     let prev_1 = f64::from_le_bytes(window_pass1[0..8].try_into().unwrap());
-    let cur_1  = f64::from_le_bytes(window_pass1[8..16].try_into().unwrap());
+    let cur_1 = f64::from_le_bytes(window_pass1[8..16].try_into().unwrap());
     eprintln!("[M1.2.17 H 2-pass] PASS 1: prev={} cur={}", prev_1, cur_1);
     assert_eq!(prev_1, 0.0);
     assert!((cur_1 - 10.0).abs() < 1e-9);
@@ -204,28 +225,40 @@ fn m1217_energy_monitor_two_pass_window_roll() {
     // Pass 2: PE = all 2.0 → sum = 20.0.  The window roll should set
     // prev = 10.0 (the previous cur) and cur = 20.0.
     let pass2_pe: Vec<f64> = vec![2.0; N as usize];
-    stream.memcpy_htod(&pass2_pe, &mut d_pe).expect("htod pe pass 2");
+    stream
+        .memcpy_htod(&pass2_pe, &mut d_pe)
+        .expect("htod pe pass 2");
     unsafe {
         prism_energy_monitor_launch_reduce(
-            d_pe_addr as *const f64, N,
-            d_temp_addr as *mut c_void, temp_bytes,
+            d_pe_addr as *const f64,
+            N,
+            d_temp_addr as *mut c_void,
+            temp_bytes,
             d_scalar_addr as *mut f64,
             d_window_addr as *mut c_void,
-            d_adj_addr    as *mut f64,
+            d_adj_addr as *mut f64,
             raw_stream,
         );
     }
     stream.synchronize().expect("pass 2 sync");
 
     let mut window_pass2 = [0u8; 16];
-    stream.memcpy_dtoh(&d_window, &mut window_pass2).expect("dtoh window 2");
+    stream
+        .memcpy_dtoh(&d_window, &mut window_pass2)
+        .expect("dtoh window 2");
     let prev_2 = f64::from_le_bytes(window_pass2[0..8].try_into().unwrap());
-    let cur_2  = f64::from_le_bytes(window_pass2[8..16].try_into().unwrap());
+    let cur_2 = f64::from_le_bytes(window_pass2[8..16].try_into().unwrap());
     eprintln!("[M1.2.17 H 2-pass] PASS 2: prev={} cur={}", prev_2, cur_2);
-    assert!((prev_2 - 10.0).abs() < 1e-9,
-        "window.prev should be PASS-1 cur (10.0); got {}", prev_2);
-    assert!((cur_2 - 20.0).abs() < 1e-9,
-        "window.cur should be PASS-2 sum (20.0); got {}", cur_2);
+    assert!(
+        (prev_2 - 10.0).abs() < 1e-9,
+        "window.prev should be PASS-1 cur (10.0); got {}",
+        prev_2
+    );
+    assert!(
+        (cur_2 - 20.0).abs() < 1e-9,
+        "window.cur should be PASS-2 sum (20.0); got {}",
+        cur_2
+    );
 
     // Drift = |20 − 10| / |10| = 1.0 = 100% — would trigger Gear 3
     // when consumed by the SFA stability fuse.

@@ -20,10 +20,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
 // ============================================================================
 // LOCKED PARAMETERS - DO NOT MODIFY
@@ -38,11 +38,17 @@ const TERMINAL_FILTER: i32 = 8;
 const MIN_RUNS_PERSISTENCE: usize = 4;
 
 fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f32, f32) {
-    if predicted.is_empty() || truth.is_empty() { return (0.0, 0.0, 0.0); }
+    if predicted.is_empty() || truth.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
     let tp = predicted.intersection(truth).count() as f32;
     let precision = tp / predicted.len() as f32;
     let recall = tp / truth.len() as f32;
-    let f1 = if precision + recall > 0.0 { 2.0 * precision * recall / (precision + recall) } else { 0.0 };
+    let f1 = if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -63,7 +69,9 @@ fn run_detection(topology_path: &Path, n_residues: i32) -> Result<Vec<(i32, f32,
     let topology = PrismPrepTopology::load(topology_path)?;
 
     // Build chromophore set (aromatics + His)
-    let chromophores: HashSet<i32> = topology.residue_names.iter()
+    let chromophores: HashSet<i32> = topology
+        .residue_names
+        .iter()
         .enumerate()
         .filter_map(|(i, name)| {
             if matches!(name.as_str(), "TRP" | "TYR" | "PHE" | "HIS") {
@@ -113,8 +121,15 @@ fn run_detection(topology_path: &Path, n_residues: i32) -> Result<Vec<(i32, f32,
             for spike in &spikes {
                 for i in 0..spike.n_residues.min(8) as usize {
                     let res = spike.nearby_residues[i];
-                    if res < 0 || terminals.contains(&res) { continue; }
-                    if !chromophores.iter().any(|&ch| (ch - res).abs() <= CHROMOPHORE_CUTOFF) { continue; }
+                    if res < 0 || terminals.contains(&res) {
+                        continue;
+                    }
+                    if !chromophores
+                        .iter()
+                        .any(|&ch| (ch - res).abs() <= CHROMOPHORE_CUTOFF)
+                    {
+                        continue;
+                    }
 
                     let entry = stats.entry(res).or_insert((0, 0.0, HashSet::new()));
                     entry.0 += 1;
@@ -128,10 +143,15 @@ fn run_detection(topology_path: &Path, n_residues: i32) -> Result<Vec<(i32, f32,
     }
 
     // Score with locked formula
-    let mut scored: Vec<_> = stats.iter()
+    let mut scored: Vec<_> = stats
+        .iter()
         .filter(|(_, (_, _, runs))| runs.len() >= MIN_RUNS_PERSISTENCE)
         .map(|(&res, (count, intensity, runs))| {
-            let dist = chromophores.iter().map(|&ch| (ch - res).abs()).min().unwrap_or(100) as f32;
+            let dist = chromophores
+                .iter()
+                .map(|&ch| (ch - res).abs())
+                .min()
+                .unwrap_or(100) as f32;
             let proximity = 4.0 / (dist + 1.0);
             let consistency = runs.len() as f32 / N_RUNS as f32;
             let avg_intensity = intensity / *count as f32;
@@ -238,37 +258,65 @@ fn main() -> Result<()> {
 
         // Report metrics
         println!("Top 20 ranked residues:");
-        println!("{:>4} {:>5} {:>8} {:>6} {:>5} {:>8}", "Rank", "Res", "Score", "Count", "Runs", "Truth?");
+        println!(
+            "{:>4} {:>5} {:>8} {:>6} {:>5} {:>8}",
+            "Rank", "Res", "Score", "Count", "Runs", "Truth?"
+        );
         println!("{}", "-".repeat(45));
 
         for (i, (res, score, count, runs)) in scored.iter().take(20).enumerate() {
             let in_truth = if truth.contains(res) { "YES ←" } else { "" };
-            println!("{:>4} {:>5} {:>8.2} {:>6} {:>5} {:>8}", i + 1, res, score, count, runs, in_truth);
+            println!(
+                "{:>4} {:>5} {:>8.2} {:>6} {:>5} {:>8}",
+                i + 1,
+                res,
+                score,
+                count,
+                runs,
+                in_truth
+            );
         }
 
         // Calculate metrics at key cutoffs
         println!("\nMetrics:");
-        println!("{:>8} {:>10} {:>10} {:>10} {:>6}", "Top-N", "Precision", "Recall", "F1", "Hits");
+        println!(
+            "{:>8} {:>10} {:>10} {:>10} {:>6}",
+            "Top-N", "Precision", "Recall", "F1", "Hits"
+        );
         println!("{}", "-".repeat(50));
 
         let cutoffs = [5, 10, 20, 30, 40];
         let mut best_f1 = 0.0f32;
 
         for &n in &cutoffs {
-            if n > scored.len() { continue; }
+            if n > scored.len() {
+                continue;
+            }
             let pred: HashSet<i32> = scored.iter().take(n).map(|(r, _, _, _)| *r).collect();
             let (p, r, f1) = calculate_metrics(&pred, &truth);
             let hits = pred.intersection(&truth).count();
             println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6}", n, p, r, f1, hits);
-            if f1 > best_f1 { best_f1 = f1; }
+            if f1 > best_f1 {
+                best_f1 = f1;
+            }
         }
 
         let top10_pred: HashSet<i32> = scored.iter().take(10).map(|(r, _, _, _)| *r).collect();
         let (p10, _, _) = calculate_metrics(&top10_pred, &truth);
 
-        all_results.push((target.name, p10, best_f1,
-                         scored.iter().take(40).filter(|(r, _, _, _)| truth.contains(r)).count() as f32 / 40.0,
-                         truth.len(), scored.len()));
+        all_results.push((
+            target.name,
+            p10,
+            best_f1,
+            scored
+                .iter()
+                .take(40)
+                .filter(|(r, _, _, _)| truth.contains(r))
+                .count() as f32
+                / 40.0,
+            truth.len(),
+            scored.len(),
+        ));
 
         println!();
     }
@@ -283,8 +331,15 @@ fn main() -> Result<()> {
     println!("╠══════════════════════════════════════════════════════════════════════╣");
 
     for (name, p10, f1, p40, truth_n, detected) in &all_results {
-        println!("║  {:18} {:>7.1}%  {:>8.3}  {:>7.1}%  {:>5}  {:>8}   ║",
-                 name, p10 * 100.0, f1, p40 * 100.0, truth_n, detected);
+        println!(
+            "║  {:18} {:>7.1}%  {:>8.3}  {:>7.1}%  {:>5}  {:>8}   ║",
+            name,
+            p10 * 100.0,
+            f1,
+            p40 * 100.0,
+            truth_n,
+            detected
+        );
     }
 
     println!("╠══════════════════════════════════════════════════════════════════════╣");
@@ -292,7 +347,11 @@ fn main() -> Result<()> {
     let avg_p10: f32 = all_results.iter().map(|r| r.1).sum::<f32>() / all_results.len() as f32;
     let avg_f1: f32 = all_results.iter().map(|r| r.2).sum::<f32>() / all_results.len() as f32;
 
-    println!("║  AVERAGE:           {:>7.1}%  {:>8.3}                              ║", avg_p10 * 100.0, avg_f1);
+    println!(
+        "║  AVERAGE:           {:>7.1}%  {:>8.3}                              ║",
+        avg_p10 * 100.0,
+        avg_f1
+    );
     println!("╠══════════════════════════════════════════════════════════════════════╣");
 
     if avg_f1 >= 0.30 {

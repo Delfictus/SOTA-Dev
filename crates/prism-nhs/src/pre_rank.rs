@@ -153,8 +153,14 @@ mod tests {
     #[test]
     fn adjudication_code_round_trip() {
         assert_eq!(AdjudicationCode::from_raw(0), Some(AdjudicationCode::Prune));
-        assert_eq!(AdjudicationCode::from_raw(1), Some(AdjudicationCode::Construct));
-        assert_eq!(AdjudicationCode::from_raw(2), Some(AdjudicationCode::Violation));
+        assert_eq!(
+            AdjudicationCode::from_raw(1),
+            Some(AdjudicationCode::Construct)
+        );
+        assert_eq!(
+            AdjudicationCode::from_raw(2),
+            Some(AdjudicationCode::Violation)
+        );
         assert_eq!(AdjudicationCode::from_raw(3), None);
         assert_eq!(AdjudicationCode::from_raw(u32::MAX), None);
     }
@@ -209,7 +215,7 @@ mod tests {
             0.5,
             10.0,
             0.5,
-            1.0,        // c=4: EXACTLY at T_rho
+            1.0, // c=4: EXACTLY at T_rho
             0.5,
             f32::NAN,
             5.0,
@@ -220,7 +226,7 @@ mod tests {
             0.5,
             10.0,
             0.5,
-            1.0,        // c=5: EXACTLY at T_phi
+            1.0, // c=5: EXACTLY at T_phi
             5.0,
             f32::INFINITY,
         ];
@@ -228,11 +234,21 @@ mod tests {
         let t_rho: f32 = 1.0;
         let t_phi: f32 = 1.0;
 
-        let mut d_densities = stream.alloc_zeros::<f32>(n as usize).expect("alloc d_densities");
-        let mut d_fluxes = stream.alloc_zeros::<f32>(n as usize).expect("alloc d_fluxes");
-        stream.memcpy_htod(&densities, &mut d_densities).expect("htod densities");
-        stream.memcpy_htod(&fluxes, &mut d_fluxes).expect("htod fluxes");
-        let d_codes = stream.alloc_zeros::<u32>(n as usize).expect("alloc d_codes");
+        let mut d_densities = stream
+            .alloc_zeros::<f32>(n as usize)
+            .expect("alloc d_densities");
+        let mut d_fluxes = stream
+            .alloc_zeros::<f32>(n as usize)
+            .expect("alloc d_fluxes");
+        stream
+            .memcpy_htod(&densities, &mut d_densities)
+            .expect("htod densities");
+        stream
+            .memcpy_htod(&fluxes, &mut d_fluxes)
+            .expect("htod fluxes");
+        let d_codes = stream
+            .alloc_zeros::<u32>(n as usize)
+            .expect("alloc d_codes");
 
         let raw_stream = stream.cu_stream() as usize;
         let (densities_dev, _g1) = d_densities.device_ptr(&stream);
@@ -254,7 +270,9 @@ mod tests {
         stream.synchronize().expect("stream sync");
 
         let mut codes = vec![0u32; n as usize];
-        stream.memcpy_dtoh(&d_codes, &mut codes).expect("dtoh codes");
+        stream
+            .memcpy_dtoh(&d_codes, &mut codes)
+            .expect("dtoh codes");
 
         let codes: Vec<AdjudicationCode> = codes
             .iter()
@@ -262,11 +280,19 @@ mod tests {
             .collect();
 
         assert_eq!(codes[0], AdjudicationCode::Construct, "c=0 high/high");
-        assert_eq!(codes[1], AdjudicationCode::Prune,     "c=1 low/low");
+        assert_eq!(codes[1], AdjudicationCode::Prune, "c=1 low/low");
         assert_eq!(codes[2], AdjudicationCode::Construct, "c=2 high density");
         assert_eq!(codes[3], AdjudicationCode::Construct, "c=3 high flux");
-        assert_eq!(codes[4], AdjudicationCode::Construct, "c=4 boundary density (strict <)");
-        assert_eq!(codes[5], AdjudicationCode::Construct, "c=5 boundary flux (strict <)");
+        assert_eq!(
+            codes[4],
+            AdjudicationCode::Construct,
+            "c=4 boundary density (strict <)"
+        );
+        assert_eq!(
+            codes[5],
+            AdjudicationCode::Construct,
+            "c=5 boundary flux (strict <)"
+        );
         assert_eq!(codes[6], AdjudicationCode::Violation, "c=6 NaN density");
         assert_eq!(codes[7], AdjudicationCode::Violation, "c=7 Inf flux");
     }
@@ -298,10 +324,22 @@ mod tests {
         let stream = ctx.new_stream().expect("stream");
 
         let aabbs: Vec<ClusterAabb> = vec![
-            ClusterAabb { min: [0.0, 0.0, 0.0], max: [1.0, 1.0, 1.0] },     // 1
-            ClusterAabb { min: [0.0, 0.0, 0.0], max: [10.0, 10.0, 10.0] },  // 1000
-            ClusterAabb { min: [5.0, 5.0, 5.0], max: [4.0, 4.0, 4.0] },     // degenerate
-            ClusterAabb { min: [0.0, 0.0, 0.0], max: [2.0, 2.0, 2.0] },     // 8
+            ClusterAabb {
+                min: [0.0, 0.0, 0.0],
+                max: [1.0, 1.0, 1.0],
+            }, // 1
+            ClusterAabb {
+                min: [0.0, 0.0, 0.0],
+                max: [10.0, 10.0, 10.0],
+            }, // 1000
+            ClusterAabb {
+                min: [5.0, 5.0, 5.0],
+                max: [4.0, 4.0, 4.0],
+            }, // degenerate
+            ClusterAabb {
+                min: [0.0, 0.0, 0.0],
+                max: [2.0, 2.0, 2.0],
+            }, // 8
         ];
         let intensities: Vec<f32> = vec![10.0, 10.0, 100.0, 4.0];
         let fluxes: Vec<f32> = vec![0.0, 0.0, 0.0, 0.0];
@@ -313,23 +351,37 @@ mod tests {
         // bytes). Reinterpret as f32 for the htod (24 B = 6 f32s per
         // cluster). The kernel then casts back via `*const ClusterAabb`
         // — same byte layout, same alignment.
-        let aabbs_as_f32: &[f32] = unsafe {
-            std::slice::from_raw_parts(
-                aabbs.as_ptr() as *const f32,
-                aabbs.len() * 6,
-            )
-        };
-        let mut d_aabbs_f32 = stream.alloc_zeros::<f32>(n as usize * 6).expect("alloc d_aabbs_f32");
-        stream.memcpy_htod(aabbs_as_f32, &mut d_aabbs_f32).expect("htod aabbs");
+        let aabbs_as_f32: &[f32] =
+            unsafe { std::slice::from_raw_parts(aabbs.as_ptr() as *const f32, aabbs.len() * 6) };
+        let mut d_aabbs_f32 = stream
+            .alloc_zeros::<f32>(n as usize * 6)
+            .expect("alloc d_aabbs_f32");
+        stream
+            .memcpy_htod(aabbs_as_f32, &mut d_aabbs_f32)
+            .expect("htod aabbs");
 
-        let mut d_intensities = stream.alloc_zeros::<f32>(n as usize).expect("alloc d_intensities");
-        let mut d_fluxes = stream.alloc_zeros::<f32>(n as usize).expect("alloc d_fluxes");
-        stream.memcpy_htod(&intensities, &mut d_intensities).expect("htod intensities");
-        stream.memcpy_htod(&fluxes, &mut d_fluxes).expect("htod fluxes");
+        let mut d_intensities = stream
+            .alloc_zeros::<f32>(n as usize)
+            .expect("alloc d_intensities");
+        let mut d_fluxes = stream
+            .alloc_zeros::<f32>(n as usize)
+            .expect("alloc d_fluxes");
+        stream
+            .memcpy_htod(&intensities, &mut d_intensities)
+            .expect("htod intensities");
+        stream
+            .memcpy_htod(&fluxes, &mut d_fluxes)
+            .expect("htod fluxes");
 
-        let d_volumes = stream.alloc_zeros::<f32>(n as usize).expect("alloc d_volumes");
-        let d_densities = stream.alloc_zeros::<f32>(n as usize).expect("alloc d_densities");
-        let d_codes = stream.alloc_zeros::<u32>(n as usize).expect("alloc d_codes");
+        let d_volumes = stream
+            .alloc_zeros::<f32>(n as usize)
+            .expect("alloc d_volumes");
+        let d_densities = stream
+            .alloc_zeros::<f32>(n as usize)
+            .expect("alloc d_densities");
+        let d_codes = stream
+            .alloc_zeros::<u32>(n as usize)
+            .expect("alloc d_codes");
 
         let raw_stream = stream.cu_stream() as usize;
 
@@ -381,11 +433,17 @@ mod tests {
 
         // dtoh + assert.
         let mut volumes = vec![0.0f32; n as usize];
-        stream.memcpy_dtoh(&d_volumes, &mut volumes).expect("dtoh volumes");
+        stream
+            .memcpy_dtoh(&d_volumes, &mut volumes)
+            .expect("dtoh volumes");
         let mut densities = vec![0.0f32; n as usize];
-        stream.memcpy_dtoh(&d_densities, &mut densities).expect("dtoh densities");
+        stream
+            .memcpy_dtoh(&d_densities, &mut densities)
+            .expect("dtoh densities");
         let mut codes_raw = vec![0u32; n as usize];
-        stream.memcpy_dtoh(&d_codes, &mut codes_raw).expect("dtoh codes");
+        stream
+            .memcpy_dtoh(&d_codes, &mut codes_raw)
+            .expect("dtoh codes");
 
         // Volumes:
         assert!((volumes[0] - 1.0).abs() < 1e-6, "c=0 volume = 1");
@@ -400,12 +458,29 @@ mod tests {
         assert!((densities[3] - 0.5).abs() < 1e-6, "c=3 density = 0.5");
 
         // Adjudication codes:
-        let codes: Vec<AdjudicationCode> = codes_raw.iter()
+        let codes: Vec<AdjudicationCode> = codes_raw
+            .iter()
             .map(|&v| AdjudicationCode::from_raw(v).unwrap())
             .collect();
-        assert_eq!(codes[0], AdjudicationCode::Construct, "c=0 high density → Construct");
-        assert_eq!(codes[1], AdjudicationCode::Prune,     "c=1 low density, low flux → Prune");
-        assert_eq!(codes[2], AdjudicationCode::Prune,     "c=2 zero density, zero flux → Prune");
-        assert_eq!(codes[3], AdjudicationCode::Prune,     "c=3 0.5 < 1.0 (T_rho), low flux → Prune");
+        assert_eq!(
+            codes[0],
+            AdjudicationCode::Construct,
+            "c=0 high density → Construct"
+        );
+        assert_eq!(
+            codes[1],
+            AdjudicationCode::Prune,
+            "c=1 low density, low flux → Prune"
+        );
+        assert_eq!(
+            codes[2],
+            AdjudicationCode::Prune,
+            "c=2 zero density, zero flux → Prune"
+        );
+        assert_eq!(
+            codes[3],
+            AdjudicationCode::Prune,
+            "c=3 0.5 < 1.0 (T_rho), low flux → Prune"
+        );
     }
 }

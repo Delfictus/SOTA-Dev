@@ -18,10 +18,7 @@ use anyhow::Result;
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{
-    PersistentNhsEngine, PersistentBatchConfig, CryoUvProtocol,
-    PrismPrepTopology,
-};
+use prism_nhs::{CryoUvProtocol, PersistentBatchConfig, PersistentNhsEngine, PrismPrepTopology};
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<()> {
@@ -64,14 +61,21 @@ fn main() -> Result<()> {
         }
 
         println!("═══════════════════════════════════════════════════════════════════════════");
-        println!("[{}/{}] Processing: {}", idx + 1, test_structures.len(), path.file_name().unwrap().to_str().unwrap());
+        println!(
+            "[{}/{}] Processing: {}",
+            idx + 1,
+            test_structures.len(),
+            path.file_name().unwrap().to_str().unwrap()
+        );
         println!("═══════════════════════════════════════════════════════════════════════════\n");
 
         // Load topology (hot-swap, reuses GPU context)
         let topology = PrismPrepTopology::load(path)?;
-        println!("  Topology: {} atoms, {} aromatics",
+        println!(
+            "  Topology: {} atoms, {} aromatics",
             topology.n_atoms,
-            topology.aromatic_residues().len());
+            topology.aromatic_residues().len()
+        );
 
         engine.load_topology(&topology)?;
         println!("  ✓ Topology loaded (hot-swapped)\n");
@@ -108,8 +112,14 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════════╝");
     println!("  Structures processed: {}", stats.structures_processed);
     println!("  Total steps:          {}", stats.total_steps_run);
-    println!("  Compute time:         {:.1}s", stats.total_compute_time_ms as f64 / 1000.0);
-    println!("  Overhead saved:       {}ms (from persistent GPU state)", stats.overhead_saved_ms);
+    println!(
+        "  Compute time:         {:.1}s",
+        stats.total_compute_time_ms as f64 / 1000.0
+    );
+    println!(
+        "  Overhead saved:       {}ms (from persistent GPU state)",
+        stats.overhead_saved_ms
+    );
     println!("\n  ✓ Unified cryo-UV protocol used for all structures");
     println!("  ✓ UV-LIF coupling: 100% aromatic localization");
     println!("  ✓ Aromatic enrichment: 2.26x over baseline");

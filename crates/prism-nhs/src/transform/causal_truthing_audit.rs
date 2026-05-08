@@ -47,8 +47,7 @@ use super::{
 // Identity + law declarations
 // ============================================================================
 
-pub const TRANSFORM_CAUSAL_TRUTHING_AUDIT: TransformId =
-    TransformId("causal_truthing_audit");
+pub const TRANSFORM_CAUSAL_TRUTHING_AUDIT: TransformId = TransformId("causal_truthing_audit");
 
 pub const LAW_L4_CAUSAL_MATH_MEANINGFUL_OR_ABSENT: LawId =
     LawId::new("l4_causal_math_meaningful_or_absent", LawFamily::Algebraic);
@@ -84,9 +83,7 @@ pub struct SiteCausalSummary {
 impl SiteCausalSummary {
     /// True if every candidate's `causal_lag` is NaN/Inf.
     pub fn all_lag_undefined(&self) -> bool {
-        self.candidate_causal_lag
-            .iter()
-            .all(|v| !v.is_finite())
+        self.candidate_causal_lag.iter().all(|v| !v.is_finite())
     }
 
     /// True if there is no TIDE projection or every entry is NaN/Inf.
@@ -181,7 +178,9 @@ impl AuditedTransform for CausalTruthingAudit {
 mod tests {
     use super::*;
 
-    fn nan() -> f32 { f32::NAN }
+    fn nan() -> f32 {
+        f32::NAN
+    }
 
     #[test]
     fn inert_site_with_dead_math_does_not_violate() {
@@ -193,8 +192,10 @@ mod tests {
         };
         let audit = CausalTruthingAudit::new();
         let outcome = audit.apply(std::slice::from_ref(&summary));
-        assert!(matches!(outcome, AuditOutcome::Accepted { .. }),
-            "inert site (low spike_support) should be accepted regardless of dead math");
+        assert!(
+            matches!(outcome, AuditOutcome::Accepted { .. }),
+            "inert site (low spike_support) should be accepted regardless of dead math"
+        );
     }
 
     #[test]
@@ -215,8 +216,11 @@ mod tests {
                 assert_eq!(v.routing, AuditRouting::Quarantine);
                 match &v.evidence {
                     ViolationEvidence::DeadCausalMathOnMeaningfulSite {
-                        site_id, spike_support, candidate_count,
-                        all_lag_undefined, all_te_undefined,
+                        site_id,
+                        spike_support,
+                        candidate_count,
+                        all_lag_undefined,
+                        all_te_undefined,
                     } => {
                         assert_eq!(*site_id, 7);
                         assert_eq!(*spike_support, 1024);
@@ -241,8 +245,10 @@ mod tests {
         };
         let audit = CausalTruthingAudit::new();
         let outcome = audit.apply(std::slice::from_ref(&summary));
-        assert!(matches!(outcome, AuditOutcome::Accepted { .. }),
-            "one finite lag value is enough to defuse L4 — TE may still be dead");
+        assert!(
+            matches!(outcome, AuditOutcome::Accepted { .. }),
+            "one finite lag value is enough to defuse L4 — TE may still be dead"
+        );
     }
 
     #[test]
@@ -255,8 +261,10 @@ mod tests {
         };
         let audit = CausalTruthingAudit::new();
         let outcome = audit.apply(std::slice::from_ref(&summary));
-        assert!(matches!(outcome, AuditOutcome::Accepted { .. }),
-            "one finite TE value is enough to defuse L4 — lag may still be dead");
+        assert!(
+            matches!(outcome, AuditOutcome::Accepted { .. }),
+            "one finite TE value is enough to defuse L4 — lag may still be dead"
+        );
     }
 
     #[test]

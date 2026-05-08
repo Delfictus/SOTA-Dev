@@ -11,10 +11,10 @@ use std::path::Path;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<()> {
@@ -27,7 +27,7 @@ fn main() -> Result<()> {
 
     // Load a test structure with aromatics
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     if !topology_path.exists() {
@@ -54,8 +54,10 @@ fn main() -> Result<()> {
     }
 
     let n_aromatics = n_trp + n_tyr + n_phe;
-    println!("[TEST] Aromatics: {} total (TRP={}, TYR={}, PHE={})",
-             n_aromatics, n_trp, n_tyr, n_phe);
+    println!(
+        "[TEST] Aromatics: {} total (TRP={}, TYR={}, PHE={})",
+        n_aromatics, n_trp, n_tyr, n_phe
+    );
 
     // Create CUDA context
     println!("[TEST] Creating CUDA context...");
@@ -66,7 +68,7 @@ fn main() -> Result<()> {
     let mut engine = NhsAmberFusedEngine::new(context, &topology, 48, 1.2)?;
 
     // Set temperature protocol
-    let start_temp = 100.0;  // Start cold for cryo contrast
+    let start_temp = 100.0; // Start cold for cryo contrast
     let end_temp = 300.0;
     let temp_protocol = TemperatureProtocol {
         start_temp,
@@ -85,28 +87,42 @@ fn main() -> Result<()> {
     let start = Instant::now();
     let summary1 = engine.run(5000)?;
     let phase1_time = start.elapsed();
-    println!("    Steps: {}, Spikes: {}, Time: {:.2}s",
-             summary1.steps_completed, summary1.total_spikes, phase1_time.as_secs_f32());
+    println!(
+        "    Steps: {}, Spikes: {}, Time: {:.2}s",
+        summary1.steps_completed,
+        summary1.total_spikes,
+        phase1_time.as_secs_f32()
+    );
 
     // Run with UV probing active
     println!("\n  Phase 2: UV probing active (spikes should correlate with UV bursts)");
     let start = Instant::now();
     let summary2 = engine.run(10000)?;
     let phase2_time = start.elapsed();
-    println!("    Steps: {}, Spikes: {}, Time: {:.2}s",
-             summary2.steps_completed, summary2.total_spikes, phase2_time.as_secs_f32());
+    println!(
+        "    Steps: {}, Spikes: {}, Time: {:.2}s",
+        summary2.steps_completed,
+        summary2.total_spikes,
+        phase2_time.as_secs_f32()
+    );
 
     // Run warm phase
     println!("\n  Phase 3: Warm phase (increased thermal motion)");
     let start = Instant::now();
     let summary3 = engine.run(10000)?;
     let phase3_time = start.elapsed();
-    println!("    Steps: {}, Spikes: {}, Time: {:.2}s",
-             summary3.steps_completed, summary3.total_spikes, phase3_time.as_secs_f32());
+    println!(
+        "    Steps: {}, Spikes: {}, Time: {:.2}s",
+        summary3.steps_completed,
+        summary3.total_spikes,
+        phase3_time.as_secs_f32()
+    );
 
     // Get final positions and check validity
     let final_positions = engine.get_positions()?;
-    let valid = final_positions.iter().all(|&p| p.is_finite() && p.abs() < 500.0);
+    let valid = final_positions
+        .iter()
+        .all(|&p| p.is_finite() && p.abs() < 500.0);
 
     // Summary
     let total_spikes = summary1.total_spikes + summary2.total_spikes + summary3.total_spikes;
@@ -116,12 +132,20 @@ fn main() -> Result<()> {
     println!("                    UV PHYSICS VALIDATION SUMMARY");
     println!("======================================================================");
     println!();
-    println!("  Aromatics detected: {} (TRP={}, TYR={}, PHE={})",
-             n_aromatics, n_trp, n_tyr, n_phe);
-    println!("  Total steps: {}", summary1.steps_completed + summary2.steps_completed + summary3.steps_completed);
+    println!(
+        "  Aromatics detected: {} (TRP={}, TYR={}, PHE={})",
+        n_aromatics, n_trp, n_tyr, n_phe
+    );
+    println!(
+        "  Total steps: {}",
+        summary1.steps_completed + summary2.steps_completed + summary3.steps_completed
+    );
     println!("  Total spikes: {}", total_spikes);
     println!("  Total time: {:.2}s", total_time.as_secs_f32());
-    println!("  Throughput: {:.0} steps/s", 25000.0 / total_time.as_secs_f32());
+    println!(
+        "  Throughput: {:.0} steps/s",
+        25000.0 / total_time.as_secs_f32()
+    );
     println!("  Positions valid: {}", if valid { "YES" } else { "NO" });
     println!();
 
@@ -153,8 +177,10 @@ fn main() -> Result<()> {
     }
 
     // Check 4: Temperature protocol executed
-    println!("  [PASS] Temperature protocol executed ({}K -> {}K)",
-             start_temp, end_temp);
+    println!(
+        "  [PASS] Temperature protocol executed ({}K -> {}K)",
+        start_temp, end_temp
+    );
 
     println!();
     if all_passed {

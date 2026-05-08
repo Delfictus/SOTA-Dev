@@ -35,7 +35,10 @@ pub struct NhsSiteId {
 
 impl NhsSiteId {
     pub fn new(pdb_id: &str, chain_id: &str, residue_number: i32, residue_name: &str) -> Self {
-        let full_id = format!("NHS_{}_{}_{}_{}", pdb_id, chain_id, residue_number, residue_name);
+        let full_id = format!(
+            "NHS_{}_{}_{}_{}",
+            pdb_id, chain_id, residue_number, residue_name
+        );
         Self {
             pdb_id: pdb_id.to_string(),
             chain_id: chain_id.to_string(),

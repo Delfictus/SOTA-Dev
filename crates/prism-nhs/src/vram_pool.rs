@@ -238,11 +238,7 @@ impl VramPool {
     /// pairing this with [`Self::free_async`] on a stream where the
     /// last user of the pointer has retired (stream-ordered free
     /// semantics — see CUDA Mempool docs).
-    pub fn alloc_async(
-        &self,
-        size: u64,
-        stream_handle: usize,
-    ) -> Result<usize, String> {
+    pub fn alloc_async(&self, size: u64, stream_handle: usize) -> Result<usize, String> {
         let mut out: *mut std::ffi::c_void = std::ptr::null_mut();
         let rc = unsafe {
             ffi::prism_vram_pool_alloc_async(
@@ -281,17 +277,15 @@ impl VramPool {
             "F2 POOL ALIGNMENT VIOLATION: alloc_async({} bytes) returned \
              0x{:x} which is not 256-byte aligned (mod 256 = {}). \
              Blackwell sm_120 vector loads will trap. HALT.",
-            size, ptr, ptr % 256
+            size,
+            ptr,
+            ptr % 256
         );
         Ok(ptr)
     }
 
     /// Free a pointer back to this pool on `stream`. Stream-ordered.
-    pub fn free_async(
-        &self,
-        device_ptr: usize,
-        stream_handle: usize,
-    ) -> Result<(), String> {
+    pub fn free_async(&self, device_ptr: usize, stream_handle: usize) -> Result<(), String> {
         let rc = unsafe {
             ffi::prism_vram_pool_free_async(
                 device_ptr as *mut std::ffi::c_void,
@@ -525,9 +519,7 @@ mod tests {
         let stream_handle = stream.cu_stream() as usize;
 
         // Allocate 4 KiB — small enough not to OOM any device.
-        let dev_ptr = pool
-            .alloc_async(4096, stream_handle)
-            .expect("alloc 4 KiB");
+        let dev_ptr = pool.alloc_async(4096, stream_handle).expect("alloc 4 KiB");
         assert_ne!(dev_ptr, 0, "device pointer must be non-null");
 
         // Free + sync. The free is stream-ordered: returns
@@ -557,7 +549,10 @@ mod tests {
         let ctx = match CudaContext::new(0) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[vram_audit telemetry] CUDA unavailable: {:?} — skipping", e);
+                eprintln!(
+                    "[vram_audit telemetry] CUDA unavailable: {:?} — skipping",
+                    e
+                );
                 return;
             }
         };
@@ -567,8 +562,11 @@ mod tests {
 
         // Initial snapshot: all zeros.
         let s0 = audit.snapshot().expect("snapshot 0");
-        assert_eq!(s0, VramAudit::zero(),
-            "audit init kernel did not zero every field");
+        assert_eq!(
+            s0,
+            VramAudit::zero(),
+            "audit init kernel did not zero every field"
+        );
 
         // 5 record_alloc of 1000 bytes each, budget = 5000.
         let budget: u64 = 5000;
@@ -578,16 +576,24 @@ mod tests {
         let s1 = audit.snapshot().expect("snapshot 1");
         assert_eq!(s1.current_allocated_bytes, 5000);
         assert_eq!(s1.peak_high_water_mark, 5000);
-        assert_eq!(s1.pool_exhaustion_flag, VramAudit::FLAG_OK,
-            "5000 bytes at boundary 5000 must NOT trip exhaustion (>, not >=)");
+        assert_eq!(
+            s1.pool_exhaustion_flag,
+            VramAudit::FLAG_OK,
+            "5000 bytes at boundary 5000 must NOT trip exhaustion (>, not >=)"
+        );
 
         // 1 more record_alloc — pushes over budget.
-        audit.record_alloc(1000, budget).expect("record_alloc over budget");
+        audit
+            .record_alloc(1000, budget)
+            .expect("record_alloc over budget");
         let s2 = audit.snapshot().expect("snapshot 2");
         assert_eq!(s2.current_allocated_bytes, 6000);
         assert_eq!(s2.peak_high_water_mark, 6000);
-        assert_eq!(s2.pool_exhaustion_flag, VramAudit::FLAG_VIOLATION,
-            "6000 > budget 5000 must trip exhaustion flag");
+        assert_eq!(
+            s2.pool_exhaustion_flag,
+            VramAudit::FLAG_VIOLATION,
+            "6000 > budget 5000 must trip exhaustion flag"
+        );
         assert!(s2.is_exhausted());
 
         // 2 record_free of 1000 each — current drops, peak stays,
@@ -595,12 +601,19 @@ mod tests {
         audit.record_free(1000).expect("record_free 1");
         audit.record_free(1000).expect("record_free 2");
         let s3 = audit.snapshot().expect("snapshot 3");
-        assert_eq!(s3.current_allocated_bytes, 4000,
-            "current_allocated_bytes must decrement on record_free");
-        assert_eq!(s3.peak_high_water_mark, 6000,
-            "peak_high_water_mark must NOT decrement on free (monotonic)");
-        assert_eq!(s3.pool_exhaustion_flag, VramAudit::FLAG_VIOLATION,
-            "exhaustion flag must stay sticky after a free recovers headroom");
+        assert_eq!(
+            s3.current_allocated_bytes, 4000,
+            "current_allocated_bytes must decrement on record_free"
+        );
+        assert_eq!(
+            s3.peak_high_water_mark, 6000,
+            "peak_high_water_mark must NOT decrement on free (monotonic)"
+        );
+        assert_eq!(
+            s3.pool_exhaustion_flag,
+            VramAudit::FLAG_VIOLATION,
+            "exhaustion flag must stay sticky after a free recovers headroom"
+        );
     }
 
     #[cfg(feature = "gpu")]
@@ -625,18 +638,24 @@ mod tests {
         let stream_handle = stream.cu_stream() as usize;
 
         let small_budget: u64 = 4096; // 4 KiB
-        let alloc_size: u64 = 8192;   // 8 KiB — over budget intentionally
+        let alloc_size: u64 = 8192; // 8 KiB — over budget intentionally
 
         // Pool alloc succeeds (the device has plenty of memory) but
         // the audit budget is violated.
-        let dev_ptr = pool.alloc_async(alloc_size, stream_handle).expect("pool alloc");
-        audit.record_alloc(alloc_size, small_budget).expect("audit record_alloc");
+        let dev_ptr = pool
+            .alloc_async(alloc_size, stream_handle)
+            .expect("pool alloc");
+        audit
+            .record_alloc(alloc_size, small_budget)
+            .expect("audit record_alloc");
 
         let s = audit.snapshot().expect("snapshot");
         assert_eq!(s.current_allocated_bytes, alloc_size);
         assert_eq!(s.peak_high_water_mark, alloc_size);
-        assert!(s.is_exhausted(),
-            "single 8 KiB alloc against 4 KiB budget must trip the flag");
+        assert!(
+            s.is_exhausted(),
+            "single 8 KiB alloc against 4 KiB budget must trip the flag"
+        );
 
         // Cleanup.
         pool.free_async(dev_ptr, stream_handle).expect("pool free");

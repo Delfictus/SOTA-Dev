@@ -7,11 +7,11 @@
 //! - Multi-stream concurrency safety
 
 use anyhow::Result;
-use prism_nhs::{UltimateEngine, UltimateEngineConfig, PrismPrepTopology};
 use cudarc::driver::CudaContext;
+use prism_nhs::{PrismPrepTopology, UltimateEngine, UltimateEngineConfig};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use std::thread;
+use std::time::{Duration, Instant};
 
 fn create_test_topology(n_atoms: usize) -> PrismPrepTopology {
     let mut positions = vec![0.0f32; n_atoms * 3];
@@ -44,10 +44,13 @@ fn create_test_topology(n_atoms: usize) -> PrismPrepTopology {
         bonds: vec![],
         angles: vec![],
         dihedrals: vec![],
-        lj_params: vec![prism_nhs::input::LjParam {
-            sigma: 3.4,
-            epsilon: 0.086,
-        }; n_atoms],
+        lj_params: vec![
+            prism_nhs::input::LjParam {
+                sigma: 3.4,
+                epsilon: 0.086,
+            };
+            n_atoms
+        ],
         exclusions: vec![vec![]; n_atoms],
         h_clusters: vec![],
         water_oxygens: vec![],
@@ -69,7 +72,10 @@ where
 
     match rx.recv_timeout(timeout) {
         Ok(result) => result,
-        Err(_) => anyhow::bail!("LIVELOCK DETECTED: Kernel did not complete within {:?}", timeout),
+        Err(_) => anyhow::bail!(
+            "LIVELOCK DETECTED: Kernel did not complete within {:?}",
+            timeout
+        ),
     }
 }
 
@@ -146,12 +152,16 @@ fn main() -> Result<()> {
         }
         // Non-determinism in GPU is sometimes expected due to floating point associativity
         // but large variations indicate race conditions
-        let max_diff = energies.iter()
+        let max_diff = energies
+            .iter()
             .map(|&e| (e - first).abs())
             .fold(0.0f64, f64::max);
 
         if max_diff > 1.0 {
-            println!("    ✗ FAIL: Max difference {:.6e} too large (possible race)", max_diff);
+            println!(
+                "    ✗ FAIL: Max difference {:.6e} too large (possible race)",
+                max_diff
+            );
             all_passed = false;
         } else {
             println!("    ✓ PASS: Variation within acceptable range");
@@ -197,7 +207,10 @@ fn main() -> Result<()> {
         println!("    Final total energy: {:.2e}", prev_total);
     } else {
         println!("✗ FAIL: Energy explosion detected");
-        println!("    Max drift: {:.2e}, Final: {:.2e}", max_drift, prev_total);
+        println!(
+            "    Max drift: {:.2e}, Final: {:.2e}",
+            max_drift, prev_total
+        );
         all_passed = false;
     }
     println!();
@@ -220,9 +233,11 @@ fn main() -> Result<()> {
     }
 
     let elapsed = start.elapsed();
-    println!("✓ PASS ({:.2}s, {:.0} launches/sec)",
-             elapsed.as_secs_f64(),
-             1000.0 / elapsed.as_secs_f64());
+    println!(
+        "✓ PASS ({:.2}s, {:.0} launches/sec)",
+        elapsed.as_secs_f64(),
+        1000.0 / elapsed.as_secs_f64()
+    );
     println!();
 
     // =========================================================================
@@ -244,7 +259,10 @@ fn main() -> Result<()> {
 
     if result.potential_energy.is_finite() && result.kinetic_energy.is_finite() {
         println!("✓ PASS ({:.2}s)", elapsed.as_secs_f64());
-        println!("    PE: {:.2e}, KE: {:.2e}", result.potential_energy, result.kinetic_energy);
+        println!(
+            "    PE: {:.2e}, KE: {:.2e}",
+            result.potential_energy, result.kinetic_energy
+        );
     } else {
         println!("✗ FAIL: NaN or Inf detected");
         all_passed = false;

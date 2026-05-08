@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 
 use cudarc::driver::CudaContext;
-use prism_nhs::{RtClusteringEngine, RtClusteringConfig, find_optixir_path};
+use prism_nhs::{find_optixir_path, RtClusteringConfig, RtClusteringEngine};
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -19,8 +19,7 @@ fn main() -> Result<()> {
 
     // Initialize CUDA
     println!("[1/5] Initializing CUDA...");
-    let context = CudaContext::new(0)
-        .context("Failed to create CUDA context")?;
+    let context = CudaContext::new(0).context("Failed to create CUDA context")?;
 
     // Get device info
     println!("  GPU: CUDA Device 0");
@@ -48,7 +47,8 @@ fn main() -> Result<()> {
         .context("Could not find rt_clustering.optixir")?;
 
     println!("  Loading from: {}", optixir_path.display());
-    engine.load_pipeline(&optixir_path)
+    engine
+        .load_pipeline(&optixir_path)
         .context("Failed to load OptiX pipeline")?;
     println!("  Pipeline loaded successfully!");
 
@@ -60,8 +60,8 @@ fn main() -> Result<()> {
     for i in 0..50 {
         let angle = (i as f32) * 0.125 * std::f32::consts::PI;
         let r = 1.0 + (i as f32) * 0.02;
-        positions.push(r * angle.cos());  // x
-        positions.push(r * angle.sin());  // y
+        positions.push(r * angle.cos()); // x
+        positions.push(r * angle.sin()); // y
         positions.push((i as f32) * 0.05); // z
     }
 
@@ -99,8 +99,7 @@ fn main() -> Result<()> {
 
     // Run clustering
     println!("\n[5/5] Running RT-core clustering...");
-    let result = engine.cluster(&positions)
-        .context("Clustering failed")?;
+    let result = engine.cluster(&positions).context("Clustering failed")?;
 
     // Print results
     println!("\n=== Results ===");
@@ -110,7 +109,8 @@ fn main() -> Result<()> {
     println!("  GPU time:         {:.2} ms", result.gpu_time_ms);
 
     // Analyze cluster assignments
-    let mut cluster_counts: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+    let mut cluster_counts: std::collections::HashMap<i32, usize> =
+        std::collections::HashMap::new();
     for &cid in &result.cluster_ids {
         *cluster_counts.entry(cid).or_default() += 1;
     }
@@ -134,7 +134,10 @@ fn main() -> Result<()> {
     if result.num_clusters >= 1 {
         println!("  [PASS] Found at least 1 cluster");
     } else {
-        println!("  [FAIL] Expected at least 1 cluster, found {}", result.num_clusters);
+        println!(
+            "  [FAIL] Expected at least 1 cluster, found {}",
+            result.num_clusters
+        );
     }
 
     if clustered_count > 0 {

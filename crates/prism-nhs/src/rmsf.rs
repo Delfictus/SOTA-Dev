@@ -105,7 +105,11 @@ impl RmsfCalculator {
         log::info!(
             "RMSF convergence: r = {:.3} ({})",
             correlation,
-            if converged { "CONVERGED" } else { "NOT CONVERGED" }
+            if converged {
+                "CONVERGED"
+            } else {
+                "NOT CONVERGED"
+            }
         );
 
         Ok(RmsfAnalysis {

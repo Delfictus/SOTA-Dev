@@ -57,11 +57,9 @@
 #![cfg(feature = "gpu")]
 
 use cudarc::driver::sys::{
-    cuMemAllocHost_v2, cuMemFreeHost,
-    cuMemcpyDtoHAsync_v2, cuPointerGetAttribute,
-    cuStreamCreate, cuStreamGetFlags,
-    CUdeviceptr, CUmemorytype_enum, CUpointer_attribute_enum,
-    CUresult, CUstream, CUstream_flags_enum,
+    cuMemAllocHost_v2, cuMemFreeHost, cuMemcpyDtoHAsync_v2, cuPointerGetAttribute, cuStreamCreate,
+    cuStreamGetFlags, CUdeviceptr, CUmemorytype_enum, CUpointer_attribute_enum, CUresult, CUstream,
+    CUstream_flags_enum,
 };
 use std::ffi::c_void;
 use std::marker::PhantomData;
@@ -339,9 +337,8 @@ pub fn schedule_async_tile_copy<T>(
         .ok_or(CUresult::CUDA_ERROR_INVALID_VALUE as i32)?;
 
     let dst = ring.write_slot_dst_ptr(frame_idx);
-    let rc = unsafe {
-        cuMemcpyDtoHAsync_v2(dst, src_dev_ptr as CUdeviceptr, bytes, telemetry_stream)
-    };
+    let rc =
+        unsafe { cuMemcpyDtoHAsync_v2(dst, src_dev_ptr as CUdeviceptr, bytes, telemetry_stream) };
     if !matches!(rc, CUresult::CUDA_SUCCESS) {
         return Err(rc as i32);
     }
@@ -367,8 +364,8 @@ pub fn schedule_async_tile_copy<T>(
 use std::io::{BufWriter, Write};
 
 use crate::site_manifest::{
-    CentroidManifold, EntangledManifoldId, SiteIdentity, SiteId, ClusterId,
-    CausalScalars, SiteManifest,
+    CausalScalars, CentroidManifold, ClusterId, EntangledManifoldId, SiteId, SiteIdentity,
+    SiteManifest,
 };
 use crate::so3_project::ContactShellTile;
 
@@ -406,9 +403,10 @@ pub fn serialize_slot_to_writer<W: Write>(
     // streaming readers (`jq -c .`, `simdjson::dom::parser::iterate`).
     for (cluster_id, tile) in slot.iter().enumerate() {
         let manifest = build_minimal_site_manifest_from_tile(cluster_id as u32, tile);
-        let json = serde_json::to_string(&manifest)
-            .map_err(GhostSerializeError::Json)?;
-        writer.write_all(json.as_bytes()).map_err(GhostSerializeError::Io)?;
+        let json = serde_json::to_string(&manifest).map_err(GhostSerializeError::Json)?;
+        writer
+            .write_all(json.as_bytes())
+            .map_err(GhostSerializeError::Io)?;
         writer.write_all(b"\n").map_err(GhostSerializeError::Io)?;
         total_bytes += json.len() + 1;
     }
@@ -427,24 +425,21 @@ pub fn serialize_slot_to_writer<W: Write>(
 ///   I/O-bloat mitigation: Cold-Hold tiles emit a near-empty record)
 ///
 /// Pure-host code; no GPU involvement, no FFI calls.
-fn build_minimal_site_manifest_from_tile(
-    cluster_id: u32,
-    tile: &ContactShellTile,
-) -> SiteManifest {
+fn build_minimal_site_manifest_from_tile(cluster_id: u32, tile: &ContactShellTile) -> SiteManifest {
     use crate::entangled_manifold::{
-        CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField, TieBreakerPolicy,
-        ViewProvenance, CausalSortKey,
+        CausalSignal, CausalSortKey, IdentityTieBreaker, SelectionPolicy, SortField,
+        TieBreakerPolicy, ViewProvenance,
     };
 
     let provenance = ViewProvenance {
-        signal:      CausalSignal::SpikeAttributionCount,
-        selection:   SelectionPolicy::TopK { k: 1 },
+        signal: CausalSignal::SpikeAttributionCount,
+        selection: SelectionPolicy::TopK { k: 1 },
         #[allow(deprecated)]
         tie_breaker: TieBreakerPolicy::CausalThenResid,
-        frame:       tile.frame as u64,
+        frame: tile.frame as u64,
     };
     let sort_lineage = CausalSortKey {
-        priorities:          vec![SortField::SpikeAttributionCount],
+        priorities: vec![SortField::SpikeAttributionCount],
         identity_tiebreaker: IdentityTieBreaker::ChainResidAtom,
     };
 
@@ -455,21 +450,21 @@ fn build_minimal_site_manifest_from_tile(
 
     SiteManifest {
         identity: SiteIdentity {
-            site_id:    SiteId(cluster_id),
+            site_id: SiteId(cluster_id),
             cluster_id: ClusterId(cluster_id),
             provenance,
         },
-        centroids:          CentroidManifold::new(),
-        causal_scalars:     CausalScalars::new_m1(tile.spike_count as u64),
-        frame:              tile.frame as u64,
+        centroids: CentroidManifold::new(),
+        causal_scalars: CausalScalars::new_m1(tile.spike_count as u64),
+        frame: tile.frame as u64,
         source_manifold_id: EntangledManifoldId(tile.frame as u64),
         sort_lineage,
         contact_shell_geo_power_spectrum: Some(c_l),
-        adjudicator_divergence:           None,
-        adjudicator_code:                 None,
-        adjudicator_elapsed_ns:           None,
-        kcc_metrics:                      None,
-        therm_dossier:                    None,
+        adjudicator_divergence: None,
+        adjudicator_code: None,
+        adjudicator_elapsed_ns: None,
+        kcc_metrics: None,
+        therm_dossier: None,
     }
 }
 
@@ -540,7 +535,7 @@ pub unsafe fn log_f1_switch_events(
 ) -> usize {
     let slot = match ring.read_slot_unchecked(current_frame_idx) {
         Some(s) => s,
-        None    => return 0,
+        None => return 0,
     };
     let mut n_fired = 0usize;
     for tile in slot {
@@ -628,8 +623,12 @@ mod tests {
             "kcc_metrics",
             "therm_dossier",
         ] {
-            assert!(!s.contains(forbidden),
-                "Pillar-5 ghost reader leaked extension field {}: {}", forbidden, s);
+            assert!(
+                !s.contains(forbidden),
+                "Pillar-5 ghost reader leaked extension field {}: {}",
+                forbidden,
+                s
+            );
         }
     }
 
@@ -669,9 +668,12 @@ mod tests {
         assert_eq!(ring.total_bytes(), 3 * 16 * 1280);
         assert!(!ring.base_ptr().is_null());
 
-        let pinned = is_pinned_host(ring.base_ptr() as *const c_void)
-            .expect("cuPointerGetAttribute");
-        assert!(pinned, "ring base pointer must be pinned (CU_MEMORYTYPE_HOST)");
+        let pinned =
+            is_pinned_host(ring.base_ptr() as *const c_void).expect("cuPointerGetAttribute");
+        assert!(
+            pinned,
+            "ring base pointer must be pinned (CU_MEMORYTYPE_HOST)"
+        );
 
         // Each slot's pointer is also in pinned memory.
         for f in 0..3u64 {
@@ -691,14 +693,17 @@ mod tests {
                 return;
             }
         };
-        let stream = create_non_blocking_telemetry_stream()
-            .expect("create non-blocking telemetry stream");
+        let stream =
+            create_non_blocking_telemetry_stream().expect("create non-blocking telemetry stream");
         let flags = stream_flags(stream).expect("cuStreamGetFlags");
         // CU_STREAM_NON_BLOCKING == 1; the default-stream-anchored
         // bit is 0 (CU_STREAM_DEFAULT).
-        assert_eq!(flags & 1, 1,
+        assert_eq!(
+            flags & 1,
+            1,
             "telemetry stream missing CU_STREAM_NON_BLOCKING (got flags=0x{:x})",
-            flags);
+            flags
+        );
         unsafe {
             let _ = cudarc::driver::sys::cuStreamDestroy_v2(stream);
         }
@@ -729,16 +734,14 @@ mod tests {
 
         // Init K_LM, get device pointer.
         unsafe {
-            let _ = crate::sh_basis::ffi::prism_sh_basis_init(
-                md_raw as *mut c_void,
-            );
+            let _ = crate::sh_basis::ffi::prism_sh_basis_init(md_raw as *mut c_void);
         }
         md_stream.synchronize().expect("post-sh-init sync");
         let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
 
         // Telemetry stream (the GHOST stream).
-        let telemetry_stream = create_non_blocking_telemetry_stream()
-            .expect("create telemetry stream");
+        let telemetry_stream =
+            create_non_blocking_telemetry_stream().expect("create telemetry stream");
 
         // F2 pool for the device-side ContactShellTile array.
         let pool = match VramPool::new(0) {
@@ -766,16 +769,18 @@ mod tests {
         };
 
         // Synthesize a tiny single-cluster spike buffer.
-        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
-            let mut s = RichSpike::zero();
-            let theta = 0.3 + (i as f32) * 0.2;
-            let phi   = 0.4 + (i as f32) * 0.3;
-            s.x = 4.0 * theta.sin() * phi.cos();
-            s.y = 4.0 * theta.sin() * phi.sin();
-            s.z = 4.0 * theta.cos();
-            s.cluster_id = 0;
-            s
-        }).collect();
+        let spikes: Vec<RichSpike> = (0..16u32)
+            .map(|i| {
+                let mut s = RichSpike::zero();
+                let theta = 0.3 + (i as f32) * 0.2;
+                let phi = 0.4 + (i as f32) * 0.3;
+                s.x = 4.0 * theta.sin() * phi.cos();
+                s.y = 4.0 * theta.sin() * phi.sin();
+                s.z = 4.0 * theta.cos();
+                s.cluster_id = 0;
+                s
+            })
+            .collect();
         let offsets: Vec<u32> = vec![0u32, spikes.len() as u32];
 
         let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
@@ -783,10 +788,16 @@ mod tests {
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        md_stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
-        let mut d_offsets = md_stream.alloc_zeros::<u32>(offsets.len()).expect("alloc o");
-        md_stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod o");
-        let (sp_dev, _g1)  = d_spikes_b.device_ptr(&md_stream);
+        md_stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod");
+        let mut d_offsets = md_stream
+            .alloc_zeros::<u32>(offsets.len())
+            .expect("alloc o");
+        md_stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod o");
+        let (sp_dev, _g1) = d_spikes_b.device_ptr(&md_stream);
         let (off_dev, _g2) = d_offsets.device_ptr(&md_stream);
 
         // Run the SO(3) projection on the MD stream — fills the F2-pool
@@ -803,8 +814,8 @@ mod tests {
         });
         match outcome {
             AuditOutcome::Accepted { .. } => (),
-            AuditOutcome::Quarantined { violations, .. } |
-            AuditOutcome::Aborted    { violations, .. } => {
+            AuditOutcome::Quarantined { violations, .. }
+            | AuditOutcome::Aborted { violations, .. } => {
                 pool.free_async(tiles_ptr_u, md_raw).ok();
                 unsafe {
                     let _ = cudarc::driver::sys::cuStreamDestroy_v2(telemetry_stream);
@@ -827,7 +838,8 @@ mod tests {
                 N_CLUSTERS as usize,
                 telemetry_stream,
                 frame,
-            ).expect("async d2h");
+            )
+            .expect("async d2h");
         }
         // Sync the GHOST stream — does NOT touch the MD stream.
         let rc = unsafe { cuStreamSynchronize(telemetry_stream) };
@@ -847,19 +859,23 @@ mod tests {
         // because we re-used the same launch — but the data is consistent).
         // Specifically: every slot must hold a sane tile.
         for s in 0..3 {
-            let tile = unsafe {
-                std::ptr::read_unaligned(
-                    ring.base_ptr().add(s * ring.elems_per_slot())
-                )
-            };
-            assert_eq!(tile.spike_count, spikes.len() as u32,
-                "slot {} corrupted: spike_count = {}", s, tile.spike_count);
+            let tile =
+                unsafe { std::ptr::read_unaligned(ring.base_ptr().add(s * ring.elems_per_slot())) };
+            assert_eq!(
+                tile.spike_count,
+                spikes.len() as u32,
+                "slot {} corrupted: spike_count = {}",
+                s,
+                tile.spike_count
+            );
         }
 
-        eprintln!("[ghost-e2e] CLA-2 verified: pinned ring × 3, non-blocking \
+        eprintln!(
+            "[ghost-e2e] CLA-2 verified: pinned ring × 3, non-blocking \
                   stream, 3-frame async DMA, slot[0] holds frame 0's tile \
                   (frame={}, spike_count={})",
-                  slot[0].frame, slot[0].spike_count);
+            slot[0].frame, slot[0].spike_count
+        );
 
         // Cleanup.
         pool.free_async(tiles_ptr_u, md_raw).ok();

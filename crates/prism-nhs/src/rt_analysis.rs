@@ -8,9 +8,9 @@
 //!
 //! These are LEADING INDICATORS that occur before full pocket opening.
 
+use crate::rt_probe::RtProbeSnapshot;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use crate::rt_probe::RtProbeSnapshot;
 
 /// RT probe analysis configuration
 #[derive(Debug, Clone)]
@@ -28,10 +28,10 @@ pub struct RtAnalysisConfig {
 impl Default for RtAnalysisConfig {
     fn default() -> Self {
         Self {
-            variance_window: 20,         // 20 timesteps
-            void_threshold: 2.0,          // 2Å void formation
-            disruption_threshold: 0.5,    // 0.5Å variance
-            min_persistence: 5,           // 5 consecutive timesteps
+            variance_window: 20,       // 20 timesteps
+            void_threshold: 2.0,       // 2Å void formation
+            disruption_threshold: 0.5, // 0.5Å variance
+            min_persistence: 5,        // 5 consecutive timesteps
         }
     }
 }
@@ -100,10 +100,7 @@ impl RtProbeAnalyzer {
     /// # Returns
     /// RtAnalysisResults with void formation and disruption events
     pub fn analyze(&self, snapshots: &[RtProbeSnapshot]) -> Result<RtAnalysisResults> {
-        anyhow::ensure!(
-            !snapshots.is_empty(),
-            "No RT probe snapshots provided"
-        );
+        anyhow::ensure!(!snapshots.is_empty(), "No RT probe snapshots provided");
 
         log::info!("Analyzing {} RT probe snapshots", snapshots.len());
 
@@ -136,7 +133,10 @@ impl RtProbeAnalyzer {
     }
 
     /// Detect void formation from hit distance time series
-    fn detect_void_formation(&self, snapshots: &[RtProbeSnapshot]) -> Result<Vec<VoidFormationEvent>> {
+    fn detect_void_formation(
+        &self,
+        snapshots: &[RtProbeSnapshot],
+    ) -> Result<Vec<VoidFormationEvent>> {
         let mut events = Vec::new();
 
         if snapshots.len() < 2 {
@@ -268,10 +268,7 @@ impl RtProbeAnalyzer {
     fn compute_window_variance(window: &[RtProbeSnapshot]) -> Option<f32> {
         // Check if solvation tracking is enabled
         if window.iter().all(|s| s.solvation_variance.is_some()) {
-            let values: Vec<f32> = window
-                .iter()
-                .filter_map(|s| s.solvation_variance)
-                .collect();
+            let values: Vec<f32> = window.iter().filter_map(|s| s.solvation_variance).collect();
             Some(Self::variance(&values))
         } else {
             None
@@ -294,7 +291,11 @@ impl RtProbeAnalyzer {
 mod tests {
     use super::*;
 
-    fn create_test_snapshot(timestep: i32, hit_distance: f32, aromatic_lif: usize) -> RtProbeSnapshot {
+    fn create_test_snapshot(
+        timestep: i32,
+        hit_distance: f32,
+        aromatic_lif: usize,
+    ) -> RtProbeSnapshot {
         RtProbeSnapshot {
             timestep,
             probe_position: [0.0, 0.0, 0.0], // Test probe at origin
@@ -333,10 +334,10 @@ mod tests {
         let analyzer = RtProbeAnalyzer::new(config);
 
         let snapshots = vec![
-            create_test_snapshot(0, 3.0, 0),    // Baseline
-            create_test_snapshot(100, 5.5, 1),  // +2.5Å (exceeds threshold)
-            create_test_snapshot(200, 5.6, 1),  // Persistent
-            create_test_snapshot(300, 3.0, 0),  // Returns to baseline
+            create_test_snapshot(0, 3.0, 0),   // Baseline
+            create_test_snapshot(100, 5.5, 1), // +2.5Å (exceeds threshold)
+            create_test_snapshot(200, 5.6, 1), // Persistent
+            create_test_snapshot(300, 3.0, 0), // Returns to baseline
         ];
 
         let result = analyzer.analyze(&snapshots).unwrap();

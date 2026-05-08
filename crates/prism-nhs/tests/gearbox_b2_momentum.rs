@@ -76,12 +76,17 @@ fn b2_velocity_rescale_pure_momentum_scale() {
         assert!(
             (v_out - expected).abs() < 1.0e-7,
             "v[{}]: expected {} (= {} · {}), got {}",
-            i, expected, v_in, RATIO, v_out,
+            i,
+            expected,
+            v_in,
+            RATIO,
+            v_out,
         );
     }
     eprintln!(
         "[B.2 RESCALE PASS] {} velocities scaled by {} (bit-exact)",
-        host_v.len(), RATIO
+        host_v.len(),
+        RATIO
     );
 
     // Idempotency / no-op gate: ratio = 1.0 must leave velocities
@@ -99,7 +104,9 @@ fn b2_velocity_rescale_pure_momentum_scale() {
     assert_eq!(rc, 0);
     stream.synchronize().expect("post-noop sync");
     let mut after_noop = vec![0.0f32; host_v.len()];
-    stream.memcpy_dtoh(&d_v, &mut after_noop).expect("dtoh v noop");
+    stream
+        .memcpy_dtoh(&d_v, &mut after_noop)
+        .expect("dtoh v noop");
     assert_eq!(baseline, after_noop, "ratio = 1.0 MUST be a no-op");
     eprintln!("[B.2 RESCALE NO-OP PASS] ratio = 1.0 idempotent ✓");
 }
@@ -125,25 +132,36 @@ fn b2_berendsen_guard_at_thermal_equilibrium() {
     // Thermal equilibrium fixture: T = T₀ = 300 K ⇒ argument = 1 + 0 = 1
     // ⇒ λ = sqrt(1) = 1.0 ⇒ velocities pass through unchanged.
     let target_temp: f32 = 300.0;
-    let tau_ps:      f32 = 0.5;
+    let tau_ps: f32 = 0.5;
 
-    let mut d_T: cudarc::driver::CudaSlice<f32> =
-        stream.alloc_zeros::<f32>(1).expect("alloc T");
-    stream.memcpy_htod(&[target_temp], &mut d_T).expect("htod T");
+    let mut d_T: cudarc::driver::CudaSlice<f32> = stream.alloc_zeros::<f32>(1).expect("alloc T");
+    stream
+        .memcpy_htod(&[target_temp], &mut d_T)
+        .expect("htod T");
 
-    let mut d_dt: cudarc::driver::CudaSlice<f32> =
-        stream.alloc_zeros::<f32>(1).expect("alloc dt");
-    stream.memcpy_htod(&[0.0005_f32], &mut d_dt).expect("htod dt"); // Gear 0 dt
+    let mut d_dt: cudarc::driver::CudaSlice<f32> = stream.alloc_zeros::<f32>(1).expect("alloc dt");
+    stream
+        .memcpy_htod(&[0.0005_f32], &mut d_dt)
+        .expect("htod dt"); // Gear 0 dt
 
-    let d_v_addr:  u64 = { let (a, _g) = d_v.device_ptr(&stream);  a as u64 };
-    let d_T_addr:  u64 = { let (a, _g) = d_T.device_ptr(&stream);  a as u64 };
-    let d_dt_addr: u64 = { let (a, _g) = d_dt.device_ptr(&stream); a as u64 };
+    let d_v_addr: u64 = {
+        let (a, _g) = d_v.device_ptr(&stream);
+        a as u64
+    };
+    let d_T_addr: u64 = {
+        let (a, _g) = d_T.device_ptr(&stream);
+        a as u64
+    };
+    let d_dt_addr: u64 = {
+        let (a, _g) = d_dt.device_ptr(&stream);
+        a as u64
+    };
 
     let rc = unsafe {
         prism_gearbox_launch_berendsen_guard(
-            d_v_addr  as *mut   f32,
+            d_v_addr as *mut f32,
             host_v.len() as u32,
-            d_T_addr  as *const f32,
+            d_T_addr as *const f32,
             d_dt_addr as *const f32,
             target_temp,
             tau_ps,
@@ -163,13 +181,16 @@ fn b2_berendsen_guard_at_thermal_equilibrium() {
         assert!(
             (v_out - v_in).abs() < 1.0e-6,
             "v[{}]: expected ≈ {} (λ=1 at T=T₀), got {}",
-            i, v_in, v_out,
+            i,
+            v_in,
+            v_out,
         );
     }
     eprintln!(
         "[B.2 BERENDSEN PASS] λ = 1.0 at T = T₀ = {} K; \
          {} velocities unchanged (max drift < 1e-6)",
-        target_temp, host_v.len()
+        target_temp,
+        host_v.len()
     );
 }
 
@@ -197,27 +218,34 @@ fn b2_berendsen_guard_cools_when_too_hot() {
     stream.memcpy_htod(&host_v, &mut d_v).expect("htod v");
 
     let target_temp: f32 = 300.0;
-    let current_T:   f32 = 600.0;
-    let dt_ps:       f32 = 0.0005;
-    let tau_ps:      f32 = 0.5;
+    let current_T: f32 = 600.0;
+    let dt_ps: f32 = 0.0005;
+    let tau_ps: f32 = 0.5;
 
-    let mut d_T: cudarc::driver::CudaSlice<f32> =
-        stream.alloc_zeros::<f32>(1).expect("alloc T");
+    let mut d_T: cudarc::driver::CudaSlice<f32> = stream.alloc_zeros::<f32>(1).expect("alloc T");
     stream.memcpy_htod(&[current_T], &mut d_T).expect("htod T");
 
-    let mut d_dt: cudarc::driver::CudaSlice<f32> =
-        stream.alloc_zeros::<f32>(1).expect("alloc dt");
+    let mut d_dt: cudarc::driver::CudaSlice<f32> = stream.alloc_zeros::<f32>(1).expect("alloc dt");
     stream.memcpy_htod(&[dt_ps], &mut d_dt).expect("htod dt");
 
-    let d_v_addr:  u64 = { let (a, _g) = d_v.device_ptr(&stream);  a as u64 };
-    let d_T_addr:  u64 = { let (a, _g) = d_T.device_ptr(&stream);  a as u64 };
-    let d_dt_addr: u64 = { let (a, _g) = d_dt.device_ptr(&stream); a as u64 };
+    let d_v_addr: u64 = {
+        let (a, _g) = d_v.device_ptr(&stream);
+        a as u64
+    };
+    let d_T_addr: u64 = {
+        let (a, _g) = d_T.device_ptr(&stream);
+        a as u64
+    };
+    let d_dt_addr: u64 = {
+        let (a, _g) = d_dt.device_ptr(&stream);
+        a as u64
+    };
 
     let rc = unsafe {
         prism_gearbox_launch_berendsen_guard(
-            d_v_addr  as *mut   f32,
+            d_v_addr as *mut f32,
             host_v.len() as u32,
-            d_T_addr  as *const f32,
+            d_T_addr as *const f32,
             d_dt_addr as *const f32,
             target_temp,
             tau_ps,
@@ -238,16 +266,26 @@ fn b2_berendsen_guard_cools_when_too_hot() {
         assert!(
             (v_out - expected).abs() < 1.0e-6,
             "v[{}]: expected ≈ {} (λ ≈ {}), got {}",
-            i, expected, lambda_expected, v_out,
+            i,
+            expected,
+            lambda_expected,
+            v_out,
         );
         // λ MUST be strictly < 1 (cooling) when T > T₀.
-        assert!(v_out < host_v[i],
+        assert!(
+            v_out < host_v[i],
             "v[{}]: expected cooling (λ < 1) when T > T₀; got {} ≥ {}",
-            i, v_out, host_v[i]);
+            i,
+            v_out,
+            host_v[i]
+        );
     }
     eprintln!(
         "[B.2 BERENDSEN COOL PASS] T = {} K > T₀ = {} K ⇒ λ ≈ {:.8} (cooling); \
          {} velocities scaled below initial",
-        current_T, target_temp, lambda_expected, host_v.len()
+        current_T,
+        target_temp,
+        lambda_expected,
+        host_v.len()
     );
 }

@@ -32,14 +32,11 @@ use clap::Parser;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use prism_nhs::input::PrismPrepTopology;
 use prism_nhs::adaptive::{
-    AdaptiveGridProtocol, AdaptiveNhsEngine, ExplorationPhase,
-    JitterConfig, CascadeDetector,
+    AdaptiveGridProtocol, AdaptiveNhsEngine, CascadeDetector, ExplorationPhase, JitterConfig,
 };
-use prism_nhs::mapping::{
-    NhsSiteMapper, ExperimentalCondition, ProtocolType, MappedHotspot,
-};
+use prism_nhs::input::PrismPrepTopology;
+use prism_nhs::mapping::{ExperimentalCondition, MappedHotspot, NhsSiteMapper, ProtocolType};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::CudaContext;
@@ -141,27 +138,30 @@ fn main() -> Result<()> {
         Some("info")
     };
     env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(log_level.unwrap_or("info"))
+        env_logger::Env::default().default_filter_or(log_level.unwrap_or("info")),
     )
-        .format_timestamp_millis()
-        .init();
+    .format_timestamp_millis()
+    .init();
 
     let mut args = Args::parse();
 
     // Validate minimum temperature (300K required for physiological relevance)
     if args.temperature < 300.0 {
-        log::warn!("Temperature {} K is below minimum 300K, setting to 300K", args.temperature);
+        log::warn!(
+            "Temperature {} K is below minimum 300K, setting to 300K",
+            args.temperature
+        );
         args.temperature = 300.0;
     }
 
     // Quick mode: reduced steps for debugging (NOT for production)
     if args.quick {
         log::warn!("QUICK MODE: Using reduced steps for testing (NOT production quality)");
-        args.survey_steps = 10000;      // 20ps
+        args.survey_steps = 10000; // 20ps
         args.convergence_steps = 20000; // 40ps
-        args.precision_steps = 10000;   // 20ps
-        args.cryo_hold = 10000;         // 20ps frozen
-        args.equilibration = 5000;      // 10ps equilibration
+        args.precision_steps = 10000; // 20ps
+        args.cryo_hold = 10000; // 20ps frozen
+        args.equilibration = 5000; // 10ps equilibration
     }
 
     // Calculate total simulation time for logging
@@ -180,9 +180,15 @@ fn main() -> Result<()> {
     }
 
     println!("Simulation Parameters:");
-    println!("  Total steps:    {} ({:.2} ns)", total_steps, total_time_ns);
+    println!(
+        "  Total steps:    {} ({:.2} ns)",
+        total_steps, total_time_ns
+    );
     println!("  Final temp:     {} K", args.temperature);
-    println!("  Cryogenic:      {}", if args.cryo { "ENABLED" } else { "disabled" });
+    println!(
+        "  Cryogenic:      {}",
+        if args.cryo { "ENABLED" } else { "disabled" }
+    );
     println!();
 
     // Verify input exists
@@ -196,8 +202,12 @@ fn main() -> Result<()> {
     }
 
     // Create output directory
-    std::fs::create_dir_all(&args.output)
-        .with_context(|| format!("Failed to create output directory: {}", args.output.display()))?;
+    std::fs::create_dir_all(&args.output).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            args.output.display()
+        )
+    })?;
 
     log::info!("Loading PRISM-PREP topology: {}", args.input.display());
     let topology = PrismPrepTopology::load(&args.input)?;
@@ -223,7 +233,9 @@ fn main() -> Result<()> {
     let aromatics = topology.aromatic_residues();
     println!("UV Probe Targets ({} aromatic residues):", aromatics.len());
     for (i, res_id) in aromatics.iter().take(10).enumerate() {
-        let res_name = topology.residue_ids.iter()
+        let res_name = topology
+            .residue_ids
+            .iter()
             .position(|&r| r == *res_id)
             .map(|atom_idx| topology.residue_names[atom_idx].as_str())
             .unwrap_or("???");
@@ -278,17 +290,29 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     protocol.phase3_precision.resolution = args.precision_grid;
 
     // Calculate grid dimensions for each phase
-    let survey_dim = ((max_dim / args.survey_grid).ceil() as usize).min(64).max(16);
-    let convergence_dim = ((max_dim / args.convergence_grid).ceil() as usize).min(128).max(32);
-    let precision_dim = ((max_dim / args.precision_grid).ceil() as usize).min(128).max(32);
+    let survey_dim = ((max_dim / args.survey_grid).ceil() as usize)
+        .min(64)
+        .max(16);
+    let convergence_dim = ((max_dim / args.convergence_grid).ceil() as usize)
+        .min(128)
+        .max(32);
+    let precision_dim = ((max_dim / args.precision_grid).ceil() as usize)
+        .min(128)
+        .max(32);
 
     println!("Adaptive Protocol:");
-    println!("  Phase 1 - Survey:      {}³ voxels @ {:.1}Å ({} steps)",
-        survey_dim, args.survey_grid, args.survey_steps);
-    println!("  Phase 2 - Convergence: {}³ voxels @ {:.1}Å ({} steps)",
-        convergence_dim, args.convergence_grid, args.convergence_steps);
-    println!("  Phase 3 - Precision:   {}³ voxels @ {:.1}Å ({} steps)",
-        precision_dim, args.precision_grid, args.precision_steps);
+    println!(
+        "  Phase 1 - Survey:      {}³ voxels @ {:.1}Å ({} steps)",
+        survey_dim, args.survey_grid, args.survey_steps
+    );
+    println!(
+        "  Phase 2 - Convergence: {}³ voxels @ {:.1}Å ({} steps)",
+        convergence_dim, args.convergence_grid, args.convergence_steps
+    );
+    println!(
+        "  Phase 3 - Precision:   {}³ voxels @ {:.1}Å ({} steps)",
+        precision_dim, args.precision_grid, args.precision_steps
+    );
     println!();
 
     // Configure jitter detection
@@ -311,12 +335,8 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
 
     // Create fused engine (using survey grid initially)
     log::info!("Creating NHS-AMBER Fused Engine (Survey Phase)...");
-    let mut engine = NhsAmberFusedEngine::new(
-        context.clone(),
-        topology,
-        survey_dim,
-        args.survey_grid,
-    )?;
+    let mut engine =
+        NhsAmberFusedEngine::new(context.clone(), topology, survey_dim, args.survey_grid)?;
 
     // Set temperature protocol
     let temp_protocol = if args.cryo {
@@ -328,7 +348,10 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
         println!("CRYOGENIC PROBING ENABLED:");
         println!("  Start temp:  {}K (frozen)", args.cryo_temp);
         println!("  Hold frozen: {} steps (survey phase)", args.cryo_hold);
-        println!("  Warm to:     {}K (during convergence/precision)", args.temperature);
+        println!(
+            "  Warm to:     {}K (during convergence/precision)",
+            args.temperature
+        );
         println!();
 
         let warm_steps = protocol.total_steps() - args.cryo_hold;
@@ -336,7 +359,7 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
             start_temp: args.cryo_temp,
             end_temp: args.temperature,
             ramp_steps: warm_steps.max(1000), // Warm up over remaining steps
-            hold_steps: args.cryo_hold,        // Hold frozen first
+            hold_steps: args.cryo_hold,       // Hold frozen first
             cold_hold_steps: 0,
             current_step: 0,
         }
@@ -390,13 +413,15 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     // Spike-based spatial analysis with aromatic-distance weighting
     // Track which voxels spike frequently → these are candidate cryptic sites
     // Weighted accumulator: (weighted_count, raw_count, aromatic_adjacent_count, position)
-    let mut spike_accumulator: std::collections::HashMap<i32, (f32, usize, usize, [f32; 3])> = std::collections::HashMap::new();
+    let mut spike_accumulator: std::collections::HashMap<i32, (f32, usize, usize, [f32; 3])> =
+        std::collections::HashMap::new();
     let spike_clustering_radius = 5.0f32; // Angstroms - cluster nearby spikes
     let aromatic_cutoff = 5.0f32; // Spikes within 5Å of aromatic count as "aromatic-adjacent"
 
     // Pre-compute aromatic residue center positions for weighting
     let aromatic_residue_ids = topology.aromatic_residues();
-    let aromatic_centers: Vec<[f32; 3]> = aromatic_residue_ids.iter()
+    let aromatic_centers: Vec<[f32; 3]> = aromatic_residue_ids
+        .iter()
         .map(|&res_id| {
             // Average position of all atoms in this aromatic residue
             let mut sum = [0.0f32; 3];
@@ -410,14 +435,21 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
                 }
             }
             if count > 0 {
-                [sum[0] / count as f32, sum[1] / count as f32, sum[2] / count as f32]
+                [
+                    sum[0] / count as f32,
+                    sum[1] / count as f32,
+                    sum[2] / count as f32,
+                ]
             } else {
                 [0.0, 0.0, 0.0]
             }
         })
         .collect();
 
-    log::info!("Computed {} aromatic centers for spike weighting", aromatic_centers.len());
+    log::info!(
+        "Computed {} aromatic centers for spike weighting",
+        aromatic_centers.len()
+    );
 
     // Run simulation using batched stepping for maximum GPU throughput
     // Batch size of 500 steps minimizes CPU-GPU sync overhead while allowing progress reporting
@@ -433,7 +465,9 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
         // Determine batch size (don't overshoot total or phase boundary)
         let phase_remaining = match adaptive.protocol.current_phase {
             ExplorationPhase::Survey => args.survey_steps - adaptive.protocol.current_step,
-            ExplorationPhase::Convergence => args.convergence_steps - adaptive.protocol.current_step,
+            ExplorationPhase::Convergence => {
+                args.convergence_steps - adaptive.protocol.current_step
+            }
             ExplorationPhase::Precision => args.precision_steps - adaptive.protocol.current_step,
         };
         let remaining = total_steps - step;
@@ -467,13 +501,17 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
             // Download spike events for spatial analysis with aromatic weighting
             if let Ok(spike_events) = engine.download_spike_events(1000) {
                 if args.verbose && !spike_events.is_empty() {
-                    log::info!("Step {}: Downloaded {} spike events for analysis",
-                        step, spike_events.len());
+                    log::info!(
+                        "Step {}: Downloaded {} spike events for analysis",
+                        step,
+                        spike_events.len()
+                    );
                 }
 
                 for (voxel_idx, pos) in &spike_events {
                     // Find distance to nearest aromatic residue
-                    let min_aromatic_dist = aromatic_centers.iter()
+                    let min_aromatic_dist = aromatic_centers
+                        .iter()
                         .map(|ac| {
                             let dx = pos[0] - ac[0];
                             let dy = pos[1] - ac[1];
@@ -490,11 +528,13 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
                     let is_aromatic_adjacent = min_aromatic_dist <= aromatic_cutoff;
 
                     // Accumulate: (weighted_count, raw_count, aromatic_adjacent_count, position)
-                    let entry = spike_accumulator.entry(*voxel_idx).or_insert((0.0, 0, 0, *pos));
-                    entry.0 += weight;  // weighted count
-                    entry.1 += 1;       // raw count
+                    let entry = spike_accumulator
+                        .entry(*voxel_idx)
+                        .or_insert((0.0, 0, 0, *pos));
+                    entry.0 += weight; // weighted count
+                    entry.1 += 1; // raw count
                     if is_aromatic_adjacent {
-                        entry.2 += 1;   // aromatic-adjacent count
+                        entry.2 += 1; // aromatic-adjacent count
                     }
                 }
             }
@@ -522,16 +562,26 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
 
                 // Log significant events
                 if args.verbose && !jitter_signals.is_empty() {
-                    log::info!("Step {}: {} jitter signals detected", step, jitter_signals.len());
+                    log::info!(
+                        "Step {}: {} jitter signals detected",
+                        step,
+                        jitter_signals.len()
+                    );
                 }
                 if !cascade_events.is_empty() {
-                    log::info!("Step {}: {} CASCADE EVENTS detected!", step, cascade_events.len());
+                    log::info!(
+                        "Step {}: {} CASCADE EVENTS detected!",
+                        step,
+                        cascade_events.len()
+                    );
                 }
             } else {
                 // Survey phase: build baseline
                 // Store history for baseline establishment
                 if step >= args.equilibration {
-                    adaptive.jitter_detector.establish_baseline(&[water_density]);
+                    adaptive
+                        .jitter_detector
+                        .establish_baseline(&[water_density]);
                 }
             }
         }
@@ -548,7 +598,10 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
                 }
                 ExplorationPhase::Precision => {
                     println!("        PHASE 3: PRECISION (Cascade Validation)");
-                    println!("        Convergence jitter signals: {}", phase_jitter_signals[1]);
+                    println!(
+                        "        Convergence jitter signals: {}",
+                        phase_jitter_signals[1]
+                    );
                     println!("        Convergence cascades: {}", phase_cascades[1]);
                 }
                 _ => {}
@@ -572,19 +625,13 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
             };
 
             // Get current temperature from protocol
-            let current_temp = temp_protocol.start_temp +
-                (temp_protocol.end_temp - temp_protocol.start_temp) *
-                (step as f32 / total_steps as f32).min(1.0);
+            let current_temp = temp_protocol.start_temp
+                + (temp_protocol.end_temp - temp_protocol.start_temp)
+                    * (step as f32 / total_steps as f32).min(1.0);
 
             println!(
                 "  Step {:>7}/{} | {:>9} | T={:>5.0}K | Spikes={:>3} | {:.0} steps/s | ETA {:.0}s",
-                step,
-                total_steps,
-                phase_name,
-                current_temp,
-                result.spike_count,
-                steps_per_sec,
-                eta
+                step, total_steps, phase_name, current_temp, result.spike_count, steps_per_sec, eta
             );
         }
     }
@@ -604,12 +651,18 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     println!();
 
     println!("Phase Analysis:");
-    println!("  Survey phase:      {} spikes, {} jitter signals (baseline establishment)",
-        phase_spikes[0], phase_jitter_signals[0]);
-    println!("  Convergence phase: {} spikes, {} jitter signals, {} cascades (hot zone detection)",
-        phase_spikes[1], phase_jitter_signals[1], phase_cascades[1]);
-    println!("  Precision phase:   {} spikes, {} jitter signals, {} cascades (cascade validation)",
-        phase_spikes[2], phase_jitter_signals[2], phase_cascades[2]);
+    println!(
+        "  Survey phase:      {} spikes, {} jitter signals (baseline establishment)",
+        phase_spikes[0], phase_jitter_signals[0]
+    );
+    println!(
+        "  Convergence phase: {} spikes, {} jitter signals, {} cascades (hot zone detection)",
+        phase_spikes[1], phase_jitter_signals[1], phase_cascades[1]
+    );
+    println!(
+        "  Precision phase:   {} spikes, {} jitter signals, {} cascades (cascade validation)",
+        phase_spikes[2], phase_jitter_signals[2], phase_cascades[2]
+    );
     println!();
 
     // Get summary from adaptive engine
@@ -623,7 +676,9 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     println!();
 
     // Create site mapper for residue correlation
-    let pdb_id = args.input.file_stem()
+    let pdb_id = args
+        .input
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("UNKNOWN")
         .split('_')
@@ -631,9 +686,7 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
         .unwrap_or("UNKNOWN");
 
     // Convert residue_ids from usize to i32 for mapping
-    let residue_ids_i32: Vec<i32> = topology.residue_ids.iter()
-        .map(|&id| id as i32)
-        .collect();
+    let residue_ids_i32: Vec<i32> = topology.residue_ids.iter().map(|&id| id as i32).collect();
 
     let mapper = NhsSiteMapper::from_topology(
         pdb_id,
@@ -654,7 +707,8 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     // Convert weighted accumulator to old format for mapping compatibility
     // (weighted_count, raw_count, aromatic_adjacent_count, pos) -> (raw_count, pos)
     let spike_accumulator_compat: std::collections::HashMap<i32, (usize, [f32; 3])> =
-        spike_accumulator.iter()
+        spike_accumulator
+            .iter()
             .map(|(&voxel_idx, &(_, raw_count, _, pos))| (voxel_idx, (raw_count, pos)))
             .collect();
 
@@ -667,7 +721,8 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     let total_aromatic_adj: usize = spike_accumulator.values().map(|(_, _, a, _)| a).sum();
 
     // Filter hotspots by aromatic adjacency (>50% of spikes near aromatics)
-    let aromatic_weighted_hotspots: Vec<_> = spike_accumulator.iter()
+    let aromatic_weighted_hotspots: Vec<_> = spike_accumulator
+        .iter()
         .filter(|(_, (_, raw, adj, _))| *raw >= 3 && *adj as f32 / *raw as f32 > 0.5)
         .map(|(&idx, &(weighted, raw, adj, pos))| (idx, weighted, raw, adj, pos))
         .collect();
@@ -677,12 +732,24 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     if spike_accumulator.is_empty() {
         println!("  No spike events captured for spatial analysis");
     } else {
-        println!("  Total unique voxels with spikes: {}", spike_accumulator.len());
-        println!("  Total spikes: {} raw, {:.1} weighted", total_raw, total_weighted);
-        println!("  Aromatic-adjacent spikes: {} ({:.1}%)", total_aromatic_adj,
-            100.0 * total_aromatic_adj as f32 / total_raw.max(1) as f32);
+        println!(
+            "  Total unique voxels with spikes: {}",
+            spike_accumulator.len()
+        );
+        println!(
+            "  Total spikes: {} raw, {:.1} weighted",
+            total_raw, total_weighted
+        );
+        println!(
+            "  Aromatic-adjacent spikes: {} ({:.1}%)",
+            total_aromatic_adj,
+            100.0 * total_aromatic_adj as f32 / total_raw.max(1) as f32
+        );
         println!("  Mapped hotspots (3+ spikes): {}", mapped_hotspots.len());
-        println!("  Aromatic-weighted hotspots (>50% aromatic): {}", aromatic_weighted_hotspots.len());
+        println!(
+            "  Aromatic-weighted hotspots (>50% aromatic): {}",
+            aromatic_weighted_hotspots.len()
+        );
         println!("  Condition: {}", condition.condition_id);
 
         if !mapped_hotspots.is_empty() {
@@ -700,32 +767,46 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
                     ""
                 };
 
-                println!("    {} {} @ ({:.1}, {:.1}, {:.1})Å - {} spikes{}",
+                println!(
+                    "    {} {} @ ({:.1}, {:.1}, {:.1})Å - {} spikes{}",
                     if hs.spike_count >= 10 { "★" } else { "○" },
                     residue_info,
-                    hs.position_angstrom[0], hs.position_angstrom[1], hs.position_angstrom[2],
+                    hs.position_angstrom[0],
+                    hs.position_angstrom[1],
+                    hs.position_angstrom[2],
                     hs.spike_count,
-                    aromatic_marker);
+                    aromatic_marker
+                );
 
                 // Show nearby residues for top 3 hotspots
                 if i < 3 && !hs.nearby_residues.is_empty() {
-                    println!("      Nearby: {}",
-                        hs.nearby_residues.iter()
+                    println!(
+                        "      Nearby: {}",
+                        hs.nearby_residues
+                            .iter()
                             .take(5)
-                            .map(|r| format!("{} ({:.1}Å)", r.site_id.residue_name, r.distance_angstrom))
+                            .map(|r| format!(
+                                "{} ({:.1}Å)",
+                                r.site_id.residue_name, r.distance_angstrom
+                            ))
                             .collect::<Vec<_>>()
-                            .join(", "));
+                            .join(", ")
+                    );
                 }
             }
 
             // Count aromatic-adjacent hotspots (potential allosteric sites)
-            let aromatic_adjacent = mapped_hotspots.iter()
+            let aromatic_adjacent = mapped_hotspots
+                .iter()
                 .filter(|hs| hs.nearby_residues.iter().any(|r| r.is_aromatic))
                 .count();
 
-            println!("\n  Aromatic-adjacent hotspots: {} / {} ({:.0}%)",
-                aromatic_adjacent, mapped_hotspots.len(),
-                100.0 * aromatic_adjacent as f32 / mapped_hotspots.len() as f32);
+            println!(
+                "\n  Aromatic-adjacent hotspots: {} / {} ({:.0}%)",
+                aromatic_adjacent,
+                mapped_hotspots.len(),
+                100.0 * aromatic_adjacent as f32 / mapped_hotspots.len() as f32
+            );
 
             if aromatic_adjacent > 0 {
                 println!("    These may respond to UV probing (allosteric candidates)");
@@ -741,23 +822,40 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
 
                 // Sort by weighted score descending
                 let mut sorted_weighted = aromatic_weighted_hotspots.clone();
-                sorted_weighted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                sorted_weighted
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-                for (rank, (voxel_idx, weighted, raw, adj, pos)) in sorted_weighted.iter().take(10).enumerate() {
+                for (rank, (voxel_idx, weighted, raw, adj, pos)) in
+                    sorted_weighted.iter().take(10).enumerate()
+                {
                     let aromatic_pct = 100.0 * *adj as f32 / (*raw).max(1) as f32;
-                    let marker = if aromatic_pct >= 75.0 { "★★" }
-                                 else if aromatic_pct >= 50.0 { "★ " }
-                                 else { "○ " };
+                    let marker = if aromatic_pct >= 75.0 {
+                        "★★"
+                    } else if aromatic_pct >= 50.0 {
+                        "★ "
+                    } else {
+                        "○ "
+                    };
 
-                    println!("    {} #{:<3} @ ({:>6.1}, {:>6.1}, {:>6.1})Å",
-                        marker, rank + 1, pos[0], pos[1], pos[2]);
-                    println!("            Weighted: {:.1} | Raw: {} | Aromatic: {}% | Voxel: {}",
-                        weighted, raw, aromatic_pct as u32, voxel_idx);
+                    println!(
+                        "    {} #{:<3} @ ({:>6.1}, {:>6.1}, {:>6.1})Å",
+                        marker,
+                        rank + 1,
+                        pos[0],
+                        pos[1],
+                        pos[2]
+                    );
+                    println!(
+                        "            Weighted: {:.1} | Raw: {} | Aromatic: {}% | Voxel: {}",
+                        weighted, raw, aromatic_pct as u32, voxel_idx
+                    );
                 }
 
                 if aromatic_weighted_hotspots.len() > 10 {
-                    println!("\n    ... and {} more aromatic-weighted hotspots",
-                        aromatic_weighted_hotspots.len() - 10);
+                    println!(
+                        "\n    ... and {} more aromatic-weighted hotspots",
+                        aromatic_weighted_hotspots.len() - 10
+                    );
                 }
             } else {
                 println!("\n  ⚠ No aromatic-weighted hotspots found");
@@ -772,8 +870,13 @@ fn run_adaptive_pipeline(args: &Args, topology: &PrismPrepTopology) -> Result<()
     if !validated.is_empty() {
         println!("✓ Validated Cryptic Sites (cascade analysis):");
         for (i, site) in validated.iter().enumerate() {
-            println!("  Site {}: ({:.1}, {:.1}, {:.1}) Å",
-                i + 1, site[0], site[1], site[2]);
+            println!(
+                "  Site {}: ({:.1}, {:.1}, {:.1}) Å",
+                i + 1,
+                site[0],
+                site[1],
+                site[2]
+            );
         }
     } else {
         println!("○ No cascade-validated sites (jitter threshold not met)");

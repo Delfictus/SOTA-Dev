@@ -5,20 +5,22 @@ use std::path::Path;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 fn compute_rmsd(pos1: &[f32], pos2: &[f32]) -> f32 {
-    if pos1.len() != pos2.len() || pos1.is_empty() { return 0.0; }
+    if pos1.len() != pos2.len() || pos1.is_empty() {
+        return 0.0;
+    }
     let n = pos1.len() / 3;
     let mut sum = 0.0;
     for i in 0..n {
-        let dx = pos1[i*3] - pos2[i*3];
-        let dy = pos1[i*3+1] - pos2[i*3+1];
-        let dz = pos1[i*3+2] - pos2[i*3+2];
-        sum += dx*dx + dy*dy + dz*dz;
+        let dx = pos1[i * 3] - pos2[i * 3];
+        let dy = pos1[i * 3 + 1] - pos2[i * 3 + 1];
+        let dz = pos1[i * 3 + 2] - pos2[i * 3 + 2];
+        sum += dx * dx + dy * dy + dz * dz;
     }
     (sum / n as f32).sqrt()
 }
@@ -28,7 +30,7 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     println!("Loading topology: {}", topology_path.display());
@@ -58,9 +60,12 @@ fn main() -> Result<()> {
     let final_pos = engine.get_positions()?;
     let rmsd = compute_rmsd(&initial_pos, &final_pos);
 
-    println!("  Steps: {} | Time: {:.2}s | Rate: {:.0} steps/s",
-             summary.steps_completed, elapsed.as_secs_f32(),
-             1000.0 / elapsed.as_secs_f32());
+    println!(
+        "  Steps: {} | Time: {:.2}s | Rate: {:.0} steps/s",
+        summary.steps_completed,
+        elapsed.as_secs_f32(),
+        1000.0 / elapsed.as_secs_f32()
+    );
     println!("  RMSD: {:.2} Å | Spikes: {}", rmsd, summary.total_spikes);
     println!("  Status: {}", if rmsd < 5.0 { "PASS" } else { "FAIL" });
 
@@ -73,9 +78,12 @@ fn main() -> Result<()> {
     let final_pos = engine.get_positions()?;
     let rmsd = compute_rmsd(&initial_pos, &final_pos);
 
-    println!("  Steps: {} | Time: {:.2}s | Rate: {:.0} steps/s",
-             summary.steps_completed, elapsed.as_secs_f32(),
-             5000.0 / elapsed.as_secs_f32());
+    println!(
+        "  Steps: {} | Time: {:.2}s | Rate: {:.0} steps/s",
+        summary.steps_completed,
+        elapsed.as_secs_f32(),
+        5000.0 / elapsed.as_secs_f32()
+    );
     println!("  RMSD: {:.2} Å | Spikes: {}", rmsd, summary.total_spikes);
     println!("  Status: {}", if rmsd < 5.0 { "PASS" } else { "FAIL" });
 

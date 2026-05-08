@@ -430,7 +430,6 @@ pub struct SiteManifest {
     // the legacy clustering path; `None` everywhere ⇒ no key emitted.
     // Populated only when the InterferometricAdjudicator (T0/T2) is wired
     // into the post-clustering path of the captured WHILE graph.
-
     /// SO(3) geometry-plane power spectrum `C_l` for `l = 0..5`,
     /// rotationally invariant (RECT-3.1.b output). The KL divergence
     /// in the Adjudicator kernel reads these values from the relaxed
@@ -463,7 +462,6 @@ pub struct SiteManifest {
     // GPU kernel. Every field `serde(skip_serializing_if = "Option::is_none")`
     // so the I/O bloat in cold-hold phases remains under the 70%
     // reduction target documented in the operator addendum.
-
     /// KCC metrics aggregated for the site's driver residue (or for
     /// the site as a whole if available). Mirrors the per-residue
     /// fields in `<target>.kcc_visualization.json`.
@@ -660,9 +658,13 @@ impl SiteManifest {
     ) -> Self {
         let center = aabb.center();
         let mut centroids = CentroidManifold::new();
-        centroids.set_geometric(Centroid3D::new(center, SpatialView::GeometricVoxelMass, frame));
-        centroids.set_lining   (Centroid3D::new(center, SpatialView::LiningResidues,     frame));
-        centroids.set_driver   (Centroid3D::new(center, SpatialView::DriverResidues,     frame));
+        centroids.set_geometric(Centroid3D::new(
+            center,
+            SpatialView::GeometricVoxelMass,
+            frame,
+        ));
+        centroids.set_lining(Centroid3D::new(center, SpatialView::LiningResidues, frame));
+        centroids.set_driver(Centroid3D::new(center, SpatialView::DriverResidues, frame));
 
         Self {
             identity: SiteIdentity {
@@ -692,8 +694,7 @@ impl SiteManifest {
 mod tests {
     use super::*;
     use crate::entangled_manifold::{
-        CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField,
-        TieBreakerPolicy,
+        CausalSignal, IdentityTieBreaker, SelectionPolicy, SortField, TieBreakerPolicy,
     };
 
     fn provenance() -> ViewProvenance {
@@ -766,16 +767,17 @@ mod tests {
         // monotonically from 0 to 8. This is the M1 contract's
         // "Eight-slot CentroidManifold" guarantee, mechanically.
         let mut m = CentroidManifold::new();
-        let v = [SpatialView::GeometricVoxelMass,
-                 SpatialView::LiningResidues,
-                 SpatialView::DriverResidues,
-                 SpatialView::HotPhase,
-                 SpatialView::ColdPhase,
-                 SpatialView::BurstMotion,
-                 SpatialView::ValidationStructural,
-                 SpatialView::LigandAdjacentSubcluster];
-        let c = |i: usize, view: SpatialView| Centroid3D::new(
-            [i as f32, 0.0, 0.0], view, 0);
+        let v = [
+            SpatialView::GeometricVoxelMass,
+            SpatialView::LiningResidues,
+            SpatialView::DriverResidues,
+            SpatialView::HotPhase,
+            SpatialView::ColdPhase,
+            SpatialView::BurstMotion,
+            SpatialView::ValidationStructural,
+            SpatialView::LigandAdjacentSubcluster,
+        ];
+        let c = |i: usize, view: SpatialView| Centroid3D::new([i as f32, 0.0, 0.0], view, 0);
         m.set_geometric(c(0, v[0]));
         assert_eq!(m.populated_count(), 1);
         m.set_lining(c(1, v[1]));
@@ -851,7 +853,10 @@ mod tests {
 
     #[test]
     fn lbvh3_from_cluster_aabb_populates_three_m1_honest_slots() {
-        let aabb = Aabb { min: [0.0, -2.0, 1.0], max: [4.0, 2.0, 5.0] };
+        let aabb = Aabb {
+            min: [0.0, -2.0, 1.0],
+            max: [4.0, 2.0, 5.0],
+        };
         let m = SiteManifest::from_lbvh_cluster_aabb(
             SiteId(11),
             ClusterId(11),
@@ -916,9 +921,12 @@ mod tests {
     fn kcc_metrics_empty_serializes_to_empty_object() {
         let k = KccMetrics::empty();
         let s = serde_json::to_string(&k).unwrap();
-        assert_eq!(s, "{}",
+        assert_eq!(
+            s, "{}",
             "All-None KccMetrics must serialize to {{}} (skip_serializing_if=Option::is_none); \
-             got {}", s);
+             got {}",
+            s
+        );
     }
 
     #[test]
@@ -926,32 +934,40 @@ mod tests {
         // A site with only `burst_motion` resolved (typical M1.x state)
         // emits exactly that one field — not eight `null`s.
         let mut k = KccMetrics::empty();
-        k.burst_motion   = Some(1.05);
-        k.kcc_score      = Some(0.55);
+        k.burst_motion = Some(1.05);
+        k.kcc_score = Some(0.55);
         let s = serde_json::to_string(&k).unwrap();
         // Order is deterministic in serde-json (insertion order from
         // the struct definition); keep the assertion shape-loose by
         // checking presence + absence rather than exact byte order.
-        assert!(s.contains("\"burst_motion\":1.05"), "missing burst_motion: {}", s);
-        assert!(s.contains("\"kcc_score\":0.55"),    "missing kcc_score: {}",    s);
-        assert!(!s.contains("active_causal_steps"),  "active_causal_steps leaked: {}", s);
-        assert!(!s.contains("causal_lag"),           "causal_lag leaked: {}", s);
-        assert!(!s.contains("null"),                 "None field serialized as null: {}", s);
+        assert!(
+            s.contains("\"burst_motion\":1.05"),
+            "missing burst_motion: {}",
+            s
+        );
+        assert!(s.contains("\"kcc_score\":0.55"), "missing kcc_score: {}", s);
+        assert!(
+            !s.contains("active_causal_steps"),
+            "active_causal_steps leaked: {}",
+            s
+        );
+        assert!(!s.contains("causal_lag"), "causal_lag leaked: {}", s);
+        assert!(!s.contains("null"), "None field serialized as null: {}", s);
     }
 
     #[test]
     fn kcc_metrics_round_trips_via_serde() {
         let k = KccMetrics {
             active_causal_steps: Some(8917),
-            burst_motion:        Some(1.0964780),
-            causal_lag:          Some(30.0),
-            direction_score:     Some(0.0003445477),
-            kcc_score:           Some(0.5503429),
-            lag_corr_peak:       Some(0.8100240),
-            local_cov:           Some(0.2572999),
-            motion_efficiency:   Some(0.0005009770),
+            burst_motion: Some(1.0964780),
+            causal_lag: Some(30.0),
+            direction_score: Some(0.0003445477),
+            kcc_score: Some(0.5503429),
+            lag_corr_peak: Some(0.8100240),
+            local_cov: Some(0.2572999),
+            motion_efficiency: Some(0.0005009770),
         };
-        let s  = serde_json::to_string(&k).unwrap();
+        let s = serde_json::to_string(&k).unwrap();
         let k2: KccMetrics = serde_json::from_str(&s).unwrap();
         assert_eq!(k, k2);
     }
@@ -959,16 +975,20 @@ mod tests {
     #[test]
     fn therm_dossier_round_trips_via_serde() {
         let t = ThermDossier {
-            ccns_tau:             1.342099,
-            therm_class:          "DYNAMIC".into(),
-            druggability:         0.6531283,
-            relative_asymmetry:   1.296145,
+            ccns_tau: 1.342099,
+            therm_class: "DYNAMIC".into(),
+            druggability: 0.6531283,
+            relative_asymmetry: 1.296145,
             hysteresis_asymmetry: 0.298600,
         };
-        let s  = serde_json::to_string(&t).unwrap();
+        let s = serde_json::to_string(&t).unwrap();
         let t2: ThermDossier = serde_json::from_str(&s).unwrap();
         assert_eq!(t, t2);
-        assert!(s.contains("\"therm_class\":\"DYNAMIC\""), "therm_class missing: {}", s);
+        assert!(
+            s.contains("\"therm_class\":\"DYNAMIC\""),
+            "therm_class missing: {}",
+            s
+        );
     }
 
     #[test]
@@ -979,7 +999,10 @@ mod tests {
         let m = SiteManifest::from_lbvh_cluster_aabb(
             SiteId(0),
             ClusterId(0),
-            &Aabb { min: [0.0; 3], max: [1.0; 3] },
+            &Aabb {
+                min: [0.0; 3],
+                max: [1.0; 3],
+            },
             EntangledManifoldId(0),
             provenance(),
             sort_key(),
@@ -996,9 +1019,13 @@ mod tests {
             "kcc_metrics",
             "therm_dossier",
         ] {
-            assert!(!s.contains(forbidden),
+            assert!(
+                !s.contains(forbidden),
                 "Cold-Hold SiteManifest leaked extension field {} (Operator I/O Bloat \
-                 Mitigation: 70% payload reduction violated): {}", forbidden, s);
+                 Mitigation: 70% payload reduction violated): {}",
+                forbidden,
+                s
+            );
         }
         // But canonical fields MUST appear.
         assert!(s.contains("\"identity\""));
@@ -1014,7 +1041,10 @@ mod tests {
         let mut m = SiteManifest::from_lbvh_cluster_aabb(
             SiteId(0),
             ClusterId(0),
-            &Aabb { min: [0.0; 3], max: [1.0; 3] },
+            &Aabb {
+                min: [0.0; 3],
+                max: [1.0; 3],
+            },
             EntangledManifoldId(7),
             provenance(),
             sort_key(),
@@ -1022,24 +1052,24 @@ mod tests {
             7,
         );
         m.contact_shell_geo_power_spectrum = Some([0.4, 0.3, 0.15, 0.08, 0.04, 0.03]);
-        m.adjudicator_divergence           = Some(2.71828);
-        m.adjudicator_code                 = Some(1);   // Burst
-        m.adjudicator_elapsed_ns           = Some(7_400);
+        m.adjudicator_divergence = Some(2.71828);
+        m.adjudicator_code = Some(1); // Burst
+        m.adjudicator_elapsed_ns = Some(7_400);
         m.kcc_metrics = Some(KccMetrics {
             active_causal_steps: Some(6949),
-            burst_motion:        Some(1.0496),
-            causal_lag:          Some(21.32),
-            direction_score:     Some(0.0003873),
-            kcc_score:           Some(0.5503),
-            lag_corr_peak:       Some(0.8294),
-            local_cov:           Some(0.3893),
-            motion_efficiency:   Some(0.000495),
+            burst_motion: Some(1.0496),
+            causal_lag: Some(21.32),
+            direction_score: Some(0.0003873),
+            kcc_score: Some(0.5503),
+            lag_corr_peak: Some(0.8294),
+            local_cov: Some(0.3893),
+            motion_efficiency: Some(0.000495),
         });
         m.therm_dossier = Some(ThermDossier {
-            ccns_tau:             1.342099,
-            therm_class:          "DYNAMIC".into(),
-            druggability:         0.6531283,
-            relative_asymmetry:   1.296145,
+            ccns_tau: 1.342099,
+            therm_class: "DYNAMIC".into(),
+            druggability: 0.6531283,
+            relative_asymmetry: 1.296145,
             hysteresis_asymmetry: 0.298600,
         });
 
@@ -1051,12 +1081,15 @@ mod tests {
             "adjudicator_elapsed_ns",
             "kcc_metrics",
             "therm_dossier",
-            "burst_motion",  // nested KccMetrics field
-            "DYNAMIC",       // ThermDossier::therm_class value
+            "burst_motion", // nested KccMetrics field
+            "DYNAMIC",      // ThermDossier::therm_class value
         ] {
-            assert!(s.contains(required),
+            assert!(
+                s.contains(required),
                 "Burst SiteManifest missing required serialized field {}: {}",
-                required, s);
+                required,
+                s
+            );
         }
     }
 
@@ -1064,7 +1097,10 @@ mod tests {
     fn lbvh3_point_cluster_aabb_round_trips_centroid() {
         // Degenerate point AABB (single-spike cluster) → centroid is
         // the spike position itself.
-        let aabb = Aabb { min: [3.5, -1.0, 7.25], max: [3.5, -1.0, 7.25] };
+        let aabb = Aabb {
+            min: [3.5, -1.0, 7.25],
+            max: [3.5, -1.0, 7.25],
+        };
         let m = SiteManifest::from_lbvh_cluster_aabb(
             SiteId(0),
             ClusterId(0),

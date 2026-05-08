@@ -12,9 +12,9 @@
 //! - Unambiguous residue identification for reproducible results
 //! - Optimal GPU memory utilization by grouping similar structures
 
-use std::collections::HashMap;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::input::PrismPrepTopology;
 
@@ -62,7 +62,11 @@ impl ResidueKey {
     }
 
     /// Create with insertion code but no alt_loc
-    pub fn with_insertion(chain_id: impl Into<String>, residue_number: i32, insertion_code: char) -> Self {
+    pub fn with_insertion(
+        chain_id: impl Into<String>,
+        residue_number: i32,
+        insertion_code: char,
+    ) -> Self {
         Self::new(chain_id, residue_number, Some(insertion_code), None)
     }
 
@@ -152,18 +156,18 @@ impl MemoryProfile {
         n_angles: usize,
         n_dihedrals: usize,
         n_aromatics: usize,
-        estimated_density: f32,  // atoms per Å³
+        estimated_density: f32, // atoms per Å³
     ) -> Self {
         // Core MD buffers: positions, velocities, forces
-        let coordinates_bytes = n_atoms * 3 * 4;  // float3
+        let coordinates_bytes = n_atoms * 3 * 4; // float3
         let velocities_bytes = n_atoms * 3 * 4;
         let forces_bytes = n_atoms * 3 * 4;
 
         // Neighbor list: depends on density
         // Typical: 50-200 neighbors per atom for 10Å cutoff
-        let avg_neighbors = (estimated_density * 4188.79).min(200.0) as usize;  // 4/3 π r³ for r=10Å
-        let avg_neighbors = avg_neighbors.max(50);  // Floor for sparse structures
-        let neighbor_list_bytes = n_atoms * avg_neighbors * 4;  // u32 indices
+        let avg_neighbors = (estimated_density * 4188.79).min(200.0) as usize; // 4/3 π r³ for r=10Å
+        let avg_neighbors = avg_neighbors.max(50); // Floor for sparse structures
+        let neighbor_list_bytes = n_atoms * avg_neighbors * 4; // u32 indices
 
         // Spike buffer: ~100 spikes per aromatic per 1000 steps, 16 bytes each
         let estimated_spikes = n_aromatics * 100;
@@ -177,9 +181,13 @@ impl MemoryProfile {
         let topology_bytes = n_bonds * 12 + n_angles * 16 + n_dihedrals * 24;
 
         // Overhead: ~10% of total for scratch buffers, alignment, etc.
-        let subtotal = coordinates_bytes + velocities_bytes + forces_bytes
-            + neighbor_list_bytes + spike_buffer_bytes
-            + clustering_overhead_bytes + topology_bytes;
+        let subtotal = coordinates_bytes
+            + velocities_bytes
+            + forces_bytes
+            + neighbor_list_bytes
+            + spike_buffer_bytes
+            + clustering_overhead_bytes
+            + topology_bytes;
         let overhead_bytes = subtotal / 10;
 
         Self {
@@ -216,11 +224,11 @@ impl MemoryProfile {
         // Use typical ratios
         Self::calculate(
             n_atoms,
-            n_atoms,             // ~1 bond per atom
-            n_atoms * 2,         // ~2 angles per atom
-            n_atoms * 4,         // ~4 dihedrals per atom
-            n_atoms / 20,        // ~5% aromatics
-            0.01,                // typical protein density
+            n_atoms,      // ~1 bond per atom
+            n_atoms * 2,  // ~2 angles per atom
+            n_atoms * 4,  // ~4 dihedrals per atom
+            n_atoms / 20, // ~5% aromatics
+            0.01,         // typical protein density
         )
     }
 }
@@ -287,9 +295,9 @@ impl MemoryTier {
     /// Typical memory usage for this tier (conservative estimate for scheduling)
     pub fn estimated_memory_mb(&self) -> usize {
         match self {
-            MemoryTier::Small => 20,    // ~20K atoms typical
-            MemoryTier::Medium => 50,   // ~60K atoms typical
-            MemoryTier::Large => 150,   // ~150K atoms typical
+            MemoryTier::Small => 20,  // ~20K atoms typical
+            MemoryTier::Medium => 50, // ~60K atoms typical
+            MemoryTier::Large => 150, // ~150K atoms typical
         }
     }
 }
@@ -483,7 +491,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Unambiguous Identification
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Residue registry: maps ResidueKey -> ResidueInfo
     pub residue_registry: HashMap<ResidueKey, ResidueInfo>,
 
@@ -493,7 +500,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Basic Metrics
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Total atoms
     pub n_atoms: usize,
 
@@ -506,7 +512,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Aromatic Analysis
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Number of aromatic residues (TRP, TYR, PHE, HIS)
     pub n_aromatic_residues: usize,
 
@@ -519,7 +524,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Catalytic Analysis
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Number of catalytic residues (GLU, ASP, HIS, SER, CYS, LYS)
     pub n_catalytic_residues: usize,
 
@@ -529,7 +533,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Hydrophobic Analysis
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Number of hydrophobic residues
     pub n_hydrophobic_residues: usize,
 
@@ -542,7 +545,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Structural Analysis (COMPUTED from 3D geometry)
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Secondary structure classification (COMPUTED from phi/psi dihedrals)
     pub secondary_structure_class: SecondaryStructureClass,
 
@@ -555,7 +557,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Computational Profile
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Detailed GPU memory profile
     pub memory_profile: MemoryProfile,
 
@@ -574,7 +575,6 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Batch Scheduling
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Multi-dimensional batch compatibility profile
     pub batch_compatibility: BatchCompatibility,
 
@@ -590,12 +590,11 @@ pub struct StructureComposition {
     // ─────────────────────────────────────────────────────────────────────────
     // Structure Quality / Edge Cases
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Number of chain breaks detected (non-sequential residue numbers)
     pub chain_breaks: usize,
 
     /// Missing residue ranges (gaps in sequence)
-    pub missing_residue_ranges: Vec<(String, i32, i32)>,  // (chain_id, start, end)
+    pub missing_residue_ranges: Vec<(String, i32, i32)>, // (chain_id, start, end)
 
     /// Number of alternate conformers detected
     pub alternate_conformers: usize,
@@ -627,7 +626,8 @@ pub enum SecondaryStructureClass {
 /// Compute secondary structure from phi/psi dihedrals
 fn compute_secondary_structure(topology: &PrismPrepTopology) -> SecondaryStructureClass {
     // Find backbone atoms (N, CA, C) for each residue
-    let mut residue_backbone: HashMap<usize, (Option<usize>, Option<usize>, Option<usize>)> = HashMap::new();
+    let mut residue_backbone: HashMap<usize, (Option<usize>, Option<usize>, Option<usize>)> =
+        HashMap::new();
 
     for i in 0..topology.n_atoms {
         let res_id = topology.residue_ids[i];
@@ -652,7 +652,7 @@ fn compute_secondary_structure(topology: &PrismPrepTopology) -> SecondaryStructu
     let residue_count = residue_backbone.len();
     let residue_ids: Vec<usize> = residue_backbone.keys().copied().collect();
 
-    for i in 1..residue_ids.len()-1 {
+    for i in 1..residue_ids.len() - 1 {
         let prev_res = residue_ids.get(i.wrapping_sub(1));
         let curr_res = Some(&residue_ids[i]);
         let next_res = residue_ids.get(i + 1);
@@ -668,8 +668,8 @@ fn compute_secondary_structure(topology: &PrismPrepTopology) -> SecondaryStructu
             let next_n = residue_backbone.get(&next).and_then(|bb| bb.0);
 
             if let (Some(c_prev), Some(n), Some(ca), Some(c), Some(n_next)) =
-                (prev_c, curr_n, curr_ca, curr_c, next_n) {
-
+                (prev_c, curr_n, curr_ca, curr_c, next_n)
+            {
                 // Compute phi dihedral
                 let phi = compute_dihedral(topology, c_prev, n, ca, c);
                 // Compute psi dihedral
@@ -678,9 +678,9 @@ fn compute_secondary_structure(topology: &PrismPrepTopology) -> SecondaryStructu
                 // Classify based on Ramachandran regions
                 let ss_type = classify_ramachandran(phi, psi);
                 match ss_type {
-                    0 => helix_count += 1,  // Alpha helix
-                    1 => sheet_count += 1,  // Beta sheet
-                    _ => coil_count += 1,   // Coil
+                    0 => helix_count += 1, // Alpha helix
+                    1 => sheet_count += 1, // Beta sheet
+                    _ => coil_count += 1,  // Coil
                 }
                 total_classified += 1;
             }
@@ -710,24 +710,24 @@ fn compute_secondary_structure(topology: &PrismPrepTopology) -> SecondaryStructu
 fn compute_dihedral(topology: &PrismPrepTopology, i: usize, j: usize, k: usize, l: usize) -> f32 {
     let pos = &topology.positions;
 
-    let p1 = [pos[i*3], pos[i*3+1], pos[i*3+2]];
-    let p2 = [pos[j*3], pos[j*3+1], pos[j*3+2]];
-    let p3 = [pos[k*3], pos[k*3+1], pos[k*3+2]];
-    let p4 = [pos[l*3], pos[l*3+1], pos[l*3+2]];
+    let p1 = [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]];
+    let p2 = [pos[j * 3], pos[j * 3 + 1], pos[j * 3 + 2]];
+    let p3 = [pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]];
+    let p4 = [pos[l * 3], pos[l * 3 + 1], pos[l * 3 + 2]];
 
     // Vectors
-    let b1 = [p2[0]-p1[0], p2[1]-p1[1], p2[2]-p1[2]];
-    let b2 = [p3[0]-p2[0], p3[1]-p2[1], p3[2]-p2[2]];
-    let b3 = [p4[0]-p3[0], p4[1]-p3[1], p4[2]-p3[2]];
+    let b1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+    let b2 = [p3[0] - p2[0], p3[1] - p2[1], p3[2] - p2[2]];
+    let b3 = [p4[0] - p3[0], p4[1] - p3[1], p4[2] - p3[2]];
 
     // Normal vectors
     let n1 = cross_product(b1, b2);
     let n2 = cross_product(b2, b3);
 
     // Dihedral angle
-    let dot = n1[0]*n2[0] + n1[1]*n2[1] + n1[2]*n2[2];
-    let n1_mag = (n1[0]*n1[0] + n1[1]*n1[1] + n1[2]*n1[2]).sqrt();
-    let n2_mag = (n2[0]*n2[0] + n2[1]*n2[1] + n2[2]*n2[2]).sqrt();
+    let dot = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2];
+    let n1_mag = (n1[0] * n1[0] + n1[1] * n1[1] + n1[2] * n1[2]).sqrt();
+    let n2_mag = (n2[0] * n2[0] + n2[1] * n2[1] + n2[2] * n2[2]).sqrt();
 
     if n1_mag < 1e-6 || n2_mag < 1e-6 {
         return 0.0;
@@ -739,9 +739,9 @@ fn compute_dihedral(topology: &PrismPrepTopology, i: usize, j: usize, k: usize, 
 
 fn cross_product(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     [
-        a[1]*b[2] - a[2]*b[1],
-        a[2]*b[0] - a[0]*b[2],
-        a[0]*b[1] - a[1]*b[0],
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
     ]
 }
 
@@ -763,7 +763,10 @@ fn classify_ramachandran(phi: f32, psi: f32) -> u8 {
 /// Detect structural domains from CA contact map
 fn detect_domains(topology: &PrismPrepTopology) -> usize {
     // Extract CA atom indices
-    let ca_indices: Vec<(usize, usize)> = topology.atom_names.iter().enumerate()
+    let ca_indices: Vec<(usize, usize)> = topology
+        .atom_names
+        .iter()
+        .enumerate()
         .filter(|(_, name)| name.trim() == "CA")
         .map(|(idx, _)| (idx, topology.residue_ids[idx]))
         .collect();
@@ -778,14 +781,14 @@ fn detect_domains(topology: &PrismPrepTopology) -> usize {
     let contact_threshold = 8.0; // Angstroms
 
     for i in 0..n {
-        for j in (i+1)..n {
+        for j in (i + 1)..n {
             let idx_i = ca_indices[i].0;
             let idx_j = ca_indices[j].0;
 
-            let dx = topology.positions[idx_i*3] - topology.positions[idx_j*3];
-            let dy = topology.positions[idx_i*3+1] - topology.positions[idx_j*3+1];
-            let dz = topology.positions[idx_i*3+2] - topology.positions[idx_j*3+2];
-            let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+            let dx = topology.positions[idx_i * 3] - topology.positions[idx_j * 3];
+            let dy = topology.positions[idx_i * 3 + 1] - topology.positions[idx_j * 3 + 1];
+            let dz = topology.positions[idx_i * 3 + 2] - topology.positions[idx_j * 3 + 2];
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
 
             if dist < contact_threshold {
                 contact_matrix[i][j] = true;
@@ -831,22 +834,43 @@ fn compute_hydrophobic_surface_ratio(
 ) -> f32 {
     // Kyte-Doolittle hydrophobicity scale
     let hydrophobicity_scale: HashMap<&str, f32> = [
-        ("ALA", 1.8), ("ARG", -4.5), ("ASN", -3.5), ("ASP", -3.5),
-        ("CYS", 2.5), ("GLN", -3.5), ("GLU", -3.5), ("GLY", -0.4),
-        ("HIS", -3.2), ("ILE", 4.5), ("LEU", 3.8), ("LYS", -3.9),
-        ("MET", 1.9), ("PHE", 2.8), ("PRO", -1.6), ("SER", -0.8),
-        ("THR", -0.7), ("TRP", -0.9), ("TYR", -1.3), ("VAL", 4.2),
-    ].iter().copied().collect();
+        ("ALA", 1.8),
+        ("ARG", -4.5),
+        ("ASN", -3.5),
+        ("ASP", -3.5),
+        ("CYS", 2.5),
+        ("GLN", -3.5),
+        ("GLU", -3.5),
+        ("GLY", -0.4),
+        ("HIS", -3.2),
+        ("ILE", 4.5),
+        ("LEU", 3.8),
+        ("LYS", -3.9),
+        ("MET", 1.9),
+        ("PHE", 2.8),
+        ("PRO", -1.6),
+        ("SER", -0.8),
+        ("THR", -0.7),
+        ("TRP", -0.9),
+        ("TYR", -1.3),
+        ("VAL", 4.2),
+    ]
+    .iter()
+    .copied()
+    .collect();
 
     // Find surface-exposed residues (CA atoms near convex hull)
     // Simplified: residues with CA > 4Å from any other CA = surface
-    let ca_positions: Vec<(usize, [f32; 3])> = topology.atom_names.iter().enumerate()
+    let ca_positions: Vec<(usize, [f32; 3])> = topology
+        .atom_names
+        .iter()
+        .enumerate()
         .filter(|(_, name)| name.trim() == "CA")
         .map(|(idx, _)| {
             let pos = [
-                topology.positions[idx*3],
-                topology.positions[idx*3+1],
-                topology.positions[idx*3+2],
+                topology.positions[idx * 3],
+                topology.positions[idx * 3 + 1],
+                topology.positions[idx * 3 + 2],
             ];
             (topology.residue_ids[idx], pos)
         })
@@ -867,7 +891,7 @@ fn compute_hydrophobic_surface_ratio(
         let dx = pos[0] - center[0];
         let dy = pos[1] - center[1];
         let dz = pos[2] - center[2];
-        let dist_from_center = (dx*dx + dy*dy + dz*dz).sqrt();
+        let dist_from_center = (dx * dx + dy * dy + dz * dz).sqrt();
 
         // Surface = far from center
         if dist_from_center > surface_threshold {
@@ -919,8 +943,12 @@ impl StructureComposition {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
 
-        log::info!("Analyzing structure composition: {} ({} atoms, {} residues)",
-            structure_name, topology.n_atoms, topology.n_residues);
+        log::info!(
+            "Analyzing structure composition: {} ({} atoms, {} residues)",
+            structure_name,
+            topology.n_atoms,
+            topology.n_residues
+        );
 
         // Build residue registry
         let mut residue_registry = HashMap::new();
@@ -928,7 +956,9 @@ impl StructureComposition {
 
         // Aromatic and catalytic residue sets
         let aromatic_names = ["TRP", "TYR", "PHE", "HIS", "HID", "HIE", "HIP"];
-        let catalytic_names = ["GLU", "ASP", "HIS", "HID", "HIE", "HIP", "SER", "CYS", "LYS"];
+        let catalytic_names = [
+            "GLU", "ASP", "HIS", "HID", "HIE", "HIP", "SER", "CYS", "LYS",
+        ];
         let hydrophobic_names = ["ALA", "VAL", "ILE", "LEU", "MET", "PHE", "TRP", "PRO"];
 
         let mut aromatic_residue_keys = Vec::new();
@@ -1065,7 +1095,7 @@ impl StructureComposition {
             topology.angles.len(),
             topology.dihedrals.len(),
             n_aromatic,
-            0.01,  // typical protein density
+            0.01, // typical protein density
         );
 
         // Classify tiers
@@ -1079,15 +1109,12 @@ impl StructureComposition {
         // Predict spike density (empirical: ~5-20 spikes per aromatic per 1000 steps)
         let predicted_spike_density = n_aromatic as f32 * 12.0;
         let spike_density_tier = SpikeDensityTier::from_spike_count(
-            (predicted_spike_density * 50.0) as usize  // estimate for 50K steps
+            (predicted_spike_density * 50.0) as usize, // estimate for 50K steps
         );
 
         // Multi-dimensional batch compatibility
-        let batch_compatibility = BatchCompatibility::new(
-            memory_tier,
-            complexity_tier,
-            spike_density_tier,
-        );
+        let batch_compatibility =
+            BatchCompatibility::new(memory_tier, complexity_tier, spike_density_tier);
         let batch_group_id = batch_compatibility.batch_group_id();
 
         // Recommended steps based on complexity
@@ -1102,11 +1129,13 @@ impl StructureComposition {
         let mut missing_residue_ranges = Vec::new();
 
         for chain in &chains_vec {
-            let chain_residues: Vec<_> = residue_registry.iter()
+            let chain_residues: Vec<_> = residue_registry
+                .iter()
                 .filter(|(k, _)| k.chain_id == chain.chain_id)
                 .collect();
 
-            let mut sorted_residues: Vec<i32> = chain_residues.iter()
+            let mut sorted_residues: Vec<i32> = chain_residues
+                .iter()
                 .map(|(k, _)| k.residue_number)
                 .collect();
             sorted_residues.sort();
@@ -1125,7 +1154,8 @@ impl StructureComposition {
         }
 
         // Count alternate conformers
-        let alternate_conformers = residue_registry.keys()
+        let alternate_conformers = residue_registry
+            .keys()
             .filter(|k| k.alt_loc.is_some())
             .count();
 
@@ -1140,10 +1170,8 @@ impl StructureComposition {
         let domain_count = detect_domains(topology);
 
         // Hydrophobic surface ratio (Kyte-Doolittle + surface exposure)
-        let hydrophobic_surface_ratio_computed = compute_hydrophobic_surface_ratio(
-            topology,
-            &residue_registry,
-        );
+        let hydrophobic_surface_ratio_computed =
+            compute_hydrophobic_surface_ratio(topology, &residue_registry);
 
         // ALL ring-containing residues for UV perturbation
         let ring_residue_count = count_ring_residues(topology);
@@ -1151,29 +1179,61 @@ impl StructureComposition {
         // Update spike density prediction to use ALL ring residues, not just aromatics
         let predicted_spike_density = ring_residue_count as f32 * 12.0;
         let spike_density_tier = SpikeDensityTier::from_spike_count(
-            (predicted_spike_density * 50.0) as usize  // estimate for 50K steps
+            (predicted_spike_density * 50.0) as usize, // estimate for 50K steps
         );
 
         // Re-compute batch compatibility with updated spike density
-        let batch_compatibility = BatchCompatibility::new(
-            memory_tier,
-            complexity_tier,
-            spike_density_tier,
-        );
+        let batch_compatibility =
+            BatchCompatibility::new(memory_tier, complexity_tier, spike_density_tier);
         let batch_group_id = batch_compatibility.batch_group_id();
 
-        log::info!("  Chains: {}", chains_vec.iter().map(|c| &c.chain_id).cloned().collect::<Vec<_>>().join(", "));
-        log::info!("  Aromatics: {} ({:.1}%)", n_aromatic, aromatic_density * 100.0);
+        log::info!(
+            "  Chains: {}",
+            chains_vec
+                .iter()
+                .map(|c| &c.chain_id)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        log::info!(
+            "  Aromatics: {} ({:.1}%)",
+            n_aromatic,
+            aromatic_density * 100.0
+        );
         log::info!("  Ring residues (UV-active): {}", ring_residue_count);
-        log::info!("  Catalytic: {} ({:.1}%)", n_catalytic, catalytic_density * 100.0);
+        log::info!(
+            "  Catalytic: {} ({:.1}%)",
+            n_catalytic,
+            catalytic_density * 100.0
+        );
         log::info!("  Secondary structure: {:?}", secondary_structure_class);
         log::info!("  Domains: {}", domain_count);
-        log::info!("  Hydrophobic surface: {:.1}%", hydrophobic_surface_ratio_computed * 100.0);
-        log::info!("  Memory: {} MB ({:?})", memory_profile.total_mb(), memory_tier);
-        log::info!("  Complexity: {:?}, Spike density: {:?}", complexity_tier, spike_density_tier);
-        log::info!("  Batch group: {} (workload: {:.1})", batch_group_id, batch_compatibility.estimated_workload());
+        log::info!(
+            "  Hydrophobic surface: {:.1}%",
+            hydrophobic_surface_ratio_computed * 100.0
+        );
+        log::info!(
+            "  Memory: {} MB ({:?})",
+            memory_profile.total_mb(),
+            memory_tier
+        );
+        log::info!(
+            "  Complexity: {:?}, Spike density: {:?}",
+            complexity_tier,
+            spike_density_tier
+        );
+        log::info!(
+            "  Batch group: {} (workload: {:.1})",
+            batch_group_id,
+            batch_compatibility.estimated_workload()
+        );
         if chain_breaks > 0 {
-            log::info!("  Chain breaks: {} (missing ranges: {:?})", chain_breaks, missing_residue_ranges);
+            log::info!(
+                "  Chain breaks: {} (missing ranges: {:?})",
+                chain_breaks,
+                missing_residue_ranges
+            );
         }
 
         Ok(Self {
@@ -1207,7 +1267,7 @@ impl StructureComposition {
             chain_breaks,
             missing_residue_ranges,
             alternate_conformers,
-            is_multi_model: false,  // TODO: detect from topology
+            is_multi_model: false, // TODO: detect from topology
             model_number: None,
         })
     }
@@ -1219,7 +1279,8 @@ impl StructureComposition {
 
     /// Get all residues for a chain
     pub fn get_chain_residues(&self, chain_id: &str) -> Vec<(&ResidueKey, &ResidueInfo)> {
-        self.residue_registry.iter()
+        self.residue_registry
+            .iter()
             .filter(|(k, _)| k.chain_id == chain_id)
             .collect()
     }
@@ -1227,7 +1288,8 @@ impl StructureComposition {
     /// Check if two compositions are compatible for batching
     /// Uses multi-dimensional compatibility check
     pub fn is_batch_compatible(&self, other: &StructureComposition) -> bool {
-        self.batch_compatibility.is_compatible(&other.batch_compatibility)
+        self.batch_compatibility
+            .is_compatible(&other.batch_compatibility)
     }
 
     /// Get estimated workload for load balancing
@@ -1242,24 +1304,30 @@ impl StructureComposition {
 
     /// Export composition to JSON
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self)
-            .context("Failed to serialize composition to JSON")
+        serde_json::to_string_pretty(self).context("Failed to serialize composition to JSON")
     }
 
     /// Save composition to file
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
         let json = self.to_json()?;
-        std::fs::write(&path, json)
-            .with_context(|| format!("Failed to write composition to: {}", path.as_ref().display()))?;
+        std::fs::write(&path, json).with_context(|| {
+            format!(
+                "Failed to write composition to: {}",
+                path.as_ref().display()
+            )
+        })?;
         Ok(())
     }
 
     /// Load composition from file
     pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let content = std::fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read composition from: {}", path.as_ref().display()))?;
-        serde_json::from_str(&content)
-            .context("Failed to parse composition JSON")
+        let content = std::fs::read_to_string(&path).with_context(|| {
+            format!(
+                "Failed to read composition from: {}",
+                path.as_ref().display()
+            )
+        })?;
+        serde_json::from_str(&content).context("Failed to parse composition JSON")
     }
 }
 
@@ -1316,7 +1384,8 @@ pub fn group_for_batch(compositions: Vec<StructureComposition>) -> Vec<BatchGrou
         let group_id = comp.batch_group_id;
         let memory_tier = comp.memory_tier;
 
-        groups.entry(group_id)
+        groups
+            .entry(group_id)
             .or_insert_with(|| BatchGroup::new(group_id, memory_tier))
             .add(comp);
     }
@@ -1358,9 +1427,9 @@ mod tests {
         // 10K atoms → ~8 MB (Small)
         // 50K atoms → ~40 MB (Medium)
         // 150K atoms → ~120 MB (Large)
-        assert_eq!(MemoryTier::from_atom_count(10_000), MemoryTier::Small);   // ~8 MB
-        assert_eq!(MemoryTier::from_atom_count(50_000), MemoryTier::Medium);  // ~40 MB
-        assert_eq!(MemoryTier::from_atom_count(150_000), MemoryTier::Large);  // ~120 MB
+        assert_eq!(MemoryTier::from_atom_count(10_000), MemoryTier::Small); // ~8 MB
+        assert_eq!(MemoryTier::from_atom_count(50_000), MemoryTier::Medium); // ~40 MB
+        assert_eq!(MemoryTier::from_atom_count(150_000), MemoryTier::Large); // ~120 MB
 
         // Concurrency limits for 16GB GPU
         assert_eq!(MemoryTier::Small.max_concurrent(), 4);

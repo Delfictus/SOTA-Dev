@@ -447,7 +447,10 @@ impl std::fmt::Display for ManifoldError {
             ManifoldError::EmptySupport => {
                 write!(f, "view support set is empty (M3: no geometric fallback)")
             }
-            ManifoldError::SoaLengthMismatch { support_len, values_len } => {
+            ManifoldError::SoaLengthMismatch {
+                support_len,
+                values_len,
+            } => {
                 write!(
                     f,
                     "SoA length mismatch: support={support_len} values={values_len}"
@@ -625,7 +628,12 @@ impl CausalDriverView {
         causal_values: Vec<f32>,
         provenance: ViewProvenance,
     ) -> Result<Self, ManifoldError> {
-        Ok(Self(build_view_data(coords, support, causal_values, provenance)?))
+        Ok(Self(build_view_data(
+            coords,
+            support,
+            causal_values,
+            provenance,
+        )?))
     }
 
     /// Borrow the underlying [`ManifoldViewData`] (support set,
@@ -660,7 +668,12 @@ impl LiningContactView {
         causal_values: Vec<f32>,
         provenance: ViewProvenance,
     ) -> Result<Self, ManifoldError> {
-        Ok(Self(build_view_data(coords, support, causal_values, provenance)?))
+        Ok(Self(build_view_data(
+            coords,
+            support,
+            causal_values,
+            provenance,
+        )?))
     }
 
     /// Borrow the underlying [`ManifoldViewData`].
@@ -690,7 +703,12 @@ impl LocalizedSubclusterView {
         causal_values: Vec<f32>,
         provenance: ViewProvenance,
     ) -> Result<Self, ManifoldError> {
-        Ok(Self(build_view_data(coords, support, causal_values, provenance)?))
+        Ok(Self(build_view_data(
+            coords,
+            support,
+            causal_values,
+            provenance,
+        )?))
     }
 
     /// Borrow the underlying [`ManifoldViewData`].
@@ -824,9 +842,9 @@ mod tests {
         // M5 invariant: AABB sees ONLY support residues, not the
         // outliers that would inflate it.
         let coords = vec![
-            [0.0, 0.0, 0.0],   // 0 — support
-            [1.0, 1.0, 1.0],   // 1 — support
-            [2.0, 2.0, 2.0],   // 2 — support
+            [0.0, 0.0, 0.0],    // 0 — support
+            [1.0, 1.0, 1.0],    // 1 — support
+            [2.0, 2.0, 2.0],    // 2 — support
             [99.0, 99.0, 99.0], // 3 — NOT in support; must not inflate
         ];
         let aabb = Aabb::from_support_set(&coords, &[0, 1, 2]).unwrap();
@@ -847,7 +865,10 @@ mod tests {
         let err = Aabb::from_support_set(&coords, &[5]).unwrap_err();
         assert!(matches!(
             err,
-            ManifoldError::SupportIndexOutOfRange { resid: 5, coord_len: 1 }
+            ManifoldError::SupportIndexOutOfRange {
+                resid: 5,
+                coord_len: 1
+            }
         ));
         let err = Aabb::from_support_set(&coords, &[-1]).unwrap_err();
         assert!(matches!(err, ManifoldError::SupportIndexOutOfRange { .. }));
@@ -861,18 +882,17 @@ mod tests {
             [0.0, 2.0, 0.0],
             [0.0, 0.0, 3.0],
         ];
-        let view = CausalDriverView::new(
-            &coords,
-            vec![1, 2, 3],
-            vec![10.0, 9.0, 8.0],
-            provenance(7),
-        )
-        .unwrap();
+        let view =
+            CausalDriverView::new(&coords, vec![1, 2, 3], vec![10.0, 9.0, 8.0], provenance(7))
+                .unwrap();
         assert_eq!(view.data().support, vec![1, 2, 3]);
         assert_eq!(view.data().causal_values, vec![10.0, 9.0, 8.0]);
         assert_eq!(view.data().aabb.min, [0.0, 0.0, 0.0]);
         assert_eq!(view.data().aabb.max, [1.0, 2.0, 3.0]);
-        assert_eq!(view.data().provenance.signal, CausalSignal::SpikeAttributionCount);
+        assert_eq!(
+            view.data().provenance.signal,
+            CausalSignal::SpikeAttributionCount
+        );
         assert_eq!(view.data().provenance.frame, 7);
     }
 
@@ -905,10 +925,8 @@ mod tests {
     #[test]
     fn entangled_manifold_enforces_frame_consistency() {
         let coords = vec![[0.0; 3]; 4];
-        let driver =
-            CausalDriverView::new(&coords, vec![0], vec![1.0], provenance(7)).unwrap();
-        let lining =
-            LiningContactView::new(&coords, vec![1], vec![1.0], provenance(7)).unwrap();
+        let driver = CausalDriverView::new(&coords, vec![0], vec![1.0], provenance(7)).unwrap();
+        let lining = LiningContactView::new(&coords, vec![1], vec![1.0], provenance(7)).unwrap();
         let localized =
             LocalizedSubclusterView::new(&coords, vec![2], vec![1.0], provenance(7)).unwrap();
 
@@ -919,10 +937,8 @@ mod tests {
     #[test]
     fn entangled_manifold_rejects_frame_mismatch() {
         let coords = vec![[0.0; 3]; 4];
-        let driver =
-            CausalDriverView::new(&coords, vec![0], vec![1.0], provenance(7)).unwrap();
-        let lining =
-            LiningContactView::new(&coords, vec![1], vec![1.0], provenance(8)).unwrap();
+        let driver = CausalDriverView::new(&coords, vec![0], vec![1.0], provenance(7)).unwrap();
+        let lining = LiningContactView::new(&coords, vec![1], vec![1.0], provenance(8)).unwrap();
         let localized =
             LocalizedSubclusterView::new(&coords, vec![2], vec![1.0], provenance(7)).unwrap();
         let err = EntangledManifold::new(driver, lining, localized).unwrap_err();
@@ -935,7 +951,10 @@ mod tests {
     fn deterministic_tie_breaker_policy_label_is_stable() {
         // M6 audit: the policy name is part of the provenance and
         // must round-trip stably for downstream auditors.
-        assert_eq!(TieBreakerPolicy::CausalThenResid.as_str(), "causal_then_resid");
+        assert_eq!(
+            TieBreakerPolicy::CausalThenResid.as_str(),
+            "causal_then_resid"
+        );
         assert_eq!(
             TieBreakerPolicy::CausalThenResidThenChain.as_str(),
             "causal_then_resid_then_chain"
@@ -946,7 +965,10 @@ mod tests {
     fn causal_signal_label_is_stable() {
         // M3 audit: the signal name is part of the provenance and
         // must round-trip stably.
-        assert_eq!(CausalSignal::SpikeAttributionCount.as_str(), "spike_attribution_count");
+        assert_eq!(
+            CausalSignal::SpikeAttributionCount.as_str(),
+            "spike_attribution_count"
+        );
         assert_eq!(CausalSignal::KccScore.as_str(), "kcc_score");
         assert_eq!(CausalSignal::TransferEntropyIn.as_str(), "te_in");
         assert_eq!(CausalSignal::TransferEntropyOut.as_str(), "te_out");

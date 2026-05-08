@@ -20,10 +20,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{
-    load_ensemble_pdb,
-    input::PrismPrepTopology,
-};
+use prism_nhs::{input::PrismPrepTopology, load_ensemble_pdb};
 
 #[cfg(feature = "gpu")]
 use cudarc::driver::{
@@ -163,7 +160,8 @@ impl TurboEngine {
         let compute_exclusion_field = exclusion_module.load_function("compute_exclusion_field")?;
         let infer_water_density = exclusion_module.load_function("infer_water_density")?;
         let lif_dewetting_step = neuromorphic_module.load_function("lif_dewetting_step")?;
-        let apply_lateral_inhibition = neuromorphic_module.load_function("apply_lateral_inhibition")?;
+        let apply_lateral_inhibition =
+            neuromorphic_module.load_function("apply_lateral_inhibition")?;
         let extract_spike_indices = neuromorphic_module.load_function("extract_spike_indices")?;
         let map_spikes_to_residues = neuromorphic_module.load_function("map_spikes_to_residues")?;
         let init_lif_state = neuromorphic_module.load_function("init_lif_state")?;
@@ -182,9 +180,17 @@ impl TurboEngine {
         let spike_count: CudaSlice<i32> = stream.alloc_zeros(1)?;
 
         // Upload constant topology data
-        let atom_types: Vec<i32> = topology.elements.iter()
+        let atom_types: Vec<i32> = topology
+            .elements
+            .iter()
             .map(|e| match e.to_uppercase().as_str() {
-                "H" => 0, "C" => 1, "N" => 2, "O" => 3, "S" => 4, "P" => 5, _ => 1,
+                "H" => 0,
+                "C" => 1,
+                "N" => 2,
+                "O" => 3,
+                "S" => 4,
+                "P" => 5,
+                _ => 1,
             })
             .collect();
 
@@ -201,19 +207,37 @@ impl TurboEngine {
         context.synchronize()?;
 
         Ok(Self {
-            context, stream,
+            context,
+            stream,
             _exclusion_module: exclusion_module,
             _neuromorphic_module: neuromorphic_module,
-            compute_exclusion_field, infer_water_density,
-            lif_dewetting_step, apply_lateral_inhibition,
-            extract_spike_indices, map_spikes_to_residues, init_lif_state,
-            exclusion_field, water_density, prev_water_density, water_gradient,
-            membrane_potential, refractory_counter, spike_output,
-            spike_indices, spike_positions, spike_count,
-            atom_types_gpu, atom_charges_gpu, atom_residues_gpu, atom_positions_gpu,
-            grid_dim, grid_spacing,
+            compute_exclusion_field,
+            infer_water_density,
+            lif_dewetting_step,
+            apply_lateral_inhibition,
+            extract_spike_indices,
+            map_spikes_to_residues,
+            init_lif_state,
+            exclusion_field,
+            water_density,
+            prev_water_density,
+            water_gradient,
+            membrane_potential,
+            refractory_counter,
+            spike_output,
+            spike_indices,
+            spike_positions,
+            spike_count,
+            atom_types_gpu,
+            atom_charges_gpu,
+            atom_residues_gpu,
+            atom_positions_gpu,
+            grid_dim,
+            grid_spacing,
             grid_origin: [0.0, 0.0, 0.0],
-            n_atoms, tau_mem: 10.0, sensitivity: 0.5,
+            n_atoms,
+            tau_mem: 10.0,
+            sensitivity: 0.5,
         })
     }
 
@@ -241,7 +265,8 @@ impl TurboEngine {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.init_lif_state)
+            self.stream
+                .launch_builder(&self.init_lif_state)
                 .arg(&self.membrane_potential)
                 .arg(&self.refractory_counter)
                 .arg(&(self.grid_dim as i32))
@@ -258,18 +283,24 @@ impl TurboEngine {
 
     /// Process frame WITHOUT reading spike count (fastest)
     fn process_frame_no_sync(&mut self, positions: &[f32]) -> Result<()> {
-        self.stream.memcpy_htod(positions, &mut self.atom_positions_gpu)?;
+        self.stream
+            .memcpy_htod(positions, &mut self.atom_positions_gpu)?;
         std::mem::swap(&mut self.water_density, &mut self.prev_water_density);
 
         let blocks_3d = (self.grid_dim as u32).div_ceil(BLOCK_SIZE_3D as u32);
         let cfg_3d = LaunchConfig {
             grid_dim: (blocks_3d, blocks_3d, blocks_3d),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
         unsafe {
-            self.stream.launch_builder(&self.compute_exclusion_field)
+            self.stream
+                .launch_builder(&self.compute_exclusion_field)
                 .arg(&self.atom_positions_gpu)
                 .arg(&self.atom_types_gpu)
                 .arg(&self.atom_charges_gpu)
@@ -282,7 +313,8 @@ impl TurboEngine {
                 .arg(&self.grid_spacing)
                 .launch(cfg_3d.clone())?;
 
-            self.stream.launch_builder(&self.infer_water_density)
+            self.stream
+                .launch_builder(&self.infer_water_density)
                 .arg(&self.exclusion_field)
                 .arg(&self.water_density)
                 .arg(&self.water_gradient)
@@ -296,7 +328,8 @@ impl TurboEngine {
         self.stream.memcpy_htod(&zero, &mut self.spike_count)?;
 
         unsafe {
-            self.stream.launch_builder(&self.lif_dewetting_step)
+            self.stream
+                .launch_builder(&self.lif_dewetting_step)
                 .arg(&self.prev_water_density)
                 .arg(&self.water_density)
                 .arg(&self.membrane_potential)
@@ -308,7 +341,8 @@ impl TurboEngine {
                 .arg(&self.sensitivity)
                 .launch(cfg_3d.clone())?;
 
-            self.stream.launch_builder(&self.apply_lateral_inhibition)
+            self.stream
+                .launch_builder(&self.apply_lateral_inhibition)
                 .arg(&self.spike_output)
                 .arg(&self.membrane_potential)
                 .arg(&(self.grid_dim as i32))
@@ -333,12 +367,17 @@ impl TurboEngine {
         let blocks_3d = (self.grid_dim as u32).div_ceil(BLOCK_SIZE_3D as u32);
         let cfg_3d = LaunchConfig {
             grid_dim: (blocks_3d, blocks_3d, blocks_3d),
-            block_dim: (BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32, BLOCK_SIZE_3D as u32),
+            block_dim: (
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+                BLOCK_SIZE_3D as u32,
+            ),
             shared_mem_bytes: 0,
         };
 
         unsafe {
-            self.stream.launch_builder(&self.extract_spike_indices)
+            self.stream
+                .launch_builder(&self.extract_spike_indices)
                 .arg(&self.spike_output)
                 .arg(&self.spike_indices)
                 .arg(&self.spike_positions)
@@ -380,7 +419,8 @@ impl TurboEngine {
         };
 
         unsafe {
-            self.stream.launch_builder(&self.map_spikes_to_residues)
+            self.stream
+                .launch_builder(&self.map_spikes_to_residues)
                 .arg(&self.spike_positions)
                 .arg(&self.atom_positions_gpu)
                 .arg(&self.atom_residues_gpu)
@@ -413,7 +453,10 @@ fn main() -> Result<()> {
     if args.fast {
         println!("║   FAST MODE: 32³ grid, 2.0Å spacing, count-only               ║");
     } else {
-        println!("║   Grid: {}³, Spacing: {:.1}Å                                   ║", grid_dim, spacing);
+        println!(
+            "║   Grid: {}³, Spacing: {:.1}Å                                   ║",
+            grid_dim, spacing
+        );
     }
     println!("╚════════════════════════════════════════════════════════════════╝");
     println!();
@@ -421,7 +464,11 @@ fn main() -> Result<()> {
     fs::create_dir_all(&args.output)?;
 
     let topology = PrismPrepTopology::load(&args.topology)?;
-    println!("Structure: {} atoms, {} residues", topology.n_atoms, topology.residue_names.len());
+    println!(
+        "Structure: {} atoms, {} residues",
+        topology.n_atoms,
+        topology.residue_names.len()
+    );
 
     let frames = load_ensemble_pdb(&args.input)?;
     println!("Ensemble: {} frames", frames.len());
@@ -449,7 +496,14 @@ fn main() -> Result<()> {
 
     println!("  Grid: {}³ = {} voxels", grid_dim, grid_dim.pow(3));
     println!("  Spacing: {:.1}Å", spacing);
-    println!("  Mode: {}", if count_only { "COUNT-ONLY (fastest)" } else { "FULL EXTRACTION" });
+    println!(
+        "  Mode: {}",
+        if count_only {
+            "COUNT-ONLY (fastest)"
+        } else {
+            "FULL EXTRACTION"
+        }
+    );
     println!();
 
     println!("════════════════════════════════════════════════════════════════");
@@ -458,10 +512,7 @@ fn main() -> Result<()> {
     println!();
 
     let start = Instant::now();
-    let frames_to_process: Vec<_> = frames.iter()
-        .enumerate()
-        .step_by(args.skip)
-        .collect();
+    let frames_to_process: Vec<_> = frames.iter().enumerate().step_by(args.skip).collect();
     let total_frames = frames_to_process.len();
 
     let mut all_spikes: Vec<SpikeRecord> = Vec::new();
@@ -512,8 +563,14 @@ fn main() -> Result<()> {
             let fps = processed.min(total_frames) as f64 / elapsed;
             let remaining = total_frames.saturating_sub(processed);
             let eta = remaining as f64 / fps.max(1.0);
-            print!("\r  Frame {}/{} | {:.0} fps | ETA {:.1}s | Spikes: {}    ",
-                processed.min(total_frames), total_frames, fps, eta, total_spike_count);
+            print!(
+                "\r  Frame {}/{} | {:.0} fps | ETA {:.1}s | Spikes: {}    ",
+                processed.min(total_frames),
+                total_frames,
+                fps,
+                eta,
+                total_spike_count
+            );
             std::io::Write::flush(&mut std::io::stdout())?;
             last_report = Instant::now();
         }
@@ -537,19 +594,35 @@ fn main() -> Result<()> {
     println!();
     println!("Detection:");
     println!("  Total spikes:       {}", total_spike_count);
-    println!("  Avg spikes/frame:   {:.2}", total_spike_count as f64 / total_frames as f64);
+    println!(
+        "  Avg spikes/frame:   {:.2}",
+        total_spike_count as f64 / total_frames as f64
+    );
 
     if !count_only && !all_spikes.is_empty() {
         let sites = cluster_spikes(&all_spikes, args.cluster_radius, total_frames);
         let high = sites.iter().filter(|s| s.confidence >= 0.75).count();
-        let medium = sites.iter().filter(|s| s.confidence >= 0.50 && s.confidence < 0.75).count();
+        let medium = sites
+            .iter()
+            .filter(|s| s.confidence >= 0.50 && s.confidence < 0.75)
+            .count();
 
         println!();
-        println!("Cryptic Sites: {} (high: {}, medium: {})", sites.len(), high, medium);
+        println!(
+            "Cryptic Sites: {} (high: {}, medium: {})",
+            sites.len(),
+            high,
+            medium
+        );
 
         for (i, site) in sites.iter().enumerate().take(10) {
-            println!("  Site {}: {} spikes, conf={:.2} [{}]",
-                i + 1, site.spike_count, site.confidence, site.category);
+            println!(
+                "  Site {}: {} spikes, conf={:.2} [{}]",
+                i + 1,
+                site.spike_count,
+                site.confidence,
+                site.category
+            );
         }
 
         // Save results
@@ -589,7 +662,9 @@ fn main() {
 
 fn compute_bounds(positions: &[f32]) -> (f32, f32, f32) {
     let n = positions.len() / 3;
-    if n == 0 { return (0.0, 0.0, 0.0); }
+    if n == 0 {
+        return (0.0, 0.0, 0.0);
+    }
     let (mut mx, mut my, mut mz) = (f32::MAX, f32::MAX, f32::MAX);
     for i in 0..n {
         mx = mx.min(positions[i * 3]);
@@ -629,7 +704,9 @@ struct TurboSummary {
 }
 
 fn cluster_spikes(spikes: &[SpikeRecord], radius: f32, total_frames: usize) -> Vec<ClusteredSite> {
-    if spikes.is_empty() { return Vec::new(); }
+    if spikes.is_empty() {
+        return Vec::new();
+    }
 
     let mut clusters: Vec<ClusteredSite> = Vec::new();
     let mut cluster_frames: Vec<std::collections::HashSet<usize>> = Vec::new();
@@ -643,8 +720,11 @@ fn cluster_spikes(spikes: &[SpikeRecord], radius: f32, total_frames: usize) -> V
             let dx = spike.position[0] - c.centroid[0];
             let dy = spike.position[1] - c.centroid[1];
             let dz = spike.position[2] - c.centroid[2];
-            let d = dx*dx + dy*dy + dz*dz;
-            if d < closest_d { closest_d = d; closest = Some(i); }
+            let d = dx * dx + dy * dy + dz * dz;
+            if d < closest_d {
+                closest_d = d;
+                closest = Some(i);
+            }
         }
 
         if closest_d < r2 {
@@ -666,7 +746,11 @@ fn cluster_spikes(spikes: &[SpikeRecord], radius: f32, total_frames: usize) -> V
             clusters.push(ClusteredSite {
                 id: clusters.len(),
                 centroid: spike.position,
-                residues: if spike.residue >= 0 { vec![spike.residue] } else { vec![] },
+                residues: if spike.residue >= 0 {
+                    vec![spike.residue]
+                } else {
+                    vec![]
+                },
                 spike_count: 1,
                 confidence: 0.0,
                 category: String::new(),
@@ -681,12 +765,22 @@ fn cluster_spikes(spikes: &[SpikeRecord], radius: f32, total_frames: usize) -> V
         let persistence = cluster_frames[i].len() as f32 / total_frames.max(1) as f32;
         let frequency = (c.spike_count as f32 / max_spikes).min(1.0);
         c.confidence = (frequency * 0.5 + persistence * 0.5).clamp(0.0, 1.0);
-        c.category = if c.confidence >= 0.75 { "HIGH".into() }
-                     else if c.confidence >= 0.50 { "MEDIUM".into() }
-                     else { "LOW".into() };
+        c.category = if c.confidence >= 0.75 {
+            "HIGH".into()
+        } else if c.confidence >= 0.50 {
+            "MEDIUM".into()
+        } else {
+            "LOW".into()
+        };
     }
 
-    clusters.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
-    for (i, c) in clusters.iter_mut().enumerate() { c.id = i; }
+    clusters.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for (i, c) in clusters.iter_mut().enumerate() {
+        c.id = i;
+    }
     clusters
 }

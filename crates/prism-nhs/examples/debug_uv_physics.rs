@@ -13,13 +13,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
 const STEPS: i32 = 2000;
-const UV_BURST_INTERVAL: i32 = 200;  // Frequent bursts for debugging
+const UV_BURST_INTERVAL: i32 = 200; // Frequent bursts for debugging
 const UV_BURST_DURATION: i32 = 20;
 
 #[cfg(feature = "gpu")]
@@ -52,7 +52,9 @@ fn main() -> Result<()> {
         println!("Atoms: {}", topology.n_atoms);
 
         // Find aromatics
-        let aromatics: Vec<(i32, &str)> = topology.residue_names.iter()
+        let aromatics: Vec<(i32, &str)> = topology
+            .residue_names
+            .iter()
             .enumerate()
             .filter_map(|(i, name)| {
                 if matches!(name.as_str(), "TRP" | "TYR" | "PHE") {
@@ -63,15 +65,23 @@ fn main() -> Result<()> {
             })
             .collect();
 
-        println!("Aromatic residues: {} (TRP: {}, TYR: {}, PHE: {})",
-                 aromatics.len(),
-                 aromatics.iter().filter(|(_, n)| *n == "TRP").count(),
-                 aromatics.iter().filter(|(_, n)| *n == "TYR").count(),
-                 aromatics.iter().filter(|(_, n)| *n == "PHE").count());
+        println!(
+            "Aromatic residues: {} (TRP: {}, TYR: {}, PHE: {})",
+            aromatics.len(),
+            aromatics.iter().filter(|(_, n)| *n == "TRP").count(),
+            aromatics.iter().filter(|(_, n)| *n == "TYR").count(),
+            aromatics.iter().filter(|(_, n)| *n == "PHE").count()
+        );
 
         // Show first few aromatics
-        println!("First 10 aromatics: {:?}",
-                 aromatics.iter().take(10).map(|(id, n)| format!("{}:{}", id, n)).collect::<Vec<_>>());
+        println!(
+            "First 10 aromatics: {:?}",
+            aromatics
+                .iter()
+                .take(10)
+                .map(|(id, n)| format!("{}:{}", id, n))
+                .collect::<Vec<_>>()
+        );
 
         // Configure UV
         let uv_config = UvProbeConfig {
@@ -87,9 +97,21 @@ fn main() -> Result<()> {
 
         println!("\nUV Config:");
         println!("  Burst energy: {} kcal/mol", uv_config.burst_energy);
-        println!("  Burst interval: {} steps ({} ps)", UV_BURST_INTERVAL, UV_BURST_INTERVAL as f32 * 0.002);
-        println!("  Burst duration: {} steps ({} fs)", UV_BURST_DURATION, UV_BURST_DURATION as f32 * 2.0);
-        println!("  Expected bursts in {} steps: {}", STEPS, STEPS / UV_BURST_INTERVAL);
+        println!(
+            "  Burst interval: {} steps ({} ps)",
+            UV_BURST_INTERVAL,
+            UV_BURST_INTERVAL as f32 * 0.002
+        );
+        println!(
+            "  Burst duration: {} steps ({} fs)",
+            UV_BURST_DURATION,
+            UV_BURST_DURATION as f32 * 2.0
+        );
+        println!(
+            "  Expected bursts in {} steps: {}",
+            STEPS,
+            STEPS / UV_BURST_INTERVAL
+        );
 
         // Run simulation
         let context = CudaContext::new(0)?;
@@ -126,7 +148,7 @@ fn main() -> Result<()> {
 
         // Categorize spikes by timing relative to UV burst
         let mut during_burst = 0;
-        let mut post_burst_0_50 = 0;   // 0-50 steps after burst ends
+        let mut post_burst_0_50 = 0; // 0-50 steps after burst ends
         let mut post_burst_50_100 = 0; // 50-100 steps after burst ends
         let mut post_burst_100_150 = 0;
         let mut between_bursts = 0;
@@ -151,24 +173,48 @@ fn main() -> Result<()> {
         }
 
         let total = spikes.len();
-        println!("Spike timing (relative to UV burst cycle of {} steps):", UV_BURST_INTERVAL);
-        println!("  During UV burst (0-{}):        {:>5} ({:>5.1}%)",
-                 UV_BURST_DURATION, during_burst, during_burst as f32 / total as f32 * 100.0);
-        println!("  Post-burst 0-50 steps:         {:>5} ({:>5.1}%)",
-                 post_burst_0_50, post_burst_0_50 as f32 / total as f32 * 100.0);
-        println!("  Post-burst 50-100 steps:       {:>5} ({:>5.1}%)",
-                 post_burst_50_100, post_burst_50_100 as f32 / total as f32 * 100.0);
-        println!("  Post-burst 100-150 steps:      {:>5} ({:>5.1}%)",
-                 post_burst_100_150, post_burst_100_150 as f32 / total as f32 * 100.0);
-        println!("  Between bursts (>{} steps):   {:>5} ({:>5.1}%)",
-                 UV_BURST_DURATION + 150, between_bursts, between_bursts as f32 / total as f32 * 100.0);
+        println!(
+            "Spike timing (relative to UV burst cycle of {} steps):",
+            UV_BURST_INTERVAL
+        );
+        println!(
+            "  During UV burst (0-{}):        {:>5} ({:>5.1}%)",
+            UV_BURST_DURATION,
+            during_burst,
+            during_burst as f32 / total as f32 * 100.0
+        );
+        println!(
+            "  Post-burst 0-50 steps:         {:>5} ({:>5.1}%)",
+            post_burst_0_50,
+            post_burst_0_50 as f32 / total as f32 * 100.0
+        );
+        println!(
+            "  Post-burst 50-100 steps:       {:>5} ({:>5.1}%)",
+            post_burst_50_100,
+            post_burst_50_100 as f32 / total as f32 * 100.0
+        );
+        println!(
+            "  Post-burst 100-150 steps:      {:>5} ({:>5.1}%)",
+            post_burst_100_150,
+            post_burst_100_150 as f32 / total as f32 * 100.0
+        );
+        println!(
+            "  Between bursts (>{} steps):   {:>5} ({:>5.1}%)",
+            UV_BURST_DURATION + 150,
+            between_bursts,
+            between_bursts as f32 / total as f32 * 100.0
+        );
 
         // If UV is working, we should see MORE spikes shortly after UV bursts
         let uv_correlated = during_burst + post_burst_0_50 + post_burst_50_100;
-        let expected_if_random = total as f32 * (UV_BURST_DURATION + 100) as f32 / UV_BURST_INTERVAL as f32;
+        let expected_if_random =
+            total as f32 * (UV_BURST_DURATION + 100) as f32 / UV_BURST_INTERVAL as f32;
 
         println!("\nUV Correlation Check:");
-        println!("  UV-correlated spikes (during + 100 steps after): {}", uv_correlated);
+        println!(
+            "  UV-correlated spikes (during + 100 steps after): {}",
+            uv_correlated
+        );
         println!("  Expected if random (uniform): {:.0}", expected_if_random);
         let enrichment = uv_correlated as f32 / expected_if_random;
         println!("  Enrichment ratio: {:.2}x", enrichment);
@@ -212,12 +258,20 @@ fn main() -> Result<()> {
             }
         }
 
-        println!("Spikes near aromatics (≤6 residues): {} ({:.1}%)",
-                 near_aromatic, near_aromatic as f32 / total as f32 * 100.0);
-        println!("Spikes far from aromatics (>6 residues): {} ({:.1}%)",
-                 far_from_aromatic, far_from_aromatic as f32 / total as f32 * 100.0);
-        println!("Average distance to nearest aromatic: {:.1} residues",
-                 aromatic_distance_sum as f32 / total as f32);
+        println!(
+            "Spikes near aromatics (≤6 residues): {} ({:.1}%)",
+            near_aromatic,
+            near_aromatic as f32 / total as f32 * 100.0
+        );
+        println!(
+            "Spikes far from aromatics (>6 residues): {} ({:.1}%)",
+            far_from_aromatic,
+            far_from_aromatic as f32 / total as f32 * 100.0
+        );
+        println!(
+            "Average distance to nearest aromatic: {:.1} residues",
+            aromatic_distance_sum as f32 / total as f32
+        );
 
         // If UV is working, spikes should be enriched near aromatics
         let aromatic_fraction = aromatics.len() as f32 / topology.residue_names.len() as f32;
@@ -241,16 +295,21 @@ fn main() -> Result<()> {
         let min_intensity = intensities.iter().cloned().fold(f32::MAX, f32::min);
 
         println!("Intensity stats:");
-        println!("  Min: {:.3}, Max: {:.3}, Avg: {:.3}", min_intensity, max_intensity, avg_intensity);
+        println!(
+            "  Min: {:.3}, Max: {:.3}, Avg: {:.3}",
+            min_intensity, max_intensity, avg_intensity
+        );
 
         // Intensity during vs after UV
-        let intensity_during: f32 = spikes.iter()
+        let intensity_during: f32 = spikes
+            .iter()
             .filter(|s| (s.timestep % UV_BURST_INTERVAL) < UV_BURST_DURATION)
             .map(|s| s.intensity)
             .sum::<f32>();
         let count_during = during_burst.max(1) as f32;
 
-        let intensity_after: f32 = spikes.iter()
+        let intensity_after: f32 = spikes
+            .iter()
             .filter(|s| {
                 let phase = s.timestep % UV_BURST_INTERVAL;
                 phase >= UV_BURST_DURATION && phase < UV_BURST_DURATION + 100
@@ -259,8 +318,14 @@ fn main() -> Result<()> {
             .sum::<f32>();
         let count_after = (post_burst_0_50 + post_burst_50_100).max(1) as f32;
 
-        println!("Avg intensity during UV: {:.3}", intensity_during / count_during);
-        println!("Avg intensity 0-100 after UV: {:.3}", intensity_after / count_after);
+        println!(
+            "Avg intensity during UV: {:.3}",
+            intensity_during / count_during
+        );
+        println!(
+            "Avg intensity 0-100 after UV: {:.3}",
+            intensity_after / count_after
+        );
 
         // Check which residues are spiking
         println!("\n--- TOP SPIKING RESIDUES ---");
@@ -278,13 +343,30 @@ fn main() -> Result<()> {
         ranked.sort_by(|a, b| b.1.cmp(a.1));
 
         println!("Top 15 residues by spike count:");
-        println!("{:>5} {:>8} {:>8} {:>10}", "Res", "Count", "ResName", "Aromatic?");
+        println!(
+            "{:>5} {:>8} {:>8} {:>10}",
+            "Res", "Count", "ResName", "Aromatic?"
+        );
         for (i, (&res, &count)) in ranked.iter().take(15).enumerate() {
-            let name = topology.residue_names.get(res as usize).map(|s| s.as_str()).unwrap_or("?");
-            let is_aromatic = if aromatic_set.contains(&res) { "YES" } else { "" };
-            let near_ar = aromatics.iter().map(|(id, _)| (id - res).abs()).min().unwrap_or(999);
-            println!("{:>5} {:>8} {:>8} {:>10} (dist to arom: {})",
-                     res, count, name, is_aromatic, near_ar);
+            let name = topology
+                .residue_names
+                .get(res as usize)
+                .map(|s| s.as_str())
+                .unwrap_or("?");
+            let is_aromatic = if aromatic_set.contains(&res) {
+                "YES"
+            } else {
+                ""
+            };
+            let near_ar = aromatics
+                .iter()
+                .map(|(id, _)| (id - res).abs())
+                .min()
+                .unwrap_or(999);
+            println!(
+                "{:>5} {:>8} {:>8} {:>10} (dist to arom: {})",
+                res, count, name, is_aromatic, near_ar
+            );
         }
 
         println!();

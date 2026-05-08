@@ -44,7 +44,9 @@ struct Lcg {
 }
 impl Lcg {
     fn new(seed: u64) -> Self {
-        Lcg { state: seed.wrapping_add(0xDEAD_BEEF_F00D_CAFEu64) }
+        Lcg {
+            state: seed.wrapping_add(0xDEAD_BEEF_F00D_CAFEu64),
+        }
     }
     fn next_u32(&mut self) -> u32 {
         // Numerical Recipes-style 64-bit LCG. Statistical quality is
@@ -90,12 +92,7 @@ struct SyntheticCase {
     cpu_aabb_flat: Vec<f32>,
 }
 
-fn cpu_assign(
-    pos: [f32; 3],
-    bbox_min: [f32; 3],
-    cell_size: f32,
-    grid_dim: [i32; 3],
-) -> u32 {
+fn cpu_assign(pos: [f32; 3], bbox_min: [f32; 3], cell_size: f32, grid_dim: [i32; 3]) -> u32 {
     // Mirrors the .cuh's `spike_to_cell_id` exactly.
     let dx = (pos[0] - bbox_min[0]) / cell_size;
     let dy = (pos[1] - bbox_min[1]) / cell_size;
@@ -145,8 +142,8 @@ fn make_random_case(rng: &mut Lcg) -> SyntheticCase {
             if rng.next_u32() & 1 == 0 {
                 p[outside_axis as usize] = -10.0 - rng.next_f32(0.0, 5.0);
             } else {
-                p[outside_axis as usize] = bbox_max[outside_axis as usize] + 1.0
-                    + rng.next_f32(0.0, 5.0);
+                p[outside_axis as usize] =
+                    bbox_max[outside_axis as usize] + 1.0 + rng.next_f32(0.0, 5.0);
             }
             p
         } else {
@@ -369,7 +366,12 @@ fn verify_against_case(out: &M1Output, case: &SyntheticCase) -> Result<(), Strin
             if exp.to_bits() != got.to_bits() {
                 return Err(format!(
                     "AABB[c={} k={}] mismatch: expected {} ({:#x}) got {} ({:#x})",
-                    c, k, exp, exp.to_bits(), got, got.to_bits()
+                    c,
+                    k,
+                    exp,
+                    exp.to_bits(),
+                    got,
+                    got.to_bits()
                 ));
             }
         }

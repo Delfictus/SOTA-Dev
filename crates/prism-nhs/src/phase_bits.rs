@@ -121,8 +121,7 @@ impl PhaseBitsDecoded {
 pub fn decode_phase_bits(raw: u32) -> PhaseBitsDecoded {
     let phase_index = (raw & CCNS_PHASE_INDEX_MASK) as u16;
     let reserved = (raw & RESERVED_MASK) >> CCNS_PHASE_INDEX_BITS;
-    let phase_radians =
-        (phase_index as f64 / CCNS_PHASE_PERIOD as f64) * std::f64::consts::TAU;
+    let phase_radians = (phase_index as f64 / CCNS_PHASE_PERIOD as f64) * std::f64::consts::TAU;
     PhaseBitsDecoded {
         phase_index,
         phase_radians,

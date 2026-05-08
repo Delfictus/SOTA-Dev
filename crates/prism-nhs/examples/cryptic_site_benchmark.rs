@@ -11,14 +11,14 @@ use std::path::Path;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 /// Benchmark configuration
 const STEPS_PER_RUN: i32 = 2000;
-const N_RUNS: usize = 5;  // 5 runs per structure = 10000 total steps
+const N_RUNS: usize = 5; // 5 runs per structure = 10000 total steps
 const TEMP_START: f32 = 100.0;
 const TEMP_END: f32 = 300.0;
 const RAMP_STEPS: i32 = 1500;
@@ -35,18 +35,20 @@ struct BenchmarkResult {
     throughput: f64,
     max_rmsd: f32,
     stable: bool,
-    spike_residues: Vec<i32>,  // Residue IDs that produced spikes
+    spike_residues: Vec<i32>, // Residue IDs that produced spikes
 }
 
 fn compute_rmsd(pos1: &[f32], pos2: &[f32]) -> f32 {
-    if pos1.len() != pos2.len() || pos1.is_empty() { return 0.0; }
+    if pos1.len() != pos2.len() || pos1.is_empty() {
+        return 0.0;
+    }
     let n = pos1.len() / 3;
     let mut sum = 0.0;
     for i in 0..n {
-        let dx = pos1[i*3] - pos2[i*3];
-        let dy = pos1[i*3+1] - pos2[i*3+1];
-        let dz = pos1[i*3+2] - pos2[i*3+2];
-        sum += dx*dx + dy*dy + dz*dz;
+        let dx = pos1[i * 3] - pos2[i * 3];
+        let dy = pos1[i * 3 + 1] - pos2[i * 3 + 1];
+        let dz = pos1[i * 3 + 2] - pos2[i * 3 + 2];
+        sum += dx * dx + dy * dy + dz * dz;
     }
     (sum / n as f32).sqrt()
 }
@@ -64,7 +66,9 @@ fn benchmark_structure(topology_path: &Path) -> Result<BenchmarkResult> {
     let n_atoms = topology.n_atoms;
 
     // Count aromatics for this structure
-    let n_aromatics = topology.residue_names.iter()
+    let n_aromatics = topology
+        .residue_names
+        .iter()
         .filter(|name| matches!(name.as_str(), "TRP" | "TYR" | "PHE"))
         .count();
 
@@ -143,10 +147,16 @@ fn main() -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════════════╗");
     println!("║           PRISM4D CRYPTIC SITE BENCHMARK (Cryo-UV + LIF)             ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
-    println!("║  Protocol: {} runs × {} steps = {} total steps per structure      ║",
-             N_RUNS, STEPS_PER_RUN, N_RUNS * STEPS_PER_RUN as usize);
-    println!("║  Temperature: {}K → {}K (cryo ramp)                                 ║",
-             TEMP_START as i32, TEMP_END as i32);
+    println!(
+        "║  Protocol: {} runs × {} steps = {} total steps per structure      ║",
+        N_RUNS,
+        STEPS_PER_RUN,
+        N_RUNS * STEPS_PER_RUN as usize
+    );
+    println!(
+        "║  Temperature: {}K → {}K (cryo ramp)                                 ║",
+        TEMP_START as i32, TEMP_END as i32
+    );
     println!("║  Detection: LIF neuromorphic spike detection                         ║");
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
@@ -186,17 +196,28 @@ fn main() -> Result<()> {
     let mut results: Vec<BenchmarkResult> = Vec::new();
 
     for (idx, path) in topology_paths.iter().enumerate() {
-        let name = path.file_stem()
+        let name = path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
 
-        println!("[{}/{}] Processing: {}", idx + 1, topology_paths.len(), name);
+        println!(
+            "[{}/{}] Processing: {}",
+            idx + 1,
+            topology_paths.len(),
+            name
+        );
 
         match benchmark_structure(path) {
             Ok(result) => {
-                println!("       Atoms: {} | Aromatics: {} | Spikes: {} | RMSD: {:.2}Å | {}",
-                         result.n_atoms, result.n_aromatics, result.total_spikes,
-                         result.max_rmsd, if result.stable { "STABLE" } else { "DRIFT" });
+                println!(
+                    "       Atoms: {} | Aromatics: {} | Spikes: {} | RMSD: {:.2}Å | {}",
+                    result.n_atoms,
+                    result.n_aromatics,
+                    result.total_spikes,
+                    result.max_rmsd,
+                    if result.stable { "STABLE" } else { "DRIFT" }
+                );
                 println!("       Spike residues: {:?}", result.spike_residues);
                 results.push(result);
             }
@@ -212,8 +233,10 @@ fn main() -> Result<()> {
     println!("                           BENCHMARK SUMMARY");
     println!("{}", "═".repeat(74));
 
-    println!("\n{:<25} {:>8} {:>8} {:>10} {:>8} {:>8}",
-             "Structure", "Atoms", "Spikes", "Time(s)", "Steps/s", "Status");
+    println!(
+        "\n{:<25} {:>8} {:>8} {:>10} {:>8} {:>8}",
+        "Structure", "Atoms", "Spikes", "Time(s)", "Steps/s", "Status"
+    );
     println!("{}", "-".repeat(74));
 
     let mut total_spikes = 0usize;
@@ -221,14 +244,21 @@ fn main() -> Result<()> {
     let mut stable_count = 0usize;
 
     for r in &results {
-        println!("{:<25} {:>8} {:>8} {:>10.1} {:>8.0} {:>8}",
-                 &r.name[..r.name.len().min(25)],
-                 r.n_atoms, r.total_spikes, r.time_seconds, r.throughput,
-                 if r.stable { "OK" } else { "DRIFT" });
+        println!(
+            "{:<25} {:>8} {:>8} {:>10.1} {:>8.0} {:>8}",
+            &r.name[..r.name.len().min(25)],
+            r.n_atoms,
+            r.total_spikes,
+            r.time_seconds,
+            r.throughput,
+            if r.stable { "OK" } else { "DRIFT" }
+        );
 
         total_spikes += r.total_spikes;
         total_time += r.time_seconds;
-        if r.stable { stable_count += 1; }
+        if r.stable {
+            stable_count += 1;
+        }
     }
 
     println!("{}", "-".repeat(74));
@@ -236,17 +266,20 @@ fn main() -> Result<()> {
     let total_structures = results.len();
     let stability_rate = if total_structures > 0 {
         stable_count as f64 / total_structures as f64 * 100.0
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     println!("\n  Total structures:    {}", total_structures);
-    println!("  Stable structures:   {} ({:.0}%)", stable_count, stability_rate);
+    println!(
+        "  Stable structures:   {} ({:.0}%)",
+        stable_count, stability_rate
+    );
     println!("  Total spikes:        {}", total_spikes);
     println!("  Total time:          {:.1}s", total_time);
 
     if total_time > 0.0 {
-        let avg_throughput = results.iter()
-            .map(|r| r.total_steps as f64)
-            .sum::<f64>() / total_time;
+        let avg_throughput = results.iter().map(|r| r.total_steps as f64).sum::<f64>() / total_time;
         println!("  Avg throughput:      {:.0} steps/s", avg_throughput);
     }
 

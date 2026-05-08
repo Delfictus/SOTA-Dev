@@ -11,10 +11,10 @@ use std::path::Path;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, SpikeEvent};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, SpikeEvent, TemperatureProtocol};
 
 /// Compute kinetic energy from velocities and masses (AMBER units: kcal/mol)
 fn compute_kinetic_energy(velocities: &[f32], masses: &[f32]) -> f32 {
@@ -93,7 +93,7 @@ struct PhysicsValidation {
     // Physics metrics per replica
     initial_temps: Vec<f32>,
     final_temps: Vec<f32>,
-    temp_drift: Vec<f32>,  // final - target
+    temp_drift: Vec<f32>, // final - target
 
     // Stability metrics
     positions_valid: Vec<bool>,
@@ -106,8 +106,8 @@ struct PhysicsValidation {
     spike_intensity_max: Vec<f32>,
 
     // Cross-replica consistency
-    replica_rmsd_variance: f32,  // variance in RMSD across replicas
-    spike_count_variance: f32,   // variance in spike counts
+    replica_rmsd_variance: f32, // variance in RMSD across replicas
+    spike_count_variance: f32,  // variance in spike counts
 }
 
 impl PhysicsValidation {
@@ -133,16 +133,27 @@ impl PhysicsValidation {
         println!("\n{}", "=".repeat(70));
         println!("  PHYSICS VALIDATION: {}", self.structure_name);
         println!("{}", "=".repeat(70));
-        println!("  Atoms: {}  |  Steps: {}  |  Replicas: {}", self.n_atoms, self.n_steps, self.n_replicas);
-        println!("  Performance: {:.1} steps/sec  |  Total time: {:.1}ms", self.steps_per_second, self.total_time_ms);
+        println!(
+            "  Atoms: {}  |  Steps: {}  |  Replicas: {}",
+            self.n_atoms, self.n_steps, self.n_replicas
+        );
+        println!(
+            "  Performance: {:.1} steps/sec  |  Total time: {:.1}ms",
+            self.steps_per_second, self.total_time_ms
+        );
         println!();
 
         // Per-replica summary
         println!("  Replica | Temp(K)      | RMSD(Å) | Valid | Spikes | Max Intensity");
         println!("  --------|--------------|---------|-------|--------|---------------");
         for r in 0..self.n_replicas {
-            let valid_str = if self.positions_valid[r] && self.no_explosion[r] { "  ✓  " } else { " FAIL" };
-            println!("     {:2}   | {:6.1}→{:5.1} |  {:5.2}  | {} |  {:4}  |    {:.3}",
+            let valid_str = if self.positions_valid[r] && self.no_explosion[r] {
+                "  ✓  "
+            } else {
+                " FAIL"
+            };
+            println!(
+                "     {:2}   | {:6.1}→{:5.1} |  {:5.2}  | {} |  {:4}  |    {:.3}",
                 r,
                 self.initial_temps[r],
                 self.final_temps[r],
@@ -160,7 +171,8 @@ impl PhysicsValidation {
         println!("    Spike count variance: {:.2}", self.spike_count_variance);
 
         // Overall pass/fail
-        let all_valid = self.positions_valid.iter().all(|&v| v) && self.no_explosion.iter().all(|&v| v);
+        let all_valid =
+            self.positions_valid.iter().all(|&v| v) && self.no_explosion.iter().all(|&v| v);
         let temp_ok = self.temp_drift.iter().all(|&d| d.abs() < 50.0); // Allow 50K drift for Langevin
         let geometry_ok = self.rmsd_from_start.iter().all(|&r| r < 10.0); // Max 10Å RMSD
 
@@ -169,9 +181,15 @@ impl PhysicsValidation {
             println!("  ✓ PHYSICS VALIDATION PASSED");
         } else {
             println!("  ✗ PHYSICS VALIDATION FAILED");
-            if !all_valid { println!("    - Invalid positions detected (NaN/Inf)"); }
-            if !temp_ok { println!("    - Temperature drift exceeded threshold"); }
-            if !geometry_ok { println!("    - RMSD exceeded threshold (geometry unstable)"); }
+            if !all_valid {
+                println!("    - Invalid positions detected (NaN/Inf)");
+            }
+            if !temp_ok {
+                println!("    - Temperature drift exceeded threshold");
+            }
+            if !geometry_ok {
+                println!("    - RMSD exceeded threshold (geometry unstable)");
+            }
         }
         println!();
     }
@@ -181,9 +199,8 @@ impl PhysicsValidation {
             return 0.0;
         }
         let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values.iter()
-            .map(|&v| (v - mean).powi(2))
-            .sum::<f32>() / values.len() as f32;
+        let variance =
+            values.iter().map(|&v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
         variance
     }
 
@@ -217,8 +234,7 @@ fn run_parallel_physics_test(
 
     // Create CUDA context
     println!("[TEST] Creating CUDA context...");
-    let context = CudaContext::new(0)
-        .context("Failed to create CUDA context")?;
+    let context = CudaContext::new(0).context("Failed to create CUDA context")?;
 
     // Create temperature protocol
     let temp_protocol = TemperatureProtocol {
@@ -250,7 +266,10 @@ fn run_parallel_physics_test(
     // Note: Initial velocities are Maxwell-Boltzmann distributed at target_temp
 
     // Run simulation
-    println!("[TEST] Running {} steps on {} replicas...", n_steps, n_replicas);
+    println!(
+        "[TEST] Running {} steps on {} replicas...",
+        n_steps, n_replicas
+    );
     let start = Instant::now();
 
     // Run in batches for better timing accuracy
@@ -259,7 +278,8 @@ fn run_parallel_physics_test(
     let mut total_spike_counts: Vec<usize> = vec![0; n_replicas];
 
     for batch in 0..n_batches {
-        let results = engine.step_parallel_replicas(batch_size as i32)
+        let results = engine
+            .step_parallel_replicas(batch_size as i32)
             .with_context(|| format!("Failed at batch {}", batch))?;
 
         // Collect spike counts from StepResult
@@ -269,7 +289,8 @@ fn run_parallel_physics_test(
     }
 
     // Collect final spike events
-    let all_spikes = engine.collect_parallel_spikes()
+    let all_spikes = engine
+        .collect_parallel_spikes()
         .unwrap_or_else(|_| vec![Vec::new(); n_replicas]);
 
     let elapsed = start.elapsed();
@@ -286,7 +307,10 @@ fn run_parallel_physics_test(
         let (valid, bad_atom) = check_positions_valid(&final_positions);
         validation.positions_valid[r] = valid;
         if !valid {
-            eprintln!("  [WARN] Replica {} has invalid position at atom {:?}", r, bad_atom);
+            eprintln!(
+                "  [WARN] Replica {} has invalid position at atom {:?}",
+                r, bad_atom
+            );
         }
 
         // Check for explosion
@@ -298,15 +322,16 @@ fn run_parallel_physics_test(
         }
 
         // Temperature estimation (approximate - real calc needs velocities)
-        validation.initial_temps[r] = target_temp;  // Maxwell-Boltzmann init
-        validation.final_temps[r] = target_temp;    // Langevin thermostat
-        validation.temp_drift[r] = 0.0;             // Should be maintained
+        validation.initial_temps[r] = target_temp; // Maxwell-Boltzmann init
+        validation.final_temps[r] = target_temp; // Langevin thermostat
+        validation.temp_drift[r] = 0.0; // Should be maintained
 
         // Spike statistics - use collected spike data + total counts
         validation.total_spikes[r] = total_spike_counts[r].max(all_spikes[r].len());
         if !all_spikes[r].is_empty() {
             let intensities: Vec<f32> = all_spikes[r].iter().map(|s| s.intensity).collect();
-            validation.spike_intensity_mean[r] = intensities.iter().sum::<f32>() / intensities.len() as f32;
+            validation.spike_intensity_mean[r] =
+                intensities.iter().sum::<f32>() / intensities.len() as f32;
             validation.spike_intensity_max[r] = intensities.iter().cloned().fold(0.0_f32, f32::max);
         }
     }
@@ -331,9 +356,24 @@ fn main() -> Result<()> {
     // Test configurations
     let test_configs = [
         // (topology_path, n_replicas, n_steps, target_temp)
-        ("/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/1L2Y_topology.json", 4, 1000, 300.0),
-        ("/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json", 3, 500, 300.0),
-        ("/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/2VWD_topology.json", 2, 500, 300.0),
+        (
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/1L2Y_topology.json",
+            4,
+            1000,
+            300.0,
+        ),
+        (
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
+            3,
+            500,
+            300.0,
+        ),
+        (
+            "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/2VWD_topology.json",
+            2,
+            500,
+            300.0,
+        ),
     ];
 
     let mut all_passed = true;
@@ -376,7 +416,10 @@ fn main() -> Result<()> {
     println!("  Total steps executed: {}", total_steps);
     println!("  Total time: {:.1} ms", total_time);
     if total_time > 0.0 {
-        println!("  Aggregate throughput: {:.1} steps/sec", total_steps as f64 / (total_time / 1000.0));
+        println!(
+            "  Aggregate throughput: {:.1} steps/sec",
+            total_steps as f64 / (total_time / 1000.0)
+        );
     }
     println!();
 

@@ -560,7 +560,11 @@ mod tests {
     #[test]
     fn independent_target_has_low_total_mi() {
         let atoms = closed_form_gcpid(0.0, 0.0, 0.0);
-        assert!(atoms.total_mi < 1e-6, "independent: total_mi = {}", atoms.total_mi);
+        assert!(
+            atoms.total_mi < 1e-6,
+            "independent: total_mi = {}",
+            atoms.total_mi
+        );
     }
 
     /// Synergy fraction is in [0, 1].
@@ -610,9 +614,7 @@ mod tests {
             let t = a + b;
             acc.observe(t, a, b);
         }
-        let atoms = acc
-            .compute()
-            .expect("PID should compute on 50 samples");
+        let atoms = acc.compute().expect("PID should compute on 50 samples");
         assert!(atoms.total_mi > 0.0, "total_mi should be positive");
         assert!(
             atoms.synergy_fraction() >= 0.0 && atoms.synergy_fraction() <= 1.0,

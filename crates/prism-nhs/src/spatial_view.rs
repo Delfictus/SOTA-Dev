@@ -252,7 +252,9 @@ impl CentroidManifold {
             SpatialView::GeometricVoxelMass => self.geometric_voxel_mass = Some(centroid),
             SpatialView::LiningResidues => self.lining_residues = Some(centroid),
             SpatialView::DriverResidues => self.driver_residues = Some(centroid),
-            SpatialView::LigandAdjacentSubcluster => self.ligand_adjacent_subcluster = Some(centroid),
+            SpatialView::LigandAdjacentSubcluster => {
+                self.ligand_adjacent_subcluster = Some(centroid)
+            }
             SpatialView::HotPhase => self.hot_phase = Some(centroid),
             SpatialView::ColdPhase => self.cold_phase = Some(centroid),
             SpatialView::ValidationStructural => self.validation_structural = Some(centroid),
@@ -347,7 +349,10 @@ mod tests {
         // Stability check: the string form is baked into downstream
         // provenance labels, so this is a contract. If you change
         // these strings you are breaking downstream.
-        assert_eq!(SpatialView::GeometricVoxelMass.as_str(), "geometric_voxel_mass");
+        assert_eq!(
+            SpatialView::GeometricVoxelMass.as_str(),
+            "geometric_voxel_mass"
+        );
         assert_eq!(SpatialView::LiningResidues.as_str(), "lining_residues");
         assert_eq!(SpatialView::DriverResidues.as_str(), "driver_residues");
         assert_eq!(
@@ -356,7 +361,10 @@ mod tests {
         );
         assert_eq!(SpatialView::HotPhase.as_str(), "hot_phase");
         assert_eq!(SpatialView::ColdPhase.as_str(), "cold_phase");
-        assert_eq!(SpatialView::ValidationStructural.as_str(), "validation_structural");
+        assert_eq!(
+            SpatialView::ValidationStructural.as_str(),
+            "validation_structural"
+        );
         assert_eq!(SpatialView::BurstMotion.as_str(), "burst_motion");
     }
 
@@ -375,7 +383,11 @@ mod tests {
             SpatialView::ValidationStructural,
             SpatialView::BurstMotion,
         ] {
-            assert!(m.view(view).is_none(), "view {:?} should default None", view);
+            assert!(
+                m.view(view).is_none(),
+                "view {:?} should default None",
+                view
+            );
         }
     }
 
@@ -383,7 +395,10 @@ mod tests {
     fn with_geometric_voxel_mass_populates_only_that_view() {
         let m = CentroidManifold::with_geometric_voxel_mass([1.0, 2.0, 3.0]);
         assert_eq!(m.populated_count(), 1);
-        assert_eq!(m.view(SpatialView::GeometricVoxelMass), Some([1.0, 2.0, 3.0]));
+        assert_eq!(
+            m.view(SpatialView::GeometricVoxelMass),
+            Some([1.0, 2.0, 3.0])
+        );
         assert!(m.view(SpatialView::LiningResidues).is_none());
         assert!(m.view(SpatialView::DriverResidues).is_none());
         assert!(m.view(SpatialView::HotPhase).is_none());
@@ -395,7 +410,10 @@ mod tests {
         let mut m = CentroidManifold::new();
         m.set(SpatialView::LiningResidues, [10.0, 20.0, 30.0]);
         m.set(SpatialView::HotPhase, [11.0, 21.0, 31.0]);
-        assert_eq!(m.view(SpatialView::LiningResidues), Some([10.0, 20.0, 30.0]));
+        assert_eq!(
+            m.view(SpatialView::LiningResidues),
+            Some([10.0, 20.0, 30.0])
+        );
         assert_eq!(m.view(SpatialView::HotPhase), Some([11.0, 21.0, 31.0]));
         assert!(m.view(SpatialView::GeometricVoxelMass).is_none());
         assert_eq!(m.populated_count(), 2);
@@ -406,8 +424,12 @@ mod tests {
         // Phase 1 enforcement: no silent default. An unpopulated view
         // yields None, not a sentinel, not "the closest available view."
         let m = CentroidManifold::with_geometric_voxel_mass([0.0, 0.0, 0.0]);
-        assert!(m.distance_to([1.0, 2.0, 3.0], SpatialView::LiningResidues).is_none());
-        assert!(m.distance_to([1.0, 2.0, 3.0], SpatialView::DriverResidues).is_none());
+        assert!(m
+            .distance_to([1.0, 2.0, 3.0], SpatialView::LiningResidues)
+            .is_none());
+        assert!(m
+            .distance_to([1.0, 2.0, 3.0], SpatialView::DriverResidues)
+            .is_none());
     }
 
     #[test]

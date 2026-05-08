@@ -11,23 +11,25 @@ use std::path::Path;
 use std::time::Instant;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol};
 
 const STEPS_PER_RUN: i32 = 2000;
 const N_RUNS: usize = 5;
 
 fn compute_rmsd(pos1: &[f32], pos2: &[f32]) -> f32 {
-    if pos1.len() != pos2.len() || pos1.is_empty() { return 0.0; }
+    if pos1.len() != pos2.len() || pos1.is_empty() {
+        return 0.0;
+    }
     let n = pos1.len() / 3;
     let mut sum = 0.0;
     for i in 0..n {
-        let dx = pos1[i*3] - pos2[i*3];
-        let dy = pos1[i*3+1] - pos2[i*3+1];
-        let dz = pos1[i*3+2] - pos2[i*3+2];
-        sum += dx*dx + dy*dy + dz*dz;
+        let dx = pos1[i * 3] - pos2[i * 3];
+        let dy = pos1[i * 3 + 1] - pos2[i * 3 + 1];
+        let dz = pos1[i * 3 + 2] - pos2[i * 3 + 2];
+        sum += dx * dx + dy * dy + dz * dz;
     }
     (sum / n as f32).sqrt()
 }
@@ -112,7 +114,7 @@ fn main() -> Result<()> {
     println!();
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     if !topology_path.exists() {
@@ -122,24 +124,37 @@ fn main() -> Result<()> {
 
     // Known binding site residues for 6LU7 (SARS-CoV-2 Mpro active site)
     let truth_6lu7: HashSet<i32> = [
-        25, 26, 27,           // S1' subsite
-        41, 42, 43, 44, 45, 46, 47, 48, 49,  // Catalytic His41 region
-        140, 141, 142, 143, 144, 145,        // Catalytic Cys145 region
-        163, 164, 165, 166, 167, 168, 169, 170, 171, 172,  // S1 subsite
-        187, 188, 189, 190, 191, 192,        // S2 subsite
-    ].iter().cloned().collect();
+        25, 26, 27, // S1' subsite
+        41, 42, 43, 44, 45, 46, 47, 48, 49, // Catalytic His41 region
+        140, 141, 142, 143, 144, 145, // Catalytic Cys145 region
+        163, 164, 165, 166, 167, 168, 169, 170, 171, 172, // S1 subsite
+        187, 188, 189, 190, 191, 192, // S2 subsite
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     print!("Running Cryo-UV detection");
     let start = Instant::now();
     let detected = run_detection(topology_path)?;
     let elapsed = start.elapsed();
 
-    println!("\nDetected {} spike residues in {:.1}s", detected.len(), elapsed.as_secs_f64());
+    println!(
+        "\nDetected {} spike residues in {:.1}s",
+        detected.len(),
+        elapsed.as_secs_f64()
+    );
 
     // Show overlap with truth
     let overlap: HashSet<_> = detected.intersection(&truth_6lu7).cloned().collect();
-    println!("Truth residues:    {:?}", truth_6lu7.iter().collect::<Vec<_>>());
-    println!("Detected overlap:  {:?}", overlap.iter().collect::<Vec<_>>());
+    println!(
+        "Truth residues:    {:?}",
+        truth_6lu7.iter().collect::<Vec<_>>()
+    );
+    println!(
+        "Detected overlap:  {:?}",
+        overlap.iter().collect::<Vec<_>>()
+    );
 
     let (precision, recall, f1) = calculate_metrics(&detected, &truth_6lu7);
     println!("\n┌─────────────────────────────────────────┐");
@@ -149,7 +164,10 @@ fn main() -> Result<()> {
     println!("└─────────────────────────────────────────┘");
 
     let hit = f1 > 0.3;
-    println!("\nResult: {} (F1 > 0.3 = HIT)", if hit { "✓ HIT" } else { "✗ MISS" });
+    println!(
+        "\nResult: {} (F1 > 0.3 = HIT)",
+        if hit { "✓ HIT" } else { "✗ MISS" }
+    );
 
     // Test Case 2: 6M0J (ACE2-RBD complex) - RBD binding interface
     println!("\n═══════════════════════════════════════════════════════════════════════");
@@ -159,7 +177,7 @@ fn main() -> Result<()> {
     println!();
 
     let topology_path_ace2 = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6M0J_apo_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6M0J_apo_topology.json",
     );
 
     if !topology_path_ace2.exists() {
@@ -169,22 +187,36 @@ fn main() -> Result<()> {
 
     // Known ACE2-RBD binding interface residues
     let truth_ace2: HashSet<i32> = [
-        24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,  // N-terminal helix
-        79, 80, 81, 82, 83,  // Loop region
-        324, 325, 326, 327, 328, 329, 330,  // Beta sheet
-        353, 354, 355, 356, 357,  // C-terminal region
-    ].iter().cloned().collect();
+        24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+        42, // N-terminal helix
+        79, 80, 81, 82, 83, // Loop region
+        324, 325, 326, 327, 328, 329, 330, // Beta sheet
+        353, 354, 355, 356, 357, // C-terminal region
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     print!("Running Cryo-UV detection");
     let start = Instant::now();
     let detected_ace2 = run_detection(topology_path_ace2)?;
     let elapsed = start.elapsed();
 
-    println!("\nDetected {} spike residues in {:.1}s", detected_ace2.len(), elapsed.as_secs_f64());
+    println!(
+        "\nDetected {} spike residues in {:.1}s",
+        detected_ace2.len(),
+        elapsed.as_secs_f64()
+    );
 
     let overlap_ace2: HashSet<_> = detected_ace2.intersection(&truth_ace2).cloned().collect();
-    println!("Truth residues:    {:?}", truth_ace2.iter().collect::<Vec<_>>());
-    println!("Detected overlap:  {:?}", overlap_ace2.iter().collect::<Vec<_>>());
+    println!(
+        "Truth residues:    {:?}",
+        truth_ace2.iter().collect::<Vec<_>>()
+    );
+    println!(
+        "Detected overlap:  {:?}",
+        overlap_ace2.iter().collect::<Vec<_>>()
+    );
 
     let (precision2, recall2, f12) = calculate_metrics(&detected_ace2, &truth_ace2);
     println!("\n┌─────────────────────────────────────────┐");
@@ -194,7 +226,10 @@ fn main() -> Result<()> {
     println!("└─────────────────────────────────────────┘");
 
     let hit2 = f12 > 0.3;
-    println!("\nResult: {} (F1 > 0.3 = HIT)", if hit2 { "✓ HIT" } else { "✗ MISS" });
+    println!(
+        "\nResult: {} (F1 > 0.3 = HIT)",
+        if hit2 { "✓ HIT" } else { "✗ MISS" }
+    );
 
     // Summary
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");
@@ -202,14 +237,23 @@ fn main() -> Result<()> {
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     println!("║  Structure          F1      Status                                   ║");
     println!("║  ─────────────────────────────────────                               ║");
-    println!("║  6LU7 (Mpro)       {:.3}    {}                                     ║",
-             f1, if hit { "HIT " } else { "MISS" });
-    println!("║  6M0J (ACE2)       {:.3}    {}                                     ║",
-             f12, if hit2 { "HIT " } else { "MISS" });
+    println!(
+        "║  6LU7 (Mpro)       {:.3}    {}                                     ║",
+        f1,
+        if hit { "HIT " } else { "MISS" }
+    );
+    println!(
+        "║  6M0J (ACE2)       {:.3}    {}                                     ║",
+        f12,
+        if hit2 { "HIT " } else { "MISS" }
+    );
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     let hits = (if hit { 1 } else { 0 }) + (if hit2 { 1 } else { 0 });
-    println!("║  Detection Rate: {}/2 ({:.0}%)                                        ║",
-             hits, hits as f32 * 50.0);
+    println!(
+        "║  Detection Rate: {}/2 ({:.0}%)                                        ║",
+        hits,
+        hits as f32 * 50.0
+    );
     println!("╚══════════════════════════════════════════════════════════════════════╝");
 
     Ok(())

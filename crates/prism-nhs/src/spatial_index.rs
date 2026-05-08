@@ -112,19 +112,11 @@ pub trait SpatialNeighborIndex {
     /// shared union-find clustering path. Reuses the structure built in
     /// `prepare()` — caller is responsible for calling `prepare()` first
     /// if switching to a different position set.
-    fn query_at_epsilon(
-        &mut self,
-        positions: &[f32],
-        epsilon: f32,
-    ) -> Result<NeighborQueryResult>;
+    fn query_at_epsilon(&mut self, positions: &[f32], epsilon: f32) -> Result<NeighborQueryResult>;
 
     /// Convenience: single query with no persistent prepare.
     /// Default impl calls `prepare()` then `query_at_epsilon()`.
-    fn query_once(
-        &mut self,
-        positions: &[f32],
-        epsilon: f32,
-    ) -> Result<NeighborQueryResult> {
+    fn query_once(&mut self, positions: &[f32], epsilon: f32) -> Result<NeighborQueryResult> {
         self.prepare(positions, epsilon)?;
         self.query_at_epsilon(positions, epsilon)
     }

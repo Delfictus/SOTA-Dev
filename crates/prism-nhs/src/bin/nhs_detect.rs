@@ -23,11 +23,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use prism_nhs::{
-    avalanche::CrypticSiteEvent,
-    config::SolventMode,
-    input::NhsPreparedInput,
-};
+use prism_nhs::{avalanche::CrypticSiteEvent, config::SolventMode, input::NhsPreparedInput};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -135,8 +131,12 @@ fn main() -> Result<()> {
     }
 
     // Create output directory
-    std::fs::create_dir_all(&args.output)
-        .with_context(|| format!("Failed to create output directory: {}", args.output.display()))?;
+    std::fs::create_dir_all(&args.output).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            args.output.display()
+        )
+    })?;
 
     // Parse solvent mode [STAGE-1-INTEGRATION]
     let solvent_mode = match args.solvent_mode.to_lowercase().as_str() {
@@ -180,14 +180,19 @@ fn main() -> Result<()> {
         println!("\nSolvation:");
         println!("  Mode:             {:?}", prepared.solvent_mode);
         println!("  Water molecules:  {}", water_atoms.len());
-        println!("  Total atoms:      {} ({} protein + {} waters)",
-                 prepared.total_atoms,
-                 prepared.total_atoms - water_atoms.len(),
-                 water_atoms.len());
+        println!(
+            "  Total atoms:      {} ({} protein + {} waters)",
+            prepared.total_atoms,
+            prepared.total_atoms - water_atoms.len(),
+            water_atoms.len()
+        );
     } else {
         println!("\nSolvation:");
         println!("  Mode:             Implicit (no explicit waters)");
-        println!("  Total atoms:      {} (protein only)", prepared.total_atoms);
+        println!(
+            "  Total atoms:      {} (protein only)",
+            prepared.total_atoms
+        );
     }
 
     println!("\nRT Probe Targets:");
@@ -202,12 +207,36 @@ fn main() -> Result<()> {
     // Print atom type statistics
     let stats = prepared.topology.atom_type_stats();
     println!("\nAtom Classification:");
-    println!("  Hydrophobic:      {:>5}", stats.get(&prism_nhs::NhsAtomType::Hydrophobic).unwrap_or(&0));
-    println!("  Polar:            {:>5}", stats.get(&prism_nhs::NhsAtomType::Polar).unwrap_or(&0));
-    println!("  Charged (+):      {:>5}", stats.get(&prism_nhs::NhsAtomType::ChargedPositive).unwrap_or(&0));
-    println!("  Charged (-):      {:>5}", stats.get(&prism_nhs::NhsAtomType::ChargedNegative).unwrap_or(&0));
-    println!("  Aromatic (UV):    {:>5}", stats.get(&prism_nhs::NhsAtomType::Aromatic).unwrap_or(&0));
-    println!("  Backbone:         {:>5}", stats.get(&prism_nhs::NhsAtomType::Backbone).unwrap_or(&0));
+    println!(
+        "  Hydrophobic:      {:>5}",
+        stats
+            .get(&prism_nhs::NhsAtomType::Hydrophobic)
+            .unwrap_or(&0)
+    );
+    println!(
+        "  Polar:            {:>5}",
+        stats.get(&prism_nhs::NhsAtomType::Polar).unwrap_or(&0)
+    );
+    println!(
+        "  Charged (+):      {:>5}",
+        stats
+            .get(&prism_nhs::NhsAtomType::ChargedPositive)
+            .unwrap_or(&0)
+    );
+    println!(
+        "  Charged (-):      {:>5}",
+        stats
+            .get(&prism_nhs::NhsAtomType::ChargedNegative)
+            .unwrap_or(&0)
+    );
+    println!(
+        "  Aromatic (UV):    {:>5}",
+        stats.get(&prism_nhs::NhsAtomType::Aromatic).unwrap_or(&0)
+    );
+    println!(
+        "  Backbone:         {:>5}",
+        stats.get(&prism_nhs::NhsAtomType::Backbone).unwrap_or(&0)
+    );
     println!();
 
     // List aromatic residues (UV bias targets)
@@ -232,8 +261,10 @@ fn main() -> Result<()> {
     println!("Grid Configuration:");
     println!("  Dimension:  {}³ voxels", prepared.grid_dim);
     println!("  Spacing:    {:.2} Å", args.spacing);
-    println!("  Origin:     [{:.1}, {:.1}, {:.1}]",
-             prepared.grid_origin[0], prepared.grid_origin[1], prepared.grid_origin[2]);
+    println!(
+        "  Origin:     [{:.1}, {:.1}, {:.1}]",
+        prepared.grid_origin[0], prepared.grid_origin[1], prepared.grid_origin[2]
+    );
     println!("  Frames:     {}", args.frames);
     println!();
 
@@ -260,11 +291,7 @@ fn run_gpu_detection(args: &Args, prepared: &NhsPreparedInput) -> Result<()> {
         .context("Failed to initialize CUDA. Ensure GPU is available.")?;
 
     log::info!("Creating NHS GPU Engine...");
-    let mut engine = NhsGpuEngine::new(
-        context,
-        prepared.grid_dim,
-        prepared.topology.n_atoms,
-    )?;
+    let mut engine = NhsGpuEngine::new(context, prepared.grid_dim, prepared.topology.n_atoms)?;
 
     engine.set_lif_params(args.tau_mem, args.sensitivity);
     engine.initialize(prepared.grid_origin)?;
@@ -272,7 +299,7 @@ fn run_gpu_detection(args: &Args, prepared: &NhsPreparedInput) -> Result<()> {
     println!("Running NHS detection ({} frames)...\n", args.frames);
 
     let mut total_spikes = 0;
-    let _cryptic_events: Vec<CrypticSiteEvent> = Vec::new();  // For future use
+    let _cryptic_events: Vec<CrypticSiteEvent> = Vec::new(); // For future use
     let start_time = Instant::now();
 
     // For now, we run multiple "frames" with the same positions
@@ -325,7 +352,10 @@ fn run_gpu_detection(args: &Args, prepared: &NhsPreparedInput) -> Result<()> {
 
     println!("Detection Summary:");
     println!("  Total spikes:     {}", total_spikes);
-    println!("  Avg spikes/frame: {:.1}", total_spikes as f64 / args.frames as f64);
+    println!(
+        "  Avg spikes/frame: {:.1}",
+        total_spikes as f64 / args.frames as f64
+    );
     println!();
 
     // Get final pocket probability
@@ -340,9 +370,15 @@ fn run_gpu_detection(args: &Args, prepared: &NhsPreparedInput) -> Result<()> {
 
     // Performance target check
     if ms_per_frame < 2.0 {
-        println!("✓ Performance target MET: {:.2} ms/frame < 2.0 ms", ms_per_frame);
+        println!(
+            "✓ Performance target MET: {:.2} ms/frame < 2.0 ms",
+            ms_per_frame
+        );
     } else {
-        println!("✗ Performance target MISSED: {:.2} ms/frame > 2.0 ms", ms_per_frame);
+        println!(
+            "✗ Performance target MISSED: {:.2} ms/frame > 2.0 ms",
+            ms_per_frame
+        );
     }
 
     // Save results (with RT integration info) [STAGE-1-INTEGRATION]

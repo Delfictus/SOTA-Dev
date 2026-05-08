@@ -36,10 +36,7 @@ pub enum ExplorationPhase {
 #[derive(Debug, Clone)]
 pub enum UvStrategy {
     /// Random uniform targeting - all aromatics equally
-    Random {
-        burst_interval: i32,
-        energy: f32,
-    },
+    Random { burst_interval: i32, energy: f32 },
     /// Signal-guided targeting - focus on responsive regions
     SignalGuided {
         hot_zone_probability: f32,
@@ -89,36 +86,36 @@ impl Default for AdaptiveGridProtocol {
     fn default() -> Self {
         Self {
             phase1_survey: GridPhase {
-                resolution: 2.0,              // Coarse 2Å grid - fast coverage
-                duration: 20000,              // 20k steps initial survey
+                resolution: 2.0, // Coarse 2Å grid - fast coverage
+                duration: 20000, // 20k steps initial survey
                 uv_strategy: UvStrategy::Random {
-                    burst_interval: 2000,     // Infrequent, broad sampling
-                    energy: 4.0,              // Low energy, gentle probing
+                    burst_interval: 2000, // Infrequent, broad sampling
+                    energy: 4.0,          // Low energy, gentle probing
                 },
-                detection_threshold: 0.4,     // High threshold - only strong signals
+                detection_threshold: 0.4, // High threshold - only strong signals
             },
             phase2_convergence: GridPhase {
-                resolution: 1.0,              // Standard 1Å grid
-                duration: 40000,              // Main exploration phase
+                resolution: 1.0, // Standard 1Å grid
+                duration: 40000, // Main exploration phase
                 uv_strategy: UvStrategy::SignalGuided {
-                    hot_zone_probability: 0.7,  // 70% chance to target hot zones
-                    random_probability: 0.3,    // 30% random exploration
-                    burst_interval: 1000,       // More frequent probing
-                    energy: 6.0,                // Increased energy
-                    exclusion_radius: 5.0,      // Don't re-probe dead zones
+                    hot_zone_probability: 0.7, // 70% chance to target hot zones
+                    random_probability: 0.3,   // 30% random exploration
+                    burst_interval: 1000,      // More frequent probing
+                    energy: 6.0,               // Increased energy
+                    exclusion_radius: 5.0,     // Don't re-probe dead zones
                 },
-                detection_threshold: 0.25,    // Lower threshold - more sensitive
+                detection_threshold: 0.25, // Lower threshold - more sensitive
             },
             phase3_precision: GridPhase {
-                resolution: 0.5,              // Fine 0.5Å grid around signals
-                duration: 40000,              // Detailed characterization
+                resolution: 0.5, // Fine 0.5Å grid around signals
+                duration: 40000, // Detailed characterization
                 uv_strategy: UvStrategy::PrecisionMapping {
                     confirmed_sites: Vec::new(),
                     burst_interval: 500,      // High frequency validation
                     energy: 8.0,              // Maximum energy for confirmation
                     spatial_refinement: true, // Sub-voxel precision
                 },
-                detection_threshold: 0.15,    // Lowest threshold - maximum sensitivity
+                detection_threshold: 0.15, // Lowest threshold - maximum sensitivity
             },
             current_phase: ExplorationPhase::Survey,
             current_step: 0,
@@ -158,9 +155,9 @@ impl AdaptiveGridProtocol {
 
     /// Total steps in protocol
     pub fn total_steps(&self) -> i32 {
-        self.phase1_survey.duration +
-        self.phase2_convergence.duration +
-        self.phase3_precision.duration
+        self.phase1_survey.duration
+            + self.phase2_convergence.duration
+            + self.phase3_precision.duration
     }
 
     /// Advance to next step, return true if phase transitioned
@@ -190,13 +187,16 @@ impl AdaptiveGridProtocol {
 
     /// Check if protocol is complete
     pub fn is_complete(&self) -> bool {
-        self.current_phase == ExplorationPhase::Precision &&
-        self.current_step >= self.phase3_precision.duration - 1
+        self.current_phase == ExplorationPhase::Precision
+            && self.current_step >= self.phase3_precision.duration - 1
     }
 
     /// Update confirmed sites for precision phase
     pub fn set_confirmed_sites(&mut self, sites: Vec<i32>) {
-        if let UvStrategy::PrecisionMapping { confirmed_sites, .. } = &mut self.phase3_precision.uv_strategy {
+        if let UvStrategy::PrecisionMapping {
+            confirmed_sites, ..
+        } = &mut self.phase3_precision.uv_strategy
+        {
             *confirmed_sites = sites;
         }
     }
@@ -346,10 +346,10 @@ impl JitterDetector {
     /// Update sensitivity based on how long the system has been quiet
     fn update_sensitivity(&mut self) {
         self.sensitivity_boost = match self.quiet_duration {
-            0..=1000 => 1.0,           // Standard sensitivity
-            1001..=5000 => 1.5,        // System settling - moderate boost
-            5001..=10000 => 2.0,       // Quiet achieved - high sensitivity
-            _ => 3.0,                   // Ultra-quiet - maximum sensitivity
+            0..=1000 => 1.0,     // Standard sensitivity
+            1001..=5000 => 1.5,  // System settling - moderate boost
+            5001..=10000 => 2.0, // Quiet achieved - high sensitivity
+            _ => 3.0,            // Ultra-quiet - maximum sensitivity
         };
     }
 
@@ -487,7 +487,12 @@ impl JitterDetector {
         // Count consecutive frames above baseline
         let mut max_streak = 0;
         let mut current_streak = 0;
-        let baseline_var = self.baseline.voxel_variances.get(voxel).copied().unwrap_or(0.1);
+        let baseline_var = self
+            .baseline
+            .voxel_variances
+            .get(voxel)
+            .copied()
+            .unwrap_or(0.1);
         let threshold = baseline_var * 1.2;
 
         for &val in history {
@@ -634,7 +639,10 @@ impl CascadeDetector {
     }
 
     /// Find spatially connected clusters of signals
-    fn find_spatial_clusters<'a>(&self, signals: &[&'a JitterSignal]) -> Vec<Vec<&'a JitterSignal>> {
+    fn find_spatial_clusters<'a>(
+        &self,
+        signals: &[&'a JitterSignal],
+    ) -> Vec<Vec<&'a JitterSignal>> {
         let mut clusters: Vec<Vec<&'a JitterSignal>> = Vec::new();
         let mut used: HashSet<i32> = HashSet::new();
 
@@ -674,7 +682,8 @@ impl CascadeDetector {
     /// Build cascade event from cluster
     fn build_cascade_event(&self, signals: Vec<&JitterSignal>) -> CascadeEvent {
         // Find trigger (earliest signal)
-        let trigger = signals.iter()
+        let trigger = signals
+            .iter()
             .min_by_key(|s| s.timestep)
             .cloned()
             .cloned()
@@ -701,13 +710,14 @@ impl CascadeDetector {
             let dx = signal.position[0] - center[0];
             let dy = signal.position[1] - center[1];
             let dz = signal.position[2] - center[2];
-            let dist = (dx*dx + dy*dy + dz*dz).sqrt();
+            let dist = (dx * dx + dy * dy + dz * dz).sqrt();
             max_dist = max_dist.max(dist);
         }
 
         // Calculate confidence
         let confidence = (signals.len() as f32 / self.min_cascade_size as f32).min(1.0)
-            * signals.iter().map(|s| s.confidence).sum::<f32>() / signals.len() as f32;
+            * signals.iter().map(|s| s.confidence).sum::<f32>()
+            / signals.len() as f32;
 
         CascadeEvent {
             trigger,
@@ -783,15 +793,9 @@ impl AdaptiveNhsEngine {
 
         // Phase-specific processing
         let result = match self.protocol.current_phase {
-            ExplorationPhase::Survey => {
-                self.process_survey_phase(water_density)
-            }
-            ExplorationPhase::Convergence => {
-                self.process_convergence_phase(water_density)
-            }
-            ExplorationPhase::Precision => {
-                self.process_precision_phase(water_density)
-            }
+            ExplorationPhase::Survey => self.process_survey_phase(water_density),
+            ExplorationPhase::Convergence => self.process_convergence_phase(water_density),
+            ExplorationPhase::Precision => self.process_precision_phase(water_density),
         };
 
         // Check for phase transition
@@ -807,7 +811,8 @@ impl AdaptiveNhsEngine {
     fn process_survey_phase(&mut self, water_density: &[f32]) -> AdaptiveStepResult {
         // Establish baseline after equilibration
         if self.timestep == self.jitter_detector.baseline.equilibration_steps {
-            self.jitter_detector.establish_baseline(&self.water_density_history);
+            self.jitter_detector
+                .establish_baseline(&self.water_density_history);
         }
 
         AdaptiveStepResult {
@@ -822,7 +827,9 @@ impl AdaptiveNhsEngine {
     /// Process convergence phase - signal-guided exploration
     fn process_convergence_phase(&mut self, water_density: &[f32]) -> AdaptiveStepResult {
         // Detect jitter signals
-        let jitter_signals = self.jitter_detector.detect_jitter(water_density, self.timestep);
+        let jitter_signals = self
+            .jitter_detector
+            .detect_jitter(water_density, self.timestep);
 
         // Identify hot zones
         let hot_zones = self.jitter_detector.identify_hot_zones();
@@ -842,7 +849,9 @@ impl AdaptiveNhsEngine {
     /// Process precision phase - validate and refine
     fn process_precision_phase(&mut self, water_density: &[f32]) -> AdaptiveStepResult {
         // Continue jitter detection with maximum sensitivity
-        let jitter_signals = self.jitter_detector.detect_jitter(water_density, self.timestep);
+        let jitter_signals = self
+            .jitter_detector
+            .detect_jitter(water_density, self.timestep);
 
         // Detect cascades
         let cascade_events = self.cascade_detector.detect_cascades(&jitter_signals);
@@ -866,15 +875,19 @@ impl AdaptiveNhsEngine {
         match self.protocol.current_phase {
             ExplorationPhase::Convergence => {
                 // Entering convergence - baseline should be established
-                log::info!("Entering convergence phase - baseline noise: {:.4}",
-                    self.jitter_detector.baseline.thermal_noise_floor);
+                log::info!(
+                    "Entering convergence phase - baseline noise: {:.4}",
+                    self.jitter_detector.baseline.thermal_noise_floor
+                );
             }
             ExplorationPhase::Precision => {
                 // Entering precision - set confirmed sites
                 let hot_zones = self.jitter_detector.identify_hot_zones();
                 self.protocol.set_confirmed_sites(hot_zones);
-                log::info!("Entering precision phase - {} hot zones identified",
-                    self.cascade_detector.validated_sites.len());
+                log::info!(
+                    "Entering precision phase - {} hot zones identified",
+                    self.cascade_detector.validated_sites.len()
+                );
             }
             _ => {}
         }
@@ -883,10 +896,15 @@ impl AdaptiveNhsEngine {
     /// Get current UV targeting parameters
     pub fn get_uv_params(&self) -> (f32, i32, Option<i32>) {
         match self.protocol.current_uv_strategy() {
-            UvStrategy::Random { energy, burst_interval } => {
-                (*energy, *burst_interval, None)
-            }
-            UvStrategy::SignalGuided { energy, burst_interval, .. } => {
+            UvStrategy::Random {
+                energy,
+                burst_interval,
+            } => (*energy, *burst_interval, None),
+            UvStrategy::SignalGuided {
+                energy,
+                burst_interval,
+                ..
+            } => {
                 // Select target based on hot zones
                 let hot_zones = self.jitter_detector.identify_hot_zones();
                 let target = if !hot_zones.is_empty() {
@@ -896,7 +914,12 @@ impl AdaptiveNhsEngine {
                 };
                 (*energy, *burst_interval, target)
             }
-            UvStrategy::PrecisionMapping { energy, burst_interval, confirmed_sites, .. } => {
+            UvStrategy::PrecisionMapping {
+                energy,
+                burst_interval,
+                confirmed_sites,
+                ..
+            } => {
                 let target = confirmed_sites.first().copied();
                 (*energy, *burst_interval, target)
             }

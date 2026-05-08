@@ -23,8 +23,8 @@
 //! // water_indices: [atom_idx1, atom_idx2, ...] (indices in combined system)
 //! ```
 
-use anyhow::{Context, Result};
 use crate::input::PrismPrepTopology;
+use anyhow::{Context, Result};
 
 /// 3D vector type
 type Vec3 = [f32; 3];
@@ -122,11 +122,11 @@ pub fn overlaps_protein(pos: Vec3, protein_coords: &[f32], cutoff: f32) -> bool 
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
         if dist_sq < cutoff_sq {
-            return true;  // Overlap detected
+            return true; // Overlap detected
         }
     }
 
-    false  // No overlap
+    false // No overlap
 }
 
 // =============================================================================
@@ -168,11 +168,14 @@ pub fn solvate_protein(
         anyhow::bail!("Padding must be positive, got {}", padding);
     }
 
-    log::info!("Solvating protein with {}Å padding (TIP3P water model)", padding);
+    log::info!(
+        "Solvating protein with {}Å padding (TIP3P water model)",
+        padding
+    );
 
     // Step 1: Compute protein bounding box
-    let (min_coords, max_coords) = compute_bbox(coordinates)
-        .context("Failed to compute protein bounding box")?;
+    let (min_coords, max_coords) =
+        compute_bbox(coordinates).context("Failed to compute protein bounding box")?;
 
     // Step 2: Expand by padding
     let box_min = [
@@ -193,11 +196,15 @@ pub fn solvate_protein(
     ];
 
     let box_volume = box_dims[0] * box_dims[1] * box_dims[2];
-    let expected_waters = (box_volume * 0.0334) as usize;  // ~30 waters/nm³
+    let expected_waters = (box_volume * 0.0334) as usize; // ~30 waters/nm³
 
     log::info!(
         "Solvation box: [{:.1} x {:.1} x {:.1}] Å³, volume={:.1} Å³, expected ~{} waters",
-        box_dims[0], box_dims[1], box_dims[2], box_volume, expected_waters
+        box_dims[0],
+        box_dims[1],
+        box_dims[2],
+        box_volume,
+        expected_waters
     );
 
     // Step 3: Fill box with water grid
@@ -210,7 +217,13 @@ pub fn solvate_protein(
     let ny = ((box_dims[1] / WATER_SPACING).ceil()) as usize;
     let nz = ((box_dims[2] / WATER_SPACING).ceil()) as usize;
 
-    log::debug!("Water grid: {}x{}x{} = {} potential positions", nx, ny, nz, nx * ny * nz);
+    log::debug!(
+        "Water grid: {}x{}x{} = {} potential positions",
+        nx,
+        ny,
+        nz,
+        nx * ny * nz
+    );
 
     for ix in 0..nx {
         for iy in 0..ny {
@@ -241,7 +254,10 @@ pub fn solvate_protein(
 
     log::info!(
         "Solvation complete: {} waters added ({} generated, {} removed due to overlap = {:.1}%)",
-        final_water_count, waters_generated, waters_removed, removal_percent
+        final_water_count,
+        waters_generated,
+        waters_removed,
+        removal_percent
     );
 
     if final_water_count == 0 {
@@ -250,13 +266,15 @@ pub fn solvate_protein(
 
     // Sanity check: density should be reasonable
     let actual_density = (final_water_count as f32) / box_volume;
-    let expected_density = 0.0334;  // molecules/Å³
+    let expected_density = 0.0334; // molecules/Å³
     let density_ratio = actual_density / expected_density;
 
     if density_ratio < 0.5 || density_ratio > 1.5 {
         log::warn!(
             "Water density {:.4} molecules/Å³ is unusual (expected ~{:.4}, ratio={:.2}x)",
-            actual_density, expected_density, density_ratio
+            actual_density,
+            expected_density,
+            density_ratio
         );
     }
 
@@ -286,31 +304,22 @@ pub fn solvate_protein(
 /// let local_waters = solvate_region([50.0, 30.0, 20.0], 10.0, &protein_coords)?;
 /// println!("Added {} local waters", local_waters.len() / 3);
 /// ```
-pub fn solvate_region(
-    center: Vec3,
-    radius: f32,
-    protein_coords: &[f32],
-) -> Result<Vec<f32>> {
+pub fn solvate_region(center: Vec3, radius: f32, protein_coords: &[f32]) -> Result<Vec<f32>> {
     if radius <= 0.0 {
         anyhow::bail!("Solvation radius must be positive, got {}", radius);
     }
 
     log::debug!(
         "Solvating region: center=[{:.2}, {:.2}, {:.2}], radius={:.1}Å",
-        center[0], center[1], center[2], radius
+        center[0],
+        center[1],
+        center[2],
+        radius
     );
 
     // Bounding box for the region
-    let box_min = [
-        center[0] - radius,
-        center[1] - radius,
-        center[2] - radius,
-    ];
-    let box_max = [
-        center[0] + radius,
-        center[1] + radius,
-        center[2] + radius,
-    ];
+    let box_min = [center[0] - radius, center[1] - radius, center[2] - radius];
+    let box_max = [center[0] + radius, center[1] + radius, center[2] + radius];
 
     let mut water_coords = Vec::new();
     let radius_sq = radius * radius;
@@ -334,7 +343,7 @@ pub fn solvate_region(
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq > radius_sq {
-                    continue;  // Outside sphere
+                    continue; // Outside sphere
                 }
 
                 let pos = [x, y, z];
@@ -374,8 +383,8 @@ mod tests {
     fn test_compute_bbox_simple() {
         // Simple 2-atom system
         let coords = vec![
-            0.0, 0.0, 0.0,   // atom 1 at origin
-            10.0, 5.0, 3.0,  // atom 2
+            0.0, 0.0, 0.0, // atom 1 at origin
+            10.0, 5.0, 3.0, // atom 2
         ];
 
         let (min, max) = compute_bbox(&coords).unwrap();
@@ -386,10 +395,7 @@ mod tests {
 
     #[test]
     fn test_compute_bbox_negative_coords() {
-        let coords = vec![
-            -5.0, -3.0, -2.0,
-            5.0, 3.0, 2.0,
-        ];
+        let coords = vec![-5.0, -3.0, -2.0, 5.0, 3.0, 2.0];
 
         let (min, max) = compute_bbox(&coords).unwrap();
 
@@ -413,7 +419,7 @@ mod tests {
     #[test]
     fn test_overlaps_protein_detected() {
         let protein = vec![
-            0.0, 0.0, 0.0,   // atom at origin
+            0.0, 0.0, 0.0, // atom at origin
         ];
 
         // Position 1.0 Å away - should overlap with cutoff 2.4 Å
@@ -425,9 +431,7 @@ mod tests {
 
     #[test]
     fn test_overlaps_protein_no_overlap() {
-        let protein = vec![
-            0.0, 0.0, 0.0,
-        ];
+        let protein = vec![0.0, 0.0, 0.0];
 
         // Position 3.0 Å away - no overlap with cutoff 2.4 Å
         assert!(!overlaps_protein([3.0, 0.0, 0.0], &protein, 2.4));
@@ -438,10 +442,7 @@ mod tests {
 
     #[test]
     fn test_overlaps_protein_multiple_atoms() {
-        let protein = vec![
-            0.0, 0.0, 0.0,
-            10.0, 0.0, 0.0,
-        ];
+        let protein = vec![0.0, 0.0, 0.0, 10.0, 0.0, 0.0];
 
         // Near first atom
         assert!(overlaps_protein([1.0, 0.0, 0.0], &protein, 2.4));
@@ -482,10 +483,7 @@ mod tests {
         };
 
         // Simple 2-atom protein (10 Å apart)
-        let coords = vec![
-            0.0, 0.0, 0.0,
-            10.0, 0.0, 0.0,
-        ];
+        let coords = vec![0.0, 0.0, 0.0, 10.0, 0.0, 0.0];
 
         let (waters, indices) = solvate_protein(&topo, &coords, 5.0).unwrap();
 
@@ -496,7 +494,12 @@ mod tests {
 
         // All water indices should be >= n_atoms
         for &idx in &indices {
-            assert!(idx >= topo.n_atoms, "Water index {} < n_atoms {}", idx, topo.n_atoms);
+            assert!(
+                idx >= topo.n_atoms,
+                "Water index {} < n_atoms {}",
+                idx,
+                topo.n_atoms
+            );
         }
 
         println!("test_solvate_protein_basic: Added {} waters", indices.len());
@@ -544,7 +547,10 @@ mod tests {
         assert!(water_count > 1000, "Water count {} too low", water_count);
         assert!(water_count < 3000, "Water count {} too high", water_count);
 
-        println!("test_solvate_protein_density: {} waters in large box", water_count);
+        println!(
+            "test_solvate_protein_density: {} waters in large box",
+            water_count
+        );
     }
 
     #[test]
@@ -587,11 +593,15 @@ mod tests {
             assert!(
                 dist >= OVERLAP_CUTOFF,
                 "Water at {:.2} Å too close (cutoff {:.2} Å)",
-                dist, OVERLAP_CUTOFF
+                dist,
+                OVERLAP_CUTOFF
             );
         }
 
-        println!("test_solvate_protein_no_overlap: All {} waters validated", waters.len() / 3);
+        println!(
+            "test_solvate_protein_no_overlap: All {} waters validated",
+            waters.len() / 3
+        );
     }
 
     #[test]
@@ -605,12 +615,15 @@ mod tests {
         assert!(waters.len() > 0, "No waters in region");
         assert_eq!(waters.len() % 3, 0);
 
-        println!("test_solvate_region_basic: {} waters in 5Å sphere", waters.len() / 3);
+        println!(
+            "test_solvate_region_basic: {} waters in 5Å sphere",
+            waters.len() / 3
+        );
     }
 
     #[test]
     fn test_solvate_region_all_within_radius() {
-        let protein = vec![100.0, 100.0, 100.0];  // Far away
+        let protein = vec![100.0, 100.0, 100.0]; // Far away
         let center = [0.0, 0.0, 0.0];
         let radius = 10.0;
 
@@ -626,11 +639,15 @@ mod tests {
             assert!(
                 dist <= radius,
                 "Water at {:.2} Å outside radius {:.2} Å",
-                dist, radius
+                dist,
+                radius
             );
         }
 
-        println!("test_solvate_region_all_within_radius: {} waters validated", waters.len() / 3);
+        println!(
+            "test_solvate_region_all_within_radius: {} waters validated",
+            waters.len() / 3
+        );
     }
 
     #[test]

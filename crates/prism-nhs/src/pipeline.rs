@@ -19,7 +19,7 @@ use crate::avalanche::{AvalancheDetector, CrypticSiteEvent};
 use crate::config::NhsConfig;
 use crate::exclusion::{ClassifiedAtom, ExclusionComputer, ExclusionGrid};
 use crate::neuromorphic::DewettingNetwork;
-use crate::uv_bias::{UvBiasEngine, PerturbationResult};
+use crate::uv_bias::{PerturbationResult, UvBiasEngine};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -172,10 +172,9 @@ impl NhsPipeline {
         self.update_atom_positions(positions);
 
         // 2. Recompute exclusion field
-        self.exclusion_computer.compute(
-            &self.classified_atoms,
-            self.grid.as_mut().unwrap(),
-        ).context("Failed to compute exclusion field")?;
+        self.exclusion_computer
+            .compute(&self.classified_atoms, self.grid.as_mut().unwrap())
+            .context("Failed to compute exclusion field")?;
 
         // 3. Run neuromorphic network - get water density first
         let water_density = self.grid.as_ref().unwrap().water_density.clone();
@@ -183,7 +182,10 @@ impl NhsPipeline {
         self.total_spikes += spikes.len() as u64;
 
         // 4. Get spike data for avalanche detection
-        let spike_positions = self.network.as_ref().unwrap()
+        let spike_positions = self
+            .network
+            .as_ref()
+            .unwrap()
             .get_spike_positions(self.grid.as_ref().unwrap());
         let spike_voxels = self.network.as_ref().unwrap().get_spike_voxels();
         let spike_residues = self.network.as_ref().unwrap().get_spike_residues();

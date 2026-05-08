@@ -11,20 +11,26 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[cfg(feature = "gpu")]
-use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
+use cudarc::driver::CudaContext;
 use prism_nhs::input::PrismPrepTopology;
 #[cfg(feature = "gpu")]
-use cudarc::driver::CudaContext;
+use prism_nhs::{NhsAmberFusedEngine, TemperatureProtocol, UvProbeConfig};
 
 const STEPS_PER_RUN: i32 = 3000;
 const N_RUNS: usize = 8;
 
 fn calculate_metrics(predicted: &HashSet<i32>, truth: &HashSet<i32>) -> (f32, f32, f32) {
-    if predicted.is_empty() || truth.is_empty() { return (0.0, 0.0, 0.0); }
+    if predicted.is_empty() || truth.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
     let tp = predicted.intersection(truth).count() as f32;
     let precision = tp / predicted.len() as f32;
     let recall = tp / truth.len() as f32;
-    let f1 = if precision + recall > 0.0 { 2.0 * precision * recall / (precision + recall) } else { 0.0 };
+    let f1 = if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    };
     (precision, recall, f1)
 }
 
@@ -38,7 +44,7 @@ fn main() -> Result<()> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     let topology_path = Path::new(
-        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json"
+        "/home/diddy/Desktop/PRISM4D-v1.1.0-STABLE/results/prism_prep_test/6LU7_topology.json",
     );
 
     let topology = PrismPrepTopology::load(topology_path)?;
@@ -49,12 +55,15 @@ fn main() -> Result<()> {
 
     // ORIGINAL NARROW TRUTH (0-indexed)
     let narrow_truth: HashSet<i32> = [
-        23, 24, 25, 26,  // S1'
-        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,  // His41
-        139, 140, 141, 142, 143, 144, 145,  // Cys145
-        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,  // S1
-        186, 187, 188, 189, 190, 191, 192,  // S2
-    ].iter().cloned().collect();
+        23, 24, 25, 26, // S1'
+        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, // His41
+        139, 140, 141, 142, 143, 144, 145, // Cys145
+        162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, // S1
+        186, 187, 188, 189, 190, 191, 192, // S2
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     // EXPANDED TRUTH - includes adjacent residues in functional pocket
     // Based on PDB 6LU7 structure analysis:
@@ -66,12 +75,10 @@ fn main() -> Result<()> {
     // - Dimerization interface relevant to active site
     let expanded_truth: HashSet<i32> = [
         // S1' subsite expanded (20-28)
-        20, 21, 22, 23, 24, 25, 26, 27, 28,
-        // His41 catalytic region expanded (36-52)
+        20, 21, 22, 23, 24, 25, 26, 27, 28, // His41 catalytic region expanded (36-52)
         36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
         // Oxyanion loop (117-120 contributes to catalysis)
-        117, 118, 119, 120,
-        // Between S1' and Cys145 (128-135)
+        117, 118, 119, 120, // Between S1' and Cys145 (128-135)
         128, 129, 130, 131, 132, 133, 134, 135,
         // Cys145 catalytic region expanded (136-148)
         136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148,
@@ -79,13 +86,18 @@ fn main() -> Result<()> {
         160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
         // S2 subsite expanded (183-195)
         183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195,
-    ].iter().cloned().collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     println!("Narrow truth set: {} residues", narrow_truth.len());
     println!("Expanded truth set: {} residues", expanded_truth.len());
 
     // Build aromatic + His set
-    let chromophores: HashSet<i32> = topology.residue_names.iter()
+    let chromophores: HashSet<i32> = topology
+        .residue_names
+        .iter()
         .enumerate()
         .filter_map(|(i, name)| {
             if matches!(name.as_str(), "TRP" | "TYR" | "PHE" | "HIS") {
@@ -136,14 +148,19 @@ fn main() -> Result<()> {
             for spike in &gpu_spikes {
                 for i in 0..spike.n_residues.min(8) as usize {
                     let res_id = spike.nearby_residues[i];
-                    if res_id < 0 { continue; }
+                    if res_id < 0 {
+                        continue;
+                    }
 
                     // Filter: near chromophore, not terminal
-                    let near_chromophore = chromophores.iter()
-                        .any(|&ch| (ch - res_id).abs() <= 10);
-                    if !near_chromophore || terminal.contains(&res_id) { continue; }
+                    let near_chromophore = chromophores.iter().any(|&ch| (ch - res_id).abs() <= 10);
+                    if !near_chromophore || terminal.contains(&res_id) {
+                        continue;
+                    }
 
-                    let entry = residue_data.entry(res_id).or_insert((0, 0.0, HashSet::new()));
+                    let entry = residue_data
+                        .entry(res_id)
+                        .or_insert((0, 0.0, HashSet::new()));
                     entry.0 += 1;
                     entry.1 += spike.intensity;
                     entry.2.insert(run_idx);
@@ -156,10 +173,12 @@ fn main() -> Result<()> {
     println!(" Done\n");
 
     // Filter by persistence (>= 3 runs) and score
-    let mut scored: Vec<_> = residue_data.iter()
+    let mut scored: Vec<_> = residue_data
+        .iter()
         .filter(|(_, (_, _, runs))| runs.len() >= 3)
         .map(|(&res_id, (count, intensity, runs))| {
-            let min_dist = chromophores.iter()
+            let min_dist = chromophores
+                .iter()
                 .map(|&ch| (ch - res_id).abs())
                 .min()
                 .unwrap_or(100) as f32;
@@ -180,8 +199,10 @@ fn main() -> Result<()> {
     println!("═══════════════════════════════════════════════════════════════════════");
     println!("TOP 60 RESIDUES (Narrow and Expanded Truth Comparison)");
     println!("═══════════════════════════════════════════════════════════════════════");
-    println!("{:>4} {:>5} {:>8} {:>5} {:>5} {:>10} {:>10}",
-             "Rank", "Res", "Score", "Count", "Runs", "Narrow?", "Expanded?");
+    println!(
+        "{:>4} {:>5} {:>8} {:>5} {:>5} {:>10} {:>10}",
+        "Rank", "Res", "Score", "Count", "Runs", "Narrow?", "Expanded?"
+    );
     println!("{}", "-".repeat(65));
 
     let mut narrow_top40 = 0;
@@ -191,15 +212,27 @@ fn main() -> Result<()> {
         let in_expanded = expanded_truth.contains(res_id);
 
         if i < 40 {
-            if in_narrow { narrow_top40 += 1; }
-            if in_expanded { expanded_top40 += 1; }
+            if in_narrow {
+                narrow_top40 += 1;
+            }
+            if in_expanded {
+                expanded_top40 += 1;
+            }
         }
 
         let narrow_mark = if in_narrow { "YES" } else { "" };
         let expanded_mark = if in_expanded { "YES ←" } else { "" };
 
-        println!("{:>4} {:>5} {:>8.2} {:>5} {:>5} {:>10} {:>10}",
-                 i + 1, res_id, score, count, runs, narrow_mark, expanded_mark);
+        println!(
+            "{:>4} {:>5} {:>8.2} {:>5} {:>5} {:>10} {:>10}",
+            i + 1,
+            res_id,
+            score,
+            count,
+            runs,
+            narrow_mark,
+            expanded_mark
+        );
     }
 
     // Metrics comparison
@@ -210,25 +243,48 @@ fn main() -> Result<()> {
     let cutoffs = [20, 30, 40, 50, 60, 80];
 
     println!("\n--- NARROW TRUTH ({} residues) ---", narrow_truth.len());
-    println!("{:>8} {:>10} {:>10} {:>10} {:>6}", "Top-N", "Precision", "Recall", "F1", "Status");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>6}",
+        "Top-N", "Precision", "Recall", "F1", "Status"
+    );
     let mut best_f1_narrow = 0.0f32;
     for &n in &cutoffs {
         let predicted: HashSet<i32> = scored.iter().take(n).map(|(r, _, _, _)| *r).collect();
         let (p, r, f1) = calculate_metrics(&predicted, &narrow_truth);
         let status = if f1 >= 0.30 { "GOOD ✓" } else { "" };
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6}", n, p, r, f1, status);
-        if f1 > best_f1_narrow { best_f1_narrow = f1; }
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6}",
+            n, p, r, f1, status
+        );
+        if f1 > best_f1_narrow {
+            best_f1_narrow = f1;
+        }
     }
 
-    println!("\n--- EXPANDED TRUTH ({} residues) ---", expanded_truth.len());
-    println!("{:>8} {:>10} {:>10} {:>10} {:>6}", "Top-N", "Precision", "Recall", "F1", "Status");
+    println!(
+        "\n--- EXPANDED TRUTH ({} residues) ---",
+        expanded_truth.len()
+    );
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>6}",
+        "Top-N", "Precision", "Recall", "F1", "Status"
+    );
     let mut best_f1_expanded = 0.0f32;
     let mut best_n_expanded = 0;
     for &n in &cutoffs {
         let predicted: HashSet<i32> = scored.iter().take(n).map(|(r, _, _, _)| *r).collect();
         let (p, r, f1) = calculate_metrics(&predicted, &expanded_truth);
-        let status = if f1 >= 0.50 { "GREAT ✓✓" } else if f1 >= 0.40 { "GOOD ✓" } else { "" };
-        println!("{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6}", n, p, r, f1, status);
+        let status = if f1 >= 0.50 {
+            "GREAT ✓✓"
+        } else if f1 >= 0.40 {
+            "GOOD ✓"
+        } else {
+            ""
+        };
+        println!(
+            "{:>8} {:>10.3} {:>10.3} {:>10.3} {:>6}",
+            n, p, r, f1, status
+        );
         if f1 > best_f1_expanded {
             best_f1_expanded = f1;
             best_n_expanded = n;
@@ -240,12 +296,26 @@ fn main() -> Result<()> {
     println!("║                            SUMMARY                                    ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     println!("║  NARROW TRUTH:                                                        ║");
-    println!("║    In top 40: {}/{}                                                   ║", narrow_top40, narrow_truth.len());
-    println!("║    Best F1: {:.3}                                                     ║", best_f1_narrow);
+    println!(
+        "║    In top 40: {}/{}                                                   ║",
+        narrow_top40,
+        narrow_truth.len()
+    );
+    println!(
+        "║    Best F1: {:.3}                                                     ║",
+        best_f1_narrow
+    );
     println!("║                                                                        ║");
     println!("║  EXPANDED TRUTH:                                                       ║");
-    println!("║    In top 40: {}/{}                                                  ║", expanded_top40, expanded_truth.len());
-    println!("║    Best F1: {:.3} at Top-{}                                           ║", best_f1_expanded, best_n_expanded);
+    println!(
+        "║    In top 40: {}/{}                                                  ║",
+        expanded_top40,
+        expanded_truth.len()
+    );
+    println!(
+        "║    Best F1: {:.3} at Top-{}                                           ║",
+        best_f1_expanded, best_n_expanded
+    );
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     if best_f1_expanded >= 0.50 {
         println!("║  RESULT: ✓✓✓ EXCELLENT with expanded truth (F1 >= 0.50)             ║");
@@ -264,7 +334,8 @@ fn main() -> Result<()> {
     println!("═══════════════════════════════════════════════════════════════════════");
 
     let top_40: HashSet<i32> = scored.iter().take(40).map(|(r, _, _, _)| *r).collect();
-    let in_expanded_not_narrow: HashSet<_> = top_40.intersection(&expanded_truth)
+    let in_expanded_not_narrow: HashSet<_> = top_40
+        .intersection(&expanded_truth)
         .filter(|r| !narrow_truth.contains(r))
         .cloned()
         .collect();
