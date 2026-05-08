@@ -10,14 +10,13 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use log::{info, warn, error};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 
 // Import PRISM physics components
 #[cfg(feature = "simulation")]
 use prism_validation::simulation_runner::{
-    SimulationRunner, SimulationConfig, TrajectoryFrame,
-    compute_rmsf,
+    compute_rmsf, SimulationConfig, SimulationRunner, TrajectoryFrame,
 };
 
 #[cfg(feature = "simulation")]
@@ -132,18 +131,18 @@ struct RealBenchmarkSummary {
 
     // Aggregated metrics
     mean_rmsf_pearson: f64,
-    mean_gnm_rmsf_pearson: f64,  // GNM-based RMSF correlation
+    mean_gnm_rmsf_pearson: f64, // GNM-based RMSF correlation
     mean_hmc_acceptance: f32,
     mean_pairwise_rmsd: f64,
     mean_ensemble_diversity: f64,
 
     // Pass rates
     overall_pass_rate: f64,
-    gnm_pass_rate: f64,  // GNM-based pass rate
+    gnm_pass_rate: f64, // GNM-based pass rate
 
     // Comparison to baselines
-    vs_alphaflow: f64,  // Improvement over 0.62
-    vs_gnm_baseline: f64,  // Improvement over 0.59 (literature GNM)
+    vs_alphaflow: f64,    // Improvement over 0.62
+    vs_gnm_baseline: f64, // Improvement over 0.59 (literature GNM)
 
     per_protein: Vec<RealBenchmarkResult>,
 }
@@ -185,17 +184,37 @@ fn parse_pdb_to_structure(pdb_path: &PathBuf, target: &AtlasTarget) -> Result<Si
         // Skip alternate conformations (keep only ' ' or 'A')
         let alt_loc = line.get(16..17).unwrap_or(" ");
         if alt_loc != " " && alt_loc != "A" {
-            continue;  // Skip B, C, etc. alternate conformations
+            continue; // Skip B, C, etc. alternate conformations
         }
 
         let res_name = line.get(17..20).unwrap_or("").trim();
         let chain = line.get(21..22).unwrap_or("A").trim();
         let res_num: i32 = line.get(22..26).unwrap_or("0").trim().parse().unwrap_or(0);
 
-        let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let b_factor: f32 = line.get(60..66).unwrap_or("20").trim().parse().unwrap_or(20.0);
+        let x: f32 = line
+            .get(30..38)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let y: f32 = line
+            .get(38..46)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let z: f32 = line
+            .get(46..54)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let b_factor: f32 = line
+            .get(60..66)
+            .unwrap_or("20")
+            .trim()
+            .parse()
+            .unwrap_or(20.0);
         let element = line.get(76..78).unwrap_or("C").trim();
 
         // Filter by chain if specified
@@ -310,13 +329,27 @@ fn compute_pairwise_rmsds_inline(frames: &[TrajectoryFrame]) -> Vec<f64> {
     // Sample frames for efficiency (every 5th pair)
     for i in (0..frames.len()).step_by(5) {
         for j in (i + 1..frames.len()).step_by(5) {
-            let pos1: Vec<[f32; 3]> = frames[i].ca_positions
+            let pos1: Vec<[f32; 3]> = frames[i]
+                .ca_positions
                 .chunks(3)
-                .filter_map(|c| if c.len() == 3 { Some([c[0], c[1], c[2]]) } else { None })
+                .filter_map(|c| {
+                    if c.len() == 3 {
+                        Some([c[0], c[1], c[2]])
+                    } else {
+                        None
+                    }
+                })
                 .collect();
-            let pos2: Vec<[f32; 3]> = frames[j].ca_positions
+            let pos2: Vec<[f32; 3]> = frames[j]
+                .ca_positions
                 .chunks(3)
-                .filter_map(|c| if c.len() == 3 { Some([c[0], c[1], c[2]]) } else { None })
+                .filter_map(|c| {
+                    if c.len() == 3 {
+                        Some([c[0], c[1], c[2]])
+                    } else {
+                        None
+                    }
+                })
                 .collect();
 
             if let Some(rmsd) = compute_ca_rmsd_f64(&pos1, &pos2) {
@@ -336,7 +369,9 @@ fn compute_ca_rmsd_f64(pos1: &[[f32; 3]], pos2: &[[f32; 3]]) -> Option<f64> {
     }
 
     let n = pos1.len() as f64;
-    let sum_sq: f64 = pos1.iter().zip(pos2.iter())
+    let sum_sq: f64 = pos1
+        .iter()
+        .zip(pos2.iter())
         .map(|(p1, p2)| {
             let dx = (p1[0] - p2[0]) as f64;
             let dy = (p1[1] - p2[1]) as f64;
@@ -411,7 +446,11 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         anyhow::bail!("No targets found at {:?}", targets_path);
     };
 
-    info!("  📊 Loaded {} targets from {:?}", targets.len(), targets_path);
+    info!(
+        "  📊 Loaded {} targets from {:?}",
+        targets.len(),
+        targets_path
+    );
     info!("  🔧 HMC Steps: {}", args.steps);
     info!("  🌡️  Temperature: {} K", args.temperature);
     info!("  🖥️  GPU Device: {}", args.gpu);
@@ -423,7 +462,7 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
     let sim_config = SimulationConfig {
         n_steps: args.steps,
         temperature: args.temperature,
-        dt: 0.005,  // 5 fs timestep for CG simulations (stable compromise)
+        dt: 0.005, // 5 fs timestep for CG simulations (stable compromise)
         save_interval: 10,
         gpu_device: args.gpu,
         coarse_grained: true,
@@ -451,21 +490,25 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         // Using coarse-grained mode: 1 atom per residue (CA-only)
         // This allows proteins up to 512 residues to fit in GPU shared memory
         const MAX_ATOMS_LIMIT: usize = 512;
-        let effective_atoms = target.n_residues;  // CG mode: 1 atom per residue
+        let effective_atoms = target.n_residues; // CG mode: 1 atom per residue
         if effective_atoms > MAX_ATOMS_LIMIT {
-            warn!("  │ {:<8} │ {:>5} │ SKIP  │ Too large ({} res > {})           │",
-                  &target.name[..target.name.len().min(8)],
-                  target.n_residues,
-                  effective_atoms,
-                  MAX_ATOMS_LIMIT);
+            warn!(
+                "  │ {:<8} │ {:>5} │ SKIP  │ Too large ({} res > {})           │",
+                &target.name[..target.name.len().min(8)],
+                target.n_residues,
+                effective_atoms,
+                MAX_ATOMS_LIMIT
+            );
             continue;
         }
 
         // Find PDB file
         let pdb_path = pdb_dir.join(format!("{}.pdb", target.name));
         if !pdb_path.exists() {
-            warn!("  │ {:<8} │ SKIP  │ PDB not found                              │",
-                  &target.name[..target.name.len().min(8)]);
+            warn!(
+                "  │ {:<8} │ SKIP  │ PDB not found                              │",
+                &target.name[..target.name.len().min(8)]
+            );
             continue;
         }
 
@@ -473,9 +516,11 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         let structure = match parse_pdb_to_structure(&pdb_path, target) {
             Ok(s) => s,
             Err(e) => {
-                warn!("  │ {:<8} │ ERROR │ {:50} │",
-                      &target.name[..target.name.len().min(8)],
-                      format!("{}", e));
+                warn!(
+                    "  │ {:<8} │ ERROR │ {:50} │",
+                    &target.name[..target.name.len().min(8)],
+                    format!("{}", e)
+                );
                 continue;
             }
         };
@@ -487,9 +532,11 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
             Ok(t) => t,
             Err(e) => {
                 // Print full error chain for debugging
-                error!("  │ {:<8} │ FAIL  │ Simulation error: {:35} │",
-                       &target.name[..target.name.len().min(8)],
-                       format!("{}", e));
+                error!(
+                    "  │ {:<8} │ FAIL  │ Simulation error: {:35} │",
+                    &target.name[..target.name.len().min(8)],
+                    format!("{}", e)
+                );
                 error!("    Full error: {:?}", e);
                 continue;
             }
@@ -554,23 +601,38 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
             log::debug!("RMSF Comparison Debug (first 20 residues):");
             log::debug!("  Idx | Sim RMSF | GNM RMSF | Exp RMSF (B-fac)");
             for i in 0..min_len.min(20) {
-                let gnm_val = if i < gnm_slice.len() { gnm_slice[i] } else { 0.0 };
-                log::debug!("  {:>3} | {:>8.3} | {:>8.3} | {:>9.3}", i, pred_slice[i], gnm_val, exp_slice[i]);
+                let gnm_val = if i < gnm_slice.len() {
+                    gnm_slice[i]
+                } else {
+                    0.0
+                };
+                log::debug!(
+                    "  {:>3} | {:>8.3} | {:>8.3} | {:>9.3}",
+                    i,
+                    pred_slice[i],
+                    gnm_val,
+                    exp_slice[i]
+                );
             }
-            log::debug!("  Sim  ρ={:.3} mean={:.3}",
+            log::debug!(
+                "  Sim  ρ={:.3} mean={:.3}",
                 rmsf_pearson,
-                pred_slice.iter().sum::<f64>() / pred_slice.len() as f64);
-            log::debug!("  GNM  ρ={:.3} mean={:.3}",
-                gnm_rmsf_pearson,
-                mean_gnm_rmsf);
-            log::debug!("  Exp  mean={:.3}",
-                exp_slice.iter().sum::<f64>() / exp_slice.len() as f64);
+                pred_slice.iter().sum::<f64>() / pred_slice.len() as f64
+            );
+            log::debug!("  GNM  ρ={:.3} mean={:.3}", gnm_rmsf_pearson, mean_gnm_rmsf);
+            log::debug!(
+                "  Exp  mean={:.3}",
+                exp_slice.iter().sum::<f64>() / exp_slice.len() as f64
+            );
         }
 
         // Compute ensemble metrics from trajectory frames
-        let ca_frames: Vec<Vec<[f32; 3]>> = trajectory.frames.iter()
+        let ca_frames: Vec<Vec<[f32; 3]>> = trajectory
+            .frames
+            .iter()
             .map(|f| {
-                f.ca_positions.chunks(3)
+                f.ca_positions
+                    .chunks(3)
                     .map(|c| [c[0], c[1], c[2]])
                     .collect()
             })
@@ -583,9 +645,11 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         } else {
             let n = pairwise_rmsds.len() as f64;
             let mean: f64 = pairwise_rmsds.iter().sum::<f64>() / n;
-            let variance: f64 = pairwise_rmsds.iter()
+            let variance: f64 = pairwise_rmsds
+                .iter()
                 .map(|x| (x - mean).powi(2))
-                .sum::<f64>() / n;
+                .sum::<f64>()
+                / n;
             (mean, variance.sqrt())
         };
 
@@ -598,7 +662,9 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
             / trajectory.frames.len() as f32;
         let mean_betti_2: f32 = trajectory.frames.iter().map(|f| f.betti[2]).sum::<f32>()
             / trajectory.frames.len() as f32;
-        let pocket_signature_max: f32 = trajectory.frames.iter()
+        let pocket_signature_max: f32 = trajectory
+            .frames
+            .iter()
             .map(|f| f.pocket_signature)
             .fold(0.0f32, |a, b| a.max(b));
 
@@ -609,7 +675,7 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
 
         // Pass/fail determination (use best of simulation or GNM)
         let best_corr = rmsf_pearson.max(gnm_rmsf_pearson);
-        let passed = best_corr > 0.50;  // Reasonable threshold
+        let passed = best_corr > 0.50; // Reasonable threshold
         let gnm_passed = gnm_rmsf_pearson > 0.50;
         let reason = if passed {
             if gnm_rmsf_pearson > rmsf_pearson {
@@ -618,20 +684,31 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
                 format!("Sim ρ={:.3} > 0.50", rmsf_pearson)
             }
         } else {
-            format!("Best ρ={:.3} < 0.50 (Sim={:.3}, GNM={:.3})", best_corr, rmsf_pearson, gnm_rmsf_pearson)
+            format!(
+                "Best ρ={:.3} < 0.50 (Sim={:.3}, GNM={:.3})",
+                best_corr, rmsf_pearson, gnm_rmsf_pearson
+            )
         };
 
-        let status = if gnm_passed { "✅ GNM" } else if passed { "✅ SIM" } else { "❌ FAIL" };
+        let status = if gnm_passed {
+            "✅ GNM"
+        } else if passed {
+            "✅ SIM"
+        } else {
+            "❌ FAIL"
+        };
 
-        info!("  │ {:<8} │ {:>5} │ {:>6.1}% │ {:>8.3} │ {:>8.3} │ {:>6.2} Å │ {:>8.3} │ {} │",
-              &target.name[..target.name.len().min(8)],
-              structure.n_residues,
-              trajectory.acceptance_rate * 100.0,
-              rmsf_pearson,
-              gnm_rmsf_pearson,
-              pw_rmsd_mean,
-              diversity,
-              status);
+        info!(
+            "  │ {:<8} │ {:>5} │ {:>6.1}% │ {:>8.3} │ {:>8.3} │ {:>6.2} Å │ {:>8.3} │ {} │",
+            &target.name[..target.name.len().min(8)],
+            structure.n_residues,
+            trajectory.acceptance_rate * 100.0,
+            rmsf_pearson,
+            gnm_rmsf_pearson,
+            pw_rmsd_mean,
+            diversity,
+            status
+        );
 
         results.push(RealBenchmarkResult {
             pdb_id: target.name.clone(),
@@ -671,35 +748,49 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
 
     let mean_rmsf_pearson = if n_proteins > 0 {
         results.iter().map(|r| r.rmsf_pearson).sum::<f64>() / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let mean_gnm_rmsf_pearson = if n_proteins > 0 {
         results.iter().map(|r| r.gnm_rmsf_pearson).sum::<f64>() / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let mean_hmc_acceptance = if n_proteins > 0 {
         results.iter().map(|r| r.hmc_acceptance_rate).sum::<f32>() / n_proteins as f32
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let mean_pw_rmsd = if n_proteins > 0 {
         results.iter().map(|r| r.pairwise_rmsd_mean).sum::<f64>() / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let mean_diversity = if n_proteins > 0 {
         results.iter().map(|r| r.ensemble_diversity).sum::<f64>() / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let pass_rate = if n_proteins > 0 {
         passed_count as f64 / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let gnm_pass_rate = if n_proteins > 0 {
         gnm_passed_count as f64 / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     // Comparison to baselines (use best of simulation or GNM)
     const ALPHAFLOW_RMSF: f64 = 0.62;
-    const GNM_LITERATURE: f64 = 0.59;  // Literature GNM correlation
+    const GNM_LITERATURE: f64 = 0.59; // Literature GNM correlation
 
     let best_mean = mean_rmsf_pearson.max(mean_gnm_rmsf_pearson);
     let vs_alphaflow = (best_mean / ALPHAFLOW_RMSF - 1.0) * 100.0;
@@ -727,37 +818,70 @@ fn run_real_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
     info!("║               PRISM-BENCH REAL: COMPREHENSIVE RESULTS                         ║");
     info!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     info!("║  Dataset: ATLAS Benchmark (REAL PRISM-NOVA Physics)                           ║");
-    info!("║  Proteins: {:<5}    Residues: {:<8}    Time: {:.1}s                  ║",
-          n_proteins, total_residues, total_time_ms as f64 / 1000.0);
+    info!(
+        "║  Proteins: {:<5}    Residues: {:<8}    Time: {:.1}s                  ║",
+        n_proteins,
+        total_residues,
+        total_time_ms as f64 / 1000.0
+    );
     info!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     info!("║  ░░░░░░░░░░░░░░░░░░  RMSF CORRELATION METHODS  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ║");
     info!("╠─────────────────────────────┬────────────┬────────────┬────────────────────────╣");
     info!("║  Method                     │ Mean ρ     │ Baseline   │ vs Baseline            ║");
     info!("╠─────────────────────────────┼────────────┼────────────┼────────────────────────╣");
-    info!("║  Simulation (HMC/pfANM)     │ {:>10.3} │ {:>10.3} │ {:>+20.1}% ║",
-          mean_rmsf_pearson, ALPHAFLOW_RMSF, (mean_rmsf_pearson / ALPHAFLOW_RMSF - 1.0) * 100.0);
-    info!("║  GNM Eigenmode Analysis     │ {:>10.3} │ {:>10.3} │ {:>+20.1}% ║",
-          mean_gnm_rmsf_pearson, GNM_LITERATURE, (mean_gnm_rmsf_pearson / GNM_LITERATURE - 1.0) * 100.0);
+    info!(
+        "║  Simulation (HMC/pfANM)     │ {:>10.3} │ {:>10.3} │ {:>+20.1}% ║",
+        mean_rmsf_pearson,
+        ALPHAFLOW_RMSF,
+        (mean_rmsf_pearson / ALPHAFLOW_RMSF - 1.0) * 100.0
+    );
+    info!(
+        "║  GNM Eigenmode Analysis     │ {:>10.3} │ {:>10.3} │ {:>+20.1}% ║",
+        mean_gnm_rmsf_pearson,
+        GNM_LITERATURE,
+        (mean_gnm_rmsf_pearson / GNM_LITERATURE - 1.0) * 100.0
+    );
     info!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     info!("║  ░░░░░░░░░░░░░░░░░░  PASS RATES & QUALITY  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ║");
     info!("╠─────────────────────────────┬─────────────────────────────────────────────────╣");
-    info!("║  Simulation Pass Rate       │ {:>9.1}%                                        ║", pass_rate * 100.0);
-    info!("║  GNM Pass Rate              │ {:>9.1}%                                        ║", gnm_pass_rate * 100.0);
-    info!("║  HMC Acceptance Rate        │ {:>9.1}%                                        ║", mean_hmc_acceptance * 100.0);
+    info!(
+        "║  Simulation Pass Rate       │ {:>9.1}%                                        ║",
+        pass_rate * 100.0
+    );
+    info!(
+        "║  GNM Pass Rate              │ {:>9.1}%                                        ║",
+        gnm_pass_rate * 100.0
+    );
+    info!(
+        "║  HMC Acceptance Rate        │ {:>9.1}%                                        ║",
+        mean_hmc_acceptance * 100.0
+    );
     info!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     info!("║  ░░░░░░░░░░░░░░░░░░░  ENSEMBLE QUALITY  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ║");
     info!("╠─────────────────────────────┬─────────────────────────────────────────────────╣");
-    info!("║  Pairwise RMSD (mean)       │ {:>10.2} Å                                      ║", mean_pw_rmsd);
-    info!("║  Ensemble Diversity         │ {:>10.3} Å                                      ║", mean_diversity);
+    info!(
+        "║  Pairwise RMSD (mean)       │ {:>10.2} Å                                      ║",
+        mean_pw_rmsd
+    );
+    info!(
+        "║  Ensemble Diversity         │ {:>10.3} Å                                      ║",
+        mean_diversity
+    );
     info!("╚═══════════════════════════════════════════════════════════════════════════════╝");
     info!("");
 
     // Victory conditions
     if mean_gnm_rmsf_pearson > GNM_LITERATURE {
-        info!("  🎯 GNM MATCHES LITERATURE BENCHMARK! ({:.3} vs {:.3} expected)", mean_gnm_rmsf_pearson, GNM_LITERATURE);
+        info!(
+            "  🎯 GNM MATCHES LITERATURE BENCHMARK! ({:.3} vs {:.3} expected)",
+            mean_gnm_rmsf_pearson, GNM_LITERATURE
+        );
     }
     if best_mean > ALPHAFLOW_RMSF {
-        info!("  🏆 PRISM OUTPERFORMS AlphaFlow! (best ρ={:.3} > {:.3})", best_mean, ALPHAFLOW_RMSF);
+        info!(
+            "  🏆 PRISM OUTPERFORMS AlphaFlow! (best ρ={:.3} > {:.3})",
+            best_mean, ALPHAFLOW_RMSF
+        );
     }
 
     // Save results
@@ -795,7 +919,11 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         anyhow::bail!("No targets found at {:?}", targets_path);
     };
 
-    info!("  📊 Loaded {} targets from {:?}", targets.len(), targets_path);
+    info!(
+        "  📊 Loaded {} targets from {:?}",
+        targets.len(),
+        targets_path
+    );
     info!("  ⚡ Mode: GNM-ONLY (eigenmode analysis, no simulation)");
     info!("  📏 GNM Cutoff: {} Å", args.gnm_cutoff);
     info!("");
@@ -818,8 +946,10 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         // Find PDB file
         let pdb_path = pdb_dir.join(format!("{}.pdb", target.name));
         if !pdb_path.exists() {
-            warn!("  │ {:<8} │ SKIP  │ PDB not found              │",
-                  &target.name[..target.name.len().min(8)]);
+            warn!(
+                "  │ {:<8} │ SKIP  │ PDB not found              │",
+                &target.name[..target.name.len().min(8)]
+            );
             continue;
         }
 
@@ -827,9 +957,11 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         let structure = match parse_pdb_to_structure(&pdb_path, target) {
             Ok(s) => s,
             Err(e) => {
-                warn!("  │ {:<8} │ ERROR │ {:26} │",
-                      &target.name[..target.name.len().min(8)],
-                      format!("{}", e));
+                warn!(
+                    "  │ {:<8} │ ERROR │ {:26} │",
+                    &target.name[..target.name.len().min(8)],
+                    format!("{}", e)
+                );
                 continue;
             }
         };
@@ -880,36 +1012,38 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
 
         let status = if passed { "✅ PASS" } else { "❌ FAIL" };
 
-        info!("  │ {:<8} │ {:>5} │ {:>8.3} │ {:>8} │ {} │",
-              &target.name[..target.name.len().min(8)],
-              structure.n_residues,
-              gnm_rmsf_pearson,
-              elapsed_ms,
-              status);
+        info!(
+            "  │ {:<8} │ {:>5} │ {:>8.3} │ {:>8} │ {} │",
+            &target.name[..target.name.len().min(8)],
+            structure.n_residues,
+            gnm_rmsf_pearson,
+            elapsed_ms,
+            status
+        );
 
         // Store result (with placeholder values for simulation-specific fields)
         results.push(RealBenchmarkResult {
             pdb_id: target.name.clone(),
             n_residues: structure.n_residues,
             n_atoms: structure.n_atoms,
-            total_steps: 0,  // No simulation
-            hmc_acceptance_rate: 0.0,  // No simulation
+            total_steps: 0,           // No simulation
+            hmc_acceptance_rate: 0.0, // No simulation
             simulation_time_ms: elapsed_ms,
-            rmsf_pearson: 0.0,  // No simulation RMSF
+            rmsf_pearson: 0.0, // No simulation RMSF
             rmsf_spearman: 0.0,
             mean_predicted_rmsf: 0.0,
             mean_experimental_rmsf: mean_exp_rmsf,
             gnm_rmsf_pearson,
             gnm_rmsf_spearman,
             mean_gnm_rmsf,
-            pairwise_rmsd_mean: 0.0,  // No ensemble
+            pairwise_rmsd_mean: 0.0, // No ensemble
             pairwise_rmsd_std: 0.0,
             ensemble_diversity: 0.0,
-            mean_betti_0: 0.0,  // No TDA
+            mean_betti_0: 0.0, // No TDA
             mean_betti_1: 0.0,
             mean_betti_2: 0.0,
             pocket_signature_max: 0.0,
-            final_efe: 0.0,  // No active inference
+            final_efe: 0.0, // No active inference
             final_goal_prior: 0.0,
             passed,
             reason,
@@ -925,11 +1059,15 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
 
     let mean_gnm_rmsf_pearson = if n_proteins > 0 {
         results.iter().map(|r| r.gnm_rmsf_pearson).sum::<f64>() / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let pass_rate = if n_proteins > 0 {
         passed_count as f64 / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     // Baselines
     const ALPHAFLOW_RMSF: f64 = 0.62;
@@ -943,7 +1081,7 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
         n_proteins,
         n_residues_total: total_residues,
         total_simulation_time_sec: total_time_ms as f64 / 1000.0,
-        mean_rmsf_pearson: 0.0,  // No simulation
+        mean_rmsf_pearson: 0.0, // No simulation
         mean_gnm_rmsf_pearson,
         mean_hmc_acceptance: 0.0,
         mean_pairwise_rmsd: 0.0,
@@ -960,23 +1098,45 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
     info!("║               PRISM-BENCH GNM-ONLY: RESULTS                                   ║");
     info!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     info!("║  Dataset: ATLAS Benchmark (GNM Eigenmode Analysis)                            ║");
-    info!("║  Proteins: {:<5}    Residues: {:<8}    Time: {:.3}s                 ║",
-          n_proteins, total_residues, total_time_ms as f64 / 1000.0);
+    info!(
+        "║  Proteins: {:<5}    Residues: {:<8}    Time: {:.3}s                 ║",
+        n_proteins,
+        total_residues,
+        total_time_ms as f64 / 1000.0
+    );
     info!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     info!("║  ░░░░░░░░░░░░░░░░░░░░  GNM PERFORMANCE  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ║");
     info!("╠─────────────────────────────┬─────────────────────────────────────────────────╣");
-    info!("║  GNM Mean Correlation (ρ)   │ {:>10.3}                                        ║", mean_gnm_rmsf_pearson);
-    info!("║  vs Literature GNM (0.59)   │ {:>+10.1}%                                       ║", vs_gnm_baseline);
-    info!("║  vs AlphaFlow (0.62)        │ {:>+10.1}%                                       ║", vs_alphaflow);
-    info!("║  Pass Rate (ρ > 0.50)       │ {:>9.1}%                                        ║", pass_rate * 100.0);
+    info!(
+        "║  GNM Mean Correlation (ρ)   │ {:>10.3}                                        ║",
+        mean_gnm_rmsf_pearson
+    );
+    info!(
+        "║  vs Literature GNM (0.59)   │ {:>+10.1}%                                       ║",
+        vs_gnm_baseline
+    );
+    info!(
+        "║  vs AlphaFlow (0.62)        │ {:>+10.1}%                                       ║",
+        vs_alphaflow
+    );
+    info!(
+        "║  Pass Rate (ρ > 0.50)       │ {:>9.1}%                                        ║",
+        pass_rate * 100.0
+    );
     info!("╚═══════════════════════════════════════════════════════════════════════════════╝");
     info!("");
 
     if mean_gnm_rmsf_pearson >= GNM_LITERATURE {
-        info!("  🎯 GNM MATCHES/EXCEEDS LITERATURE BENCHMARK! ({:.3} >= {:.3})", mean_gnm_rmsf_pearson, GNM_LITERATURE);
+        info!(
+            "  🎯 GNM MATCHES/EXCEEDS LITERATURE BENCHMARK! ({:.3} >= {:.3})",
+            mean_gnm_rmsf_pearson, GNM_LITERATURE
+        );
     }
     if mean_gnm_rmsf_pearson > ALPHAFLOW_RMSF {
-        info!("  🏆 GNM OUTPERFORMS AlphaFlow! ({:.3} > {:.3})", mean_gnm_rmsf_pearson, ALPHAFLOW_RMSF);
+        info!(
+            "  🏆 GNM OUTPERFORMS AlphaFlow! ({:.3} > {:.3})",
+            mean_gnm_rmsf_pearson, ALPHAFLOW_RMSF
+        );
     }
 
     // Save results
@@ -984,9 +1144,16 @@ fn run_gnm_only_benchmark(args: &Args) -> Result<RealBenchmarkSummary> {
     fs::write(&results_json, serde_json::to_string_pretty(&summary)?)?;
     info!("");
     info!("  📄 Results saved to: {:?}", results_json);
-    info!("  ⚡ Total time: {:.3}s for {} proteins ({:.1}ms/protein)",
-          total_time_ms as f64 / 1000.0, n_proteins,
-          if n_proteins > 0 { total_time_ms as f64 / n_proteins as f64 } else { 0.0 });
+    info!(
+        "  ⚡ Total time: {:.3}s for {} proteins ({:.1}ms/protein)",
+        total_time_ms as f64 / 1000.0,
+        n_proteins,
+        if n_proteins > 0 {
+            total_time_ms as f64 / n_proteins as f64
+        } else {
+            0.0
+        }
+    );
 
     Ok(summary)
 }
@@ -997,9 +1164,7 @@ fn run_real_benchmark(_args: &Args) -> Result<RealBenchmarkSummary> {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 

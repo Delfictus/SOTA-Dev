@@ -157,7 +157,11 @@ impl GpuZroCrypticScorer {
     /// Score with RLS online learning from ground truth label
     ///
     /// Returns the prediction BEFORE the weight update (for fair evaluation).
-    pub fn score_and_learn(&mut self, features: &CrypticFeatures, ground_truth: bool) -> Result<f32> {
+    pub fn score_and_learn(
+        &mut self,
+        features: &CrypticFeatures,
+        ground_truth: bool,
+    ) -> Result<f32> {
         let mut input = [0.0f32; 40];
 
         if let Some(ref prev) = self.prev_features {
@@ -314,12 +318,16 @@ impl GpuZroCrypticScorer {
     /// Uses bincode for compact, fast, precision-preserving serialization.
     /// This is the production-grade format for neural network weights.
     pub fn save_weights(&self, path: &str) -> Result<()> {
-        let data = bincode::serialize(&self.readout_weights)
-            .context("Failed to serialize weights")?;
+        let data =
+            bincode::serialize(&self.readout_weights).context("Failed to serialize weights")?;
         std::fs::write(path, data).context("Failed to write weights file")?;
 
-        log::info!("Saved weights to {} ({} updates, {} bytes)",
-                   path, self.update_count, self.readout_weights.len() * 4);
+        log::info!(
+            "Saved weights to {} ({} updates, {} bytes)",
+            path,
+            self.update_count,
+            self.readout_weights.len() * 4
+        );
         Ok(())
     }
 
@@ -416,7 +424,11 @@ mod tests {
     fn test_scorer_initialization() {
         let context = CudaContext::new(0).expect("CUDA not available");
         let scorer = GpuZroCrypticScorer::new(context);
-        assert!(scorer.is_ok(), "Failed to initialize scorer: {:?}", scorer.err());
+        assert!(
+            scorer.is_ok(),
+            "Failed to initialize scorer: {:?}",
+            scorer.err()
+        );
     }
 
     #[test]
@@ -436,7 +448,11 @@ mod tests {
         assert!(score.is_ok(), "Scoring failed: {:?}", score.err());
 
         let score_val = score.unwrap();
-        assert!(score_val >= 0.0 && score_val <= 1.0, "Score {} out of range", score_val);
+        assert!(
+            score_val >= 0.0 && score_val <= 1.0,
+            "Score {} out of range",
+            score_val
+        );
     }
 
     #[test]
@@ -454,7 +470,9 @@ mod tests {
         };
 
         // Learn from positive example
-        let score1 = scorer.score_and_learn(&features, true).expect("Learning failed");
+        let score1 = scorer
+            .score_and_learn(&features, true)
+            .expect("Learning failed");
         assert!(score1 >= 0.0 && score1 <= 1.0);
 
         // Update count should increase
@@ -462,7 +480,9 @@ mod tests {
 
         // Learn from negative example
         let neg_features = CrypticFeatures::default();
-        let score2 = scorer.score_and_learn(&neg_features, false).expect("Learning failed");
+        let score2 = scorer
+            .score_and_learn(&neg_features, false)
+            .expect("Learning failed");
         assert!(score2 >= 0.0 && score2 <= 1.0);
 
         assert_eq!(scorer.update_count(), 2);

@@ -241,7 +241,9 @@ impl ApoHoloResult {
         if self.rmsd_trajectory.is_empty() {
             return 0.0;
         }
-        let improved = self.rmsd_trajectory.iter()
+        let improved = self
+            .rmsd_trajectory
+            .iter()
             .filter(|&&r| r < self.apo_holo_rmsd)
             .count();
         improved as f32 / self.rmsd_trajectory.len() as f32
@@ -308,11 +310,23 @@ impl ApoHoloBenchmarkSummary {
         s.push_str("## Results by Motion Type\n\n");
         s.push_str("| Motion Type | Success | Mean Improvement |\n");
         s.push_str("|-------------|---------|------------------|\n");
-        self.add_motion_row(&mut s, "Small Rotation", &self.by_motion_type.small_rotation);
+        self.add_motion_row(
+            &mut s,
+            "Small Rotation",
+            &self.by_motion_type.small_rotation,
+        );
         self.add_motion_row(&mut s, "Loop Motion", &self.by_motion_type.loop_motion);
         self.add_motion_row(&mut s, "Hinge Motion", &self.by_motion_type.hinge_motion);
-        self.add_motion_row(&mut s, "Domain Rotation", &self.by_motion_type.domain_rotation);
-        self.add_motion_row(&mut s, "Domain Closure", &self.by_motion_type.domain_closure);
+        self.add_motion_row(
+            &mut s,
+            "Domain Rotation",
+            &self.by_motion_type.domain_rotation,
+        );
+        self.add_motion_row(
+            &mut s,
+            "Domain Closure",
+            &self.by_motion_type.domain_closure,
+        );
         s.push('\n');
 
         s.push_str("## Individual Results\n\n");
@@ -359,7 +373,11 @@ impl ApoHoloBenchmarkSummary {
                 r.apo_holo_rmsd,
                 r.min_rmsd_to_holo,
                 r.rmsd_improvement,
-                if r.success { "\\checkmark" } else { "$\\times$" }
+                if r.success {
+                    "\\checkmark"
+                } else {
+                    "$\\times$"
+                }
             ));
         }
 
@@ -376,8 +394,8 @@ impl ApoHoloBenchmarkSummary {
 
     /// Save results to JSON file
     pub fn save_json(&self, path: &str) -> Result<()> {
-        let json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize benchmark summary")?;
+        let json =
+            serde_json::to_string_pretty(self).context("Failed to serialize benchmark summary")?;
         std::fs::write(path, json).context("Failed to write JSON file")?;
         Ok(())
     }
@@ -464,7 +482,11 @@ impl ApoHoloBenchmark {
                 Ok(result) => {
                     log::info!(
                         "  {} {}: {:.2}\u{212B} \u{2192} {:.2}\u{212B} ({})",
-                        if result.success { "\u{2713}" } else { "\u{2717}" },
+                        if result.success {
+                            "\u{2713}"
+                        } else {
+                            "\u{2717}"
+                        },
                         pair.name,
                         result.apo_holo_rmsd,
                         result.min_rmsd_to_holo,
@@ -483,21 +505,27 @@ impl ApoHoloBenchmark {
 
     /// Run benchmark on all pairs with GPU sampler
     #[cfg(feature = "cryptic-gpu")]
-    pub fn run_all(&mut self, context: std::sync::Arc<cudarc::driver::CudaContext>) -> Result<ApoHoloBenchmarkSummary> {
+    pub fn run_all(
+        &mut self,
+        context: std::sync::Arc<cudarc::driver::CudaContext>,
+    ) -> Result<ApoHoloBenchmarkSummary> {
         log::info!(
             "Starting apo-holo benchmark on {} pairs",
             APO_HOLO_PAIRS.len()
         );
 
-        let mut sampler = HybridSampler::new(context)?
-            .with_strategy(self.config.routing_strategy);
+        let mut sampler = HybridSampler::new(context)?.with_strategy(self.config.routing_strategy);
 
         for pair in APO_HOLO_PAIRS {
             match self.run_pair_with_sampler(pair, &mut sampler) {
                 Ok(result) => {
                     log::info!(
                         "  {} {}: {:.2}\u{212B} \u{2192} {:.2}\u{212B} ({})",
-                        if result.success { "\u{2713}" } else { "\u{2717}" },
+                        if result.success {
+                            "\u{2713}"
+                        } else {
+                            "\u{2717}"
+                        },
                         pair.name,
                         result.apo_holo_rmsd,
                         result.min_rmsd_to_holo,
@@ -535,8 +563,8 @@ impl ApoHoloBenchmark {
 
         let apo_content =
             std::fs::read_to_string(&apo_path).context(format!("Failed to read {}", apo_path))?;
-        let holo_content = std::fs::read_to_string(&holo_path)
-            .context(format!("Failed to read {}", holo_path))?;
+        let holo_content =
+            std::fs::read_to_string(&holo_path).context(format!("Failed to read {}", holo_path))?;
 
         // Sanitize structures
         let apo_struct = sanitize_pdb(&apo_content, pair.apo)?;
@@ -629,11 +657,7 @@ impl ApoHoloBenchmark {
         };
 
         let mean_min_rmsd = if n_total > 0 {
-            self.results
-                .iter()
-                .map(|r| r.min_rmsd_to_holo)
-                .sum::<f32>()
-                / n_total as f32
+            self.results.iter().map(|r| r.min_rmsd_to_holo).sum::<f32>() / n_total as f32
         } else {
             0.0
         };
@@ -730,20 +754,24 @@ fn compute_rmsd_kabsch(conf1: &[[f32; 3]], conf2: &[[f32; 3]]) -> f32 {
 
     let centered1: Vec<Vector3<f64>> = conf1
         .iter()
-        .map(|p| Vector3::new(
-            (p[0] - center1[0]) as f64,
-            (p[1] - center1[1]) as f64,
-            (p[2] - center1[2]) as f64,
-        ))
+        .map(|p| {
+            Vector3::new(
+                (p[0] - center1[0]) as f64,
+                (p[1] - center1[1]) as f64,
+                (p[2] - center1[2]) as f64,
+            )
+        })
         .collect();
 
     let centered2: Vec<Vector3<f64>> = conf2
         .iter()
-        .map(|p| Vector3::new(
-            (p[0] - center2[0]) as f64,
-            (p[1] - center2[1]) as f64,
-            (p[2] - center2[2]) as f64,
-        ))
+        .map(|p| {
+            Vector3::new(
+                (p[0] - center2[0]) as f64,
+                (p[1] - center2[1]) as f64,
+                (p[2] - center2[2]) as f64,
+            )
+        })
         .collect();
 
     // Step 2: Compute covariance matrix H = P^T * Q
@@ -896,18 +924,36 @@ mod tests {
         let conf2 = vec![[50.0, 50.0, 50.0], [51.0, 50.0, 50.0], [50.0, 51.0, 50.0]];
         let rmsd = compute_rmsd(&conf1, &conf2);
         // After centering, structures are identical -> RMSD ≈ 0
-        assert!(rmsd < 0.001, "Kabsch RMSD should be ~0 for translated structure, got {}", rmsd);
+        assert!(
+            rmsd < 0.001,
+            "Kabsch RMSD should be ~0 for translated structure, got {}",
+            rmsd
+        );
     }
 
     #[test]
     fn test_compute_rmsd_with_rotation() {
         // Same structure, 90° rotation around Z axis
-        let conf1 = vec![[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0]];
+        let conf1 = vec![
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ];
         // 90° rotation: (x,y,z) -> (-y, x, z)
-        let conf2 = vec![[0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let conf2 = vec![
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ];
         let rmsd = compute_rmsd(&conf1, &conf2);
         // Kabsch should find optimal rotation -> RMSD ≈ 0
-        assert!(rmsd < 0.001, "Kabsch RMSD should be ~0 for rotated structure, got {}", rmsd);
+        assert!(
+            rmsd < 0.001,
+            "Kabsch RMSD should be ~0 for rotated structure, got {}",
+            rmsd
+        );
     }
 
     #[test]

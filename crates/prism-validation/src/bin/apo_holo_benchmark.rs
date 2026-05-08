@@ -46,12 +46,12 @@ fn main() -> Result<()> {
     // overpowers the protein's ability to maintain its fold.
     let sampling_config = SamplingConfig {
         n_samples: args.samples,
-        steps_per_sample: 500,  // 500 steps × 0.1 fs = 50 fs relaxation (was 50 → 5 fs)
+        steps_per_sample: 500, // 500 steps × 0.1 fs = 50 fs relaxation (was 50 → 5 fs)
         temperature: 310.0,
         seed: 42,
         // 0.1 fs required for stability with explicit hydrogens (C-H period ~10 fs)
         timestep_fs: Some(0.1),
-        leapfrog_steps: Some(5),  // NOTE: Currently unused by amber_path.rs
+        leapfrog_steps: Some(5), // NOTE: Currently unused by amber_path.rs
     };
 
     // Configure benchmark
@@ -67,16 +67,14 @@ fn main() -> Result<()> {
     // Run benchmark
     let summary = if args.mock {
         println!("Running in MOCK mode...");
-        benchmark.run_all_mock()
-            .context("Mock benchmark failed")?
+        benchmark.run_all_mock().context("Mock benchmark failed")?
     } else {
         #[cfg(feature = "cryptic-gpu")]
         {
             use cudarc::driver::CudaContext;
 
             println!("Initializing CUDA...");
-            let context = CudaContext::new(0)
-                .context("Failed to initialize CUDA device")?;
+            let context = CudaContext::new(0).context("Failed to initialize CUDA device")?;
             println!("CUDA initialized");
             println!();
 
@@ -84,8 +82,7 @@ fn main() -> Result<()> {
             println!("This may take 20-30 minutes...");
             println!();
 
-            benchmark.run_all(context)
-                .context("GPU benchmark failed")?
+            benchmark.run_all(context).context("GPU benchmark failed")?
         }
 
         #[cfg(not(feature = "cryptic-gpu"))]
@@ -103,7 +100,11 @@ fn main() -> Result<()> {
     println!("{}", summary.to_markdown());
 
     // Save results
-    std::fs::create_dir_all(std::path::Path::new(&args.output).parent().unwrap_or(std::path::Path::new(".")))?;
+    std::fs::create_dir_all(
+        std::path::Path::new(&args.output)
+            .parent()
+            .unwrap_or(std::path::Path::new(".")),
+    )?;
     summary.save_json(&args.output)?;
     println!("Results saved to: {}", args.output);
 
@@ -111,13 +112,20 @@ fn main() -> Result<()> {
     println!();
     println!("=== SUMMARY ===");
     println!("Total pairs: {}", summary.n_total);
-    println!("Successful: {} ({:.1}%)",
+    println!(
+        "Successful: {} ({:.1}%)",
         summary.n_success,
         100.0 * summary.n_success as f64 / summary.n_total.max(1) as f64
     );
     println!("Overall success rate: {:.1}%", summary.success_rate * 100.0);
-    println!("Mean min RMSD to holo: {:.2} Å", summary.mean_min_rmsd_to_holo);
-    println!("Mean improvement: {:.1}%", summary.mean_rmsd_improvement * 100.0);
+    println!(
+        "Mean min RMSD to holo: {:.2} Å",
+        summary.mean_min_rmsd_to_holo
+    );
+    println!(
+        "Mean improvement: {:.1}%",
+        summary.mean_rmsd_improvement * 100.0
+    );
 
     // Check against targets
     println!();
@@ -126,15 +134,29 @@ fn main() -> Result<()> {
     let rmsd_target = 3.5;
 
     if summary.success_rate >= success_target {
-        println!("✅ Success rate {:.1}% >= {:.0}% target", summary.success_rate * 100.0, success_target * 100.0);
+        println!(
+            "✅ Success rate {:.1}% >= {:.0}% target",
+            summary.success_rate * 100.0,
+            success_target * 100.0
+        );
     } else {
-        println!("❌ Success rate {:.1}% < {:.0}% target", summary.success_rate * 100.0, success_target * 100.0);
+        println!(
+            "❌ Success rate {:.1}% < {:.0}% target",
+            summary.success_rate * 100.0,
+            success_target * 100.0
+        );
     }
 
     if summary.mean_min_rmsd_to_holo <= rmsd_target {
-        println!("✅ Mean min RMSD {:.2}Å <= {:.1}Å target", summary.mean_min_rmsd_to_holo, rmsd_target);
+        println!(
+            "✅ Mean min RMSD {:.2}Å <= {:.1}Å target",
+            summary.mean_min_rmsd_to_holo, rmsd_target
+        );
     } else {
-        println!("❌ Mean min RMSD {:.2}Å > {:.1}Å target", summary.mean_min_rmsd_to_holo, rmsd_target);
+        println!(
+            "❌ Mean min RMSD {:.2}Å > {:.1}Å target",
+            summary.mean_min_rmsd_to_holo, rmsd_target
+        );
     }
 
     Ok(())

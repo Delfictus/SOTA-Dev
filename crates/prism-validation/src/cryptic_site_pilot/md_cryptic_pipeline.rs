@@ -35,15 +35,13 @@ use std::sync::Arc;
 use prism_gpu::{AmberMegaFusedHmc, LcpoSasaGpu};
 
 #[cfg(feature = "cryptic-gpu")]
-use prism_gpu::{
-    ReplicaParallelMD, ReplicaParallelConfig, SharedTopology, ReplicaDiagnostics,
-};
+use prism_gpu::{ReplicaDiagnostics, ReplicaParallelConfig, ReplicaParallelMD, SharedTopology};
 
 #[cfg(feature = "cryptic-gpu")]
 use cudarc::driver::CudaContext;
 
-use super::topology_loader::PrismTopology;
 use super::druggability::{DruggabilityScore, DruggabilityScorer};
+use super::topology_loader::PrismTopology;
 
 // =============================================================================
 // CONFIGURATION
@@ -59,7 +57,6 @@ pub struct MdCrypticConfig {
     // =========================================================================
     // PHYSICAL CONSTANTS — DO NOT MODIFY
     // =========================================================================
-
     /// Water probe radius for SASA calculation (Å)
     /// Source: Standard value for water molecule
     /// DO NOT MODIFY - this is a physical constant
@@ -68,7 +65,6 @@ pub struct MdCrypticConfig {
     // =========================================================================
     // MD PARAMETERS — STANDARD PRACTICE
     // =========================================================================
-
     /// Integration timestep (femtoseconds)
     /// 2.0 fs is standard with SHAKE/RATTLE H-bond constraints
     pub dt_fs: f32,
@@ -96,7 +92,6 @@ pub struct MdCrypticConfig {
     // =========================================================================
     // CLASSIFICATION THRESHOLDS — LITERATURE-DERIVED, SET BEFORE VALIDATION
     // =========================================================================
-
     /// Volume coefficient of variation threshold for cryptic classification
     ///
     /// Source: CryptoSite (Cimermancic et al., 2016), PocketMiner (Meller et al., 2023)
@@ -135,7 +130,6 @@ pub struct MdCrypticConfig {
     // =========================================================================
     // POCKET DETECTION PARAMETERS
     // =========================================================================
-
     /// Neighbor distance cutoff for pocket detection (Å)
     /// Tighter than Cα-only (10Å) because using all heavy atoms
     pub pocket_neighbor_cutoff: f32,
@@ -152,7 +146,6 @@ pub struct MdCrypticConfig {
     // =========================================================================
     // REPLICA-PARALLEL ACCELERATION (OPTIONAL)
     // =========================================================================
-
     /// Number of parallel replicas (1 = serial, 4 = recommended for speed)
     ///
     /// With n_replicas > 1:
@@ -166,23 +159,23 @@ impl Default for MdCrypticConfig {
     fn default() -> Self {
         Self {
             // Physical constants
-            sasa_probe_radius: 1.4,  // Water molecule radius - NON-NEGOTIABLE
+            sasa_probe_radius: 1.4, // Water molecule radius - NON-NEGOTIABLE
 
             // MD parameters (standard practice)
-            dt_fs: 2.0,              // Standard with H-constraints
-            temperature_k: 310.0,    // Physiological temperature
-            gamma_fs: 1.0,           // Standard Langevin friction
-            segment_steps: 10_000,   // 20 ps per frame at 2 fs timestep
-            n_frames: 200,           // 4 ns total production
+            dt_fs: 2.0,                  // Standard with H-constraints
+            temperature_k: 310.0,        // Physiological temperature
+            gamma_fs: 1.0,               // Standard Langevin friction
+            segment_steps: 10_000,       // 20 ps per frame at 2 fs timestep
+            n_frames: 200,               // 4 ns total production
             equilibration_steps: 25_000, // 50 ps equilibration
 
             // Classification thresholds - LITERATURE DERIVED, SET BEFORE VALIDATION
-            cv_threshold: 0.20,          // CryptoSite, PocketMiner standard
-            min_open_frequency: 0.05,    // 5% minimum
-            max_open_frequency: 0.90,    // 90% maximum
-            jaccard_threshold: 0.30,     // 30% residue overlap
-            min_pocket_volume: 80.0,     // Fragment-sized minimum
-            max_pocket_volume: 2000.0,   // Upper bound
+            cv_threshold: 0.20,        // CryptoSite, PocketMiner standard
+            min_open_frequency: 0.05,  // 5% minimum
+            max_open_frequency: 0.90,  // 90% maximum
+            jaccard_threshold: 0.30,   // 30% residue overlap
+            min_pocket_volume: 80.0,   // Fragment-sized minimum
+            max_pocket_volume: 2000.0, // Upper bound
 
             // Pocket detection
             pocket_neighbor_cutoff: 8.0, // Tighter than Cα (10Å)
@@ -192,7 +185,7 @@ impl Default for MdCrypticConfig {
             seed: 42,
 
             // Replica-parallel acceleration (disabled by default for compatibility)
-            n_replicas: 1,  // Serial execution
+            n_replicas: 1, // Serial execution
         }
     }
 }
@@ -201,8 +194,8 @@ impl MdCrypticConfig {
     /// Quick test configuration (shorter simulation)
     pub fn quick_test() -> Self {
         Self {
-            segment_steps: 5_000,     // 10 ps per frame
-            n_frames: 50,             // 500 ps total
+            segment_steps: 5_000,        // 10 ps per frame
+            n_frames: 50,                // 500 ps total
             equilibration_steps: 10_000, // 20 ps equilibration
             ..Default::default()
         }
@@ -211,8 +204,8 @@ impl MdCrypticConfig {
     /// Production configuration (longer simulation for difficult cases)
     pub fn production() -> Self {
         Self {
-            segment_steps: 10_000,    // 20 ps per frame
-            n_frames: 400,            // 8 ns total
+            segment_steps: 10_000,       // 20 ps per frame
+            n_frames: 400,               // 8 ns total
             equilibration_steps: 50_000, // 100 ps equilibration
             ..Default::default()
         }
@@ -232,11 +225,11 @@ impl MdCrypticConfig {
     pub fn accelerated() -> Self {
         Self {
             // NOTE: For 4fs timestep, topology MUST be from `prism-prep --hmr`
-            dt_fs: 4.0,               // 4 fs (requires HMR topology)
-            segment_steps: 5_000,     // 20 ps per frame (5000 × 4fs)
-            n_frames: 200,            // 4 ns total (same coverage)
+            dt_fs: 4.0,                  // 4 fs (requires HMR topology)
+            segment_steps: 5_000,        // 20 ps per frame (5000 × 4fs)
+            n_frames: 200,               // 4 ns total (same coverage)
             equilibration_steps: 12_500, // 50 ps (12500 × 4fs)
-            n_replicas: 4,            // 4 parallel replicas
+            n_replicas: 4,               // 4 parallel replicas
             ..Default::default()
         }
     }
@@ -249,18 +242,19 @@ impl MdCrypticConfig {
     /// IMPORTANT: Requires topology from `prism-prep --hmr` for 4fs timestep.
     pub fn max_acceleration() -> Self {
         Self {
-            dt_fs: 4.0,               // Requires HMR topology from prism-prep
-            segment_steps: 2_500,     // 10 ps per frame
-            n_frames: 100,            // 1 ns total (quick scan)
+            dt_fs: 4.0,                 // Requires HMR topology from prism-prep
+            segment_steps: 2_500,       // 10 ps per frame
+            n_frames: 100,              // 1 ns total (quick scan)
             equilibration_steps: 6_250, // 25 ps
-            n_replicas: 8,            // 8 parallel replicas
+            n_replicas: 8,              // 8 parallel replicas
             ..Default::default()
         }
     }
 
     /// Total simulation time in picoseconds
     pub fn total_time_ps(&self) -> f64 {
-        let production_ps = self.n_frames as f64 * self.segment_steps as f64 * self.dt_fs as f64 / 1000.0;
+        let production_ps =
+            self.n_frames as f64 * self.segment_steps as f64 * self.dt_fs as f64 / 1000.0;
         let eq_ps = self.equilibration_steps as f64 * self.dt_fs as f64 / 1000.0;
         production_ps + eq_ps
     }
@@ -330,12 +324,12 @@ impl PocketTimeSeries {
     }
 
     fn compute_statistics(&mut self) {
-        let observed_volumes: Vec<f64> = self.volumes.iter()
-            .filter(|&&v| v > 0.0)
-            .copied()
-            .collect();
+        let observed_volumes: Vec<f64> =
+            self.volumes.iter().filter(|&&v| v > 0.0).copied().collect();
 
-        let observed_sasa: Vec<f64> = self.sasa_values.iter()
+        let observed_sasa: Vec<f64> = self
+            .sasa_values
+            .iter()
             .filter(|&&s| s > 0.0)
             .copied()
             .collect();
@@ -346,20 +340,32 @@ impl PocketTimeSeries {
         if n_observed >= 5 {
             // Volume statistics
             self.mean_volume = observed_volumes.iter().sum::<f64>() / n_observed as f64;
-            let variance = observed_volumes.iter()
+            let variance = observed_volumes
+                .iter()
                 .map(|v| (v - self.mean_volume).powi(2))
-                .sum::<f64>() / n_observed as f64;
+                .sum::<f64>()
+                / n_observed as f64;
             self.std_volume = variance.sqrt();
-            self.cv = if self.mean_volume > 0.0 { self.std_volume / self.mean_volume } else { 0.0 };
+            self.cv = if self.mean_volume > 0.0 {
+                self.std_volume / self.mean_volume
+            } else {
+                0.0
+            };
 
             // SASA statistics
             if !observed_sasa.is_empty() {
                 self.mean_sasa = observed_sasa.iter().sum::<f64>() / observed_sasa.len() as f64;
-                let sasa_variance = observed_sasa.iter()
+                let sasa_variance = observed_sasa
+                    .iter()
                     .map(|s| (s - self.mean_sasa).powi(2))
-                    .sum::<f64>() / observed_sasa.len() as f64;
+                    .sum::<f64>()
+                    / observed_sasa.len() as f64;
                 let std_sasa = sasa_variance.sqrt();
-                self.cv_sasa = if self.mean_sasa > 0.0 { std_sasa / self.mean_sasa } else { 0.0 };
+                self.cv_sasa = if self.mean_sasa > 0.0 {
+                    std_sasa / self.mean_sasa
+                } else {
+                    0.0
+                };
             }
 
             self.open_frequency = n_observed as f64 / n_total as f64;
@@ -423,13 +429,7 @@ impl ResidueBasedVolumeTracker {
     }
 
     /// Add a pocket observation from a single frame
-    pub fn add_observation(
-        &mut self,
-        frame_idx: usize,
-        residues: &[i32],
-        volume: f64,
-        sasa: f64,
-    ) {
+    pub fn add_observation(&mut self, frame_idx: usize, residues: &[i32], volume: f64, sasa: f64) {
         let residue_set: HashSet<i32> = residues.iter().copied().collect();
 
         // Try to find matching pocket by Jaccard similarity
@@ -507,7 +507,8 @@ impl ResidueBasedVolumeTracker {
 
     /// Get all tracked pockets (including non-cryptic)
     pub fn get_all_pockets(&self) -> Vec<&PocketTimeSeries> {
-        self.pockets.values()
+        self.pockets
+            .values()
             .filter(|p| p.frames_observed.len() >= self.min_observations)
             .collect()
     }
@@ -528,7 +529,9 @@ impl ResidueBasedVolumeTracker {
         min_freq: f64,
         max_freq: f64,
     ) -> Vec<CrypticSite> {
-        let mut cryptic: Vec<CrypticSite> = self.pockets.iter()
+        let mut cryptic: Vec<CrypticSite> = self
+            .pockets
+            .iter()
             .filter(|(_, p)| {
                 p.frames_observed.len() >= self.min_observations
                 && p.cv_sasa > cv_threshold  // SASA CV, not volume CV
@@ -537,7 +540,9 @@ impl ResidueBasedVolumeTracker {
             })
             .map(|(id, p)| {
                 // Confidence based on how much SASA CV exceeds threshold
-                let confidence = ((p.cv_sasa - cv_threshold) / cv_threshold).min(1.0).max(0.0);
+                let confidence = ((p.cv_sasa - cv_threshold) / cv_threshold)
+                    .min(1.0)
+                    .max(0.0);
 
                 CrypticSite {
                     site_id: id.clone(),
@@ -555,7 +560,11 @@ impl ResidueBasedVolumeTracker {
             .collect();
 
         // Sort by confidence (descending)
-        cryptic.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        cryptic.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Assign ranks
         for (i, site) in cryptic.iter_mut().enumerate() {
@@ -569,7 +578,8 @@ impl ResidueBasedVolumeTracker {
     /// NOTE: Reports SASA CV values (the classification metric), not volume CV
     pub fn get_diagnostics(&self) -> TrackerDiagnostics {
         let all_pockets: Vec<&PocketTimeSeries> = self.pockets.values().collect();
-        let valid_pockets: Vec<&PocketTimeSeries> = all_pockets.iter()
+        let valid_pockets: Vec<&PocketTimeSeries> = all_pockets
+            .iter()
             .filter(|p| p.frames_observed.len() >= self.min_observations)
             .copied()
             .collect();
@@ -583,9 +593,16 @@ impl ResidueBasedVolumeTracker {
             valid_pockets: valid_pockets.len(),
             cv_min: cv_values.iter().copied().fold(f64::INFINITY, f64::min),
             cv_max: cv_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            cv_mean: if !cv_values.is_empty() { cv_values.iter().sum::<f64>() / cv_values.len() as f64 } else { 0.0 },
+            cv_mean: if !cv_values.is_empty() {
+                cv_values.iter().sum::<f64>() / cv_values.len() as f64
+            } else {
+                0.0
+            },
             freq_min: freq_values.iter().copied().fold(f64::INFINITY, f64::min),
-            freq_max: freq_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            freq_max: freq_values
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max),
         }
     }
 }
@@ -683,8 +700,10 @@ impl MdCrypticPipeline {
     /// - n_replicas > 1: Parallel execution with ReplicaParallelMD (2D grid kernel)
     pub fn run(&self, topology_path: &str) -> Result<MdCrypticResult> {
         if self.config.n_replicas > 1 {
-            log::info!("[MD-CRYPTIC] Using REPLICA-PARALLEL mode ({} replicas)",
-                self.config.n_replicas);
+            log::info!(
+                "[MD-CRYPTIC] Using REPLICA-PARALLEL mode ({} replicas)",
+                self.config.n_replicas
+            );
             self.run_replica_parallel(topology_path)
         } else {
             log::info!("[MD-CRYPTIC] Using SERIAL mode (1 replica)");
@@ -701,9 +720,15 @@ impl MdCrypticPipeline {
         let start_time = std::time::Instant::now();
         let n_replicas = self.config.n_replicas;
 
-        log::info!("[MD-CRYPTIC-PARALLEL] Starting with {} replicas", n_replicas);
-        log::info!("[MD-CRYPTIC-PARALLEL] Config: {} frames/replica, {} ps total",
-            self.config.n_frames, self.config.total_time_ps());
+        log::info!(
+            "[MD-CRYPTIC-PARALLEL] Starting with {} replicas",
+            n_replicas
+        );
+        log::info!(
+            "[MD-CRYPTIC-PARALLEL] Config: {} frames/replica, {} ps total",
+            self.config.n_frames,
+            self.config.total_time_ps()
+        );
 
         // 1. Load topology
         let topology = PrismTopology::load(Path::new(topology_path))
@@ -712,12 +737,15 @@ impl MdCrypticPipeline {
         let pdb_id = topology.get_pdb_id();
         let n_atoms = topology.n_atoms;
 
-        log::info!("[MD-CRYPTIC-PARALLEL] Loaded {} atoms, {} residues from {}",
-            n_atoms, topology.n_residues, pdb_id);
+        log::info!(
+            "[MD-CRYPTIC-PARALLEL] Loaded {} atoms, {} residues from {}",
+            n_atoms,
+            topology.n_residues,
+            pdb_id
+        );
 
         // 2. Initialize GPU context
-        let context = CudaContext::new(0)
-            .context("Failed to create CUDA context")?;
+        let context = CudaContext::new(0).context("Failed to create CUDA context")?;
 
         // 3. Build shared topology for replica-parallel MD
         let shared_topology = self.build_shared_topology(&topology)?;
@@ -731,11 +759,13 @@ impl MdCrypticPipeline {
         );
 
         // 5. Initialize replica-parallel MD engine
-        let mut md_engine = ReplicaParallelMD::new(context.clone(), replica_config, &shared_topology)
-            .context("Failed to create ReplicaParallelMD engine")?;
+        let mut md_engine =
+            ReplicaParallelMD::new(context.clone(), replica_config, &shared_topology)
+                .context("Failed to create ReplicaParallelMD engine")?;
 
         // Initialize the simulation (uploads positions, inits RNG, builds neighbor list)
-        md_engine.initialize()
+        md_engine
+            .initialize()
             .context("Failed to initialize ReplicaParallelMD")?;
 
         // 6. Initialize GPU SASA calculator (shared across replicas)
@@ -744,22 +774,22 @@ impl MdCrypticPipeline {
 
         // 7. Initialize per-replica volume trackers
         let mut volume_trackers: Vec<ResidueBasedVolumeTracker> = (0..n_replicas)
-            .map(|_| ResidueBasedVolumeTracker::new(
-                self.config.n_frames,
-                self.config.jaccard_threshold,
-            ))
+            .map(|_| {
+                ResidueBasedVolumeTracker::new(self.config.n_frames, self.config.jaccard_threshold)
+            })
             .collect();
 
         // 8. Equilibration (all replicas in parallel)
-        log::info!("[MD-CRYPTIC-PARALLEL] Running {} steps equilibration ({:.1} ps) on {} replicas...",
+        log::info!(
+            "[MD-CRYPTIC-PARALLEL] Running {} steps equilibration ({:.1} ps) on {} replicas...",
             self.config.equilibration_steps,
             self.config.equilibration_steps as f64 * self.config.dt_fs as f64 / 1000.0,
-            n_replicas);
+            n_replicas
+        );
 
         // Run equilibration steps (no frame extraction)
         for _ in 0..self.config.equilibration_steps {
-            md_engine.step()
-                .context("Equilibration step failed")?;
+            md_engine.step().context("Equilibration step failed")?;
         }
 
         log::info!("[MD-CRYPTIC-PARALLEL] Equilibration complete, starting production...");
@@ -772,11 +802,13 @@ impl MdCrypticPipeline {
         // Run production with RMSD diagnostics every 20 frames
         // This verifies replica independence throughout the simulation
         let diagnostic_interval = std::cmp::max(1, self.config.n_frames / 10); // ~10 checkpoints
-        let (all_replica_frames, replica_rmsd_diagnostics) = md_engine.run_with_diagnostics(
-            self.config.n_frames * self.config.segment_steps,
-            self.config.segment_steps,
-            diagnostic_interval,
-        ).with_context(|| "Production MD failed")?;
+        let (all_replica_frames, replica_rmsd_diagnostics) = md_engine
+            .run_with_diagnostics(
+                self.config.n_frames * self.config.segment_steps,
+                self.config.segment_steps,
+                diagnostic_interval,
+            )
+            .with_context(|| "Production MD failed")?;
 
         // Build replica independence report from diagnostics
         let replica_diagnostics = if !replica_rmsd_diagnostics.is_empty() {
@@ -784,11 +816,14 @@ impl MdCrypticPipeline {
             let last = replica_rmsd_diagnostics.last().unwrap();
 
             // Compute mean RMSD across all checkpoints
-            let mean_rmsd = replica_rmsd_diagnostics.iter()
+            let mean_rmsd = replica_rmsd_diagnostics
+                .iter()
                 .map(|d| d.mean_rmsd)
-                .sum::<f64>() / replica_rmsd_diagnostics.len() as f64;
+                .sum::<f64>()
+                / replica_rmsd_diagnostics.len() as f64;
 
-            let max_rmsd = replica_rmsd_diagnostics.iter()
+            let max_rmsd = replica_rmsd_diagnostics
+                .iter()
                 .map(|d| d.max_rmsd)
                 .fold(0.0_f64, f64::max);
 
@@ -808,15 +843,27 @@ impl MdCrypticPipeline {
                 log::info!("╔════════════════════════════════════════════════════════════════╗");
                 log::info!("║  ✓ REPLICA INDEPENDENCE VERIFIED                               ║");
                 log::info!("╠════════════════════════════════════════════════════════════════╣");
-                log::info!("║  Initial RMSD: {:6.3} Å (should be ~0)                        ║", report.initial_rmsd);
-                log::info!("║  Final RMSD:   {:6.3} Å (should be > 0.5)                     ║", report.final_rmsd);
-                log::info!("║  Maximum RMSD: {:6.3} Å                                       ║", report.max_rmsd);
+                log::info!(
+                    "║  Initial RMSD: {:6.3} Å (should be ~0)                        ║",
+                    report.initial_rmsd
+                );
+                log::info!(
+                    "║  Final RMSD:   {:6.3} Å (should be > 0.5)                     ║",
+                    report.final_rmsd
+                );
+                log::info!(
+                    "║  Maximum RMSD: {:6.3} Å                                       ║",
+                    report.max_rmsd
+                );
                 log::info!("╚════════════════════════════════════════════════════════════════╝");
             } else {
                 log::warn!("╔════════════════════════════════════════════════════════════════╗");
                 log::warn!("║  ✗ WARNING: REPLICAS DID NOT DIVERGE                          ║");
                 log::warn!("╠════════════════════════════════════════════════════════════════╣");
-                log::warn!("║  Final RMSD: {:6.3} Å < 0.5 Å threshold                       ║", report.final_rmsd);
+                log::warn!(
+                    "║  Final RMSD: {:6.3} Å < 0.5 Å threshold                       ║",
+                    report.final_rmsd
+                );
                 log::warn!("║  This may indicate replicas are stuck in same local minimum   ║");
                 log::warn!("╚════════════════════════════════════════════════════════════════╝");
             }
@@ -830,12 +877,14 @@ impl MdCrypticPipeline {
         for (replica_idx, replica_frames) in all_replica_frames.iter().enumerate() {
             for (frame_idx, frame) in replica_frames.iter().enumerate() {
                 // Compute SASA for this replica's frame
-                let sasa_result = sasa_calculator.compute(
-                    &frame.positions,
-                    &atom_types,
-                    Some(&radii),
-                ).with_context(|| format!("SASA failed for replica {} frame {}",
-                    replica_idx, frame_idx))?;
+                let sasa_result = sasa_calculator
+                    .compute(&frame.positions, &atom_types, Some(&radii))
+                    .with_context(|| {
+                        format!(
+                            "SASA failed for replica {} frame {}",
+                            replica_idx, frame_idx
+                        )
+                    })?;
 
                 // Detect pockets
                 let pockets = self.detect_pockets_allatom(
@@ -868,11 +917,20 @@ impl MdCrypticPipeline {
 
         let elapsed = start_time.elapsed().as_secs_f64();
 
-        log::info!("[MD-CRYPTIC-PARALLEL] Complete: {} cryptic sites detected in {:.1}s",
-            merged_result.cryptic_sites.len(), elapsed);
-        log::info!("[MD-CRYPTIC-PARALLEL] Effective speedup: {:.1}x vs serial estimate",
-            (self.config.n_frames as f64 * self.config.segment_steps as f64 *
-             self.config.dt_fs as f64 / 1000.0 * 60.0) / elapsed);
+        log::info!(
+            "[MD-CRYPTIC-PARALLEL] Complete: {} cryptic sites detected in {:.1}s",
+            merged_result.cryptic_sites.len(),
+            elapsed
+        );
+        log::info!(
+            "[MD-CRYPTIC-PARALLEL] Effective speedup: {:.1}x vs serial estimate",
+            (self.config.n_frames as f64
+                * self.config.segment_steps as f64
+                * self.config.dt_fs as f64
+                / 1000.0
+                * 60.0)
+                / elapsed
+        );
 
         Ok(MdCrypticResult {
             pdb_id,
@@ -896,7 +954,8 @@ impl MdCrypticPipeline {
 
         // Masses and inverse masses
         let masses: Vec<f32> = topology.masses.iter().map(|&m| m as f32).collect();
-        let inv_masses: Vec<f32> = masses.iter()
+        let inv_masses: Vec<f32> = masses
+            .iter()
             .map(|&m| if m > 0.1 { 1.0 / m } else { 0.0 })
             .collect();
 
@@ -905,10 +964,22 @@ impl MdCrypticPipeline {
 
         // LJ parameters
         let sigmas: Vec<f32> = (0..n_atoms)
-            .map(|i| topology.lj_params.get(i).map(|p| p.sigma as f32).unwrap_or(3.4))
+            .map(|i| {
+                topology
+                    .lj_params
+                    .get(i)
+                    .map(|p| p.sigma as f32)
+                    .unwrap_or(3.4)
+            })
             .collect();
         let epsilons: Vec<f32> = (0..n_atoms)
-            .map(|i| topology.lj_params.get(i).map(|p| p.epsilon as f32).unwrap_or(0.1))
+            .map(|i| {
+                topology
+                    .lj_params
+                    .get(i)
+                    .map(|p| p.epsilon as f32)
+                    .unwrap_or(0.1)
+            })
             .collect();
 
         // Bonds: flatten to [i, j, i, j, ...] and params to [k, r0, k, r0, ...]
@@ -1011,7 +1082,10 @@ impl MdCrypticPipeline {
             gb_screen.push(0.8_f32); // Standard screening factor
         }
 
-        log::info!("[MD-CRYPTIC] GB solvation: {} atoms with Born radii (OBC model)", n_atoms);
+        log::info!(
+            "[MD-CRYPTIC] GB solvation: {} atoms with Born radii (OBC model)",
+            n_atoms
+        );
 
         // Positional restraints to prevent protein expansion in implicit solvent
         // - Backbone (CA, C, N, O): k=50.0 kcal/(mol·Å²) - strong, maintain fold
@@ -1020,15 +1094,17 @@ impl MdCrypticPipeline {
         // This hierarchical scheme prevents Rg explosion while allowing pocket sampling
         let mut restraint_k = vec![0.0_f32; n_atoms];
 
-        let backbone_strength = 50.0_f32;  // Strong restraints
-        let cb_strength = 30.0_f32;        // Moderate-strong restraints (increased from 15)
+        let backbone_strength = 50.0_f32; // Strong restraints
+        let cb_strength = 30.0_f32; // Moderate-strong restraints (increased from 15)
         let sidechain_strength = 15.0_f32; // Moderate restraints (increased from 5)
 
         let backbone_names = ["CA", "C", "N", "O"];
         let cb_names = ["CB"];
-        let sidechain_names = ["CG", "CG1", "CG2", "CD", "CD1", "CD2", "CE", "CE1", "CE2", "CE3",
-                               "CZ", "CZ2", "CZ3", "CH2", "SD", "SG", "OG", "OG1", "OD1", "OD2",
-                               "OE1", "OE2", "ND1", "ND2", "NE", "NE1", "NE2", "NH1", "NH2", "NZ"];
+        let sidechain_names = [
+            "CG", "CG1", "CG2", "CD", "CD1", "CD2", "CE", "CE1", "CE2", "CE3", "CZ", "CZ2", "CZ3",
+            "CH2", "SD", "SG", "OG", "OG1", "OD1", "OD2", "OE1", "OE2", "ND1", "ND2", "NE", "NE1",
+            "NE2", "NH1", "NH2", "NZ",
+        ];
 
         let mut n_backbone = 0;
         let mut n_cb = 0;
@@ -1091,7 +1167,8 @@ impl MdCrypticPipeline {
                 residues.sort();
                 let canonical_id = format!("res_{:?}", &residues[..residues.len().min(5)]);
 
-                all_pocket_data.entry(canonical_id)
+                all_pocket_data
+                    .entry(canonical_id)
                     .or_insert_with(Vec::new)
                     .push(pocket);
             }
@@ -1112,13 +1189,18 @@ impl MdCrypticPipeline {
                     / replica_pockets.len() as f64;
                 let mean_sasa: f64 = replica_pockets.iter().map(|p| p.mean_sasa).sum::<f64>()
                     / replica_pockets.len() as f64;
-                let mean_freq: f64 = replica_pockets.iter().map(|p| p.open_frequency).sum::<f64>()
+                let mean_freq: f64 = replica_pockets
+                    .iter()
+                    .map(|p| p.open_frequency)
+                    .sum::<f64>()
                     / replica_pockets.len() as f64;
 
                 // Cross-replica variance (error estimate)
-                let cv_variance: f64 = replica_pockets.iter()
+                let cv_variance: f64 = replica_pockets
+                    .iter()
                     .map(|p| (p.cv_sasa - mean_cv_sasa).powi(2))
-                    .sum::<f64>() / replica_pockets.len() as f64;
+                    .sum::<f64>()
+                    / replica_pockets.len() as f64;
                 let cv_std = cv_variance.sqrt();
 
                 // Merge residue sets
@@ -1127,10 +1209,8 @@ impl MdCrypticPipeline {
                     merged_residues.extend(&pocket.defining_residues);
                 }
 
-                let mut merged_pocket = PocketTimeSeries::new(
-                    format!("merged_{}", canonical_id),
-                    self.config.n_frames,
-                );
+                let mut merged_pocket =
+                    PocketTimeSeries::new(format!("merged_{}", canonical_id), self.config.n_frames);
                 merged_pocket.defining_residues = merged_residues.into_iter().collect();
                 merged_pocket.defining_residues.sort();
                 merged_pocket.cv = mean_cv;
@@ -1178,15 +1258,18 @@ impl MdCrypticPipeline {
         }
 
         // Classify cryptic sites from merged pockets
-        let mut cryptic_sites: Vec<CrypticSite> = merged_pockets.iter()
+        let mut cryptic_sites: Vec<CrypticSite> = merged_pockets
+            .iter()
             .filter(|p| {
                 p.cv_sasa > self.config.cv_threshold
-                && p.open_frequency >= self.config.min_open_frequency
-                && p.open_frequency <= self.config.max_open_frequency
+                    && p.open_frequency >= self.config.min_open_frequency
+                    && p.open_frequency <= self.config.max_open_frequency
             })
             .map(|p| {
-                let confidence = ((p.cv_sasa - self.config.cv_threshold) / self.config.cv_threshold)
-                    .min(1.0).max(0.0);
+                let confidence = ((p.cv_sasa - self.config.cv_threshold)
+                    / self.config.cv_threshold)
+                    .min(1.0)
+                    .max(0.0);
 
                 CrypticSite {
                     site_id: p.pocket_id.clone(),
@@ -1204,25 +1287,33 @@ impl MdCrypticPipeline {
             .collect();
 
         // Sort by confidence and assign ranks
-        cryptic_sites.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        cryptic_sites.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for (i, site) in cryptic_sites.iter_mut().enumerate() {
             site.rank = i + 1;
         }
 
         // Score druggability
         for site in &mut cryptic_sites {
-            let residue_names: Vec<String> = site.residues.iter()
+            let residue_names: Vec<String> = site
+                .residues
+                .iter()
                 .filter_map(|&res_id| {
-                    topology.residue_ids.iter()
+                    topology
+                        .residue_ids
+                        .iter()
                         .position(|&r| r == res_id)
                         .and_then(|idx| topology.residue_names.get(idx).cloned())
                 })
                 .collect();
 
-            site.druggability = Some(self.druggability_scorer.score_simple(
-                &residue_names,
-                site.mean_volume,
-            ));
+            site.druggability = Some(
+                self.druggability_scorer
+                    .score_simple(&residue_names, site.mean_volume),
+            );
         }
 
         // Compute diagnostics from merged pockets
@@ -1234,9 +1325,16 @@ impl MdCrypticPipeline {
             valid_pockets: merged_pockets.len(),
             cv_min: cv_values.iter().copied().fold(f64::INFINITY, f64::min),
             cv_max: cv_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            cv_mean: if !cv_values.is_empty() { cv_values.iter().sum::<f64>() / cv_values.len() as f64 } else { 0.0 },
+            cv_mean: if !cv_values.is_empty() {
+                cv_values.iter().sum::<f64>() / cv_values.len() as f64
+            } else {
+                0.0
+            },
             freq_min: freq_values.iter().copied().fold(f64::INFINITY, f64::min),
-            freq_max: freq_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            freq_max: freq_values
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max),
         };
 
         Ok(MergedReplicaResult {
@@ -1251,8 +1349,11 @@ impl MdCrypticPipeline {
         let start_time = std::time::Instant::now();
 
         log::info!("[MD-CRYPTIC] Starting MD-based cryptic site detection");
-        log::info!("[MD-CRYPTIC] Config: {} frames, {} ps total",
-            self.config.n_frames, self.config.total_time_ps());
+        log::info!(
+            "[MD-CRYPTIC] Config: {} frames, {} ps total",
+            self.config.n_frames,
+            self.config.total_time_ps()
+        );
 
         // 1. Load topology
         let topology = PrismTopology::load(Path::new(topology_path))
@@ -1261,12 +1362,15 @@ impl MdCrypticPipeline {
         let pdb_id = topology.get_pdb_id();
         let n_atoms = topology.n_atoms;
 
-        log::info!("[MD-CRYPTIC] Loaded {} atoms, {} residues from {}",
-            n_atoms, topology.n_residues, pdb_id);
+        log::info!(
+            "[MD-CRYPTIC] Loaded {} atoms, {} residues from {}",
+            n_atoms,
+            topology.n_residues,
+            pdb_id
+        );
 
         // 2. Initialize GPU context
-        let context = CudaContext::new(0)
-            .context("Failed to create CUDA context")?;
+        let context = CudaContext::new(0).context("Failed to create CUDA context")?;
 
         // 3. Initialize MD engine
         let mut md_engine = self.setup_md_engine(&context, &topology)?;
@@ -1276,22 +1380,24 @@ impl MdCrypticPipeline {
             .context("Failed to initialize GPU SASA calculator")?;
 
         // 5. Initialize volume tracker
-        let mut volume_tracker = ResidueBasedVolumeTracker::new(
-            self.config.n_frames,
-            self.config.jaccard_threshold,
-        );
+        let mut volume_tracker =
+            ResidueBasedVolumeTracker::new(self.config.n_frames, self.config.jaccard_threshold);
 
         // 6. Equilibration (discard)
-        log::info!("[MD-CRYPTIC] Running {} steps equilibration ({:.1} ps)...",
+        log::info!(
+            "[MD-CRYPTIC] Running {} steps equilibration ({:.1} ps)...",
             self.config.equilibration_steps,
-            self.config.equilibration_steps as f64 * self.config.dt_fs as f64 / 1000.0);
+            self.config.equilibration_steps as f64 * self.config.dt_fs as f64 / 1000.0
+        );
 
-        md_engine.run(
-            self.config.equilibration_steps,
-            self.config.dt_fs,
-            self.config.temperature_k,
-            self.config.gamma_fs,
-        ).context("Equilibration failed")?;
+        md_engine
+            .run(
+                self.config.equilibration_steps,
+                self.config.dt_fs,
+                self.config.temperature_k,
+                self.config.gamma_fs,
+            )
+            .context("Equilibration failed")?;
 
         log::info!("[MD-CRYPTIC] Equilibration complete, starting production...");
 
@@ -1302,19 +1408,19 @@ impl MdCrypticPipeline {
 
         for frame_idx in 0..self.config.n_frames {
             // Run MD segment
-            let result = md_engine.run(
-                self.config.segment_steps,
-                self.config.dt_fs,
-                self.config.temperature_k,
-                self.config.gamma_fs,
-            ).with_context(|| format!("MD failed at frame {}", frame_idx))?;
+            let result = md_engine
+                .run(
+                    self.config.segment_steps,
+                    self.config.dt_fs,
+                    self.config.temperature_k,
+                    self.config.gamma_fs,
+                )
+                .with_context(|| format!("MD failed at frame {}", frame_idx))?;
 
             // Compute SASA for this frame
-            let sasa_result = sasa_calculator.compute(
-                &result.positions,
-                &atom_types,
-                Some(&radii),
-            ).with_context(|| format!("SASA calculation failed at frame {}", frame_idx))?;
+            let sasa_result = sasa_calculator
+                .compute(&result.positions, &atom_types, Some(&radii))
+                .with_context(|| format!("SASA calculation failed at frame {}", frame_idx))?;
 
             // Detect pockets (all-atom)
             let pockets = self.detect_pockets_allatom(
@@ -1335,9 +1441,13 @@ impl MdCrypticPipeline {
             }
 
             if (frame_idx + 1) % 20 == 0 || frame_idx == 0 {
-                log::info!("[MD-CRYPTIC] Frame {}/{} (T={:.1}K, PE={:.1})",
-                    frame_idx + 1, self.config.n_frames,
-                    result.avg_temperature, result.potential_energy);
+                log::info!(
+                    "[MD-CRYPTIC] Frame {}/{} (T={:.1}K, PE={:.1})",
+                    frame_idx + 1,
+                    self.config.n_frames,
+                    result.avg_temperature,
+                    result.potential_energy
+                );
             }
         }
 
@@ -1345,8 +1455,12 @@ impl MdCrypticPipeline {
         volume_tracker.finalize();
 
         let diagnostics = volume_tracker.get_diagnostics();
-        log::info!("[MD-CRYPTIC] Tracked {} valid pockets (CV range: {:.3} - {:.3})",
-            diagnostics.valid_pockets, diagnostics.cv_min, diagnostics.cv_max);
+        log::info!(
+            "[MD-CRYPTIC] Tracked {} valid pockets (CV range: {:.3} - {:.3})",
+            diagnostics.valid_pockets,
+            diagnostics.cv_min,
+            diagnostics.cv_max
+        );
 
         let mut cryptic_sites = volume_tracker.get_cryptic_pockets(
             self.config.cv_threshold,
@@ -1356,33 +1470,47 @@ impl MdCrypticPipeline {
 
         // 9. Score druggability for cryptic sites
         for site in &mut cryptic_sites {
-            let residue_names: Vec<String> = site.residues.iter()
+            let residue_names: Vec<String> = site
+                .residues
+                .iter()
                 .filter_map(|&res_id| {
-                    topology.residue_ids.iter()
+                    topology
+                        .residue_ids
+                        .iter()
                         .position(|&r| r == res_id)
                         .and_then(|idx| topology.residue_names.get(idx).cloned())
                 })
                 .collect();
 
-            site.druggability = Some(self.druggability_scorer.score_simple(
-                &residue_names,
-                site.mean_volume,
-            ));
+            site.druggability = Some(
+                self.druggability_scorer
+                    .score_simple(&residue_names, site.mean_volume),
+            );
         }
 
         let elapsed = start_time.elapsed().as_secs_f64();
 
-        log::info!("[MD-CRYPTIC] Complete: {} cryptic sites detected in {:.1}s",
-            cryptic_sites.len(), elapsed);
+        log::info!(
+            "[MD-CRYPTIC] Complete: {} cryptic sites detected in {:.1}s",
+            cryptic_sites.len(),
+            elapsed
+        );
 
         // Report diagnostics for scientific integrity
         if cryptic_sites.is_empty() {
             log::warn!("[MD-CRYPTIC] No cryptic sites detected. Diagnostics:");
             log::warn!("  - Valid pockets: {}", diagnostics.valid_pockets);
-            log::warn!("  - CV range: {:.3} - {:.3} (threshold: {:.3})",
-                diagnostics.cv_min, diagnostics.cv_max, self.config.cv_threshold);
-            log::warn!("  - Freq range: {:.2} - {:.2}",
-                diagnostics.freq_min, diagnostics.freq_max);
+            log::warn!(
+                "  - CV range: {:.3} - {:.3} (threshold: {:.3})",
+                diagnostics.cv_min,
+                diagnostics.cv_max,
+                self.config.cv_threshold
+            );
+            log::warn!(
+                "  - Freq range: {:.2} - {:.2}",
+                diagnostics.freq_min,
+                diagnostics.freq_max
+            );
             log::warn!("  DO NOT adjust thresholds post-hoc. Investigate physics.");
         }
 
@@ -1391,7 +1519,11 @@ impl MdCrypticPipeline {
             config: self.config.clone(),
             total_time_ps: self.config.total_time_ps(),
             n_frames: self.config.n_frames,
-            all_pockets: volume_tracker.get_all_pockets().into_iter().cloned().collect(),
+            all_pockets: volume_tracker
+                .get_all_pockets()
+                .into_iter()
+                .cloned()
+                .collect(),
             cryptic_sites,
             diagnostics,
             computation_time_secs: elapsed,
@@ -1416,24 +1548,48 @@ impl MdCrypticPipeline {
         let positions: Vec<f32> = topology.positions.iter().map(|&x| x as f32).collect();
 
         // Bonded terms - note: AMBER format is (i, j, k, r0) for bonds
-        let bonds: Vec<(usize, usize, f32, f32)> = topology.bonds.iter()
+        let bonds: Vec<(usize, usize, f32, f32)> = topology
+            .bonds
+            .iter()
             .map(|b| (b.i, b.j, b.k as f32, b.r0 as f32))
             .collect();
 
-        let angles: Vec<(usize, usize, usize, f32, f32)> = topology.angles.iter()
+        let angles: Vec<(usize, usize, usize, f32, f32)> = topology
+            .angles
+            .iter()
             .map(|a| (a.i, a.j, a.k_idx, a.force_k as f32, a.theta0 as f32))
             .collect();
 
         // Dihedrals: (i, j, k, l, pk, n, phase) where n is float periodicity
-        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology.dihedrals.iter()
-            .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k as f32, d.periodicity as f32, d.phase as f32))
+        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology
+            .dihedrals
+            .iter()
+            .map(|d| {
+                (
+                    d.i,
+                    d.j,
+                    d.k_idx,
+                    d.l,
+                    d.force_k as f32,
+                    d.periodicity as f32,
+                    d.phase as f32,
+                )
+            })
             .collect();
 
         // NB params: (sigma, epsilon, charge, mass) per atom
         let nb_params: Vec<(f32, f32, f32, f32)> = (0..n_atoms)
             .map(|i| {
-                let sigma = topology.lj_params.get(i).map(|p| p.sigma as f32).unwrap_or(3.4);
-                let epsilon = topology.lj_params.get(i).map(|p| p.epsilon as f32).unwrap_or(0.1);
+                let sigma = topology
+                    .lj_params
+                    .get(i)
+                    .map(|p| p.sigma as f32)
+                    .unwrap_or(3.4);
+                let epsilon = topology
+                    .lj_params
+                    .get(i)
+                    .map(|p| p.epsilon as f32)
+                    .unwrap_or(0.1);
                 let charge = topology.charges.get(i).map(|&c| c as f32).unwrap_or(0.0);
                 let mass = topology.masses.get(i).map(|&m| m as f32).unwrap_or(12.0);
                 (sigma, epsilon, charge, mass)
@@ -1451,11 +1607,15 @@ impl MdCrypticPipeline {
             &dihedrals,
             &nb_params,
             &exclusions,
-        ).context("Failed to upload topology to MD engine")?;
+        )
+        .context("Failed to upload topology to MD engine")?;
 
         // Set up H-bond constraints from topology if available
         if !topology.h_clusters.is_empty() {
-            log::info!("[MD-CRYPTIC] Setting up {} H-bond constraints", topology.h_clusters.len());
+            log::info!(
+                "[MD-CRYPTIC] Setting up {} H-bond constraints",
+                topology.h_clusters.len()
+            );
             // H-constraints setup would go here
         }
 
@@ -1521,7 +1681,8 @@ impl MdCrypticPipeline {
                 let volume = neighbors.len() as f64 * 25.0;
 
                 // Skip if outside volume range
-                if volume < self.config.min_pocket_volume || volume > self.config.max_pocket_volume {
+                if volume < self.config.min_pocket_volume || volume > self.config.max_pocket_volume
+                {
                     continue;
                 }
 
@@ -1555,7 +1716,11 @@ impl MdCrypticPipeline {
         }
 
         // Sort by volume (largest first)
-        candidates.sort_by(|a, b| b.volume.partial_cmp(&a.volume).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            b.volume
+                .partial_cmp(&a.volume)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut merged: Vec<DetectedPocket> = Vec::new();
         let mut used = vec![false; candidates.len()];

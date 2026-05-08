@@ -64,7 +64,10 @@ fn main() -> Result<()> {
 
     // Configure validation
     let config = ValidationConfig {
-        data_dir: manifest_path.parent().unwrap_or(&PathBuf::from(".")).to_path_buf(),
+        data_dir: manifest_path
+            .parent()
+            .unwrap_or(&PathBuf::from("."))
+            .to_path_buf(),
         output_dir: output_dir.clone(),
         steps_per_target: steps,
         temperature: 310.0, // 37°C physiological
@@ -101,11 +104,13 @@ fn main() -> Result<()> {
                 .map(|r| format!("{:.2}", r))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            let pocket_rmsd = pipeline.compute_pocket_rmsd(&target_name)
+            let pocket_rmsd = pipeline
+                .compute_pocket_rmsd(&target_name)
                 .map(|r| format!("{:.2}", r))
                 .unwrap_or_else(|| "N/A".to_string());
 
-            println!("│ {:<14} │ {:>14} │ {:>14} │",
+            println!(
+                "│ {:<14} │ {:>14} │ {:>14} │",
                 &target_name[..target_name.len().min(14)],
                 ca_rmsd,
                 pocket_rmsd
@@ -117,15 +122,20 @@ fn main() -> Result<()> {
     // Run validation
     println!("\n🚀 Running validation benchmarks...\n");
 
-    let summary = pipeline.run()
-        .context("Validation run failed")?;
+    let summary = pipeline.run().context("Validation run failed")?;
 
     // Print results
     println!("\n╔══════════════════════════════════════════════════════════════════╗");
     println!("║                    VALIDATION RESULTS                            ║");
     println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║  Duration: {:.1}s", (summary.finished - summary.started).num_seconds());
-    println!("║  Overall Pass Rate: {:.1}%", summary.overall_pass_rate * 100.0);
+    println!(
+        "║  Duration: {:.1}s",
+        (summary.finished - summary.started).num_seconds()
+    );
+    println!(
+        "║  Overall Pass Rate: {:.1}%",
+        summary.overall_pass_rate * 100.0
+    );
     println!("║  Overall Score: {:.1}/100", summary.overall_score);
     println!("╚══════════════════════════════════════════════════════════════════╝");
 
@@ -135,7 +145,8 @@ fn main() -> Result<()> {
     println!("├──────────────────┼─────────┼───────────┼────────────┼────────────┤");
 
     for bench in &summary.benchmark_summaries {
-        println!("│ {:<16} │ {:>7} │ {:>8.1}% │ {:>10.1} │ {:>10.1} │",
+        println!(
+            "│ {:<16} │ {:>7} │ {:>8.1}% │ {:>10.1} │ {:>10.1} │",
             &bench.benchmark[..bench.benchmark.len().min(16)],
             bench.targets_run,
             bench.pass_rate * 100.0,
@@ -149,10 +160,9 @@ fn main() -> Result<()> {
     println!("\n🏆 Top Performers by Benchmark:");
     for bench in &summary.benchmark_summaries {
         if !bench.best_target.is_empty() {
-            println!("  • {}: Best = {}, Challenging = {}",
-                bench.benchmark,
-                bench.best_target,
-                bench.worst_target
+            println!(
+                "  • {}: Best = {}, Challenging = {}",
+                bench.benchmark, bench.best_target, bench.worst_target
             );
         }
     }
@@ -196,7 +206,10 @@ fn main() -> Result<()> {
     };
 
     println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║  FINAL GRADE: {} - {}                          ", grade.0, grade.1);
+    println!(
+        "║  FINAL GRADE: {} - {}                          ",
+        grade.0, grade.1
+    );
     println!("╚══════════════════════════════════════════════════════════════════╝");
 
     if summary.overall_pass_rate >= 0.8 {

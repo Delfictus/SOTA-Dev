@@ -11,8 +11,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use clap::Parser;
-use serde::{Deserialize, Serialize};
 use log::{info, warn};
+use serde::{Deserialize, Serialize};
 
 // Import our benchmark module (will be added to lib.rs)
 mod prism_bench_impl {
@@ -161,7 +161,8 @@ fn compute_roc_auc(scores: &[f64], labels: &[bool]) -> f64 {
         return 0.5;
     }
 
-    let mut indexed: Vec<(f64, bool)> = scores.iter().cloned().zip(labels.iter().cloned()).collect();
+    let mut indexed: Vec<(f64, bool)> =
+        scores.iter().cloned().zip(labels.iter().cloned()).collect();
     indexed.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let n_pos = labels.iter().filter(|&&x| x).count() as f64;
@@ -239,10 +240,18 @@ fn generate_prism_ensemble(n_residues: usize, n_samples: usize) -> (Vec<f64>, f6
     let pairwise_rmsd = mean_rmsf * 0.8 * (n_samples as f64).sqrt() / 10.0;
 
     // Diversity (RMS deviation from mean)
-    let diversity = rmsf.iter().map(|x| (x - mean_rmsf).powi(2)).sum::<f64>().sqrt()
+    let diversity = rmsf
+        .iter()
+        .map(|x| (x - mean_rmsf).powi(2))
+        .sum::<f64>()
+        .sqrt()
         / rmsf.len() as f64;
 
-    (rmsf, pairwise_rmsd.clamp(0.3, 3.0), diversity.clamp(0.1, 1.0))
+    (
+        rmsf,
+        pairwise_rmsd.clamp(0.3, 3.0),
+        diversity.clamp(0.1, 1.0),
+    )
 }
 
 // ============================================================================
@@ -304,7 +313,10 @@ fn main() {
         let (pred_rmsf, pairwise_rmsd, diversity) = generate_prism_ensemble(*n_residues, 50);
 
         // Simulate B-factors (correlated with RMSF)
-        let bfactors: Vec<f64> = pred_rmsf.iter().map(|r| r * r * 8.0 * 3.14159 * 3.14159 / 3.0).collect();
+        let bfactors: Vec<f64> = pred_rmsf
+            .iter()
+            .map(|r| r * r * 8.0 * 3.14159 * 3.14159 / 3.0)
+            .collect();
 
         // Compute correlations
         let bfactor_corr = if n_residues > &5 {
@@ -316,13 +328,17 @@ fn main() {
 
         let rmsf_corr = if *ref_rmsf > 0.0 {
             // Correlation with reference RMSF
-            let ref_vec: Vec<f64> = (0..*n_residues).map(|i| {
-                *ref_rmsf * (1.0 + 0.3 * (i as f64 / *n_residues as f64 - 0.5).abs())
-            }).collect();
+            let ref_vec: Vec<f64> = (0..*n_residues)
+                .map(|i| *ref_rmsf * (1.0 + 0.3 * (i as f64 / *n_residues as f64 - 0.5).abs()))
+                .collect();
             let corr = pearson_correlation(&pred_rmsf, &ref_vec);
-            if corr.is_nan() { 0.7 } else { corr.clamp(0.5, 0.99) }
+            if corr.is_nan() {
+                0.7
+            } else {
+                corr.clamp(0.5, 0.99)
+            }
         } else {
-            0.85  // Default for missing reference
+            0.85 // Default for missing reference
         };
 
         let is_pass = rmsf_corr > 0.70 && bfactor_corr > 0.50;
@@ -331,7 +347,9 @@ fn main() {
         total_rmsf_corr += rmsf_corr;
         total_pairwise_rmsd += pairwise_rmsd;
         total_diversity += diversity;
-        if is_pass { passed += 1; }
+        if is_pass {
+            passed += 1;
+        }
 
         let status = if is_pass { "✅ PASS" } else { "❌ FAIL" };
         println!(
@@ -362,7 +380,11 @@ fn main() {
     // Compute summary statistics
     let n = proteins.len() as f64;
     let summary = PrismBenchSummary {
-        dataset: if args.full_atlas { "ATLAS Full (1937)".into() } else { "ATLAS Benchmark".into() },
+        dataset: if args.full_atlas {
+            "ATLAS Full (1937)".into()
+        } else {
+            "ATLAS Benchmark".into()
+        },
         n_proteins: proteins.len(),
         n_residues_total: proteins.iter().map(|(_, n, _)| n).sum(),
 
@@ -372,12 +394,12 @@ fn main() {
 
         mean_pairwise_rmsd: total_pairwise_rmsd / n,
         mean_diversity: total_diversity / n,
-        dcc: 0.85,  // Placeholder
+        dcc: 0.85, // Placeholder
 
-        cryptic_auc: 0.87,     // Placeholder - would need ground truth
-        allosteric_auc: 0.82,  // Placeholder
+        cryptic_auc: 0.87,    // Placeholder - would need ground truth
+        allosteric_auc: 0.82, // Placeholder
 
-        apoholo_correlation: 0.78,  // Placeholder
+        apoholo_correlation: 0.78, // Placeholder
 
         overall_pass_rate: passed as f64 / n,
         f1_score: f1_score(passed as f64 / n, passed as f64 / n),
@@ -395,8 +417,16 @@ fn main() {
     let summary_json = args.output.join("prism_bench_summary.json");
     let report_md = args.output.join("PRISM_BENCH_REPORT.md");
 
-    fs::write(&results_json, serde_json::to_string_pretty(&results).unwrap()).unwrap();
-    fs::write(&summary_json, serde_json::to_string_pretty(&summary).unwrap()).unwrap();
+    fs::write(
+        &results_json,
+        serde_json::to_string_pretty(&results).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        &summary_json,
+        serde_json::to_string_pretty(&summary).unwrap(),
+    )
+    .unwrap();
     fs::write(&report_md, generate_markdown_report(&summary, &results)).unwrap();
 
     println!();
@@ -410,13 +440,15 @@ fn load_atlas_tsv(path: &PathBuf, limit: usize) -> Vec<(String, usize, f64)> {
     let mut proteins = Vec::new();
 
     for (i, line) in content.lines().skip(1).enumerate() {
-        if i >= limit { break; }
+        if i >= limit {
+            break;
+        }
 
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() >= 5 {
             let pdb_id = parts[0].to_string();
             let length: usize = parts[4].parse().unwrap_or(100);
-            let avg_rmsf: f64 = parts[19].parse().unwrap_or(1.0);  // avg_RMSF column
+            let avg_rmsf: f64 = parts[19].parse().unwrap_or(1.0); // avg_RMSF column
             proteins.push((pdb_id, length, avg_rmsf));
         }
     }
@@ -428,26 +460,32 @@ fn load_targets_json(path: &PathBuf, limit: usize) -> Vec<(String, usize, f64)> 
     let content = fs::read_to_string(path).expect("Failed to read targets JSON");
     let targets: Vec<serde_json::Value> = serde_json::from_str(&content).unwrap_or_default();
 
-    targets.iter().take(limit).filter_map(|t| {
-        let name = t.get("name")?.as_str()?;
-        let n_res = t.get("n_residues")?.as_u64()? as usize;
-        let rmsf = t.get("md_rmsf")?.as_array()?;
-        let mean_rmsf = if !rmsf.is_empty() {
-            rmsf.iter().filter_map(|v| v.as_f64()).sum::<f64>() / rmsf.len() as f64
-        } else {
-            1.0
-        };
-        Some((name.to_string(), n_res, mean_rmsf))
-    }).collect()
+    targets
+        .iter()
+        .take(limit)
+        .filter_map(|t| {
+            let name = t.get("name")?.as_str()?;
+            let n_res = t.get("n_residues")?.as_u64()? as usize;
+            let rmsf = t.get("md_rmsf")?.as_array()?;
+            let mean_rmsf = if !rmsf.is_empty() {
+                rmsf.iter().filter_map(|v| v.as_f64()).sum::<f64>() / rmsf.len() as f64
+            } else {
+                1.0
+            };
+            Some((name.to_string(), n_res, mean_rmsf))
+        })
+        .collect()
 }
 
 fn generate_synthetic_testset(n: usize) -> Vec<(String, usize, f64)> {
-    (0..n).map(|i| {
-        let pdb = format!("SYN{:04}", i);
-        let length = 100 + (i * 37) % 500;
-        let rmsf = 0.8 + (i as f64 * 0.1) % 1.5;
-        (pdb, length, rmsf)
-    }).collect()
+    (0..n)
+        .map(|i| {
+            let pdb = format!("SYN{:04}", i);
+            let length = 100 + (i * 37) % 500;
+            let rmsf = 0.8 + (i as f64 * 0.1) % 1.5;
+            (pdb, length, rmsf)
+        })
+        .collect()
 }
 
 fn print_comprehensive_results(s: &PrismBenchSummary) {
@@ -455,43 +493,88 @@ fn print_comprehensive_results(s: &PrismBenchSummary) {
     println!("║                      PRISM-BENCH COMPREHENSIVE RESULTS                    ║");
     println!("╠═══════════════════════════════════════════════════════════════════════════╣");
     println!("║  Dataset: {:<65}║", s.dataset);
-    println!("║  Proteins: {:<10}   Total Residues: {:<31}║", s.n_proteins, s.n_residues_total);
+    println!(
+        "║  Proteins: {:<10}   Total Residues: {:<31}║",
+        s.n_proteins, s.n_residues_total
+    );
     println!("╠═══════════════════════════════════════════════════════════════════════════╣");
     println!("║  ░░░░░░░░░░░░░░░░░░░░  FLEXIBILITY VALIDATION  ░░░░░░░░░░░░░░░░░░░░░░░░░ ║");
     println!("╠─────────────────────────────┬────────────┬────────────┬──────────────────╣");
     println!("║  Metric                     │ PRISM-Δ    │ Baseline   │ Δ Improvement    ║");
     println!("╠─────────────────────────────┼────────────┼────────────┼──────────────────╣");
-    println!("║  B-factor ρ (Pearson)       │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
-             s.mean_bfactor_corr, Baselines::GNM_BFACTOR, s.vs_gnm * 100.0);
-    println!("║  MD RMSF ρ (vs AlphaFlow)   │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
-             s.mean_rmsf_corr, Baselines::ALPHAFLOW_RMSF, s.vs_alphaflow * 100.0);
-    println!("║  Flexibility Pass Rate      │ {:>9.1}% │       70%  │ {:>+14.1}% ║",
-             s.flexibility_pass_rate * 100.0, (s.flexibility_pass_rate - 0.7) * 100.0);
+    println!(
+        "║  B-factor ρ (Pearson)       │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
+        s.mean_bfactor_corr,
+        Baselines::GNM_BFACTOR,
+        s.vs_gnm * 100.0
+    );
+    println!(
+        "║  MD RMSF ρ (vs AlphaFlow)   │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
+        s.mean_rmsf_corr,
+        Baselines::ALPHAFLOW_RMSF,
+        s.vs_alphaflow * 100.0
+    );
+    println!(
+        "║  Flexibility Pass Rate      │ {:>9.1}% │       70%  │ {:>+14.1}% ║",
+        s.flexibility_pass_rate * 100.0,
+        (s.flexibility_pass_rate - 0.7) * 100.0
+    );
     println!("╠═══════════════════════════════════════════════════════════════════════════╣");
     println!("║  ░░░░░░░░░░░░░░░░░░░░░  ENSEMBLE QUALITY  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ ║");
     println!("╠─────────────────────────────┬────────────────────────────────────────────╣");
-    println!("║  Mean Pairwise RMSD         │ {:>10.2} Å                              ║", s.mean_pairwise_rmsd);
-    println!("║  Ensemble Diversity         │ {:>10.3} Å                              ║", s.mean_diversity);
-    println!("║  Distance Correlation (DCC) │ {:>10.3}                                ║", s.dcc);
+    println!(
+        "║  Mean Pairwise RMSD         │ {:>10.2} Å                              ║",
+        s.mean_pairwise_rmsd
+    );
+    println!(
+        "║  Ensemble Diversity         │ {:>10.3} Å                              ║",
+        s.mean_diversity
+    );
+    println!(
+        "║  Distance Correlation (DCC) │ {:>10.3}                                ║",
+        s.dcc
+    );
     println!("╠═══════════════════════════════════════════════════════════════════════════╣");
     println!("║  ░░░░░░░░░░░░░░░░░░░░  BINDING SITE DETECTION  ░░░░░░░░░░░░░░░░░░░░░░░░░ ║");
     println!("╠─────────────────────────────┬────────────┬────────────┬──────────────────╣");
-    println!("║  Cryptic Sites (AUC)        │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
-             s.cryptic_auc, Baselines::CRYPTOSITE_AUC, s.vs_cryptosite * 100.0);
-    println!("║  Allosteric Sites (AUC)     │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
-             s.allosteric_auc, Baselines::ALLOSITE_AUC, (s.allosteric_auc / Baselines::ALLOSITE_AUC - 1.0) * 100.0);
-    println!("║  LBS Detection (AUC)        │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
-             0.89, Baselines::FPOCKET_AUC, (0.89 / Baselines::FPOCKET_AUC - 1.0) * 100.0);
+    println!(
+        "║  Cryptic Sites (AUC)        │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
+        s.cryptic_auc,
+        Baselines::CRYPTOSITE_AUC,
+        s.vs_cryptosite * 100.0
+    );
+    println!(
+        "║  Allosteric Sites (AUC)     │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
+        s.allosteric_auc,
+        Baselines::ALLOSITE_AUC,
+        (s.allosteric_auc / Baselines::ALLOSITE_AUC - 1.0) * 100.0
+    );
+    println!(
+        "║  LBS Detection (AUC)        │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
+        0.89,
+        Baselines::FPOCKET_AUC,
+        (0.89 / Baselines::FPOCKET_AUC - 1.0) * 100.0
+    );
     println!("╠═══════════════════════════════════════════════════════════════════════════╣");
     println!("║  ░░░░░░░░░░░░░░░░░░  CONFORMATIONAL CHANGE  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░ ║");
     println!("╠─────────────────────────────┬────────────┬────────────┬──────────────────╣");
-    println!("║  Apo-Holo RMSD ρ            │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
-             s.apoholo_correlation, Baselines::DYNAMINE_APOHOLO, (s.apoholo_correlation / Baselines::DYNAMINE_APOHOLO - 1.0) * 100.0);
+    println!(
+        "║  Apo-Holo RMSD ρ            │ {:>10.3} │ {:>10.3} │ {:>+14.1}% ║",
+        s.apoholo_correlation,
+        Baselines::DYNAMINE_APOHOLO,
+        (s.apoholo_correlation / Baselines::DYNAMINE_APOHOLO - 1.0) * 100.0
+    );
     println!("╠═══════════════════════════════════════════════════════════════════════════╣");
     println!("║  ░░░░░░░░░░░░░░░░░░░░░░  OVERALL METRICS  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ ║");
     println!("╠─────────────────────────────────────────────────────────────────────────────╣");
-    println!("║  Overall Pass Rate: {:>6.1}%                                              ║", s.overall_pass_rate * 100.0);
-    println!("║  F1 Score:          {:>6.3}                                               ║", s.f1_score);
+    println!(
+        "║  Overall Pass Rate: {:>6.1}%                                              ║",
+        s.overall_pass_rate * 100.0
+    );
+    println!(
+        "║  F1 Score:          {:>6.3}                                               ║",
+        s.f1_score
+    );
     println!("╚═══════════════════════════════════════════════════════════════════════════╝");
     println!();
     println!("  🏆 PRISM-Delta outperforms all baselines across metrics!");
@@ -508,24 +591,45 @@ fn generate_markdown_report(s: &PrismBenchSummary, results: &[BenchmarkResult]) 
     md.push_str("## Summary\n\n");
     md.push_str("| Benchmark | PRISM-Δ | Baseline | Improvement |\n");
     md.push_str("|-----------|---------|----------|-------------|\n");
-    md.push_str(&format!("| B-factor ρ | {:.3} | {:.3} (GNM) | {:+.1}% |\n",
-                         s.mean_bfactor_corr, Baselines::GNM_BFACTOR, s.vs_gnm * 100.0));
-    md.push_str(&format!("| RMSF ρ | {:.3} | {:.3} (AlphaFlow) | {:+.1}% |\n",
-                         s.mean_rmsf_corr, Baselines::ALPHAFLOW_RMSF, s.vs_alphaflow * 100.0));
-    md.push_str(&format!("| Cryptic AUC | {:.3} | {:.3} (CryptoSite) | {:+.1}% |\n",
-                         s.cryptic_auc, Baselines::CRYPTOSITE_AUC, s.vs_cryptosite * 100.0));
-    md.push_str(&format!("| Allosteric AUC | {:.3} | {:.3} (AlloSite) | {:+.1}% |\n\n",
-                         s.allosteric_auc, Baselines::ALLOSITE_AUC,
-                         (s.allosteric_auc / Baselines::ALLOSITE_AUC - 1.0) * 100.0));
+    md.push_str(&format!(
+        "| B-factor ρ | {:.3} | {:.3} (GNM) | {:+.1}% |\n",
+        s.mean_bfactor_corr,
+        Baselines::GNM_BFACTOR,
+        s.vs_gnm * 100.0
+    ));
+    md.push_str(&format!(
+        "| RMSF ρ | {:.3} | {:.3} (AlphaFlow) | {:+.1}% |\n",
+        s.mean_rmsf_corr,
+        Baselines::ALPHAFLOW_RMSF,
+        s.vs_alphaflow * 100.0
+    ));
+    md.push_str(&format!(
+        "| Cryptic AUC | {:.3} | {:.3} (CryptoSite) | {:+.1}% |\n",
+        s.cryptic_auc,
+        Baselines::CRYPTOSITE_AUC,
+        s.vs_cryptosite * 100.0
+    ));
+    md.push_str(&format!(
+        "| Allosteric AUC | {:.3} | {:.3} (AlloSite) | {:+.1}% |\n\n",
+        s.allosteric_auc,
+        Baselines::ALLOSITE_AUC,
+        (s.allosteric_auc / Baselines::ALLOSITE_AUC - 1.0) * 100.0
+    ));
 
     md.push_str("## Per-Protein Results\n\n");
     md.push_str("| PDB | Residues | B-fac ρ | RMSF ρ | PW-RMSD | Status |\n");
     md.push_str("|-----|----------|---------|--------|---------|--------|\n");
     for r in results.iter().take(50) {
         let status = if r.passed { "✅" } else { "❌" };
-        md.push_str(&format!("| {} | {} | {:.3} | {:.3} | {:.2}Å | {} |\n",
-                             r.pdb_id, r.n_residues, r.bfactor_correlation,
-                             r.rmsf_correlation, r.pairwise_rmsd, status));
+        md.push_str(&format!(
+            "| {} | {} | {:.3} | {:.3} | {:.2}Å | {} |\n",
+            r.pdb_id,
+            r.n_residues,
+            r.bfactor_correlation,
+            r.rmsf_correlation,
+            r.pairwise_rmsd,
+            status
+        ));
     }
 
     md.push_str("\n---\n*Generated by PRISM-Bench*\n");

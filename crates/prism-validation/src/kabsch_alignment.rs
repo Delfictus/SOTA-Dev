@@ -73,7 +73,9 @@ pub fn compute_rmsd(coords1: &[[f32; 3]], coords2: &[[f32; 3]]) -> f64 {
     }
 
     let n = coords1.len() as f64;
-    let sum_sq: f64 = coords1.iter().zip(coords2.iter())
+    let sum_sq: f64 = coords1
+        .iter()
+        .zip(coords2.iter())
         .map(|(a, b)| {
             let dx = a[0] as f64 - b[0] as f64;
             let dy = a[1] as f64 - b[1] as f64;
@@ -97,9 +99,7 @@ fn compute_rotation_matrix(h: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
 
     // Convert to nalgebra matrix
     let h_mat = Matrix3::new(
-        h[0][0], h[0][1], h[0][2],
-        h[1][0], h[1][1], h[1][2],
-        h[2][0], h[2][1], h[2][2],
+        h[0][0], h[0][1], h[0][2], h[1][0], h[1][1], h[1][2], h[2][0], h[2][1], h[2][2],
     );
 
     // Compute SVD
@@ -151,7 +151,8 @@ fn rotate_point(point: &[f64; 3], rotation: &[[f64; 3]; 3]) -> [f64; 3] {
 /// Aligned coordinates in reference frame (as f64 for precision)
 pub fn kabsch_align(reference: &[[f32; 3]], mobile: &[[f32; 3]]) -> Vec<[f64; 3]> {
     if mobile.len() != reference.len() || mobile.is_empty() {
-        return mobile.iter()
+        return mobile
+            .iter()
             .map(|p| [p[0] as f64, p[1] as f64, p[2] as f64])
             .collect();
     }
@@ -163,20 +164,26 @@ pub fn kabsch_align(reference: &[[f32; 3]], mobile: &[[f32; 3]]) -> Vec<[f64; 3]
     let ref_center = compute_centroid(reference);
 
     // Center the structures
-    let mobile_centered: Vec<[f64; 3]> = mobile.iter()
-        .map(|p| [
-            p[0] as f64 - mobile_center[0],
-            p[1] as f64 - mobile_center[1],
-            p[2] as f64 - mobile_center[2],
-        ])
+    let mobile_centered: Vec<[f64; 3]> = mobile
+        .iter()
+        .map(|p| {
+            [
+                p[0] as f64 - mobile_center[0],
+                p[1] as f64 - mobile_center[1],
+                p[2] as f64 - mobile_center[2],
+            ]
+        })
         .collect();
 
-    let ref_centered: Vec<[f64; 3]> = reference.iter()
-        .map(|p| [
-            p[0] as f64 - ref_center[0],
-            p[1] as f64 - ref_center[1],
-            p[2] as f64 - ref_center[2],
-        ])
+    let ref_centered: Vec<[f64; 3]> = reference
+        .iter()
+        .map(|p| {
+            [
+                p[0] as f64 - ref_center[0],
+                p[1] as f64 - ref_center[1],
+                p[2] as f64 - ref_center[2],
+            ]
+        })
         .collect();
 
     // Step 2: Compute correlation matrix H = mobile^T * reference
@@ -193,7 +200,8 @@ pub fn kabsch_align(reference: &[[f32; 3]], mobile: &[[f32; 3]]) -> Vec<[f64; 3]
     let rotation = compute_rotation_matrix(&h);
 
     // Step 4: Apply rotation and translate to reference frame
-    mobile_centered.iter()
+    mobile_centered
+        .iter()
         .map(|p| {
             let rotated = rotate_point(p, &rotation);
             [
@@ -222,7 +230,10 @@ pub fn align_and_compute_displacement(
     conformation: &[[f32; 3]],
 ) -> (Vec<[f32; 3]>, Vec<[f32; 3]>) {
     if conformation.len() != reference.len() || conformation.is_empty() {
-        return (conformation.to_vec(), vec![[0.0, 0.0, 0.0]; conformation.len()]);
+        return (
+            conformation.to_vec(),
+            vec![[0.0, 0.0, 0.0]; conformation.len()],
+        );
     }
 
     // Perform Kabsch alignment (returns f64 for precision)
@@ -261,7 +272,8 @@ pub fn align_with_full_result(
     // Compute RMSD
     let rmsd = if !aligned.is_empty() {
         let n = aligned.len() as f64;
-        let sum_sq: f64 = displacements.iter()
+        let sum_sq: f64 = displacements
+            .iter()
             .map(|d| (d[0] as f64).powi(2) + (d[1] as f64).powi(2) + (d[2] as f64).powi(2))
             .sum();
         (sum_sq / n).sqrt()
@@ -273,20 +285,26 @@ pub fn align_with_full_result(
     let ref_center = compute_centroid(reference);
     let mobile_center = compute_centroid(conformation);
 
-    let mobile_centered: Vec<[f64; 3]> = conformation.iter()
-        .map(|p| [
-            p[0] as f64 - mobile_center[0],
-            p[1] as f64 - mobile_center[1],
-            p[2] as f64 - mobile_center[2],
-        ])
+    let mobile_centered: Vec<[f64; 3]> = conformation
+        .iter()
+        .map(|p| {
+            [
+                p[0] as f64 - mobile_center[0],
+                p[1] as f64 - mobile_center[1],
+                p[2] as f64 - mobile_center[2],
+            ]
+        })
         .collect();
 
-    let ref_centered: Vec<[f64; 3]> = reference.iter()
-        .map(|p| [
-            p[0] as f64 - ref_center[0],
-            p[1] as f64 - ref_center[1],
-            p[2] as f64 - ref_center[2],
-        ])
+    let ref_centered: Vec<[f64; 3]> = reference
+        .iter()
+        .map(|p| {
+            [
+                p[0] as f64 - ref_center[0],
+                p[1] as f64 - ref_center[1],
+                p[2] as f64 - ref_center[2],
+            ]
+        })
         .collect();
 
     let mut h = [[0.0f64; 3]; 3];
@@ -331,21 +349,25 @@ pub fn compute_rmsf(displacements: &[Vec<[f32; 3]>]) -> Vec<f64> {
     let n_atoms = displacements[0].len();
     let n_conf = displacements.len() as f64;
 
-    (0..n_atoms).map(|i| {
-        let mean_sq: f64 = displacements.iter()
-            .map(|d| {
-                if i < d.len() {
-                    let dx = d[i][0] as f64;
-                    let dy = d[i][1] as f64;
-                    let dz = d[i][2] as f64;
-                    dx*dx + dy*dy + dz*dz
-                } else {
-                    0.0
-                }
-            })
-            .sum::<f64>() / n_conf;
-        mean_sq.sqrt()
-    }).collect()
+    (0..n_atoms)
+        .map(|i| {
+            let mean_sq: f64 = displacements
+                .iter()
+                .map(|d| {
+                    if i < d.len() {
+                        let dx = d[i][0] as f64;
+                        let dy = d[i][1] as f64;
+                        let dz = d[i][2] as f64;
+                        dx * dx + dy * dy + dz * dz
+                    } else {
+                        0.0
+                    }
+                })
+                .sum::<f64>()
+                / n_conf;
+            mean_sq.sqrt()
+        })
+        .collect()
 }
 
 /// Compute RMSF from f64 displacements (for higher precision)
@@ -357,18 +379,22 @@ pub fn compute_rmsf_f64(displacements: &[Vec<[f64; 3]>]) -> Vec<f64> {
     let n_atoms = displacements[0].len();
     let n_conf = displacements.len() as f64;
 
-    (0..n_atoms).map(|i| {
-        let mean_sq: f64 = displacements.iter()
-            .map(|d| {
-                if i < d.len() {
-                    d[i][0]*d[i][0] + d[i][1]*d[i][1] + d[i][2]*d[i][2]
-                } else {
-                    0.0
-                }
-            })
-            .sum::<f64>() / n_conf;
-        mean_sq.sqrt()
-    }).collect()
+    (0..n_atoms)
+        .map(|i| {
+            let mean_sq: f64 = displacements
+                .iter()
+                .map(|d| {
+                    if i < d.len() {
+                        d[i][0] * d[i][0] + d[i][1] * d[i][1] + d[i][2] * d[i][2]
+                    } else {
+                        0.0
+                    }
+                })
+                .sum::<f64>()
+                / n_conf;
+            mean_sq.sqrt()
+        })
+        .collect()
 }
 
 /// Compute mean structure from ensemble
@@ -406,9 +432,7 @@ pub fn compute_mean_structure(aligned_ensemble: &[Vec<[f32; 3]>]) -> Vec<[f32; 3
 /// Compute displacement variance per atom (useful for B-factor estimation)
 ///
 /// Returns both RMSF and variance for each atom.
-pub fn compute_displacement_statistics(
-    displacements: &[Vec<[f32; 3]>],
-) -> (Vec<f64>, Vec<f64>) {
+pub fn compute_displacement_statistics(displacements: &[Vec<[f32; 3]>]) -> (Vec<f64>, Vec<f64>) {
     let rmsf = compute_rmsf(displacements);
     let variance: Vec<f64> = rmsf.iter().map(|r| r * r).collect();
     (rmsf, variance)
@@ -446,18 +470,20 @@ pub fn compute_pairwise_rmsd(ensemble: &[Vec<[f32; 3]>]) -> Vec<Vec<f64>> {
     let mut matrix = vec![vec![0.0; n]; n];
 
     for i in 0..n {
-        for j in i+1..n {
+        for j in i + 1..n {
             // Align j to i and compute RMSD
             let aligned = kabsch_align(&ensemble[i], &ensemble[j]);
 
             let rmsd: f64 = if !aligned.is_empty() {
-                let sum_sq: f64 = aligned.iter().enumerate()
+                let sum_sq: f64 = aligned
+                    .iter()
+                    .enumerate()
                     .map(|(k, pos)| {
                         let ref_pos = &ensemble[i][k];
                         let dx = pos[0] - ref_pos[0] as f64;
                         let dy = pos[1] - ref_pos[1] as f64;
                         let dz = pos[2] - ref_pos[2] as f64;
-                        dx*dx + dy*dy + dz*dz
+                        dx * dx + dy * dy + dz * dz
                     })
                     .sum();
                 (sum_sq / aligned.len() as f64).sqrt()
@@ -479,11 +505,7 @@ mod tests {
 
     #[test]
     fn test_compute_centroid() {
-        let coords = vec![
-            [0.0, 0.0, 0.0],
-            [2.0, 0.0, 0.0],
-            [0.0, 2.0, 0.0],
-        ];
+        let coords = vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
         let centroid = compute_centroid(&coords);
         assert!((centroid[0] - 0.6667).abs() < 0.01);
         assert!((centroid[1] - 0.6667).abs() < 0.01);
@@ -493,11 +515,7 @@ mod tests {
     #[test]
     fn test_identity_alignment() {
         // Same structure should have zero RMSD after alignment
-        let coords = vec![
-            [0.0, 0.0, 0.0],
-            [3.8, 0.0, 0.0],
-            [7.6, 0.0, 0.0],
-        ];
+        let coords = vec![[0.0, 0.0, 0.0], [3.8, 0.0, 0.0], [7.6, 0.0, 0.0]];
         let (aligned, displacement) = align_and_compute_displacement(&coords, &coords);
 
         // Displacements should be near zero
@@ -511,16 +529,8 @@ mod tests {
     #[test]
     fn test_translated_alignment() {
         // Translated structure should align perfectly
-        let reference = vec![
-            [0.0, 0.0, 0.0],
-            [3.8, 0.0, 0.0],
-            [7.6, 0.0, 0.0],
-        ];
-        let translated = vec![
-            [10.0, 10.0, 10.0],
-            [13.8, 10.0, 10.0],
-            [17.6, 10.0, 10.0],
-        ];
+        let reference = vec![[0.0, 0.0, 0.0], [3.8, 0.0, 0.0], [7.6, 0.0, 0.0]];
+        let translated = vec![[10.0, 10.0, 10.0], [13.8, 10.0, 10.0], [17.6, 10.0, 10.0]];
 
         let (aligned, displacement) = align_and_compute_displacement(&reference, &translated);
 
@@ -551,17 +561,9 @@ mod tests {
     #[test]
     fn test_rotated_alignment() {
         // 90-degree rotation around Z axis
-        let reference = vec![
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-        ];
+        let reference = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
         // Rotated 90 degrees: (x,y) -> (-y, x)
-        let rotated = vec![
-            [0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [-1.0, 0.0, 0.0],
-        ];
+        let rotated = vec![[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]];
 
         let result = align_with_full_result(&reference, &rotated);
 
@@ -576,18 +578,18 @@ mod tests {
         let reference = vec![
             [0.0, 0.0, 0.0],
             [3.8, 0.0, 0.0],
-            [1.9, 3.3, 0.0],  // Roughly equilateral triangle
+            [1.9, 3.3, 0.0], // Roughly equilateral triangle
         ];
 
         // Ensemble with small perturbations (simulating thermal motion)
         let ensemble = vec![
             vec![
-                [0.1, 0.05, 0.0],    // Small displacement
+                [0.1, 0.05, 0.0], // Small displacement
                 [3.75, 0.1, 0.0],
                 [1.85, 3.35, 0.1],
             ],
             vec![
-                [-0.1, -0.05, 0.0],  // Opposite displacement
+                [-0.1, -0.05, 0.0], // Opposite displacement
                 [3.85, -0.1, 0.0],
                 [1.95, 3.25, -0.1],
             ],
@@ -598,8 +600,16 @@ mod tests {
         // Verify output structure
         assert_eq!(aligned.len(), 2, "Should return 2 aligned conformations");
         assert_eq!(displacements.len(), 2, "Should return 2 displacement sets");
-        assert_eq!(aligned[0].len(), 3, "Each aligned conformation should have 3 atoms");
-        assert_eq!(displacements[0].len(), 3, "Each displacement set should have 3 atoms");
+        assert_eq!(
+            aligned[0].len(),
+            3,
+            "Each aligned conformation should have 3 atoms"
+        );
+        assert_eq!(
+            displacements[0].len(),
+            3,
+            "Each displacement set should have 3 atoms"
+        );
 
         // Compute RMSF
         let rmsf = compute_rmsf(&displacements);
@@ -608,13 +618,26 @@ mod tests {
         // All RMSF values should be small (< 0.5 Å) after alignment
         // since the perturbations were small
         for (i, &r) in rmsf.iter().enumerate() {
-            assert!(r < 0.5, "RMSF[{}] = {} should be < 0.5 Å for small perturbations", i, r);
+            assert!(
+                r < 0.5,
+                "RMSF[{}] = {} should be < 0.5 Å for small perturbations",
+                i,
+                r
+            );
             assert!(r >= 0.0, "RMSF[{}] = {} should be non-negative", i, r);
         }
 
         // Verify mean RMSF is reasonable (not zero, not huge)
         let mean_rmsf: f64 = rmsf.iter().sum::<f64>() / rmsf.len() as f64;
-        assert!(mean_rmsf > 0.01, "Mean RMSF = {} should be > 0.01 (real motion)", mean_rmsf);
-        assert!(mean_rmsf < 0.3, "Mean RMSF = {} should be < 0.3 (small motion)", mean_rmsf);
+        assert!(
+            mean_rmsf > 0.01,
+            "Mean RMSF = {} should be > 0.01 (real motion)",
+            mean_rmsf
+        );
+        assert!(
+            mean_rmsf < 0.3,
+            "Mean RMSF = {} should be < 0.3 (small motion)",
+            mean_rmsf
+        );
     }
 }

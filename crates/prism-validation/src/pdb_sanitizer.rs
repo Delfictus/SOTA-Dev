@@ -31,8 +31,8 @@ use std::collections::HashSet;
 
 /// Standard amino acid 3-letter codes
 pub const STANDARD_AMINO_ACIDS: &[&str] = &[
-    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
-    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET",
+    "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
 ];
 
 /// Common water molecule residue names to filter
@@ -266,7 +266,8 @@ impl PdbSanitizer {
         let mut residue_counter = 0usize;
         let mut atom_counter = 0usize;
         let mut chains_seen = HashSet::new();
-        let mut residues_per_chain: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+        let mut residues_per_chain: std::collections::HashMap<char, usize> =
+            std::collections::HashMap::new();
 
         // Build set of valid residue names
         let valid_residues: HashSet<&str> = STANDARD_AMINO_ACIDS.iter().cloned().collect();
@@ -311,8 +312,18 @@ impl PdbSanitizer {
 
             // Parse remaining PDB fields (fixed-width format)
             let atom_name = line.get(12..16).unwrap_or("").trim();
-            let alt_loc = line.get(16..17).unwrap_or(" ").chars().next().unwrap_or(' ');
-            let chain_id = line.get(21..22).unwrap_or(" ").chars().next().unwrap_or('A');
+            let alt_loc = line
+                .get(16..17)
+                .unwrap_or(" ")
+                .chars()
+                .next()
+                .unwrap_or(' ');
+            let chain_id = line
+                .get(21..22)
+                .unwrap_or(" ")
+                .chars()
+                .next()
+                .unwrap_or('A');
             let res_seq_str = line.get(22..26).unwrap_or("0").trim();
 
             // Apply chain filter
@@ -453,7 +464,11 @@ pub fn sanitize_pdb(content: &str, source_id: &str) -> Result<SanitizedStructure
 }
 
 /// Convenience function to sanitize PDB content for a specific chain
-pub fn sanitize_pdb_chain(content: &str, source_id: &str, chain: char) -> Result<SanitizedStructure> {
+pub fn sanitize_pdb_chain(
+    content: &str,
+    source_id: &str,
+    chain: char,
+) -> Result<SanitizedStructure> {
     PdbSanitizer::new()
         .with_chain(chain)
         .sanitize(content, source_id)
@@ -496,7 +511,10 @@ END
 
         // Should not contain HETATM atoms
         assert!(
-            !result.atoms.iter().any(|a| a.residue_name == "HOH" || a.residue_name == "MG"),
+            !result
+                .atoms
+                .iter()
+                .any(|a| a.residue_name == "HOH" || a.residue_name == "MG"),
             "HETATM records should be removed"
         );
 

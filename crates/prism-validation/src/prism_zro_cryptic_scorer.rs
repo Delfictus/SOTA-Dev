@@ -36,14 +36,14 @@
 //! 7. Sidechain flexibility (GLY=1.4, PRO=0.6, etc.) - NEW!
 //! 8. B-factor (normalized, if available) - NEW!
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 // GPU SNN reservoir - the REAL PRISM-ZrO infrastructure
-use prism_gpu::{DendriticSNNReservoir, SNN_INPUT_DIM, DEFAULT_RESERVOIR_SIZE};
 use cudarc::driver::CudaContext;
+use prism_gpu::{DendriticSNNReservoir, DEFAULT_RESERVOIR_SIZE, SNN_INPUT_DIM};
 
 /// Number of cryptic-specific input features (ENHANCED to 16 for comprehensive analysis)
 /// Features: dynamics (5) + structural (3) + chemical (3) + distance (3) + tertiary (2)
@@ -104,7 +104,6 @@ pub struct ResidueFeatures {
     pub residue_id: i32,
 
     // ==================== DYNAMICS FEATURES (5) ====================
-
     /// Burial change from reference (positive = more exposed)
     pub burial_change: f64,
     /// RMSF from ensemble
@@ -117,7 +116,6 @@ pub struct ResidueFeatures {
     pub burial_potential: f64,
 
     // ==================== STRUCTURAL FEATURES (3) ====================
-
     /// Secondary structure flexibility factor (Helix=0.7, Sheet=0.8, Loop=1.2)
     /// Loops are more flexible and more likely to contain cryptic sites
     pub ss_flexibility: f64,
@@ -131,7 +129,6 @@ pub struct ResidueFeatures {
     pub b_factor: Option<f64>,
 
     // ==================== CHEMICAL FEATURES (3) ====================
-
     /// Net charge of residue at physiological pH
     /// K, R = +1; H = +0.1; D, E = -1; others = 0
     /// Charged residues often line binding sites
@@ -146,7 +143,6 @@ pub struct ResidueFeatures {
     pub h_bond_potential: f64,
 
     // ==================== DISTANCE FEATURES (3) ====================
-
     /// Contact density (number of Cβ atoms within 8Å)
     /// Low density = surface, high density = buried core
     pub contact_density: f64,
@@ -160,7 +156,6 @@ pub struct ResidueFeatures {
     pub nearest_charged_dist: f64,
 
     // ==================== TERTIARY FEATURES (2) ====================
-
     /// Interface proximity score
     /// Residues at domain interfaces can form cryptic binding sites
     pub interface_score: f64,
@@ -215,7 +210,7 @@ impl ResidueFeatures {
 
         // SASA change: normalized change from reference
         if let Some(sasa) = self.sasa_change {
-            features[12] = (sasa / 100.0).tanh() as f32;  // 100 Å² is large change
+            features[12] = (sasa / 100.0).tanh() as f32; // 100 Å² is large change
         }
 
         // Distance to nearest charged residue: typically 2-30 Å
@@ -239,10 +234,10 @@ pub mod amino_acid_properties {
     /// Net charge at physiological pH 7.4
     pub fn net_charge(residue_name: &str) -> f64 {
         match residue_name {
-            "LYS" | "ARG" => 1.0,     // Positively charged
-            "HIS" => 0.1,              // Partially protonated at pH 7.4
-            "ASP" | "GLU" => -1.0,     // Negatively charged
-            _ => 0.0,                   // Neutral
+            "LYS" | "ARG" => 1.0,  // Positively charged
+            "HIS" => 0.1,          // Partially protonated at pH 7.4
+            "ASP" | "GLU" => -1.0, // Negatively charged
+            _ => 0.0,              // Neutral
         }
     }
 
@@ -276,30 +271,30 @@ pub mod amino_acid_properties {
     /// Number of potential hydrogen bond donors + acceptors
     pub fn h_bond_potential(residue_name: &str) -> f64 {
         match residue_name {
-            "ARG" => 6.0,  // 5 NH + backbone
-            "LYS" => 4.0,  // 3 NH + backbone
-            "HIS" => 3.0,  // NH + backbone
-            "ASN" | "GLN" => 4.0,  // NH2 + C=O + backbone
-            "SER" | "THR" => 3.0,  // OH + backbone
-            "TYR" => 3.0,  // OH + backbone
-            "TRP" => 2.0,  // NH + backbone
-            "ASP" | "GLU" => 4.0,  // 2x C=O + backbone
-            "CYS" => 2.0,  // SH + backbone
-            "MET" => 2.0,  // backbone only + S acceptor
-            _ => 2.0,      // backbone NH + C=O
+            "ARG" => 6.0,         // 5 NH + backbone
+            "LYS" => 4.0,         // 3 NH + backbone
+            "HIS" => 3.0,         // NH + backbone
+            "ASN" | "GLN" => 4.0, // NH2 + C=O + backbone
+            "SER" | "THR" => 3.0, // OH + backbone
+            "TYR" => 3.0,         // OH + backbone
+            "TRP" => 2.0,         // NH + backbone
+            "ASP" | "GLU" => 4.0, // 2x C=O + backbone
+            "CYS" => 2.0,         // SH + backbone
+            "MET" => 2.0,         // backbone only + S acceptor
+            _ => 2.0,             // backbone NH + C=O
         }
     }
 
     /// Sidechain flexibility factor (based on rotamer diversity)
     pub fn sidechain_flexibility(residue_name: &str) -> f64 {
         match residue_name {
-            "GLY" => 1.40,  // Most flexible (no sidechain)
-            "ALA" => 1.20,  // Small, flexible
+            "GLY" => 1.40, // Most flexible (no sidechain)
+            "ALA" => 1.20, // Small, flexible
             "SER" => 1.15,
             "CYS" => 1.10,
             "ASN" => 1.05,
             "ASP" => 1.05,
-            "THR" => 1.00,  // Baseline
+            "THR" => 1.00, // Baseline
             "VAL" => 0.95,
             "GLU" => 0.95,
             "GLN" => 0.95,
@@ -312,7 +307,7 @@ pub mod amino_acid_properties {
             "TYR" => 0.75,
             "TRP" => 0.70,
             "ARG" => 0.70,
-            "PRO" => 0.60,  // Most rigid (cyclic)
+            "PRO" => 0.60, // Most rigid (cyclic)
             _ => 1.00,
         }
     }
@@ -357,7 +352,7 @@ impl CrypticFeatureExtractor {
         b_factor: Option<f64>,
         ss_type: char,
     ) -> ResidueFeatures {
-        let idx = residue_id as usize - 1;  // Assuming 1-indexed
+        let idx = residue_id as usize - 1; // Assuming 1-indexed
         let n_residues = all_ca_coords.len();
 
         // ==================== DYNAMICS FEATURES ====================
@@ -366,21 +361,31 @@ impl CrypticFeatureExtractor {
         let conf_neighbors = self.count_neighbors(all_ca_coords, idx);
         let burial_change = (ref_neighbors - conf_neighbors) as f64;
 
-        let rmsf = if idx < ensemble_rmsf.len() { ensemble_rmsf[idx] } else { 0.0 };
-        let variance = if idx < ensemble_variance.len() { ensemble_variance[idx] } else { 0.0 };
+        let rmsf = if idx < ensemble_rmsf.len() {
+            ensemble_rmsf[idx]
+        } else {
+            0.0
+        };
+        let variance = if idx < ensemble_variance.len() {
+            ensemble_variance[idx]
+        } else {
+            0.0
+        };
 
         // Neighbor flexibility: mean RMSF of neighbors within cutoff
-        let neighbor_flexibility = self.compute_neighbor_flexibility(all_ca_coords, idx, ensemble_rmsf);
+        let neighbor_flexibility =
+            self.compute_neighbor_flexibility(all_ca_coords, idx, ensemble_rmsf);
 
         // Burial potential: how much more could this residue become exposed?
-        let max_possible_neighbors = 20;  // Typical maximum for buried residue
-        let burial_potential = (max_possible_neighbors - conf_neighbors).max(0) as f64 / max_possible_neighbors as f64;
+        let max_possible_neighbors = 20; // Typical maximum for buried residue
+        let burial_potential =
+            (max_possible_neighbors - conf_neighbors).max(0) as f64 / max_possible_neighbors as f64;
 
         // ==================== STRUCTURAL FEATURES ====================
         let ss_flexibility = match ss_type {
-            'H' => 0.7,   // Helix - most rigid
-            'E' => 0.8,   // Sheet - intermediate
-            'C' | _ => 1.2,  // Loop/coil - most flexible
+            'H' => 0.7,     // Helix - most rigid
+            'E' => 0.8,     // Sheet - intermediate
+            'C' | _ => 1.2, // Loop/coil - most flexible
         };
 
         let sidechain_flexibility = amino_acid_properties::sidechain_flexibility(residue_name);
@@ -395,12 +400,10 @@ impl CrypticFeatureExtractor {
 
         // SASA change would require actual SASA calculation (simplified here)
         // Using burial change as proxy
-        let sasa_change = Some(burial_change * 20.0);  // Rough approximation
+        let sasa_change = Some(burial_change * 20.0); // Rough approximation
 
         // Distance to nearest charged residue
-        let nearest_charged_dist = self.find_nearest_charged(
-            all_ca_coords, idx, all_residue_names
-        );
+        let nearest_charged_dist = self.find_nearest_charged(all_ca_coords, idx, all_residue_names);
 
         // ==================== TERTIARY FEATURES ====================
         // Interface score: residues with mixed high/low burial are at interfaces
@@ -438,7 +441,9 @@ impl CrypticFeatureExtractor {
         let mut count = 0;
 
         for (j, other) in coords.iter().enumerate() {
-            if j == idx { continue; }
+            if j == idx {
+                continue;
+            }
             let dx = my_coord[0] - other[0];
             let dy = my_coord[1] - other[1];
             let dz = my_coord[2] - other[2];
@@ -451,19 +456,16 @@ impl CrypticFeatureExtractor {
     }
 
     /// Compute mean RMSF of neighbors
-    fn compute_neighbor_flexibility(
-        &self,
-        coords: &[[f32; 3]],
-        idx: usize,
-        rmsf: &[f64],
-    ) -> f64 {
+    fn compute_neighbor_flexibility(&self, coords: &[[f32; 3]], idx: usize, rmsf: &[f64]) -> f64 {
         let cutoff_sq = (self.contact_cutoff * self.contact_cutoff) as f32;
         let my_coord = coords[idx];
         let mut total_rmsf = 0.0;
         let mut count = 0;
 
         for (j, other) in coords.iter().enumerate() {
-            if j == idx { continue; }
+            if j == idx {
+                continue;
+            }
             let dx = my_coord[0] - other[0];
             let dy = my_coord[1] - other[1];
             let dz = my_coord[2] - other[2];
@@ -474,7 +476,11 @@ impl CrypticFeatureExtractor {
             }
         }
 
-        if count > 0 { total_rmsf / count as f64 } else { 0.0 }
+        if count > 0 {
+            total_rmsf / count as f64
+        } else {
+            0.0
+        }
     }
 
     /// Find distance to nearest charged residue
@@ -488,10 +494,13 @@ impl CrypticFeatureExtractor {
         let mut min_dist = f64::MAX;
 
         for (j, (other, name)) in coords.iter().zip(residue_names.iter()).enumerate() {
-            if j == idx { continue; }
+            if j == idx {
+                continue;
+            }
 
             let charge = amino_acid_properties::net_charge(name);
-            if charge.abs() > 0.5 {  // Charged residue (K, R, D, E)
+            if charge.abs() > 0.5 {
+                // Charged residue (K, R, D, E)
                 let dx = (my_coord[0] - other[0]) as f64;
                 let dy = (my_coord[1] - other[1]) as f64;
                 let dz = (my_coord[2] - other[2]) as f64;
@@ -502,7 +511,11 @@ impl CrypticFeatureExtractor {
             }
         }
 
-        if min_dist == f64::MAX { 30.0 } else { min_dist }  // Default to max if no charged found
+        if min_dist == f64::MAX {
+            30.0
+        } else {
+            min_dist
+        } // Default to max if no charged found
     }
 
     /// Compute interface score based on neighbor distribution
@@ -514,7 +527,9 @@ impl CrypticFeatureExtractor {
         let my_coord = coords[idx];
 
         for (j, other) in coords.iter().enumerate() {
-            if j == idx { continue; }
+            if j == idx {
+                continue;
+            }
             let dx = my_coord[0] - other[0];
             let dy = my_coord[1] - other[1];
             let dz = my_coord[2] - other[2];
@@ -531,10 +546,13 @@ impl CrypticFeatureExtractor {
         }
 
         // Interface residues have high variance in neighbor burial
-        let mean_burial: f64 = neighbor_burials.iter().sum::<usize>() as f64 / neighbor_burials.len() as f64;
-        let variance: f64 = neighbor_burials.iter()
+        let mean_burial: f64 =
+            neighbor_burials.iter().sum::<usize>() as f64 / neighbor_burials.len() as f64;
+        let variance: f64 = neighbor_burials
+            .iter()
             .map(|&b| (b as f64 - mean_burial).powi(2))
-            .sum::<f64>() / neighbor_burials.len() as f64;
+            .sum::<f64>()
+            / neighbor_burials.len() as f64;
 
         // Normalize to 0-1 (variance typically 0-50)
         (variance / 25.0).min(1.0)
@@ -597,7 +615,8 @@ impl CrypticRLSReadout {
 
         log::info!(
             "CrypticRLSReadout initialized: {} reservoir neurons, λ={}",
-            reservoir_size, lambda
+            reservoir_size,
+            lambda
         );
 
         Self {
@@ -611,7 +630,9 @@ impl CrypticRLSReadout {
 
     /// Compute cryptic score from reservoir state (sigmoid output)
     fn compute_score(&self, state: &[f32]) -> f32 {
-        let raw: f32 = self.weights.iter()
+        let raw: f32 = self
+            .weights
+            .iter()
             .zip(state.iter())
             .map(|(w, s)| w * s)
             .sum();
@@ -644,14 +665,12 @@ impl CrypticRLSReadout {
         }
 
         // Step 2: Compute x^T @ P @ x
-        let xtpx: f32 = state.iter()
-            .zip(px.iter())
-            .map(|(xi, pxi)| xi * pxi)
-            .sum();
+        let xtpx: f32 = state.iter().zip(px.iter()).map(|(xi, pxi)| xi * pxi).sum();
 
         // Step 3: Compute Kalman gain k = P @ x / (λ + x^T @ P @ x)
         let denom = (self.lambda + xtpx).max(1e-8);
-        let k: Vec<f32> = px.iter()
+        let k: Vec<f32> = px
+            .iter()
             .map(|pxi| (pxi / denom).clamp(-1e6, 1e6))
             .collect();
 
@@ -692,7 +711,7 @@ impl CrypticRLSReadout {
         if is_cryptic {
             MAX_REWARD_MODULATION
         } else {
-            1.0  // Baseline learning for negatives
+            1.0 // Baseline learning for negatives
         }
     }
 }
@@ -723,8 +742,8 @@ impl ZroCrypticScorer {
         log::info!("🚀 Initializing PRISM-ZrO Cryptic Scorer (GPU)...");
 
         // Initialize CUDA context
-        let context = CudaContext::new(0)
-            .context("Failed to create CUDA context - is GPU available?")?;
+        let context =
+            CudaContext::new(0).context("Failed to create CUDA context - is GPU available?")?;
 
         // Create GPU reservoir (512 neurons)
         let mut reservoir = DendriticSNNReservoir::new(context, GPU_RESERVOIR_SIZE)
@@ -732,13 +751,17 @@ impl ZroCrypticScorer {
 
         // Initialize reservoir weights
         let seed = config.seed.unwrap_or(42);
-        reservoir.initialize(seed)
+        reservoir
+            .initialize(seed)
             .context("Failed to initialize reservoir")?;
 
         // Create RLS readout
         let readout = CrypticRLSReadout::new(GPU_RESERVOIR_SIZE, config.lambda);
 
-        log::info!("✅ PRISM-ZrO initialized: {} GPU neurons, E/I balanced", GPU_RESERVOIR_SIZE);
+        log::info!(
+            "✅ PRISM-ZrO initialized: {} GPU neurons, E/I balanced",
+            GPU_RESERVOIR_SIZE
+        );
 
         Ok(Self {
             config,
@@ -759,7 +782,9 @@ impl ZroCrypticScorer {
     /// Score from raw feature vector (must be SNN_INPUT_DIM = 40 dimensions)
     pub fn score_from_vector(&mut self, features: &[f32]) -> Result<f64> {
         // Process through GPU reservoir
-        let state = self.reservoir.process_features(features)
+        let state = self
+            .reservoir
+            .process_features(features)
             .context("GPU reservoir processing failed")?;
 
         // Compute score through RLS readout
@@ -781,7 +806,9 @@ impl ZroCrypticScorer {
         let padded = features.to_padded_vector();
 
         // Process through GPU reservoir
-        let state = self.reservoir.process_features(&padded)
+        let state = self
+            .reservoir
+            .process_features(&padded)
             .context("GPU reservoir processing failed")?;
 
         // Compute score
@@ -792,7 +819,8 @@ impl ZroCrypticScorer {
             if self.config.online_learning {
                 let target = if cryptic { 1.0 } else { 0.0 };
                 let modulation = CrypticRLSReadout::compute_reward_modulation(cryptic);
-                self.readout.rls_update_modulated(&state, target, modulation);
+                self.readout
+                    .rls_update_modulated(&state, target, modulation);
             }
         }
 
@@ -810,7 +838,8 @@ impl ZroCrypticScorer {
         ground_truth: Option<&HashMap<i32, bool>>,
     ) -> Result<HashMap<i32, f64>> {
         // Reset reservoir state for new structure
-        self.reservoir.reset_state()
+        self.reservoir
+            .reset_state()
             .context("Failed to reset reservoir state")?;
 
         let mut scores = HashMap::new();
@@ -826,7 +855,8 @@ impl ZroCrypticScorer {
 
     /// Reset reservoir state for new structure
     pub fn reset_reservoir(&mut self) -> Result<()> {
-        self.reservoir.reset_state()
+        self.reservoir
+            .reset_state()
             .context("Failed to reset reservoir state")
     }
 
@@ -872,7 +902,8 @@ impl ZroCrypticScorer {
         for i in 0..n {
             // Burial change: decrease in neighbors (more exposed)
             let burial_change = if neighbor_counts_ref[i] > 0 {
-                (neighbor_counts_ref[i] as f64 - neighbor_counts_mean[i]) / neighbor_counts_ref[i] as f64
+                (neighbor_counts_ref[i] as f64 - neighbor_counts_mean[i])
+                    / neighbor_counts_ref[i] as f64
             } else {
                 0.0
             };
@@ -891,12 +922,12 @@ impl ZroCrypticScorer {
             // NEW: Get secondary structure flexibility (default to Loop=1.2 if not provided)
             let ss_flex = ss_flexibility
                 .and_then(|ss| ss.get(i).copied())
-                .unwrap_or(1.0);  // Neutral default
+                .unwrap_or(1.0); // Neutral default
 
             // NEW: Get sidechain flexibility (default to average=1.0 if not provided)
             let sc_flex = sidechain_flexibility
                 .and_then(|sc| sc.get(i).copied())
-                .unwrap_or(1.0);  // Neutral default
+                .unwrap_or(1.0); // Neutral default
 
             // NEW: Get B-factor if available
             let bfac = b_factors.and_then(|bf| bf.get(i).copied());
@@ -917,12 +948,12 @@ impl ZroCrypticScorer {
                 sidechain_flexibility: sc_flex,
                 b_factor: bfac,
                 // Chemical features (3) - defaults; use CrypticFeatureExtractor for full computation
-                net_charge: 0.0,           // Neutral default
-                hydrophobicity: 0.0,       // Neutral on Kyte-Doolittle scale
-                h_bond_potential: 2.0,     // Average H-bond capacity
+                net_charge: 0.0,       // Neutral default
+                hydrophobicity: 0.0,   // Neutral on Kyte-Doolittle scale
+                h_bond_potential: 2.0, // Average H-bond capacity
                 // Distance features (3)
                 contact_density,
-                sasa_change: None,         // Requires SASA computation
+                sasa_change: None,          // Requires SASA computation
                 nearest_charged_dist: 10.0, // Default moderate distance (Å)
                 // Tertiary features (2)
                 interface_score: 0.0,       // Neutral default
@@ -951,9 +982,9 @@ impl ZroCrypticScorer {
             neighbor_counts_ref,
             neighbor_counts_mean,
             residue_ids,
-            None,  // No SS info
-            None,  // No sidechain info
-            None,  // No B-factors
+            None, // No SS info
+            None, // No sidechain info
+            None, // No B-factors
         )
     }
 }
@@ -979,8 +1010,8 @@ mod tests {
             neighbor_flexibility: 1.5,
             burial_potential: 0.3,
             ss_flexibility: 1.2,        // Loop
-            sidechain_flexibility: 1.4,  // GLY
-            b_factor: Some(45.0),        // Above average
+            sidechain_flexibility: 1.4, // GLY
+            b_factor: Some(45.0),       // Above average
             ..Default::default()
         };
 
@@ -1009,9 +1040,9 @@ mod tests {
             variance: 4.0,
             neighbor_flexibility: 1.5,
             burial_potential: 0.3,
-            ss_flexibility: 0.7,         // Helix
-            sidechain_flexibility: 0.6,  // PRO
-            b_factor: None,              // No B-factor available
+            ss_flexibility: 0.7,        // Helix
+            sidechain_flexibility: 0.6, // PRO
+            b_factor: None,             // No B-factor available
             ..Default::default()
         };
 
@@ -1024,7 +1055,10 @@ mod tests {
         assert!(padded[5] < 0.0, "helix should have negative ss_flexibility");
 
         // Sidechain flexibility for PRO (0.6) → normalized: (0.6 - 1.0) * 2.0 = -0.8
-        assert!(padded[6] < 0.0, "PRO should have negative sidechain_flexibility");
+        assert!(
+            padded[6] < 0.0,
+            "PRO should have negative sidechain_flexibility"
+        );
     }
 
     #[test]
@@ -1035,7 +1069,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]  // Requires GPU
+    #[ignore] // Requires GPU
     fn test_gpu_scorer_creation() {
         let config = ZroCrypticConfig::default();
         let scorer = ZroCrypticScorer::new(config);

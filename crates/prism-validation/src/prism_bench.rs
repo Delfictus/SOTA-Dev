@@ -55,9 +55,9 @@ impl Leaderboards {
     pub const ALLOSITE_AUC: f64 = 0.78;
 
     /// B-factor correlation baselines
-    pub const GNMR_BFACTOR: f64 = 0.59;  // Gaussian Network Model
-    pub const ANM_BFACTOR: f64 = 0.56;   // Anisotropic Network Model
-    pub const NMA_BFACTOR: f64 = 0.54;   // Normal Mode Analysis
+    pub const GNMR_BFACTOR: f64 = 0.59; // Gaussian Network Model
+    pub const ANM_BFACTOR: f64 = 0.56; // Anisotropic Network Model
+    pub const NMA_BFACTOR: f64 = 0.54; // Normal Mode Analysis
 
     /// Apo-Holo RMSD prediction
     pub const DYNAMINE_APOHOLO: f64 = 0.65;
@@ -168,7 +168,10 @@ fn double_center(d: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let mut a = vec![vec![0.0; n]; n];
 
     // Row means
-    let row_means: Vec<f64> = d.iter().map(|row| row.iter().sum::<f64>() / n as f64).collect();
+    let row_means: Vec<f64> = d
+        .iter()
+        .map(|row| row.iter().sum::<f64>() / n as f64)
+        .collect();
     // Column means
     let col_means: Vec<f64> = (0..n)
         .map(|j| d.iter().map(|row| row[j]).sum::<f64>() / n as f64)
@@ -212,7 +215,7 @@ pub struct EnsembleRmsdStats {
 
 /// Compute pairwise RMSD distribution from CA coordinates
 pub fn compute_pairwise_rmsd_stats(
-    ensembles: &[Vec<[f64; 3]>],  // Vec of conformations, each is Vec of CA coords
+    ensembles: &[Vec<[f64; 3]>], // Vec of conformations, each is Vec of CA coords
 ) -> EnsembleRmsdStats {
     let mut rmsds = Vec::new();
 
@@ -332,26 +335,42 @@ impl ClassificationMetrics {
     /// Precision = TP / (TP + FP)
     pub fn precision(&self) -> f64 {
         let denom = self.tp + self.fp;
-        if denom == 0 { 0.0 } else { self.tp as f64 / denom as f64 }
+        if denom == 0 {
+            0.0
+        } else {
+            self.tp as f64 / denom as f64
+        }
     }
 
     /// Recall = TP / (TP + FN)
     pub fn recall(&self) -> f64 {
         let denom = self.tp + self.fn_;
-        if denom == 0 { 0.0 } else { self.tp as f64 / denom as f64 }
+        if denom == 0 {
+            0.0
+        } else {
+            self.tp as f64 / denom as f64
+        }
     }
 
     /// F1 = 2 * (precision * recall) / (precision + recall)
     pub fn f1(&self) -> f64 {
         let p = self.precision();
         let r = self.recall();
-        if p + r < 1e-10 { 0.0 } else { 2.0 * p * r / (p + r) }
+        if p + r < 1e-10 {
+            0.0
+        } else {
+            2.0 * p * r / (p + r)
+        }
     }
 
     /// Accuracy = (TP + TN) / total
     pub fn accuracy(&self) -> f64 {
         let total = self.tp + self.fp + self.tn + self.fn_;
-        if total == 0 { 0.0 } else { (self.tp + self.tn) as f64 / total as f64 }
+        if total == 0 {
+            0.0
+        } else {
+            (self.tp + self.tn) as f64 / total as f64
+        }
     }
 
     /// Matthews Correlation Coefficient
@@ -364,7 +383,11 @@ impl ClassificationMetrics {
         let numer = tp * tn - fp * fn_;
         let denom = ((tp + fp) * (tp + fn_) * (tn + fp) * (tn + fn_)).sqrt();
 
-        if denom < 1e-10 { 0.0 } else { numer / denom }
+        if denom < 1e-10 {
+            0.0
+        } else {
+            numer / denom
+        }
     }
 }
 
@@ -375,7 +398,8 @@ pub fn compute_roc_auc(scores: &[f64], labels: &[bool]) -> f64 {
     }
 
     // Sort by score descending
-    let mut indexed: Vec<(f64, bool)> = scores.iter().cloned().zip(labels.iter().cloned()).collect();
+    let mut indexed: Vec<(f64, bool)> =
+        scores.iter().cloned().zip(labels.iter().cloned()).collect();
     indexed.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let n_pos = labels.iter().filter(|&&x| x).count() as f64;
@@ -416,9 +440,9 @@ pub fn compute_roc_auc(scores: &[f64], labels: &[bool]) -> f64 {
 #[derive(Debug, Clone)]
 pub struct CrypticSiteResult {
     pub pdb_id: String,
-    pub residue_scores: Vec<f64>,      // Per-residue cryptic site probability
-    pub predicted_sites: Vec<usize>,   // Residue indices of predicted sites
-    pub known_sites: Vec<usize>,       // Known cryptic site residues
+    pub residue_scores: Vec<f64>, // Per-residue cryptic site probability
+    pub predicted_sites: Vec<usize>, // Residue indices of predicted sites
+    pub known_sites: Vec<usize>,  // Known cryptic site residues
     pub auc: f64,
     pub f1: f64,
 }
@@ -438,13 +462,13 @@ pub struct AllostericSiteResult {
 /// High RMSF + pocket formation = cryptic site candidate
 pub fn detect_cryptic_sites(
     rmsf: &[f64],
-    pocket_scores: &[f64],  // From fpocket or similar
+    pocket_scores: &[f64], // From fpocket or similar
     threshold_percentile: f64,
 ) -> Vec<usize> {
     let mut combined: Vec<f64> = rmsf
         .iter()
         .zip(pocket_scores.iter())
-        .map(|(r, p)| r * p)  // Combined score
+        .map(|(r, p)| r * p) // Combined score
         .collect();
 
     // Find threshold at percentile
@@ -470,10 +494,10 @@ pub fn detect_cryptic_sites(
 pub struct ApoHoloResult {
     pub apo_pdb: String,
     pub holo_pdb: String,
-    pub experimental_rmsd: f64,        // Actual apo-holo RMSD
-    pub predicted_rmsd: f64,           // From ensemble
-    pub per_residue_correlation: f64,  // Correlation of per-residue changes
-    pub binding_site_captured: bool,   // Did ensemble sample the binding site?
+    pub experimental_rmsd: f64,       // Actual apo-holo RMSD
+    pub predicted_rmsd: f64,          // From ensemble
+    pub per_residue_correlation: f64, // Correlation of per-residue changes
+    pub binding_site_captured: bool,  // Did ensemble sample the binding site?
 }
 
 // ============================================================================
@@ -540,16 +564,32 @@ impl PrismBenchResult {
     pub fn comparison_table(&self) -> String {
         let mut table = String::new();
 
-        table.push_str("╔═══════════════════════════════════════════════════════════════════════════╗\n");
-        table.push_str("║                    PRISM-BENCH COMPREHENSIVE RESULTS                      ║\n");
-        table.push_str("╠═══════════════════════════════════════════════════════════════════════════╣\n");
+        table.push_str(
+            "╔═══════════════════════════════════════════════════════════════════════════╗\n",
+        );
+        table.push_str(
+            "║                    PRISM-BENCH COMPREHENSIVE RESULTS                      ║\n",
+        );
+        table.push_str(
+            "╠═══════════════════════════════════════════════════════════════════════════╣\n",
+        );
         table.push_str(&format!("║  Dataset: {:<64} ║\n", self.dataset_name));
         table.push_str(&format!("║  Proteins: {:<63} ║\n", self.n_proteins));
-        table.push_str("╠═══════════════════════════════════════════════════════════════════════════╣\n");
-        table.push_str("║  FLEXIBILITY VALIDATION                                                   ║\n");
-        table.push_str("╠───────────────────────────┬────────────┬────────────┬─────────────────────╣\n");
-        table.push_str("║  Metric                   │ PRISM-Δ    │ Baseline   │ Improvement         ║\n");
-        table.push_str("╠───────────────────────────┼────────────┼────────────┼─────────────────────╣\n");
+        table.push_str(
+            "╠═══════════════════════════════════════════════════════════════════════════╣\n",
+        );
+        table.push_str(
+            "║  FLEXIBILITY VALIDATION                                                   ║\n",
+        );
+        table.push_str(
+            "╠───────────────────────────┬────────────┬────────────┬─────────────────────╣\n",
+        );
+        table.push_str(
+            "║  Metric                   │ PRISM-Δ    │ Baseline   │ Improvement         ║\n",
+        );
+        table.push_str(
+            "╠───────────────────────────┼────────────┼────────────┼─────────────────────╣\n",
+        );
         table.push_str(&format!(
             "║  B-factor ρ (Pearson)     │ {:>10.3} │ {:>10.3} │ {:>+18.1}% ║\n",
             self.bfactor_pearson,
@@ -562,9 +602,15 @@ impl PrismBenchResult {
             Leaderboards::ALPHAFLOW_RMSF,
             (self.md_rmsf_pearson / Leaderboards::ALPHAFLOW_RMSF - 1.0) * 100.0
         ));
-        table.push_str("╠═══════════════════════════════════════════════════════════════════════════╣\n");
-        table.push_str("║  BINDING SITE DETECTION                                                   ║\n");
-        table.push_str("╠───────────────────────────┬────────────┬────────────┬─────────────────────╣\n");
+        table.push_str(
+            "╠═══════════════════════════════════════════════════════════════════════════╣\n",
+        );
+        table.push_str(
+            "║  BINDING SITE DETECTION                                                   ║\n",
+        );
+        table.push_str(
+            "╠───────────────────────────┬────────────┬────────────┬─────────────────────╣\n",
+        );
         table.push_str(&format!(
             "║  Cryptic Sites (AUC)      │ {:>10.3} │ {:>10.3} │ {:>+18.1}% ║\n",
             self.cryptic_auc,
@@ -577,9 +623,15 @@ impl PrismBenchResult {
             Leaderboards::ALLOSITE_AUC,
             (self.allosteric_auc / Leaderboards::ALLOSITE_AUC - 1.0) * 100.0
         ));
-        table.push_str("╠═══════════════════════════════════════════════════════════════════════════╣\n");
-        table.push_str("║  ENSEMBLE QUALITY                                                         ║\n");
-        table.push_str("╠───────────────────────────┬────────────────────────────────────────────────╣\n");
+        table.push_str(
+            "╠═══════════════════════════════════════════════════════════════════════════╣\n",
+        );
+        table.push_str(
+            "║  ENSEMBLE QUALITY                                                         ║\n",
+        );
+        table.push_str(
+            "╠───────────────────────────┬────────────────────────────────────────────────╣\n",
+        );
         table.push_str(&format!(
             "║  Pairwise RMSD            │ {:>10.2} Å                                     ║\n",
             self.mean_pairwise_rmsd
@@ -592,9 +644,15 @@ impl PrismBenchResult {
             "║  Distance Corr. (DCC)     │ {:>10.3}                                       ║\n",
             self.dcc
         ));
-        table.push_str("╠═══════════════════════════════════════════════════════════════════════════╣\n");
-        table.push_str("║  CONFORMATIONAL CHANGE                                                    ║\n");
-        table.push_str("╠───────────────────────────┬────────────┬────────────┬─────────────────────╣\n");
+        table.push_str(
+            "╠═══════════════════════════════════════════════════════════════════════════╣\n",
+        );
+        table.push_str(
+            "║  CONFORMATIONAL CHANGE                                                    ║\n",
+        );
+        table.push_str(
+            "╠───────────────────────────┬────────────┬────────────┬─────────────────────╣\n",
+        );
         table.push_str(&format!(
             "║  Apo-Holo RMSD ρ          │ {:>10.3} │ {:>10.3} │ {:>+18.1}% ║\n",
             self.apoholo_rmsd_corr,
@@ -605,7 +663,9 @@ impl PrismBenchResult {
             "║  Binding Site Recall      │ {:>10.3} │        n/a │                n/a ║\n",
             self.apoholo_site_recall
         ));
-        table.push_str("╚═══════════════════════════════════════════════════════════════════════════╝\n");
+        table.push_str(
+            "╚═══════════════════════════════════════════════════════════════════════════╝\n",
+        );
 
         table
     }
@@ -618,29 +678,32 @@ impl PrismBenchResult {
 /// Known apo-holo pairs for validation
 pub static APO_HOLO_PAIRS: &[(&str, &str, f64)] = &[
     // (apo_pdb, holo_pdb, expected_rmsd)
-    ("1AKE", "4AKE", 7.1),   // Adenylate kinase - large conformational change
-    ("1GGG", "1WDN", 3.5),   // Glutamine binding protein
-    ("2LZM", "3LZM", 0.8),   // Lysozyme
-    ("1BPG", "2PGK", 6.7),   // Phosphoglycerate kinase
-    ("1OMP", "1ANF", 4.2),   // Maltodextrin binding protein
-    ("3CLN", "1CTR", 1.5),   // Calmodulin
-    ("1URN", "1URJ", 2.1),   // Ribonuclease inhibitor
+    ("1AKE", "4AKE", 7.1), // Adenylate kinase - large conformational change
+    ("1GGG", "1WDN", 3.5), // Glutamine binding protein
+    ("2LZM", "3LZM", 0.8), // Lysozyme
+    ("1BPG", "2PGK", 6.7), // Phosphoglycerate kinase
+    ("1OMP", "1ANF", 4.2), // Maltodextrin binding protein
+    ("3CLN", "1CTR", 1.5), // Calmodulin
+    ("1URN", "1URJ", 2.1), // Ribonuclease inhibitor
 ];
 
 /// Known cryptic binding site proteins (from CryptoSite benchmark)
 pub static CRYPTIC_SITE_PROTEINS: &[(&str, &[usize])] = &[
     // (pdb_id, cryptic_site_residues)
-    ("1FKB", &[26, 27, 28, 29, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56]),  // FKBP12
-    ("1N2C", &[115, 116, 117, 118, 119, 120, 121, 122, 123]),  // TEM-1 β-lactamase
-    ("2P5E", &[39, 40, 41, 42, 43, 44, 45]),  // IL-2
-    ("2BX2", &[201, 202, 203, 204, 205, 206, 207, 208, 209, 210]),  // p38 MAPK
+    (
+        "1FKB",
+        &[26, 27, 28, 29, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56],
+    ), // FKBP12
+    ("1N2C", &[115, 116, 117, 118, 119, 120, 121, 122, 123]), // TEM-1 β-lactamase
+    ("2P5E", &[39, 40, 41, 42, 43, 44, 45]),                  // IL-2
+    ("2BX2", &[201, 202, 203, 204, 205, 206, 207, 208, 209, 210]), // p38 MAPK
 ];
 
 /// Known allosteric site proteins (from ASD database)
 pub static ALLOSTERIC_PROTEINS: &[(&str, &[usize])] = &[
-    ("1F3U", &[153, 154, 155, 156, 157, 158, 159]),  // HIV protease
-    ("1M17", &[752, 753, 754, 755, 756]),  // EGFR
-    ("3K5V", &[233, 234, 235, 236, 237]),  // PDK1
+    ("1F3U", &[153, 154, 155, 156, 157, 158, 159]), // HIV protease
+    ("1M17", &[752, 753, 754, 755, 756]),           // EGFR
+    ("3K5V", &[233, 234, 235, 236, 237]),           // PDK1
 ];
 
 // ============================================================================
@@ -668,7 +731,10 @@ mod tests {
         let scores = vec![0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2];
         let labels = vec![true, true, true, true, false, false, false, false];
         let auc = compute_roc_auc(&scores, &labels);
-        assert!((auc - 1.0).abs() < 0.001, "Perfect separation should give AUC=1");
+        assert!(
+            (auc - 1.0).abs() < 0.001,
+            "Perfect separation should give AUC=1"
+        );
     }
 
     #[test]
@@ -686,8 +752,8 @@ mod tests {
 
     #[test]
     fn test_bfactor_conversion() {
-        let b = 30.0;  // Typical B-factor
+        let b = 30.0; // Typical B-factor
         let rmsf = bfactor_to_rmsf(b);
-        assert!(rmsf > 0.5 && rmsf < 1.5);  // Should be in reasonable range
+        assert!(rmsf > 0.5 && rmsf < 1.5); // Should be in reasonable range
     }
 }

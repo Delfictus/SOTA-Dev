@@ -6,8 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use serde::Deserialize;
 use nalgebra::{DMatrix, SymmetricEigen};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 struct AtlasTarget {
@@ -47,7 +47,11 @@ fn main() -> Result<()> {
         let mut correlations = Vec::new();
 
         for target in &targets {
-            let pdb_path_with_chain = pdb_dir.join(format!("{}_{}.pdb", target.pdb_id.to_lowercase(), target.chain));
+            let pdb_path_with_chain = pdb_dir.join(format!(
+                "{}_{}.pdb",
+                target.pdb_id.to_lowercase(),
+                target.chain
+            ));
             let pdb_path_no_chain = pdb_dir.join(format!("{}.pdb", target.pdb_id.to_lowercase()));
 
             let pdb_path = if pdb_path_with_chain.exists() {
@@ -58,15 +62,23 @@ fn main() -> Result<()> {
                 continue;
             };
 
-            let target_chain = if target.chain.is_empty() { None } else { Some(target.chain.as_str()) };
+            let target_chain = if target.chain.is_empty() {
+                None
+            } else {
+                Some(target.chain.as_str())
+            };
 
-            if let Ok((ca_pos, kept_indices)) = parse_pdb_ca_chain_with_indices(&pdb_path, target_chain) {
-                if ca_pos.len() < 10 { continue; }
+            if let Ok((ca_pos, kept_indices)) =
+                parse_pdb_ca_chain_with_indices(&pdb_path, target_chain)
+            {
+                if ca_pos.len() < 10 {
+                    continue;
+                }
 
                 // Compute RMSF with experimental settings
                 let rmsf = compute_rmsf_experimental(
                     &ca_pos,
-                    9.0,  // cutoff
+                    9.0, // cutoff
                     *sigma,
                     *terminus_residues,
                     *terminus_boost,
@@ -74,7 +86,8 @@ fn main() -> Result<()> {
                 );
 
                 // Align ground truth
-                let aligned_exp: Vec<f64> = kept_indices.iter()
+                let aligned_exp: Vec<f64> = kept_indices
+                    .iter()
                     .filter_map(|&idx| target.md_rmsf.get(idx).copied())
                     .collect();
 
@@ -90,13 +103,30 @@ fn main() -> Result<()> {
         if !correlations.is_empty() {
             let mean = correlations.iter().sum::<f64>() / correlations.len() as f64;
             let above_07 = correlations.iter().filter(|&&c| c >= 0.7).count();
-            let pass_rate = correlations.iter().filter(|&&c| c > 0.3).count() as f64 / correlations.len() as f64;
+            let pass_rate = correlations.iter().filter(|&&c| c > 0.3).count() as f64
+                / correlations.len() as f64;
 
-            let delta = mean - 0.615;  // vs baseline
-            let marker = if mean >= 0.70 { "🎯" } else if delta > 0.005 { "✅" } else if delta < -0.005 { "❌" } else { "  " };
+            let delta = mean - 0.615; // vs baseline
+            let marker = if mean >= 0.70 {
+                "🎯"
+            } else if delta > 0.005 {
+                "✅"
+            } else if delta < -0.005 {
+                "❌"
+            } else {
+                "  "
+            };
 
-            println!("  {} {:30} ρ = {:.3}  Δ={:+.3}  ≥0.7: {:2}/{}  pass={:.1}%",
-                     marker, name, mean, delta, above_07, correlations.len(), pass_rate * 100.0);
+            println!(
+                "  {} {:30} ρ = {:.3}  Δ={:+.3}  ≥0.7: {:2}/{}  pass={:.1}%",
+                marker,
+                name,
+                mean,
+                delta,
+                above_07,
+                correlations.len(),
+                pass_rate * 100.0
+            );
         }
     }
 
@@ -157,7 +187,9 @@ fn compute_rmsf_experimental(
     for k in 1..=mode_count {
         let idx = sorted_indices[k];
         let lambda = eigenvalues[idx];
-        if lambda.abs() < 1e-6 { continue; }
+        if lambda.abs() < 1e-6 {
+            continue;
+        }
 
         for i in 0..n {
             let v = eigenvectors[(i, idx)];
@@ -194,7 +226,10 @@ fn compute_rmsf_experimental(
     rmsf
 }
 
-fn parse_pdb_ca_chain_with_indices(path: &PathBuf, target_chain: Option<&str>) -> Result<(Vec<[f32; 3]>, Vec<usize>)> {
+fn parse_pdb_ca_chain_with_indices(
+    path: &PathBuf,
+    target_chain: Option<&str>,
+) -> Result<(Vec<[f32; 3]>, Vec<usize>)> {
     let content = fs::read_to_string(path)?;
     let mut positions = Vec::new();
     let mut kept_indices = Vec::new();
@@ -202,29 +237,54 @@ fn parse_pdb_ca_chain_with_indices(path: &PathBuf, target_chain: Option<&str>) -
     let mut target_chain_ca_index = 0usize;
 
     for line in content.lines() {
-        if !line.starts_with("ATOM") { continue; }
+        if !line.starts_with("ATOM") {
+            continue;
+        }
         let atom_name = line.get(12..16).unwrap_or("").trim();
-        if atom_name != "CA" { continue; }
+        if atom_name != "CA" {
+            continue;
+        }
 
         let chain_id = line.get(21..22).unwrap_or(" ");
         if let Some(target) = target_chain {
-            if chain_id != target { continue; }
+            if chain_id != target {
+                continue;
+            }
         }
 
         let current_index = target_chain_ca_index;
         target_chain_ca_index += 1;
 
         let alt_loc = line.get(16..17).unwrap_or(" ");
-        if alt_loc != " " && alt_loc != "A" { continue; }
+        if alt_loc != " " && alt_loc != "A" {
+            continue;
+        }
 
         let res_num = line.get(22..27).unwrap_or("0").trim();
         let res_key = format!("{}{}", chain_id, res_num);
-        if res_key == last_res_key { continue; }
+        if res_key == last_res_key {
+            continue;
+        }
         last_res_key = res_key;
 
-        let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+        let x: f32 = line
+            .get(30..38)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let y: f32 = line
+            .get(38..46)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let z: f32 = line
+            .get(46..54)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
 
         positions.push([x, y, z]);
         kept_indices.push(current_index);
@@ -234,7 +294,9 @@ fn parse_pdb_ca_chain_with_indices(path: &PathBuf, target_chain: Option<&str>) -
 }
 
 fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
-    if x.len() != y.len() || x.is_empty() { return 0.0; }
+    if x.len() != y.len() || x.is_empty() {
+        return 0.0;
+    }
 
     let n = x.len() as f64;
     let mean_x = x.iter().sum::<f64>() / n;
@@ -252,6 +314,8 @@ fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
         var_y += dy * dy;
     }
 
-    if var_x < 1e-10 || var_y < 1e-10 { return 0.0; }
+    if var_x < 1e-10 || var_y < 1e-10 {
+        return 0.0;
+    }
     cov / (var_x.sqrt() * var_y.sqrt())
 }

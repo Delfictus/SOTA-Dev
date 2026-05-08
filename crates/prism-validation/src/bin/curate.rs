@@ -13,8 +13,8 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use indicatif::{ProgressBar, ProgressStyle};
 use prism_validation::data_curation::{
-    AtomicMetadata, CuratedTarget, CurationManifest, CurationStats, DataCurator,
-    PdbProvenance, TargetDefinition, get_validation_targets,
+    get_validation_targets, AtomicMetadata, CuratedTarget, CurationManifest, CurationStats,
+    DataCurator, PdbProvenance, TargetDefinition,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -158,9 +158,10 @@ async fn main() -> Result<()> {
     let mut valid_count = 0;
 
     for target in &targets {
-        if let (Some((apo_prov, apo_meta)), Some((holo_prov, holo_meta))) =
-            (apo_provenance.get(&target.name), holo_provenance.get(&target.name))
-        {
+        if let (Some((apo_prov, apo_meta)), Some((holo_prov, holo_meta))) = (
+            apo_provenance.get(&target.name),
+            holo_provenance.get(&target.name),
+        ) {
             let valid_for_blind = apo_prov.validation.safe_for_blind;
             if valid_for_blind {
                 valid_count += 1;
@@ -168,7 +169,9 @@ async fn main() -> Result<()> {
 
             total_atoms += apo_meta.atoms.len() + holo_meta.atoms.len();
             total_residues += apo_meta.residues.len() + holo_meta.residues.len();
-            *area_counts.entry(target.therapeutic_area.clone()).or_insert(0) += 1;
+            *area_counts
+                .entry(target.therapeutic_area.clone())
+                .or_insert(0) += 1;
 
             let mut notes = target.notes.clone();
             notes.extend(apo_prov.validation.warnings.clone());
@@ -228,16 +231,30 @@ async fn main() -> Result<()> {
     println!("╔══════════════════════════════════════════════════════════════════╗");
     println!("║                    CURATION COMPLETE                             ║");
     println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║  Targets curated: {:>3}                                           ║", manifest.stats.total_targets);
-    println!("║  Valid for blind: {:>3} ({:.0}%)                                      ║",
-             valid_count,
-             (valid_count as f64 / manifest.stats.total_targets.max(1) as f64) * 100.0);
-    println!("║  Total atoms:     {:>7}                                       ║", total_atoms);
-    println!("║  Total residues:  {:>7}                                       ║", total_residues);
+    println!(
+        "║  Targets curated: {:>3}                                           ║",
+        manifest.stats.total_targets
+    );
+    println!(
+        "║  Valid for blind: {:>3} ({:.0}%)                                      ║",
+        valid_count,
+        (valid_count as f64 / manifest.stats.total_targets.max(1) as f64) * 100.0
+    );
+    println!(
+        "║  Total atoms:     {:>7}                                       ║",
+        total_atoms
+    );
+    println!(
+        "║  Total residues:  {:>7}                                       ║",
+        total_residues
+    );
     println!("╠══════════════════════════════════════════════════════════════════╣");
     println!("║  Manifest:  {:?}", manifest_path);
     println!("║  Report:    {:?}", report_path);
-    println!("║  Manifest BLAKE3: {}...", &manifest.manifest_hash.as_ref().unwrap()[..16]);
+    println!(
+        "║  Manifest BLAKE3: {}...",
+        &manifest.manifest_hash.as_ref().unwrap()[..16]
+    );
     println!("╚══════════════════════════════════════════════════════════════════╝");
 
     // Print therapeutic area breakdown
@@ -252,12 +269,20 @@ async fn main() -> Result<()> {
         let status = if target.valid_for_blind {
             format!(
                 "✓ {} days before drug",
-                target.apo_provenance.validation.days_before_drug.unwrap_or(0)
+                target
+                    .apo_provenance
+                    .validation
+                    .days_before_drug
+                    .unwrap_or(0)
             )
         } else {
             format!(
                 "⚠ {}",
-                target.apo_provenance.validation.warnings.first()
+                target
+                    .apo_provenance
+                    .validation
+                    .warnings
+                    .first()
                     .map(|s| s.as_str())
                     .unwrap_or("Unknown issue")
             )
@@ -302,7 +327,13 @@ fn generate_report(manifest: &CurationManifest, path: &PathBuf) -> Result<()> {
 
     report.push_str("# PRISM-4D Data Curation Report\n\n");
     report.push_str(&format!("**Generated**: {}\n\n", manifest.created_at));
-    report.push_str(&format!("**Manifest BLAKE3**: `{}`\n\n", manifest.manifest_hash.as_ref().unwrap_or(&"N/A".to_string())));
+    report.push_str(&format!(
+        "**Manifest BLAKE3**: `{}`\n\n",
+        manifest
+            .manifest_hash
+            .as_ref()
+            .unwrap_or(&"N/A".to_string())
+    ));
 
     report.push_str("## Executive Summary\n\n");
     report.push_str(&format!(
@@ -311,16 +342,21 @@ fn generate_report(manifest: &CurationManifest, path: &PathBuf) -> Result<()> {
         temporal integrity requirements for scientifically defensible blind testing.\n\n",
         manifest.stats.total_targets,
         manifest.stats.valid_for_blind,
-        (manifest.stats.valid_for_blind as f64 / manifest.stats.total_targets.max(1) as f64) * 100.0
+        (manifest.stats.valid_for_blind as f64 / manifest.stats.total_targets.max(1) as f64)
+            * 100.0
     ));
 
     report.push_str("## Data Leakage Prevention\n\n");
     report.push_str("For retrospective blind validation to be scientifically defensible:\n\n");
-    report.push_str("1. **APO structures must predate drug discovery** - We only use the APO structure \n");
+    report.push_str(
+        "1. **APO structures must predate drug discovery** - We only use the APO structure \n",
+    );
     report.push_str("   (closed/inactive state) as input, and verify it was deposited before the drug was discovered.\n");
     report.push_str("2. **HOLO structures are ground truth only** - The HOLO structure (open/drug-bound state) \n");
     report.push_str("   is NEVER used during simulation, only for evaluation after the fact.\n");
-    report.push_str("3. **No binding site information encoded** - The pocket residues are not provided to \n");
+    report.push_str(
+        "3. **No binding site information encoded** - The pocket residues are not provided to \n",
+    );
     report.push_str("   PRISM-NOVA during simulation; they're only used to evaluate if the correct site was found.\n\n");
 
     report.push_str("## Therapeutic Area Coverage\n\n");
@@ -334,31 +370,53 @@ fn generate_report(manifest: &CurationManifest, path: &PathBuf) -> Result<()> {
     report.push_str("## Target Details\n\n");
 
     for target in &manifest.targets {
-        report.push_str(&format!("### {} ({})\n\n", target.name, target.therapeutic_area));
-        report.push_str(&format!("**Drug**: {} (discovered ~{})\n\n", target.drug_name, target.drug_date));
+        report.push_str(&format!(
+            "### {} ({})\n\n",
+            target.name, target.therapeutic_area
+        ));
+        report.push_str(&format!(
+            "**Drug**: {} (discovered ~{})\n\n",
+            target.drug_name, target.drug_date
+        ));
 
         report.push_str("#### APO Structure (Blind Input)\n\n");
         report.push_str(&format!("- **PDB ID**: {}\n", target.apo_provenance.pdb_id));
-        report.push_str(&format!("- **BLAKE3**: `{}`\n", target.apo_provenance.blake3_hash));
+        report.push_str(&format!(
+            "- **BLAKE3**: `{}`\n",
+            target.apo_provenance.blake3_hash
+        ));
         report.push_str(&format!(
             "- **Deposition Date**: {}\n",
-            target.apo_provenance.deposition_date
+            target
+                .apo_provenance
+                .deposition_date
                 .map(|d| d.to_string())
                 .unwrap_or("Unknown".to_string())
         ));
         report.push_str(&format!("- **Atoms**: {}\n", target.apo_provenance.n_atoms));
-        report.push_str(&format!("- **Residues**: {}\n", target.apo_provenance.n_residues));
+        report.push_str(&format!(
+            "- **Residues**: {}\n",
+            target.apo_provenance.n_residues
+        ));
         report.push_str(&format!(
             "- **Temporal Validity**: {}\n",
             if target.apo_provenance.validation.temporal_valid {
                 format!(
                     "✓ VALID ({} days before drug discovery)",
-                    target.apo_provenance.validation.days_before_drug.unwrap_or(0)
+                    target
+                        .apo_provenance
+                        .validation
+                        .days_before_drug
+                        .unwrap_or(0)
                 )
             } else {
                 format!(
                     "⚠ CAUTION - {}",
-                    target.apo_provenance.validation.warnings.first()
+                    target
+                        .apo_provenance
+                        .validation
+                        .warnings
+                        .first()
                         .map(|s| s.as_str())
                         .unwrap_or("Unknown")
                 )
@@ -367,10 +425,22 @@ fn generate_report(manifest: &CurationManifest, path: &PathBuf) -> Result<()> {
         report.push_str("\n");
 
         report.push_str("#### HOLO Structure (Ground Truth - Evaluation Only)\n\n");
-        report.push_str(&format!("- **PDB ID**: {}\n", target.holo_provenance.pdb_id));
-        report.push_str(&format!("- **BLAKE3**: `{}`\n", target.holo_provenance.blake3_hash));
-        report.push_str(&format!("- **Atoms**: {}\n", target.holo_provenance.n_atoms));
-        report.push_str(&format!("- **Residues**: {}\n", target.holo_provenance.n_residues));
+        report.push_str(&format!(
+            "- **PDB ID**: {}\n",
+            target.holo_provenance.pdb_id
+        ));
+        report.push_str(&format!(
+            "- **BLAKE3**: `{}`\n",
+            target.holo_provenance.blake3_hash
+        ));
+        report.push_str(&format!(
+            "- **Atoms**: {}\n",
+            target.holo_provenance.n_atoms
+        ));
+        report.push_str(&format!(
+            "- **Residues**: {}\n",
+            target.holo_provenance.n_residues
+        ));
         report.push_str("\n");
 
         if !target.notes.is_empty() {
@@ -397,9 +467,12 @@ fn generate_report(manifest: &CurationManifest, path: &PathBuf) -> Result<()> {
     report.push_str("```\n\n");
 
     report.push_str("## Legal & Ethical Statement\n\n");
-    report.push_str("All PDB structures are obtained from the RCSB Protein Data Bank, a publicly \n");
-    report.push_str("available resource. The temporal validation ensures that our retrospective \n");
-    report.push_str("blind testing is scientifically valid and does not constitute \"p-hacking\" \n");
+    report
+        .push_str("All PDB structures are obtained from the RCSB Protein Data Bank, a publicly \n");
+    report
+        .push_str("available resource. The temporal validation ensures that our retrospective \n");
+    report
+        .push_str("blind testing is scientifically valid and does not constitute \"p-hacking\" \n");
     report.push_str("or cherry-picking of favorable results.\n");
 
     std::fs::write(path, report)?;

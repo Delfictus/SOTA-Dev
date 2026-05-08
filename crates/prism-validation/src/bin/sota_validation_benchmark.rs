@@ -18,7 +18,7 @@
 //!     --output results/sota_validation
 //! ```
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -142,7 +142,9 @@ fn main() -> Result<()> {
     #[cfg(feature = "cuda")]
     {
         use cudarc::driver::CudaContext;
-        use prism_gpu::{AmberSimdBatch, StructureTopology, OptimizationConfig, BATCH_SPATIAL_OFFSET};
+        use prism_gpu::{
+            AmberSimdBatch, OptimizationConfig, StructureTopology, BATCH_SPATIAL_OFFSET,
+        };
         use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom};
         use prism_validation::pdb_sanitizer::{PdbSanitizer, SanitizedStructure};
         use std::sync::Arc;
@@ -196,7 +198,9 @@ fn main() -> Result<()> {
                 }
             }
 
-            let pdb_path = if pdb_path.exists() { pdb_path } else {
+            let pdb_path = if pdb_path.exists() {
+                pdb_path
+            } else {
                 args.pdb_dir.join(format!("{}.pdb", pdb_id.to_lowercase()))
             };
 
@@ -225,17 +229,23 @@ fn main() -> Result<()> {
             result.n_residues = sanitized.ca_residues.len();
             result.n_chains = sanitized.chains.len();
 
-            println!("   ✓ Sanitized: {} atoms, {} residues, {} chains",
-                     result.n_atoms, result.n_residues, result.n_chains);
-            println!("     Removed: {} HETATM, {} waters, {} alt conformations",
-                     sanitized.stats.hetatm_removed,
-                     sanitized.stats.waters_removed,
-                     sanitized.stats.altloc_removed);
+            println!(
+                "   ✓ Sanitized: {} atoms, {} residues, {} chains",
+                result.n_atoms, result.n_residues, result.n_chains
+            );
+            println!(
+                "     Removed: {} HETATM, {} waters, {} alt conformations",
+                sanitized.stats.hetatm_removed,
+                sanitized.stats.waters_removed,
+                sanitized.stats.altloc_removed
+            );
 
             // Step 2: Generate AMBER topology
             let topology_start = Instant::now();
-            let pdb_atoms: Vec<PdbAtom> = sanitized.atoms.iter().map(|a| {
-                PdbAtom {
+            let pdb_atoms: Vec<PdbAtom> = sanitized
+                .atoms
+                .iter()
+                .map(|a| PdbAtom {
                     index: a.index,
                     name: a.name.clone(),
                     residue_name: a.residue_name.clone(),
@@ -244,8 +254,8 @@ fn main() -> Result<()> {
                     x: a.position[0],
                     y: a.position[1],
                     z: a.position[2],
-                }
-            }).collect();
+                })
+                .collect();
 
             let amber_topo = AmberTopology::from_pdb_atoms(&pdb_atoms);
             result.topology_ms = topology_start.elapsed().as_secs_f64() * 1000.0;
@@ -254,8 +264,10 @@ fn main() -> Result<()> {
             result.n_angles = amber_topo.angles.len();
             result.n_dihedrals = amber_topo.dihedrals.len();
 
-            println!("   ✓ Topology: {} bonds, {} angles, {} dihedrals",
-                     result.n_bonds, result.n_angles, result.n_dihedrals);
+            println!(
+                "   ✓ Topology: {} bonds, {} angles, {} dihedrals",
+                result.n_bonds, result.n_angles, result.n_dihedrals
+            );
 
             // Convert to StructureTopology format
             let structure_topo = convert_to_structure_topology(&sanitized, &amber_topo);
@@ -272,9 +284,7 @@ fn main() -> Result<()> {
         println!("╚══════════════════════════════════════════════════════════════╝");
 
         // Collect all successful topologies
-        let successful_topos: Vec<_> = results.iter()
-            .filter(|r| r.error.is_none())
-            .collect();
+        let successful_topos: Vec<_> = results.iter().filter(|r| r.error.is_none()).collect();
 
         if successful_topos.is_empty() {
             println!("   ✗ No structures available for batched benchmark");
@@ -292,8 +302,10 @@ fn main() -> Result<()> {
 
                 if let Ok(content) = fs::read_to_string(&pdb_path) {
                     if let Ok(sanitized) = sanitizer.sanitize(&content, pdb_id) {
-                        let pdb_atoms: Vec<PdbAtom> = sanitized.atoms.iter().map(|a| {
-                            PdbAtom {
+                        let pdb_atoms: Vec<PdbAtom> = sanitized
+                            .atoms
+                            .iter()
+                            .map(|a| PdbAtom {
                                 index: a.index,
                                 name: a.name.clone(),
                                 residue_name: a.residue_name.clone(),
@@ -302,8 +314,8 @@ fn main() -> Result<()> {
                                 x: a.position[0],
                                 y: a.position[1],
                                 z: a.position[2],
-                            }
-                        }).collect();
+                            })
+                            .collect();
                         let amber_topo = AmberTopology::from_pdb_atoms(&pdb_atoms);
                         let structure_topo = convert_to_structure_topology(&sanitized, &amber_topo);
                         all_topos.push(structure_topo);
@@ -313,12 +325,22 @@ fn main() -> Result<()> {
             }
 
             let n_batch = all_topos.len();
-            let max_atoms = all_topos.iter().map(|t| t.positions.len() / 3).max().unwrap_or(0);
+            let max_atoms = all_topos
+                .iter()
+                .map(|t| t.positions.len() / 3)
+                .max()
+                .unwrap_or(0);
 
             println!("\n📊 Batch Configuration:");
             println!("   Structures in batch: {}", n_batch);
             println!("   Max atoms/structure: {}", max_atoms);
-            println!("   Total atoms: {}", all_topos.iter().map(|t| t.positions.len() / 3).sum::<usize>());
+            println!(
+                "   Total atoms: {}",
+                all_topos
+                    .iter()
+                    .map(|t| t.positions.len() / 3)
+                    .sum::<usize>()
+            );
 
             // ---- SEQUENTIAL BASELINE (one at a time) ----
             println!("\n⏱️  SEQUENTIAL BASELINE (processing one-by-one)...");
@@ -339,11 +361,17 @@ fn main() -> Result<()> {
             }
 
             let seq_elapsed = seq_start.elapsed().as_secs_f64() * 1000.0;
-            println!("   Sequential total: {:.1}ms ({:.1}ms per structure)",
-                     seq_elapsed, seq_elapsed / n_batch as f64);
+            println!(
+                "   Sequential total: {:.1}ms ({:.1}ms per structure)",
+                seq_elapsed,
+                seq_elapsed / n_batch as f64
+            );
 
             // ---- PARALLEL BATCHED (all at once with SOTA) ----
-            println!("\n🚀 PARALLEL BATCHED (all {} structures in single kernel)...", n_batch);
+            println!(
+                "\n🚀 PARALLEL BATCHED (all {} structures in single kernel)...",
+                n_batch
+            );
             let batch_start = Instant::now();
 
             let mut batch = AmberSimdBatch::new_with_config(
@@ -365,8 +393,11 @@ fn main() -> Result<()> {
             let batch_results = batch.get_all_results()?;
             let batch_stats = batch.sota_stats();
 
-            println!("   Batched total: {:.1}ms ({:.1}ms effective per structure)",
-                     batch_elapsed, batch_elapsed / n_batch as f64);
+            println!(
+                "   Batched total: {:.1}ms ({:.1}ms effective per structure)",
+                batch_elapsed,
+                batch_elapsed / n_batch as f64
+            );
             println!("   Verlet rebuilds: {}", batch_stats.verlet_rebuild_count);
 
             // Calculate real speedup
@@ -374,9 +405,18 @@ fn main() -> Result<()> {
             println!("\n╔══════════════════════════════════════════════════════════════╗");
             println!("║                    TRUE BATCHED SPEEDUP                       ║");
             println!("╠══════════════════════════════════════════════════════════════╣");
-            println!("║   Sequential: {:>10.1}ms                                   ║", seq_elapsed);
-            println!("║   Batched:    {:>10.1}ms                                   ║", batch_elapsed);
-            println!("║   SPEEDUP:    {:>10.2}× 🚀                                 ║", real_speedup);
+            println!(
+                "║   Sequential: {:>10.1}ms                                   ║",
+                seq_elapsed
+            );
+            println!(
+                "║   Batched:    {:>10.1}ms                                   ║",
+                batch_elapsed
+            );
+            println!(
+                "║   SPEEDUP:    {:>10.2}× 🚀                                 ║",
+                real_speedup
+            );
             println!("╚══════════════════════════════════════════════════════════════╝");
 
             // Update results with batch info
@@ -395,30 +435,30 @@ fn main() -> Result<()> {
 
         // Generate summary
         let successful: Vec<_> = results.iter().filter(|r| r.success).collect();
-        let speedups: Vec<f64> = successful.iter()
-            .filter_map(|r| r.speedup)
-            .collect();
+        let speedups: Vec<f64> = successful.iter().filter_map(|r| r.speedup).collect();
 
-        let total_legacy: f64 = successful.iter()
-            .filter_map(|r| r.legacy_md_ms)
-            .sum();
-        let total_sota: f64 = successful.iter()
-            .filter_map(|r| r.sota_md_ms)
-            .sum();
+        let total_legacy: f64 = successful.iter().filter_map(|r| r.legacy_md_ms).sum();
+        let total_sota: f64 = successful.iter().filter_map(|r| r.sota_md_ms).sum();
 
         let summary = BenchmarkSummary {
             total_structures: results.len(),
             successful: successful.len(),
             failed: results.len() - successful.len(),
             total_atoms: successful.iter().map(|r| r.n_atoms).sum(),
-            avg_speedup: if speedups.is_empty() { 0.0 } else {
+            avg_speedup: if speedups.is_empty() {
+                0.0
+            } else {
                 speedups.iter().sum::<f64>() / speedups.len() as f64
             },
             max_speedup: speedups.iter().cloned().fold(0.0_f64, f64::max),
             min_speedup: speedups.iter().cloned().fold(f64::MAX, f64::min),
             total_legacy_ms: total_legacy,
             total_sota_ms: total_sota,
-            overall_speedup: if total_sota > 0.0 { total_legacy / total_sota } else { 0.0 },
+            overall_speedup: if total_sota > 0.0 {
+                total_legacy / total_sota
+            } else {
+                0.0
+            },
         };
 
         // Create report
@@ -450,15 +490,20 @@ fn main() -> Result<()> {
         println!("║                    BENCHMARK COMPLETE                         ║");
         println!("╚══════════════════════════════════════════════════════════════╝");
         println!("\n📊 Summary:");
-        println!("   Structures: {}/{} successful", summary.successful, summary.total_structures);
+        println!(
+            "   Structures: {}/{} successful",
+            summary.successful, summary.total_structures
+        );
         println!("   Total atoms processed: {}", summary.total_atoms);
         if !args.skip_legacy {
             println!("   Legacy total: {:.1}ms", summary.total_legacy_ms);
             println!("   SOTA total: {:.1}ms", summary.total_sota_ms);
             println!("   Overall speedup: {:.2}×", summary.overall_speedup);
             if !speedups.is_empty() {
-                println!("   Per-structure speedup: {:.2}× avg, {:.2}× max, {:.2}× min",
-                         summary.avg_speedup, summary.max_speedup, summary.min_speedup);
+                println!(
+                    "   Per-structure speedup: {:.2}× avg, {:.2}× max, {:.2}× min",
+                    summary.avg_speedup, summary.max_speedup, summary.min_speedup
+                );
             }
         }
         println!("\n📁 Report saved to: {:?}", report_path);
@@ -480,7 +525,9 @@ fn convert_to_structure_topology(
     use std::collections::HashSet;
 
     // Positions from sanitized structure
-    let positions: Vec<f32> = sanitized.atoms.iter()
+    let positions: Vec<f32> = sanitized
+        .atoms
+        .iter()
         .flat_map(|a| vec![a.position[0], a.position[1], a.position[2]])
         .collect();
 
@@ -494,13 +541,17 @@ fn convert_to_structure_topology(
     let epsilons: Vec<f32> = amber.lj_params.iter().map(|p| p.epsilon).collect();
 
     // Bonds: (i, j, k, r0) - connectivity and params stored separately
-    let bonds: Vec<(usize, usize, f32, f32)> = amber.bonds.iter()
+    let bonds: Vec<(usize, usize, f32, f32)> = amber
+        .bonds
+        .iter()
         .zip(amber.bond_params.iter())
         .map(|((i, j), param)| (*i as usize, *j as usize, param.k, param.r0))
         .collect();
 
     // Angles: (i, j, k, force_k, theta0) - connectivity and params stored separately
-    let angles: Vec<(usize, usize, usize, f32, f32)> = amber.angles.iter()
+    let angles: Vec<(usize, usize, usize, f32, f32)> = amber
+        .angles
+        .iter()
         .zip(amber.angle_params.iter())
         .map(|((i, j, k), param)| (*i as usize, *j as usize, *k as usize, param.k, param.theta0))
         .collect();
@@ -511,8 +562,13 @@ fn convert_to_structure_topology(
     for ((i, j, k, l), params) in amber.dihedrals.iter().zip(amber.dihedral_params.iter()) {
         for param in params {
             dihedrals.push((
-                *i as usize, *j as usize, *k as usize, *l as usize,
-                param.k, param.n as f32, param.phase
+                *i as usize,
+                *j as usize,
+                *k as usize,
+                *l as usize,
+                param.k,
+                param.n as f32,
+                param.phase,
             ));
         }
     }
@@ -634,5 +690,9 @@ fn run_md_benchmark_sota(
     let stats = batch.sota_stats();
     let rebuilds = stats.verlet_rebuild_count;
 
-    Ok((results[0].potential_energy, results[0].temperature, rebuilds))
+    Ok((
+        results[0].potential_energy,
+        results[0].temperature,
+        rebuilds,
+    ))
 }

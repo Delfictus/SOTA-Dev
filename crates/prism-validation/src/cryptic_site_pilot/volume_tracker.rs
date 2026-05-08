@@ -97,20 +97,28 @@ pub struct VolumeStatistics {
 
 impl VolumeTimeSeries {
     /// Create from a sequence of volume frames
-    pub fn from_frames(pocket_id: String, defining_residues: Vec<i32>, frames: Vec<VolumeFrame>) -> Self {
+    pub fn from_frames(
+        pocket_id: String,
+        defining_residues: Vec<i32>,
+        frames: Vec<VolumeFrame>,
+    ) -> Self {
         let stats = Self::compute_statistics(&frames);
 
         // Classify as cryptic based on volume CV and open frequency
         // Cryptic: CV > 20% AND open frequency 5-90%
-        let is_cryptic = stats.cv_volume > 0.20
-            && stats.open_frequency >= 0.05
-            && stats.open_frequency <= 0.90;
+        let is_cryptic =
+            stats.cv_volume > 0.20 && stats.open_frequency >= 0.05 && stats.open_frequency <= 0.90;
 
         // Confidence based on how clearly it meets criteria
-        let cv_confidence = if stats.cv_volume > 0.30 { 1.0 }
-            else if stats.cv_volume > 0.20 { 0.8 }
-            else if stats.cv_volume > 0.15 { 0.5 }
-            else { 0.2 };
+        let cv_confidence = if stats.cv_volume > 0.30 {
+            1.0
+        } else if stats.cv_volume > 0.20 {
+            0.8
+        } else if stats.cv_volume > 0.15 {
+            0.5
+        } else {
+            0.2
+        };
 
         let freq_confidence = if stats.open_frequency >= 0.10 && stats.open_frequency <= 0.80 {
             1.0
@@ -158,29 +166,47 @@ impl VolumeTimeSeries {
         let open_frequency = n_open_frames as f64 / n_frames as f64;
 
         // Volume statistics (only for open frames)
-        let (mean_volume, std_volume, min_volume, max_volume, min_frame, max_frame) =
-            if open_frames.is_empty() {
-                (0.0, 0.0, 0.0, 0.0, 0, 0)
+        let (mean_volume, std_volume, min_volume, max_volume, min_frame, max_frame) = if open_frames
+            .is_empty()
+        {
+            (0.0, 0.0, 0.0, 0.0, 0, 0)
+        } else {
+            let volumes: Vec<f64> = open_frames.iter().map(|f| f.volume).collect();
+            let mean = volumes.iter().sum::<f64>() / volumes.len() as f64;
+            let variance = if volumes.len() > 1 {
+                volumes.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (volumes.len() - 1) as f64
             } else {
-                let volumes: Vec<f64> = open_frames.iter().map(|f| f.volume).collect();
-                let mean = volumes.iter().sum::<f64>() / volumes.len() as f64;
-                let variance = if volumes.len() > 1 {
-                    volumes.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (volumes.len() - 1) as f64
-                } else {
-                    0.0
-                };
-                let std = variance.sqrt();
-
-                let min = volumes.iter().cloned().fold(f64::INFINITY, f64::min);
-                let max = volumes.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-
-                let min_idx = open_frames.iter().position(|f| (f.volume - min).abs() < 0.01).unwrap_or(0);
-                let max_idx = open_frames.iter().position(|f| (f.volume - max).abs() < 0.01).unwrap_or(0);
-
-                (mean, std, min, max, open_frames[min_idx].frame, open_frames[max_idx].frame)
+                0.0
             };
+            let std = variance.sqrt();
 
-        let cv_volume = if mean_volume > 0.0 { std_volume / mean_volume } else { 0.0 };
+            let min = volumes.iter().cloned().fold(f64::INFINITY, f64::min);
+            let max = volumes.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+            let min_idx = open_frames
+                .iter()
+                .position(|f| (f.volume - min).abs() < 0.01)
+                .unwrap_or(0);
+            let max_idx = open_frames
+                .iter()
+                .position(|f| (f.volume - max).abs() < 0.01)
+                .unwrap_or(0);
+
+            (
+                mean,
+                std,
+                min,
+                max,
+                open_frames[min_idx].frame,
+                open_frames[max_idx].frame,
+            )
+        };
+
+        let cv_volume = if mean_volume > 0.0 {
+            std_volume / mean_volume
+        } else {
+            0.0
+        };
         let breathing_amplitude = max_volume - min_volume;
 
         // SASA statistics
@@ -191,9 +217,7 @@ impl VolumeTimeSeries {
         };
 
         // Druggability statistics
-        let drug_scores: Vec<f64> = open_frames.iter()
-            .filter_map(|f| f.druggability)
-            .collect();
+        let drug_scores: Vec<f64> = open_frames.iter().filter_map(|f| f.druggability).collect();
         let mean_druggability = if !drug_scores.is_empty() {
             Some(drug_scores.iter().sum::<f64>() / drug_scores.len() as f64)
         } else {
@@ -234,11 +258,13 @@ impl VolumeTimeSeries {
 
     /// Get top N frames by volume (open states)
     pub fn get_top_open_frames(&self, n: usize) -> Vec<&VolumeFrame> {
-        let mut open_frames: Vec<&VolumeFrame> = self.frames.iter()
-            .filter(|f| f.is_open)
-            .collect();
+        let mut open_frames: Vec<&VolumeFrame> = self.frames.iter().filter(|f| f.is_open).collect();
 
-        open_frames.sort_by(|a, b| b.volume.partial_cmp(&a.volume).unwrap_or(std::cmp::Ordering::Equal));
+        open_frames.sort_by(|a, b| {
+            b.volume
+                .partial_cmp(&a.volume)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         open_frames.into_iter().take(n).collect()
     }
 }
@@ -260,8 +286,8 @@ pub struct VolumeTracker {
 impl Default for VolumeTracker {
     fn default() -> Self {
         Self {
-            min_open_volume: 100.0,  // Å³
-            centroid_match_distance: 8.0,  // Å
+            min_open_volume: 100.0,       // Å³
+            centroid_match_distance: 8.0, // Å
             min_frames_for_tracking: 5,
             pockets: HashMap::new(),
             next_pocket_id: 0,
@@ -308,12 +334,11 @@ impl VolumeTracker {
         };
 
         // Try to match to existing pocket
-        let pocket_id = self.find_matching_pocket(&centroid)
-            .unwrap_or_else(|| {
-                let id = format!("pocket_{}", self.next_pocket_id);
-                self.next_pocket_id += 1;
-                id
-            });
+        let pocket_id = self.find_matching_pocket(&centroid).unwrap_or_else(|| {
+            let id = format!("pocket_{}", self.next_pocket_id);
+            self.next_pocket_id += 1;
+            id
+        });
 
         // Add frame to pocket
         if let Some(pocket) = self.pockets.get_mut(&pocket_id) {
@@ -325,11 +350,8 @@ impl VolumeTracker {
                 }
             }
         } else {
-            let pocket = VolumeTimeSeries::from_frames(
-                pocket_id.clone(),
-                residues.to_vec(),
-                vec![frame],
-            );
+            let pocket =
+                VolumeTimeSeries::from_frames(pocket_id.clone(), residues.to_vec(), vec![frame]);
             self.pockets.insert(pocket_id, pocket);
         }
     }
@@ -371,19 +393,25 @@ impl VolumeTracker {
 
     /// Get all tracked pockets (including non-cryptic)
     pub fn get_all_pockets(&self) -> Vec<&VolumeTimeSeries> {
-        self.pockets.values()
+        self.pockets
+            .values()
             .filter(|p| p.frames.len() >= self.min_frames_for_tracking)
             .collect()
     }
 
     /// Get only cryptic pockets, sorted by confidence
     pub fn get_cryptic_pockets(&self) -> Vec<&VolumeTimeSeries> {
-        let mut cryptic: Vec<&VolumeTimeSeries> = self.pockets.values()
+        let mut cryptic: Vec<&VolumeTimeSeries> = self
+            .pockets
+            .values()
             .filter(|p| p.is_cryptic && p.frames.len() >= self.min_frames_for_tracking)
             .collect();
 
-        cryptic.sort_by(|a, b| b.cryptic_confidence.partial_cmp(&a.cryptic_confidence)
-            .unwrap_or(std::cmp::Ordering::Equal));
+        cryptic.sort_by(|a, b| {
+            b.cryptic_confidence
+                .partial_cmp(&a.cryptic_confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         cryptic
     }
@@ -398,11 +426,17 @@ impl VolumeTracker {
                     "{},{},{},{:.2},{:.2},{},{},{:.3},{:.3},{:.3}\n",
                     pocket.pocket_id,
                     frame.frame,
-                    frame.time_ps.map(|t| t.to_string()).unwrap_or_else(|| "NA".to_string()),
+                    frame
+                        .time_ps
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "NA".to_string()),
                     frame.volume,
                     frame.sasa,
                     if frame.is_open { "true" } else { "false" },
-                    frame.druggability.map(|d| format!("{:.3}", d)).unwrap_or_else(|| "NA".to_string()),
+                    frame
+                        .druggability
+                        .map(|d| format!("{:.3}", d))
+                        .unwrap_or_else(|| "NA".to_string()),
                     frame.centroid[0],
                     frame.centroid[1],
                     frame.centroid[2],
@@ -418,7 +452,7 @@ impl VolumeTracker {
         let mut csv = String::from(
             "pocket_id,n_frames,n_open,open_frequency,mean_volume,std_volume,cv_volume,\
              min_volume,max_volume,breathing_amplitude,is_cryptic,cryptic_confidence,\
-             mean_druggability,residues\n"
+             mean_druggability,residues\n",
         );
 
         for pocket in self.pockets.values() {
@@ -427,7 +461,9 @@ impl VolumeTracker {
             }
 
             let stats = &pocket.stats;
-            let residues_str = pocket.defining_residues.iter()
+            let residues_str = pocket
+                .defining_residues
+                .iter()
                 .map(|r| r.to_string())
                 .collect::<Vec<_>>()
                 .join(";");
@@ -446,7 +482,10 @@ impl VolumeTracker {
                 stats.breathing_amplitude,
                 if pocket.is_cryptic { "true" } else { "false" },
                 pocket.cryptic_confidence,
-                stats.mean_druggability.map(|d| format!("{:.3}", d)).unwrap_or_else(|| "NA".to_string()),
+                stats
+                    .mean_druggability
+                    .map(|d| format!("{:.3}", d))
+                    .unwrap_or_else(|| "NA".to_string()),
                 residues_str,
             ));
         }
@@ -482,11 +521,7 @@ mod tests {
             make_frame(4, 50.0, false), // Closed
         ];
 
-        let series = VolumeTimeSeries::from_frames(
-            "test".to_string(),
-            vec![1, 2, 3],
-            frames,
-        );
+        let series = VolumeTimeSeries::from_frames("test".to_string(), vec![1, 2, 3], frames);
 
         assert_eq!(series.stats.n_frames, 5);
         assert_eq!(series.stats.n_open_frames, 4);
@@ -499,17 +534,23 @@ mod tests {
     fn test_cryptic_classification() {
         // High variance pocket that opens and closes - should be cryptic
         // Need: CV > 0.20 AND open_frequency in 0.05..0.90
-        let high_variance_frames: Vec<VolumeFrame> = (0..20).map(|i| {
-            // Mix of open (volume >= 100) and closed (volume < 100) frames
-            // ~60% open, ~40% closed (12 open, 8 closed)
-            // Use more variable volumes to ensure CV > 0.20
-            let volume = if i % 5 < 3 {
-                if i % 2 == 0 { 400.0 } else { 150.0 } // High variance in open state
-            } else {
-                50.0 // Closed state
-            };
-            make_frame(i, volume, volume >= 100.0)
-        }).collect();
+        let high_variance_frames: Vec<VolumeFrame> = (0..20)
+            .map(|i| {
+                // Mix of open (volume >= 100) and closed (volume < 100) frames
+                // ~60% open, ~40% closed (12 open, 8 closed)
+                // Use more variable volumes to ensure CV > 0.20
+                let volume = if i % 5 < 3 {
+                    if i % 2 == 0 {
+                        400.0
+                    } else {
+                        150.0
+                    } // High variance in open state
+                } else {
+                    50.0 // Closed state
+                };
+                make_frame(i, volume, volume >= 100.0)
+            })
+            .collect();
 
         let high_var_series = VolumeTimeSeries::from_frames(
             "high_var".to_string(),
@@ -518,17 +559,34 @@ mod tests {
         );
 
         // Verify we have the right open frequency (should be around 0.6)
-        assert!(high_var_series.stats.open_frequency > 0.05, "Open freq: {}", high_var_series.stats.open_frequency);
-        assert!(high_var_series.stats.open_frequency < 0.90, "Open freq: {}", high_var_series.stats.open_frequency);
-        assert!(high_var_series.stats.cv_volume > 0.20, "CV: {}", high_var_series.stats.cv_volume);
-        assert!(high_var_series.is_cryptic, "Should be cryptic: CV={}, open_freq={}",
-            high_var_series.stats.cv_volume, high_var_series.stats.open_frequency);
+        assert!(
+            high_var_series.stats.open_frequency > 0.05,
+            "Open freq: {}",
+            high_var_series.stats.open_frequency
+        );
+        assert!(
+            high_var_series.stats.open_frequency < 0.90,
+            "Open freq: {}",
+            high_var_series.stats.open_frequency
+        );
+        assert!(
+            high_var_series.stats.cv_volume > 0.20,
+            "CV: {}",
+            high_var_series.stats.cv_volume
+        );
+        assert!(
+            high_var_series.is_cryptic,
+            "Should be cryptic: CV={}, open_freq={}",
+            high_var_series.stats.cv_volume, high_var_series.stats.open_frequency
+        );
 
         // Low variance pocket that's always open - should not be cryptic
-        let low_variance_frames: Vec<VolumeFrame> = (0..20).map(|i| {
-            let volume = 200.0 + (i as f64 * 2.0); // Low variance, always open
-            make_frame(i, volume, true)
-        }).collect();
+        let low_variance_frames: Vec<VolumeFrame> = (0..20)
+            .map(|i| {
+                let volume = 200.0 + (i as f64 * 2.0); // Low variance, always open
+                make_frame(i, volume, true)
+            })
+            .collect();
 
         let low_var_series = VolumeTimeSeries::from_frames(
             "low_var".to_string(),
@@ -537,8 +595,11 @@ mod tests {
         );
 
         // Should not be cryptic because open_frequency = 1.0 (> 0.90)
-        assert!(!low_var_series.is_cryptic, "Should NOT be cryptic: open_freq={}",
-            low_var_series.stats.open_frequency);
+        assert!(
+            !low_var_series.is_cryptic,
+            "Should NOT be cryptic: open_freq={}",
+            low_var_series.stats.open_frequency
+        );
     }
 
     #[test]

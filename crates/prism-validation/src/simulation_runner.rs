@@ -18,12 +18,12 @@ use std::sync::Arc;
 
 // AMBER ff14SB force field and topology generation
 use prism_physics::amber_ff14sb::{
-    AmberTopology, GpuTopology, PdbAtom, AmberAtomType,
-    get_atom_charge, get_lj_param, get_atom_mass,
+    get_atom_charge, get_atom_mass, get_lj_param, AmberAtomType, AmberTopology, GpuTopology,
+    PdbAtom,
 };
 
 // Re-export NOVA types for convenience
-pub use prism_gpu::{PrismNova, NovaConfig, NovaStepResult};
+pub use prism_gpu::{NovaConfig, NovaStepResult, PrismNova};
 
 /// Atomic properties for simulation
 /// Derived from element type and residue context
@@ -110,12 +110,12 @@ impl Default for SimulationConfig {
     fn default() -> Self {
         Self {
             n_steps: 1000,
-            temperature: 310.0,  // 37°C
-            dt: 0.002,           // 2 fs
+            temperature: 310.0, // 37°C
+            dt: 0.002,          // 2 fs
             goal_strength: 0.1,
             save_interval: 10,
             gpu_device: 0,
-            coarse_grained: true,  // Default to CA-only for GPU compatibility
+            coarse_grained: true, // Default to CA-only for GPU compatibility
         }
     }
 }
@@ -126,8 +126,8 @@ impl From<&ValidationConfig> for SimulationConfig {
             n_steps: vc.steps_per_target,
             temperature: vc.temperature,
             gpu_device: vc.gpu_device,
-            coarse_grained: true,  // Use CA-only for validation benchmark
-            dt: 0.005,             // 5 fs timestep for CG (2.5x larger than all-atom)
+            coarse_grained: true, // Use CA-only for validation benchmark
+            dt: 0.005,            // 5 fs timestep for CG (2.5x larger than all-atom)
             ..Default::default()
         }
     }
@@ -163,7 +163,10 @@ impl SimulationRunner {
             return Ok(ctx.clone());
         }
 
-        log::info!("Initializing CUDA context on device {}", self.config.gpu_device);
+        log::info!(
+            "Initializing CUDA context on device {}",
+            self.config.gpu_device
+        );
 
         // CudaContext::new() in cudarc 0.18 returns Arc<CudaContext> directly
         let ctx = cudarc::driver::CudaContext::new(self.config.gpu_device)
@@ -190,9 +193,9 @@ impl SimulationRunner {
         // Determine effective atom count based on coarse-grained mode
         // Use actual data lengths, not metadata
         let effective_n_atoms = if self.config.coarse_grained {
-            structure.ca_positions.len()  // Actual CA atoms in PDB
+            structure.ca_positions.len() // Actual CA atoms in PDB
         } else {
-            structure.all_positions.len()  // Actual all-atoms in PDB
+            structure.all_positions.len() // Actual all-atoms in PDB
         };
 
         // Also update n_residues to match actual data
@@ -235,7 +238,11 @@ impl SimulationRunner {
             goal_strength: self.config.goal_strength,
             n_atoms: effective_n_atoms as i32,
             n_residues: effective_n_residues as i32,
-            n_target_residues: structure.pocket_residues.as_ref().map(|p| p.len()).unwrap_or(0) as i32,
+            n_target_residues: structure
+                .pocket_residues
+                .as_ref()
+                .map(|p| p.len())
+                .unwrap_or(0) as i32,
             leapfrog_steps,
             ..NovaConfig::default()
         };
@@ -271,19 +278,30 @@ impl SimulationRunner {
                 for i in 0..max_targets {
                     nova_config.target_residues[i] = (i * step) as i32;
                 }
-                log::info!("TDA targeting {} sampled residues (from {} total, step={})",
-                          max_targets, n_residues, step);
+                log::info!(
+                    "TDA targeting {} sampled residues (from {} total, step={})",
+                    max_targets,
+                    n_residues,
+                    step
+                );
             }
         }
 
         // Initialize PRISM-NOVA
         log::info!("Initializing PRISM-NOVA engine...");
-        let mut nova = PrismNova::new(context, nova_config)
-            .context("Failed to initialize PRISM-NOVA")?;
+        let mut nova =
+            PrismNova::new(context, nova_config).context("Failed to initialize PRISM-NOVA")?;
 
         // Upload molecular system
-        nova.upload_system(&positions, &masses, &charges, &lj_params, &atom_types, &residue_atoms)
-            .context("Failed to upload molecular system")?;
+        nova.upload_system(
+            &positions,
+            &masses,
+            &charges,
+            &lj_params,
+            &atom_types,
+            &residue_atoms,
+        )
+        .context("Failed to upload molecular system")?;
 
         // Generate and upload topology (bonds, angles, dihedrals)
         self.upload_topology(&mut nova, structure)?;
@@ -300,7 +318,11 @@ impl SimulationRunner {
             .context("Failed to initialize RLS")?;
 
         // Run simulation
-        log::info!("Running {} steps at T={} K", self.config.n_steps, self.config.temperature);
+        log::info!(
+            "Running {} steps at T={} K",
+            self.config.n_steps,
+            self.config.temperature
+        );
         let trajectory = self.run_simulation_loop(&mut nova, structure, target_structure)?;
 
         log::info!(
@@ -331,21 +353,24 @@ impl SimulationRunner {
             }
 
             // Use unified CA properties (~110 Da per residue average)
-            let masses: Vec<f32> = vec![110.0; n_atoms];  // Average residue mass
-            let charges: Vec<f32> = vec![0.0; n_atoms];   // Neutral (no explicit electrostatics)
+            let masses: Vec<f32> = vec![110.0; n_atoms]; // Average residue mass
+            let charges: Vec<f32> = vec![0.0; n_atoms]; // Neutral (no explicit electrostatics)
             let mut lj_params = Vec::with_capacity(n_atoms * 2);
-            let atom_types: Vec<i32> = vec![0; n_atoms];  // All CA type
+            let atom_types: Vec<i32> = vec![0; n_atoms]; // All CA type
 
             // Coarse-grained: DISABLE LJ interactions
             // The pfANM springs already model all inter-residue interactions
             // Adding LJ on top creates competing potentials and low HMC acceptance
             // For pure ENM/ANM, only harmonic springs are used
             for _ in 0..n_atoms {
-                lj_params.push(0.0);    // epsilon = 0 (disabled)
-                lj_params.push(1.0);    // sigma (Å) - unused but must be non-zero
+                lj_params.push(0.0); // epsilon = 0 (disabled)
+                lj_params.push(1.0); // sigma (Å) - unused but must be non-zero
             }
 
-            log::info!("Converted {} residues to COARSE-GRAINED (CA-only) format", n_atoms);
+            log::info!(
+                "Converted {} residues to COARSE-GRAINED (CA-only) format",
+                n_atoms
+            );
             Ok((positions, masses, charges, lj_params, atom_types))
         } else {
             // ALL-ATOM MODE: Use proper AMBER ff14SB parameters
@@ -380,7 +405,7 @@ impl SimulationRunner {
                 let lj = get_lj_param(amber_type);
                 // Convert from (epsilon, rmin_half) to (epsilon, sigma)
                 // sigma = 2^(1/6) * rmin, where rmin = 2 * rmin_half
-                let sigma = 2.0_f32.powf(1.0/6.0) * 2.0 * lj.rmin_half;
+                let sigma = 2.0_f32.powf(1.0 / 6.0) * 2.0 * lj.rmin_half;
 
                 // Get proper mass from atom type
                 let mass = get_atom_mass(amber_type);
@@ -392,7 +417,10 @@ impl SimulationRunner {
                 atom_types.push(amber_type as i32);
             }
 
-            log::info!("Converted {} atoms to ALL-ATOM format with AMBER ff14SB parameters", n_atoms);
+            log::info!(
+                "Converted {} atoms to ALL-ATOM format with AMBER ff14SB parameters",
+                n_atoms
+            );
             Ok((positions, masses, charges, lj_params, atom_types))
         }
     }
@@ -476,9 +504,9 @@ impl SimulationRunner {
     /// Estimate partial charge for carbon based on residue context
     fn estimate_carbon_charge(&self, residue: &str) -> f32 {
         match residue {
-            "ASP" | "GLU" => -0.1,  // Acidic residues
-            "LYS" | "ARG" => 0.1,   // Basic residues
-            "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TRP" => 0.0,  // Hydrophobic
+            "ASP" | "GLU" => -0.1, // Acidic residues
+            "LYS" | "ARG" => 0.1,  // Basic residues
+            "ALA" | "VAL" | "LEU" | "ILE" | "MET" | "PHE" | "TRP" => 0.0, // Hydrophobic
             _ => 0.0,
         }
     }
@@ -486,21 +514,21 @@ impl SimulationRunner {
     /// Estimate partial charge for nitrogen based on residue context
     fn estimate_nitrogen_charge(&self, residue: &str) -> f32 {
         match residue {
-            "LYS" => 0.5,    // Lysine amino group
-            "ARG" => 0.4,    // Arginine guanidinium
-            "HIS" => 0.2,    // Histidine (partially protonated at pH 7)
-            "ASN" | "GLN" => -0.2,  // Amide nitrogen
-            _ => -0.4,       // Backbone amide
+            "LYS" => 0.5,          // Lysine amino group
+            "ARG" => 0.4,          // Arginine guanidinium
+            "HIS" => 0.2,          // Histidine (partially protonated at pH 7)
+            "ASN" | "GLN" => -0.2, // Amide nitrogen
+            _ => -0.4,             // Backbone amide
         }
     }
 
     /// Estimate partial charge for oxygen based on residue context
     fn estimate_oxygen_charge(&self, residue: &str) -> f32 {
         match residue {
-            "ASP" | "GLU" => -0.6,  // Carboxylate
-            "SER" | "THR" | "TYR" => -0.3,  // Hydroxyl
-            "ASN" | "GLN" => -0.4,  // Amide oxygen
-            _ => -0.5,       // Backbone carbonyl
+            "ASP" | "GLU" => -0.6,         // Carboxylate
+            "SER" | "THR" | "TYR" => -0.3, // Hydroxyl
+            "ASN" | "GLN" => -0.4,         // Amide oxygen
+            _ => -0.5,                     // Backbone carbonyl
         }
     }
 
@@ -543,11 +571,7 @@ impl SimulationRunner {
     ///
     /// For coarse-grained (CA-only) simulations: Uses elastic network model (ENM)
     /// For all-atom simulations: Uses full AMBER ff14SB topology
-    fn upload_topology(
-        &self,
-        nova: &mut PrismNova,
-        structure: &SimulationStructure,
-    ) -> Result<()> {
+    fn upload_topology(&self, nova: &mut PrismNova, structure: &SimulationStructure) -> Result<()> {
         if self.config.coarse_grained {
             // Coarse-grained: Elastic Network Model
             // Build PdbAtom list from CA positions only
@@ -559,17 +583,23 @@ impl SimulationRunner {
             for (i, name) in structure.atom_names.iter().enumerate() {
                 if name == "CA" && ca_idx < structure.ca_positions.len() {
                     let pos = structure.ca_positions[ca_idx];
-                    let chain_id = structure.chain_ids.get(i)
+                    let chain_id = structure
+                        .chain_ids
+                        .get(i)
                         .and_then(|s| s.chars().next())
                         .unwrap_or('A');
 
                     ca_atoms.push(PdbAtom {
                         index: ca_idx,
                         name: "CA".to_string(),
-                        residue_name: structure.residue_names.get(i)
+                        residue_name: structure
+                            .residue_names
+                            .get(i)
                             .cloned()
                             .unwrap_or_else(|| "UNK".to_string()),
-                        residue_id: structure.residue_seqs.get(i)
+                        residue_id: structure
+                            .residue_seqs
+                            .get(i)
                             .copied()
                             .unwrap_or(ca_idx as i32),
                         chain_id,
@@ -624,30 +654,35 @@ impl SimulationRunner {
                 .context("Failed to upload empty exclusions")?;
             nova.upload_pairs_14(&[])
                 .context("Failed to upload empty 1-4 pairs")?;
-
         } else {
             // All-atom: Full AMBER ff14SB topology
             let mut pdb_atoms = Vec::with_capacity(structure.n_atoms);
 
             for i in 0..structure.n_atoms {
-                let pos = structure.all_positions.get(i)
+                let pos = structure
+                    .all_positions
+                    .get(i)
                     .copied()
                     .unwrap_or([0.0, 0.0, 0.0]);
-                let chain_id = structure.chain_ids.get(i)
+                let chain_id = structure
+                    .chain_ids
+                    .get(i)
                     .and_then(|s| s.chars().next())
                     .unwrap_or('A');
 
                 pdb_atoms.push(PdbAtom {
                     index: i,
-                    name: structure.atom_names.get(i)
+                    name: structure
+                        .atom_names
+                        .get(i)
                         .cloned()
                         .unwrap_or_else(|| "UNK".to_string()),
-                    residue_name: structure.residue_names.get(i)
+                    residue_name: structure
+                        .residue_names
+                        .get(i)
                         .cloned()
                         .unwrap_or_else(|| "UNK".to_string()),
-                    residue_id: structure.residue_seqs.get(i)
-                        .copied()
-                        .unwrap_or(0),
+                    residue_id: structure.residue_seqs.get(i).copied().unwrap_or(0),
                     chain_id,
                     x: pos[0],
                     y: pos[1],
@@ -676,7 +711,8 @@ impl SimulationRunner {
                 &gpu_topo.dihedral_list,
                 &gpu_topo.dihedral_params,
                 &gpu_topo.dihedral_term_counts,
-            ).context("Failed to upload dihedrals")?;
+            )
+            .context("Failed to upload dihedrals")?;
 
             // Upload exclusion and 1-4 pair lists for proper AMBER non-bonded interactions
             nova.upload_exclusions(&gpu_topo.exclusion_list)
@@ -707,7 +743,9 @@ impl SimulationRunner {
 
         for _ in 0..total_size {
             // Simple LCG random number generator
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let u = (seed >> 33) as f32 / (u32::MAX as f32);
 
             // Sparse initialization: ~10% non-zero
@@ -744,7 +782,8 @@ impl SimulationRunner {
 
         for step in 0..self.config.n_steps {
             // Run NOVA step
-            let result = nova.step()
+            let result = nova
+                .step()
                 .with_context(|| format!("Failed at step {}", step))?;
 
             // Track statistics
@@ -759,12 +798,17 @@ impl SimulationRunner {
             // Detect pocket opening (Betti-2 > 0)
             if pocket_opening_step.is_none() && result.betti[2] > 0.5 {
                 pocket_opening_step = Some(step);
-                log::info!("Pocket opened at step {} (Betti-2={:.2})", step, result.betti[2]);
+                log::info!(
+                    "Pocket opened at step {} (Betti-2={:.2})",
+                    step,
+                    result.betti[2]
+                );
             }
 
             // Save frame at interval
             if step % self.config.save_interval == 0 {
-                let positions = nova.download_positions()
+                let positions = nova
+                    .download_positions()
                     .context("Failed to download positions")?;
 
                 // Extract CA positions
@@ -889,7 +933,9 @@ pub fn compute_ca_rmsd(pos1: &[[f32; 3]], pos2: &[[f32; 3]]) -> Option<f32> {
     }
 
     let n = pos1.len() as f32;
-    let sum_sq: f32 = pos1.iter().zip(pos2.iter())
+    let sum_sq: f32 = pos1
+        .iter()
+        .zip(pos2.iter())
         .map(|(p1, p2)| {
             let dx = p1[0] - p2[0];
             let dy = p1[1] - p2[1];
@@ -961,7 +1007,9 @@ pub fn trajectory_to_metrics(
     metrics.steps_to_opening = trajectory.pocket_opening_step;
 
     // Compute pocket stability (fraction of frames with open pocket)
-    let open_frames = trajectory.frames.iter()
+    let open_frames = trajectory
+        .frames
+        .iter()
         .filter(|f| f.betti[2] > 0.5)
         .count();
     metrics.pocket_stability = Some(open_frames as f32 / trajectory.frames.len().max(1) as f32);
@@ -970,7 +1018,8 @@ pub fn trajectory_to_metrics(
     if let Some(target) = target_structure {
         if let Some(final_frame) = trajectory.frames.last() {
             // Convert final positions to [f32; 3] format
-            let final_ca: Vec<[f32; 3]> = final_frame.ca_positions
+            let final_ca: Vec<[f32; 3]> = final_frame
+                .ca_positions
                 .chunks(3)
                 .filter_map(|chunk| {
                     if chunk.len() == 3 {
@@ -985,11 +1034,7 @@ pub fn trajectory_to_metrics(
 
             // Pocket RMSD
             if let Some(ref pocket) = structure.pocket_residues {
-                metrics.pocket_rmsd = compute_pocket_rmsd(
-                    &final_ca,
-                    &target.ca_positions,
-                    pocket,
-                );
+                metrics.pocket_rmsd = compute_pocket_rmsd(&final_ca, &target.ca_positions, pocket);
             }
         }
     }
@@ -999,9 +1044,11 @@ pub fn trajectory_to_metrics(
     if !pairwise_rmsds.is_empty() {
         let n = pairwise_rmsds.len() as f32;
         let mean: f32 = pairwise_rmsds.iter().sum::<f32>() / n;
-        let variance: f32 = pairwise_rmsds.iter()
+        let variance: f32 = pairwise_rmsds
+            .iter()
             .map(|x| (x - mean).powi(2))
-            .sum::<f32>() / n;
+            .sum::<f32>()
+            / n;
 
         metrics.pairwise_rmsd_mean = Some(mean);
         metrics.pairwise_rmsd_std = Some(variance.sqrt());
@@ -1017,13 +1064,27 @@ fn compute_pairwise_rmsds(frames: &[TrajectoryFrame]) -> Vec<f32> {
     // Sample frames for efficiency (every 10th pair)
     for i in (0..frames.len()).step_by(5) {
         for j in (i + 1..frames.len()).step_by(5) {
-            let pos1: Vec<[f32; 3]> = frames[i].ca_positions
+            let pos1: Vec<[f32; 3]> = frames[i]
+                .ca_positions
                 .chunks(3)
-                .filter_map(|c| if c.len() == 3 { Some([c[0], c[1], c[2]]) } else { None })
+                .filter_map(|c| {
+                    if c.len() == 3 {
+                        Some([c[0], c[1], c[2]])
+                    } else {
+                        None
+                    }
+                })
                 .collect();
-            let pos2: Vec<[f32; 3]> = frames[j].ca_positions
+            let pos2: Vec<[f32; 3]> = frames[j]
+                .ca_positions
                 .chunks(3)
-                .filter_map(|c| if c.len() == 3 { Some([c[0], c[1], c[2]]) } else { None })
+                .filter_map(|c| {
+                    if c.len() == 3 {
+                        Some([c[0], c[1], c[2]])
+                    } else {
+                        None
+                    }
+                })
                 .collect();
 
             if let Some(rmsd) = compute_ca_rmsd(&pos1, &pos2) {
@@ -1066,7 +1127,8 @@ mod tests {
         let weights = runner.generate_reservoir_weights();
 
         // Should have correct size
-        let expected_size = prism_gpu::prism_nova::FEATURE_DIM * prism_gpu::prism_nova::RESERVOIR_SIZE
+        let expected_size = prism_gpu::prism_nova::FEATURE_DIM
+            * prism_gpu::prism_nova::RESERVOIR_SIZE
             + prism_gpu::prism_nova::RESERVOIR_SIZE * prism_gpu::prism_nova::RESERVOIR_SIZE;
         assert_eq!(weights.len(), expected_size);
 

@@ -26,8 +26,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use prism_validation::{
-    AlphaFlowEnsemble, AlphaFlowMetrics, AtlasBenchmarkRunner,
-    AtlasBenchmarkSummary, AtlasTarget,
+    AlphaFlowEnsemble, AlphaFlowMetrics, AtlasBenchmarkRunner, AtlasBenchmarkSummary, AtlasTarget,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -65,14 +64,18 @@ fn main() -> Result<()> {
 
     // Filter targets if specified
     let targets: Vec<_> = if let Some(ref filter) = args.target_filter {
-        targets.into_iter()
+        targets
+            .into_iter()
             .filter(|t| t.pdb_id.contains(filter))
             .collect()
     } else {
         targets
     };
 
-    log::info!("\n🔬 Running ATLAS benchmark on {} targets...", targets.len());
+    log::info!(
+        "\n🔬 Running ATLAS benchmark on {} targets...",
+        targets.len()
+    );
 
     // Create benchmark runner
     let runner = AtlasBenchmarkRunner {
@@ -95,7 +98,9 @@ fn main() -> Result<()> {
 
     // Save results
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-    let results_path = args.output_dir.join(format!("atlas_results_{}.json", timestamp));
+    let results_path = args
+        .output_dir
+        .join(format!("atlas_results_{}.json", timestamp));
     let results_json = serde_json::to_string_pretty(&summary)?;
     std::fs::write(&results_path, &results_json)?;
     log::info!("\n📄 Results saved to: {:?}", results_path);
@@ -110,10 +115,16 @@ fn main() -> Result<()> {
     log::info!("\n═══════════════════════════════════════════════════════════════");
     if summary.mean_rmsf_pearson >= 0.70 {
         log::info!("  ✅ ATLAS BENCHMARK PASSED");
-        log::info!("  Mean RMSF Pearson: {:.3} (threshold: 0.70)", summary.mean_rmsf_pearson);
+        log::info!(
+            "  Mean RMSF Pearson: {:.3} (threshold: 0.70)",
+            summary.mean_rmsf_pearson
+        );
     } else {
         log::warn!("  ⚠️  ATLAS BENCHMARK: Below threshold");
-        log::warn!("  Mean RMSF Pearson: {:.3} (threshold: 0.70)", summary.mean_rmsf_pearson);
+        log::warn!(
+            "  Mean RMSF Pearson: {:.3} (threshold: 0.70)",
+            summary.mean_rmsf_pearson
+        );
     }
     log::info!("═══════════════════════════════════════════════════════════════");
 
@@ -267,8 +278,11 @@ fn print_results(summary: &AtlasBenchmarkSummary) {
 
     log::info!("\n  Summary:");
     log::info!("    Targets evaluated: {}", summary.n_targets);
-    log::info!("    Targets passed: {} ({:.1}%)",
-        summary.n_passed, summary.pass_rate * 100.0);
+    log::info!(
+        "    Targets passed: {} ({:.1}%)",
+        summary.n_passed,
+        summary.pass_rate * 100.0
+    );
     log::info!("    Mean RMSF Pearson: {:.3}", summary.mean_rmsf_pearson);
 
     log::info!("\n  Per-target results:");
@@ -277,7 +291,11 @@ fn print_results(summary: &AtlasBenchmarkSummary) {
     log::info!("  ├─────────┼──────┼────────┼──────────┼───────────┼────────┤");
 
     for result in &summary.results {
-        let status = if result.passed { "✅ PASS" } else { "❌ FAIL" };
+        let status = if result.passed {
+            "✅ PASS"
+        } else {
+            "❌ FAIL"
+        };
         log::info!(
             "  │ {:7} │ {:4} │ {:6.3} │ {:5.2} Å  │ {:6.2} Å  │ {} │",
             result.pdb_id,
@@ -299,8 +317,10 @@ fn print_results(summary: &AtlasBenchmarkSummary) {
     log::info!("  │ AlphaFlow       │ 0.62       │ Jing et al. 2024         │");
     log::info!("  │ ESMFlow         │ 0.58       │ (baseline)               │");
     log::info!("  │ MD Reference    │ 1.00       │ (ground truth)           │");
-    log::info!("  │ PRISM-Delta     │ {:6.3}     │ This work                │",
-        summary.mean_rmsf_pearson);
+    log::info!(
+        "  │ PRISM-Delta     │ {:6.3}     │ This work                │",
+        summary.mean_rmsf_pearson
+    );
     log::info!("  └─────────────────┴────────────┴──────────────────────────┘");
 }
 
@@ -313,28 +333,28 @@ fn create_sample_atlas_dataset(data_dir: &PathBuf) -> Result<()> {
             pdb_id: "1AKE".to_string(),
             chain: "A".to_string(),
             n_residues: 214,
-            md_rmsf: (0..214).map(|i| 0.5 + 2.0 * ((i as f32 * 0.1).sin().abs())).collect(),
-            reference_coords: (0..214)
-                .map(|i| [i as f32 * 3.8, 0.0, 0.0])
+            md_rmsf: (0..214)
+                .map(|i| 0.5 + 2.0 * ((i as f32 * 0.1).sin().abs()))
                 .collect(),
+            reference_coords: (0..214).map(|i| [i as f32 * 3.8, 0.0, 0.0]).collect(),
         },
         AtlasTarget {
             pdb_id: "1HHP".to_string(),
             chain: "A".to_string(),
             n_residues: 99,
-            md_rmsf: (0..99).map(|i| 0.8 + 1.5 * ((i as f32 * 0.15).sin().abs())).collect(),
-            reference_coords: (0..99)
-                .map(|i| [i as f32 * 3.8, 0.0, 0.0])
+            md_rmsf: (0..99)
+                .map(|i| 0.8 + 1.5 * ((i as f32 * 0.15).sin().abs()))
                 .collect(),
+            reference_coords: (0..99).map(|i| [i as f32 * 3.8, 0.0, 0.0]).collect(),
         },
         AtlasTarget {
             pdb_id: "2LZM".to_string(),
             chain: "A".to_string(),
             n_residues: 164,
-            md_rmsf: (0..164).map(|i| 0.6 + 1.8 * ((i as f32 * 0.12).sin().abs())).collect(),
-            reference_coords: (0..164)
-                .map(|i| [i as f32 * 3.8, 0.0, 0.0])
+            md_rmsf: (0..164)
+                .map(|i| 0.6 + 1.8 * ((i as f32 * 0.12).sin().abs()))
                 .collect(),
+            reference_coords: (0..164).map(|i| [i as f32 * 3.8, 0.0, 0.0]).collect(),
         },
     ];
 

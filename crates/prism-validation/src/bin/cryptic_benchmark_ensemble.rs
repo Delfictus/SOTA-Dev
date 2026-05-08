@@ -20,24 +20,24 @@
 //! 2. **Pocket Detection**: Detect pockets across ensemble
 //! 3. **Cryptic Scoring**: Score residues by pocket-formation frequency
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{info, warn, error, debug};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use prism_validation::{
-    anm_ensemble::{AnmEnsembleGenerator, AnmEnsembleConfig, AnmEnsemble},
+    anm_ensemble::{AnmEnsemble, AnmEnsembleConfig, AnmEnsembleGenerator},
+    cryptic_metrics::{compute_pr_auc, compute_roc_auc},
     ensemble_pocket_detector::{
-        EnsemblePocketDetector, EnsemblePocketConfig, CrypticSiteResult,
-        cryptic_scores_to_predictions, compute_prediction_overlap,
+        compute_prediction_overlap, cryptic_scores_to_predictions, CrypticSiteResult,
+        EnsemblePocketConfig, EnsemblePocketDetector,
     },
     pocketminer_dataset::{PocketMinerDataset, PocketMinerEntry},
-    cryptic_metrics::{compute_roc_auc, compute_pr_auc},
 };
 
 #[derive(Parser, Debug)]
@@ -206,7 +206,9 @@ fn main() -> Result<()> {
 
     // Filter to single structure if requested
     let entries: Vec<_> = if let Some(ref single) = args.single {
-        dataset.entries.iter()
+        dataset
+            .entries
+            .iter()
             .filter(|e| e.pdb_id.contains(single))
             .cloned()
             .collect()
@@ -330,16 +332,24 @@ fn run_benchmark(
     let mean_rmsd = total_rmsd / n_structures as f64;
     let mean_generation_time = total_generation_time as f64 / n_structures as f64;
 
-    let mean_overlap = per_structure_results.iter()
+    let mean_overlap = per_structure_results
+        .iter()
         .map(|r| r.overlap_fraction)
-        .sum::<f64>() / n_structures as f64;
+        .sum::<f64>()
+        / n_structures as f64;
 
-    let mean_cryptic_score = per_structure_results.iter()
+    let mean_cryptic_score = per_structure_results
+        .iter()
         .map(|r| {
-            if r.top_predictions.is_empty() { 0.0 }
-            else { r.top_predictions.iter().map(|(_, s)| s).sum::<f64>() / r.top_predictions.len() as f64 }
+            if r.top_predictions.is_empty() {
+                0.0
+            } else {
+                r.top_predictions.iter().map(|(_, s)| s).sum::<f64>()
+                    / r.top_predictions.len() as f64
+            }
         })
-        .sum::<f64>() / n_structures as f64;
+        .sum::<f64>()
+        / n_structures as f64;
 
     // Compute global ROC/PR AUC
     let roc_auc = compute_global_roc_auc(&all_predictions, &all_ground_truth);
@@ -349,7 +359,8 @@ fn run_benchmark(
     let (top1_accuracy, top3_accuracy) = compute_top_n_accuracy(&per_structure_results);
 
     // Count total ground truth pockets
-    let n_pockets = entries.iter()
+    let n_pockets = entries
+        .iter()
         .filter(|e| !e.cryptic_residues.is_empty())
         .count();
 
@@ -404,9 +415,7 @@ fn process_single_entry(
 
     // Build residue index map (sequential index -> residue ID)
     // PocketMiner uses 0-indexed labels, so map to match
-    let residue_map: HashMap<usize, i32> = (0..ca_coords.len())
-        .map(|i| (i, i as i32))
-        .collect();
+    let residue_map: HashMap<usize, i32> = (0..ca_coords.len()).map(|i| (i, i as i32)).collect();
 
     // Generate ensemble
     let start = std::time::Instant::now();
@@ -414,7 +423,10 @@ fn process_single_entry(
     let ensemble = generator.generate_ensemble(&ca_coords)?;
     let gen_time = start.elapsed().as_millis();
 
-    debug!("{}: ensemble RMSD = {:.2}Å", entry.pdb_id, ensemble.mean_rmsd);
+    debug!(
+        "{}: ensemble RMSD = {:.2}Å",
+        entry.pdb_id, ensemble.mean_rmsd
+    );
 
     // Detect cryptic sites
     let cryptic_result = detector.detect_cryptic_sites(&ensemble, &residue_map)?;
@@ -423,7 +435,8 @@ fn process_single_entry(
     // These are sorted by Expected Free Energy which balances exploration and exploitation
     let all_predictions: Vec<(i32, f64)> = if !cryptic_result.efe_scores.is_empty() {
         // Use EFE scores for ROC/AUC (better ranking)
-        let mut preds: Vec<(i32, f64)> = cryptic_result.efe_scores
+        let mut preds: Vec<(i32, f64)> = cryptic_result
+            .efe_scores
             .iter()
             .map(|(&r, &s)| (r, s))
             .collect();
@@ -431,7 +444,8 @@ fn process_single_entry(
         preds
     } else {
         // Fallback to regular scores
-        cryptic_result.cryptic_scores
+        cryptic_result
+            .cryptic_scores
             .iter()
             .map(|(&r, &s)| (r, s))
             .collect()
@@ -456,7 +470,8 @@ fn process_single_entry(
         compute_prediction_overlap(&predicted_residues, &ground_truth);
 
     // Also compute overlap for all cluster members (more accurate recall)
-    let cluster_member_residues: Vec<i32> = cryptic_result.clusters
+    let cluster_member_residues: Vec<i32> = cryptic_result
+        .clusters
         .iter()
         .flat_map(|c| c.residues.iter().cloned())
         .collect();
@@ -467,7 +482,11 @@ fn process_single_entry(
     };
 
     // Detection threshold: use cluster recall if available (more accurate)
-    let effective_recall = if cluster_recall > recall { cluster_recall } else { recall };
+    let effective_recall = if cluster_recall > recall {
+        cluster_recall
+    } else {
+        recall
+    };
     let detected = effective_recall >= 0.3;
 
     if verbose {
@@ -482,13 +501,19 @@ fn process_single_entry(
             ground_truth.len()
         );
         // Debug: show cluster details
-        debug!("  Clusters: {} total, {} residues",
+        debug!(
+            "  Clusters: {} total, {} residues",
             cryptic_result.clusters.len(),
-            cluster_member_residues.len());
-        debug!("  Top cluster representatives: {:?}",
-            predictions.iter().take(5).collect::<Vec<_>>());
-        debug!("  Ground truth residues: {:?}",
-            ground_truth.iter().cloned().collect::<Vec<i32>>());
+            cluster_member_residues.len()
+        );
+        debug!(
+            "  Top cluster representatives: {:?}",
+            predictions.iter().take(5).collect::<Vec<_>>()
+        );
+        debug!(
+            "  Ground truth residues: {:?}",
+            ground_truth.iter().cloned().collect::<Vec<i32>>()
+        );
     }
 
     // Compute effective precision/recall/F1 using cluster members
@@ -506,7 +531,7 @@ fn process_single_entry(
         precision,
         recall: effective_recall,
         f1_score: effective_f1,
-        n_predictions: cryptic_result.clusters.len(),  // Number of clusters, not raw residues
+        n_predictions: cryptic_result.clusters.len(), // Number of clusters, not raw residues
         n_ground_truth: ground_truth.len(),
         n_apo_pocket: cryptic_result.n_apo_pocket,
         n_cryptic: cryptic_result.n_cryptic,
@@ -560,10 +585,7 @@ fn parse_ca_coords(pdb_path: &Path) -> Result<Vec<[f32; 3]>> {
 }
 
 /// Compute global ROC AUC from all predictions
-fn compute_global_roc_auc(
-    predictions: &[(i32, f64)],
-    ground_truth: &HashSet<i32>,
-) -> f64 {
+fn compute_global_roc_auc(predictions: &[(i32, f64)], ground_truth: &HashSet<i32>) -> f64 {
     if predictions.is_empty() || ground_truth.is_empty() {
         return 0.5; // Random baseline
     }
@@ -602,10 +624,7 @@ fn compute_global_roc_auc(
 }
 
 /// Compute global PR AUC from all predictions
-fn compute_global_pr_auc(
-    predictions: &[(i32, f64)],
-    ground_truth: &HashSet<i32>,
-) -> f64 {
+fn compute_global_pr_auc(predictions: &[(i32, f64)], ground_truth: &HashSet<i32>) -> f64 {
     if predictions.is_empty() || ground_truth.is_empty() {
         return 0.0;
     }
@@ -651,14 +670,13 @@ fn compute_top_n_accuracy(results: &[EnsembleStructureResult]) -> (f64, f64) {
     // For simplicity, we use overlap_count > 0 as "hit"
     // A more sophisticated approach would check centroid distance
 
-    let top1_hits = results.iter()
+    let top1_hits = results
+        .iter()
         .filter(|r| !r.top_predictions.is_empty() && r.overlap_count > 0)
         .count();
 
     // Top-3: at least one of top-3 predictions overlaps
-    let top3_hits = results.iter()
-        .filter(|r| r.overlap_count > 0)
-        .count();
+    let top3_hits = results.iter().filter(|r| r.overlap_count > 0).count();
 
     (top1_hits as f64 / n, top3_hits as f64 / n)
 }
@@ -668,36 +686,66 @@ fn print_summary(report: &EnsembleBenchmarkReport) {
     println!("║          PRISM Ensemble Cryptic Site Benchmark                ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Detector: {:<52} ║", report.detector);
-    println!("║ Structures: {:<4}    Pockets: {:<4}                            ║",
-             report.n_structures, report.n_pockets);
+    println!(
+        "║ Structures: {:<4}    Pockets: {:<4}                            ║",
+        report.n_structures, report.n_pockets
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║                      AGGREGATE METRICS                        ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║ Success Rate (≥30% recall):  {:.1}%                           ║",
-             report.aggregate_metrics.success_rate * 100.0);
-    println!("║ Any Overlap Rate:            {:.1}%                           ║",
-             report.aggregate_metrics.any_overlap_rate * 100.0);
-    println!("║ Mean Overlap (recall):       {:.1}%                           ║",
-             report.aggregate_metrics.mean_overlap * 100.0);
-    println!("║ ROC AUC:                     {:.3}                            ║",
-             report.aggregate_metrics.roc_auc);
-    println!("║ PR AUC:                      {:.3}                            ║",
-             report.aggregate_metrics.pr_auc);
-    println!("║ Top-1 Accuracy:              {:.1}%                           ║",
-             report.aggregate_metrics.top1_accuracy * 100.0);
-    println!("║ Top-3 Accuracy:              {:.1}%                           ║",
-             report.aggregate_metrics.top3_accuracy * 100.0);
+    println!(
+        "║ Success Rate (≥30% recall):  {:.1}%                           ║",
+        report.aggregate_metrics.success_rate * 100.0
+    );
+    println!(
+        "║ Any Overlap Rate:            {:.1}%                           ║",
+        report.aggregate_metrics.any_overlap_rate * 100.0
+    );
+    println!(
+        "║ Mean Overlap (recall):       {:.1}%                           ║",
+        report.aggregate_metrics.mean_overlap * 100.0
+    );
+    println!(
+        "║ ROC AUC:                     {:.3}                            ║",
+        report.aggregate_metrics.roc_auc
+    );
+    println!(
+        "║ PR AUC:                      {:.3}                            ║",
+        report.aggregate_metrics.pr_auc
+    );
+    println!(
+        "║ Top-1 Accuracy:              {:.1}%                           ║",
+        report.aggregate_metrics.top1_accuracy * 100.0
+    );
+    println!(
+        "║ Top-3 Accuracy:              {:.1}%                           ║",
+        report.aggregate_metrics.top3_accuracy * 100.0
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║                      ENSEMBLE STATS                           ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║ Conformations per structure: {:<5}                           ║",
-             report.ensemble_config.n_conformations);
-    println!("║ Modes used:                  {:<5}                           ║",
-             report.ensemble_config.n_modes);
-    println!("║ Mean RMSD from original:     {:.2} Å                          ║",
-             report.aggregate_metrics.ensemble_stats.mean_rmsd_from_original);
-    println!("║ Mean generation time:        {:.0} ms                         ║",
-             report.aggregate_metrics.ensemble_stats.mean_generation_time_ms);
+    println!(
+        "║ Conformations per structure: {:<5}                           ║",
+        report.ensemble_config.n_conformations
+    );
+    println!(
+        "║ Modes used:                  {:<5}                           ║",
+        report.ensemble_config.n_modes
+    );
+    println!(
+        "║ Mean RMSD from original:     {:.2} Å                          ║",
+        report
+            .aggregate_metrics
+            .ensemble_stats
+            .mean_rmsd_from_original
+    );
+    println!(
+        "║ Mean generation time:        {:.0} ms                         ║",
+        report
+            .aggregate_metrics
+            .ensemble_stats
+            .mean_generation_time_ms
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║                      SOTA COMPARISON                          ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
@@ -705,20 +753,28 @@ fn print_summary(report: &EnsembleBenchmarkReport) {
     println!("║─────────────────────┼─────────┼──────────┤                    ║");
     println!("║ PocketMiner (ML)    │  0.87   │   -      │                    ║");
     println!("║ Schrödinger (MD)    │   -     │  83%     │                    ║");
-    println!("║ PRISM Static        │  {:.2}   │  {:.1}%   │ (baseline)        ║",
-             report.sota_comparison.prism_static_roc_auc,
-             report.sota_comparison.prism_static_success * 100.0);
-    println!("║ PRISM Ensemble      │  {:.2}   │  {:.1}%   │ (this run)        ║",
-             report.aggregate_metrics.roc_auc,
-             report.aggregate_metrics.success_rate * 100.0);
+    println!(
+        "║ PRISM Static        │  {:.2}   │  {:.1}%   │ (baseline)        ║",
+        report.sota_comparison.prism_static_roc_auc,
+        report.sota_comparison.prism_static_success * 100.0
+    );
+    println!(
+        "║ PRISM Ensemble      │  {:.2}   │  {:.1}%   │ (this run)        ║",
+        report.aggregate_metrics.roc_auc,
+        report.aggregate_metrics.success_rate * 100.0
+    );
     println!("╚═══════════════════════════════════════════════════════════════╝");
 
     // Print top performers
-    let mut top_structures: Vec<_> = report.per_structure_results.iter()
+    let mut top_structures: Vec<_> = report
+        .per_structure_results
+        .iter()
         .filter(|r| r.overlap_fraction > 0.0)
         .collect();
     top_structures.sort_by(|a, b| {
-        b.overlap_fraction.partial_cmp(&a.overlap_fraction).unwrap_or(std::cmp::Ordering::Equal)
+        b.overlap_fraction
+            .partial_cmp(&a.overlap_fraction)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     if !top_structures.is_empty() {

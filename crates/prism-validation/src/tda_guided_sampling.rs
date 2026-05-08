@@ -15,7 +15,9 @@ pub struct TdaGuidedSampler {
 
 impl TdaGuidedSampler {
     pub fn new() -> Self {
-        Self { config: TdaGuidedSamplingConfig::default() }
+        Self {
+            config: TdaGuidedSamplingConfig::default(),
+        }
     }
 
     pub fn with_config(config: TdaGuidedSamplingConfig) -> Self {

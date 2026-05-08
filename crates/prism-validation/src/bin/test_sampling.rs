@@ -3,8 +3,8 @@
 //! Usage: cargo run --release -p prism-validation --bin test_sampling -- --pdb <path> --samples <n>
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use clap::Parser;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "test_sampling")]
@@ -39,12 +39,13 @@ fn main() -> Result<()> {
 
     // Sanitize structure
     use prism_validation::pdb_sanitizer::sanitize_pdb;
-    let pdb_id = args.pdb.file_stem()
+    let pdb_id = args
+        .pdb
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
 
-    let structure = sanitize_pdb(&pdb_content, pdb_id)
-        .context("Failed to sanitize PDB")?;
+    let structure = sanitize_pdb(&pdb_content, pdb_id).context("Failed to sanitize PDB")?;
 
     println!("Structure loaded:");
     println!("  Atoms: {}", structure.n_atoms());
@@ -55,25 +56,25 @@ fn main() -> Result<()> {
     // Check if we can use GPU
     #[cfg(feature = "cryptic-gpu")]
     {
+        use cudarc::driver::CudaContext;
+        use prism_validation::sampling::contract::SamplingBackend;
         use prism_validation::sampling::result::SamplingConfig;
         use prism_validation::sampling::router::HybridSampler;
-        use prism_validation::sampling::contract::SamplingBackend;
-        use cudarc::driver::CudaContext;
         use std::sync::Arc;
 
         println!("Initializing CUDA...");
-        let context = CudaContext::new(0)
-            .context("Failed to initialize CUDA device")?;
+        let context = CudaContext::new(0).context("Failed to initialize CUDA device")?;
         println!("CUDA initialized successfully");
         println!();
 
         // Create sampler
-        let mut sampler = HybridSampler::new(context.clone())
-            .context("Failed to create HybridSampler")?;
+        let mut sampler =
+            HybridSampler::new(context.clone()).context("Failed to create HybridSampler")?;
 
         // Load structure
         println!("Loading structure into sampler...");
-        sampler.load_structure(&structure)
+        sampler
+            .load_structure(&structure)
             .context("Failed to load structure")?;
         println!("Structure loaded successfully");
         println!();
@@ -91,15 +92,15 @@ fn main() -> Result<()> {
         // Run sampling
         println!("Running GPU sampling...");
         let start = std::time::Instant::now();
-        let result = sampler.sample(&config)
-            .context("Sampling failed")?;
+        let result = sampler.sample(&config).context("Sampling failed")?;
         let elapsed = start.elapsed();
 
         println!();
         println!("=== Results ===");
         println!("Backend: {:?}", result.metadata.backend);
         println!("Samples collected: {}", result.conformations.len());
-        println!("Time: {:.2}s ({:.1} samples/sec)",
+        println!(
+            "Time: {:.2}s ({:.1} samples/sec)",
             elapsed.as_secs_f64(),
             result.conformations.len() as f64 / elapsed.as_secs_f64()
         );

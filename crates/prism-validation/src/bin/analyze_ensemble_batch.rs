@@ -20,7 +20,7 @@ use std::time::Instant;
 
 // Import native Kabsch alignment
 use prism_validation::kabsch_alignment::{
-    align_and_compute_displacement, compute_rmsf, compute_rmsd,
+    align_and_compute_displacement, compute_rmsd, compute_rmsf,
 };
 
 #[derive(Parser, Debug)]
@@ -148,8 +148,7 @@ fn main() -> Result<()> {
     }
 
     // Create output directory
-    std::fs::create_dir_all(&args.output_dir)
-        .context("Failed to create output directory")?;
+    std::fs::create_dir_all(&args.output_dir).context("Failed to create output directory")?;
 
     let start_time = Instant::now();
 
@@ -158,16 +157,10 @@ fn main() -> Result<()> {
         println!("\n🔄 Processing {} files in parallel...", n_files);
     }
 
-    let results: Vec<FileResult> = args.ensembles
+    let results: Vec<FileResult> = args
+        .ensembles
         .par_iter()
-        .map(|path| {
-            process_single_file(
-                path,
-                &args.output_dir,
-                args.ca_only,
-                args.reference_frame,
-            )
-        })
+        .map(|path| process_single_file(path, &args.output_dir, args.ca_only, args.reference_frame))
         .collect();
 
     let total_elapsed = start_time.elapsed().as_secs_f64();
@@ -210,18 +203,30 @@ fn main() -> Result<()> {
     println!("║                  BATCH ANALYSIS COMPLETE                      ║");
     println!("╚══════════════════════════════════════════════════════════════╝");
     println!("\n📊 Summary:");
-    println!("   Files processed: {}/{}", summary.successful, summary.total_files);
+    println!(
+        "   Files processed: {}/{}",
+        summary.successful, summary.total_files
+    );
     println!("   Total frames: {}", summary.total_frames);
-    println!("   Mean RMSD (all files): {:.3} ± {:.3} Å",
-             summary.mean_rmsd_across_all, summary.std_rmsd_across_all);
+    println!(
+        "   Mean RMSD (all files): {:.3} ± {:.3} Å",
+        summary.mean_rmsd_across_all, summary.std_rmsd_across_all
+    );
     println!("   Total time: {:.2}s", summary.elapsed_secs);
-    println!("   Throughput: {:.2} files/sec", summary.throughput_files_per_sec);
+    println!(
+        "   Throughput: {:.2} files/sec",
+        summary.throughput_files_per_sec
+    );
 
     // List failures
     if !failed.is_empty() {
         println!("\n⚠️  Failures ({}):", failed.len());
         for f in &failed {
-            println!("   - {}: {}", f.name, f.error.as_ref().unwrap_or(&"Unknown".to_string()));
+            println!(
+                "   - {}: {}",
+                f.name,
+                f.error.as_ref().unwrap_or(&"Unknown".to_string())
+            );
         }
     }
 
@@ -261,22 +266,26 @@ fn process_single_file(
     // Load ensemble PDB
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
-        Err(e) => return FileResult {
-            name: file_name,
-            result: None,
-            error: Some(format!("Failed to read file: {}", e)),
-            elapsed_secs: start.elapsed().as_secs_f64(),
-        },
+        Err(e) => {
+            return FileResult {
+                name: file_name,
+                result: None,
+                error: Some(format!("Failed to read file: {}", e)),
+                elapsed_secs: start.elapsed().as_secs_f64(),
+            }
+        }
     };
 
     let (frames, atom_info) = match parse_ensemble_pdb(&content) {
         Ok(r) => r,
-        Err(e) => return FileResult {
-            name: file_name,
-            result: None,
-            error: Some(format!("Failed to parse PDB: {}", e)),
-            elapsed_secs: start.elapsed().as_secs_f64(),
-        },
+        Err(e) => {
+            return FileResult {
+                name: file_name,
+                result: None,
+                error: Some(format!("Failed to parse PDB: {}", e)),
+                elapsed_secs: start.elapsed().as_secs_f64(),
+            }
+        }
     };
 
     if frames.is_empty() {
@@ -296,7 +305,10 @@ fn process_single_file(
 
     // Select coordinates
     let analysis_frames: Vec<Vec<[f32; 3]>> = if ca_only {
-        frames.iter().map(|f| extract_coords(f, &ca_indices)).collect()
+        frames
+            .iter()
+            .map(|f| extract_coords(f, &ca_indices))
+            .collect()
     } else {
         frames.clone()
     };
@@ -332,30 +344,44 @@ fn process_single_file(
     // Statistics
     let (mean_rmsd, std_rmsd) = mean_std(&frame_rmsds);
     let min_rmsd = frame_rmsds.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_rmsd = frame_rmsds.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let max_rmsd = frame_rmsds
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let (mean_rmsf, std_rmsf) = mean_std(&atom_rmsf);
     let high_flex_count = atom_rmsf.iter().filter(|&&r| r > 1.0).count();
 
     // Residue-level RMSF
     let residue_rmsf: Option<Vec<ResidueRmsf>> = if ca_only {
-        Some(atom_rmsf.iter().enumerate().map(|(i, &rmsf)| {
-            let atom = &atom_info[ca_indices[i]];
-            ResidueRmsf {
-                residue_id: atom.residue_id as usize,
-                residue_name: atom.residue_name.clone(),
-                ca_rmsf: rmsf,
-            }
-        }).collect())
+        Some(
+            atom_rmsf
+                .iter()
+                .enumerate()
+                .map(|(i, &rmsf)| {
+                    let atom = &atom_info[ca_indices[i]];
+                    ResidueRmsf {
+                        residue_id: atom.residue_id as usize,
+                        residue_name: atom.residue_name.clone(),
+                        ca_rmsf: rmsf,
+                    }
+                })
+                .collect(),
+        )
     } else if !ca_indices.is_empty() {
-        Some(ca_indices.iter().map(|&i| {
-            let atom = &atom_info[i];
-            ResidueRmsf {
-                residue_id: atom.residue_id as usize,
-                residue_name: atom.residue_name.clone(),
-                ca_rmsf: atom_rmsf[i],
-            }
-        }).collect())
+        Some(
+            ca_indices
+                .iter()
+                .map(|&i| {
+                    let atom = &atom_info[i];
+                    ResidueRmsf {
+                        residue_id: atom.residue_id as usize,
+                        residue_name: atom.residue_name.clone(),
+                        ca_rmsf: atom_rmsf[i],
+                    }
+                })
+                .collect(),
+        )
     } else {
         None
     };
@@ -413,16 +439,36 @@ fn parse_ensemble_pdb(content: &str) -> Result<(Vec<Vec<[f32; 3]>>, Vec<PdbAtom>
                 continue;
             }
 
-            let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-            let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-            let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+            let x: f32 = line
+                .get(30..38)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
+            let y: f32 = line
+                .get(38..46)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
+            let z: f32 = line
+                .get(46..54)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
 
             current_frame.push([x, y, z]);
 
             if first_frame {
                 let atom_name = line.get(12..16).unwrap_or("    ").trim().to_string();
                 let residue_name = line.get(17..20).unwrap_or("UNK").trim().to_string();
-                let chain_id = line.get(21..22).unwrap_or("A").chars().next().unwrap_or('A');
+                let chain_id = line
+                    .get(21..22)
+                    .unwrap_or("A")
+                    .chars()
+                    .next()
+                    .unwrap_or('A');
                 let residue_id: i32 = line.get(22..26).unwrap_or("0").trim().parse().unwrap_or(0);
 
                 atom_info.push(PdbAtom {
@@ -430,7 +476,9 @@ fn parse_ensemble_pdb(content: &str) -> Result<(Vec<Vec<[f32; 3]>>, Vec<PdbAtom>
                     residue_name,
                     residue_id,
                     chain_id,
-                    x, y, z,
+                    x,
+                    y,
+                    z,
                 });
             }
         }
@@ -449,7 +497,9 @@ fn parse_ensemble_pdb(content: &str) -> Result<(Vec<Vec<[f32; 3]>>, Vec<PdbAtom>
 }
 
 fn get_ca_indices(atoms: &[PdbAtom]) -> Vec<usize> {
-    atoms.iter().enumerate()
+    atoms
+        .iter()
+        .enumerate()
         .filter(|(_, a)| a.name == "CA")
         .map(|(i, _)| i)
         .collect()

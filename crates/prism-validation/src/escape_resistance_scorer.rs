@@ -86,12 +86,11 @@ impl EscapeResistanceScore {
 
         // Weighted combination
         // Conservation and structural constraint are most important
-        let combined =
-            0.30 * conservation +
-            0.25 * structural_constraint +
-            0.20 * contact_criticality +
-            0.15 * burial_depth +
-            0.10 * epitope_overlap;
+        let combined = 0.30 * conservation
+            + 0.25 * structural_constraint
+            + 0.20 * contact_criticality
+            + 0.15 * burial_depth
+            + 0.10 * epitope_overlap;
 
         Self {
             conservation,
@@ -168,11 +167,26 @@ impl AminoAcidProperties {
     /// Get hydrophobicity index (Kyte-Doolittle scale, normalized)
     pub fn hydrophobicity(aa: char) -> f64 {
         match aa {
-            'I' => 1.00, 'V' => 0.97, 'L' => 0.92, 'F' => 0.72,
-            'C' => 0.67, 'M' => 0.49, 'A' => 0.46, 'G' => -0.08,
-            'T' => -0.18, 'S' => -0.23, 'W' => -0.23, 'Y' => -0.33,
-            'P' => -0.41, 'H' => -0.85, 'N' => -0.92, 'D' => -0.92,
-            'Q' => -0.92, 'E' => -0.92, 'K' => -1.00, 'R' => -1.23,
+            'I' => 1.00,
+            'V' => 0.97,
+            'L' => 0.92,
+            'F' => 0.72,
+            'C' => 0.67,
+            'M' => 0.49,
+            'A' => 0.46,
+            'G' => -0.08,
+            'T' => -0.18,
+            'S' => -0.23,
+            'W' => -0.23,
+            'Y' => -0.33,
+            'P' => -0.41,
+            'H' => -0.85,
+            'N' => -0.92,
+            'D' => -0.92,
+            'Q' => -0.92,
+            'E' => -0.92,
+            'K' => -1.00,
+            'R' => -1.23,
             _ => 0.0,
         }
     }
@@ -201,20 +215,20 @@ impl AminoAcidProperties {
     /// Based on frequency in protein cores and secondary structure
     pub fn structural_importance(aa: char) -> f64 {
         match aa {
-            'G' => 0.9,  // Glycine: critical for turns and flexibility
-            'P' => 0.9,  // Proline: critical for structure
-            'C' => 0.85, // Cysteine: disulfide bonds
-            'W' => 0.8,  // Tryptophan: large, rare, often functional
-            'Y' => 0.7,  // Tyrosine: often in active sites
-            'F' => 0.6,  // Phenylalanine: hydrophobic packing
+            'G' => 0.9,             // Glycine: critical for turns and flexibility
+            'P' => 0.9,             // Proline: critical for structure
+            'C' => 0.85,            // Cysteine: disulfide bonds
+            'W' => 0.8,             // Tryptophan: large, rare, often functional
+            'Y' => 0.7,             // Tyrosine: often in active sites
+            'F' => 0.6,             // Phenylalanine: hydrophobic packing
             'I' | 'L' | 'V' => 0.5, // Core hydrophobics
-            'M' => 0.5,  // Methionine: protein cores
-            'A' => 0.4,  // Alanine: common, flexible
-            'H' => 0.6,  // Histidine: catalytic
-            'N' | 'Q' => 0.4, // Amide side chains
-            'D' | 'E' => 0.5, // Carboxylic acids: often functional
-            'K' | 'R' => 0.4, // Basic: surface exposed
-            'S' | 'T' => 0.4, // Hydroxyl: H-bonding
+            'M' => 0.5,             // Methionine: protein cores
+            'A' => 0.4,             // Alanine: common, flexible
+            'H' => 0.6,             // Histidine: catalytic
+            'N' | 'Q' => 0.4,       // Amide side chains
+            'D' | 'E' => 0.5,       // Carboxylic acids: often functional
+            'K' | 'R' => 0.4,       // Basic: surface exposed
+            'S' | 'T' => 0.4,       // Hydroxyl: H-bonding
             _ => 0.3,
         }
     }
@@ -253,8 +267,8 @@ impl Default for EscapeResistanceConfig {
             contact_weight: 0.20,
             burial_weight: 0.15,
             epitope_weight: 0.10,
-            ddg_threshold: 3.0,       // 3 kcal/mol = significant
-            max_entropy: 4.32,        // log2(20) for uniform AA distribution
+            ddg_threshold: 3.0, // 3 kcal/mol = significant
+            max_entropy: 4.32,  // log2(20) for uniform AA distribution
         }
     }
 }
@@ -296,46 +310,56 @@ impl EscapeResistanceScorer {
         if msa_entropy.len() != n_residues || structure_info.len() != n_residues {
             log::warn!(
                 "Input size mismatch: seq={}, entropy={}, struct={}",
-                n_residues, msa_entropy.len(), structure_info.len()
+                n_residues,
+                msa_entropy.len(),
+                structure_info.len()
             );
             return vec![EscapeResistanceScore::zero(); n_residues];
         }
 
-        sequence.chars().enumerate().map(|(i, aa)| {
-            let info = &structure_info[i];
+        sequence
+            .chars()
+            .enumerate()
+            .map(|(i, aa)| {
+                let info = &structure_info[i];
 
-            // Conservation: 1 - normalized entropy (low entropy = conserved)
-            let conservation = 1.0 - (msa_entropy[i] / self.config.max_entropy).min(1.0);
+                // Conservation: 1 - normalized entropy (low entropy = conserved)
+                let conservation = 1.0 - (msa_entropy[i] / self.config.max_entropy).min(1.0);
 
-            // Critical contacts = regular contacts + H-bonds * 2 + salt bridge * 3
-            let n_critical = info.n_contacts.min(10) / 2  // Regular contacts (capped)
+                // Critical contacts = regular contacts + H-bonds * 2 + salt bridge * 3
+                let n_critical = info.n_contacts.min(10) / 2  // Regular contacts (capped)
                 + info.n_hbonds * 2                        // H-bonds are important
                 + if info.has_salt_bridge { 3 } else { 0 } // Salt bridges very important
-                + info.core_contacts;                      // Core contacts
+                + info.core_contacts; // Core contacts
 
-            // ΔΔG estimate (simplified: 0.5 kcal/mol per critical contact)
-            let ddg_estimate = n_critical as f64 * 0.5;
+                // ΔΔG estimate (simplified: 0.5 kcal/mol per critical contact)
+                let ddg_estimate = n_critical as f64 * 0.5;
 
-            // Boost for secondary structure
-            let struct_boost = if info.in_secondary_structure { 0.5 } else { 0.0 };
-            let ddg_estimate = ddg_estimate + struct_boost;
+                // Boost for secondary structure
+                let struct_boost = if info.in_secondary_structure {
+                    0.5
+                } else {
+                    0.0
+                };
+                let ddg_estimate = ddg_estimate + struct_boost;
 
-            // Boost for interface residues
-            let interface_boost = if info.at_interface { 0.3 } else { 0.0 };
-            let ddg_estimate = ddg_estimate + interface_boost;
+                // Boost for interface residues
+                let interface_boost = if info.at_interface { 0.3 } else { 0.0 };
+                let ddg_estimate = ddg_estimate + interface_boost;
 
-            // Add amino acid intrinsic importance
-            let aa_importance = AminoAcidProperties::structural_importance(aa);
-            let ddg_estimate = ddg_estimate * (0.5 + aa_importance * 0.5);
+                // Add amino acid intrinsic importance
+                let aa_importance = AminoAcidProperties::structural_importance(aa);
+                let ddg_estimate = ddg_estimate * (0.5 + aa_importance * 0.5);
 
-            EscapeResistanceScore::compute(
-                conservation,
-                n_critical,
-                ddg_estimate,
-                info.burial_fraction,
-                None, // No epitope profile for now
-            )
-        }).collect()
+                EscapeResistanceScore::compute(
+                    conservation,
+                    n_critical,
+                    ddg_estimate,
+                    info.burial_fraction,
+                    None, // No epitope profile for now
+                )
+            })
+            .collect()
     }
 
     /// Score residues with epitope information from PRISM-VE
@@ -348,36 +372,45 @@ impl EscapeResistanceScorer {
     ) -> Vec<EscapeResistanceScore> {
         let n_residues = sequence.len();
 
-        if msa_entropy.len() != n_residues ||
-           structure_info.len() != n_residues ||
-           epitope_profiles.len() != n_residues {
+        if msa_entropy.len() != n_residues
+            || structure_info.len() != n_residues
+            || epitope_profiles.len() != n_residues
+        {
             log::warn!("Input size mismatch for epitope scoring");
             return self.score_residues(sequence, msa_entropy, structure_info);
         }
 
-        sequence.chars().enumerate().map(|(i, aa)| {
-            let info = &structure_info[i];
+        sequence
+            .chars()
+            .enumerate()
+            .map(|(i, aa)| {
+                let info = &structure_info[i];
 
-            let conservation = 1.0 - (msa_entropy[i] / self.config.max_entropy).min(1.0);
+                let conservation = 1.0 - (msa_entropy[i] / self.config.max_entropy).min(1.0);
 
-            let n_critical = info.n_contacts.min(10) / 2
-                + info.n_hbonds * 2
-                + if info.has_salt_bridge { 3 } else { 0 }
-                + info.core_contacts;
+                let n_critical = info.n_contacts.min(10) / 2
+                    + info.n_hbonds * 2
+                    + if info.has_salt_bridge { 3 } else { 0 }
+                    + info.core_contacts;
 
-            let mut ddg_estimate = n_critical as f64 * 0.5;
-            if info.in_secondary_structure { ddg_estimate += 0.5; }
-            if info.at_interface { ddg_estimate += 0.3; }
-            ddg_estimate *= 0.5 + AminoAcidProperties::structural_importance(aa) * 0.5;
+                let mut ddg_estimate = n_critical as f64 * 0.5;
+                if info.in_secondary_structure {
+                    ddg_estimate += 0.5;
+                }
+                if info.at_interface {
+                    ddg_estimate += 0.3;
+                }
+                ddg_estimate *= 0.5 + AminoAcidProperties::structural_importance(aa) * 0.5;
 
-            EscapeResistanceScore::compute(
-                conservation,
-                n_critical,
-                ddg_estimate,
-                info.burial_fraction,
-                Some(&epitope_profiles[i]),
-            )
-        }).collect()
+                EscapeResistanceScore::compute(
+                    conservation,
+                    n_critical,
+                    ddg_estimate,
+                    info.burial_fraction,
+                    Some(&epitope_profiles[i]),
+                )
+            })
+            .collect()
     }
 
     /// Compute full escape resistance from coordinates and sequence
@@ -397,7 +430,11 @@ impl EscapeResistanceScorer {
         let n_residues = coords.len();
 
         if n_residues != sequence.len() {
-            log::error!("Coordinate/sequence length mismatch: {} vs {}", n_residues, sequence.len());
+            log::error!(
+                "Coordinate/sequence length mismatch: {} vs {}",
+                n_residues,
+                sequence.len()
+            );
             return vec![EscapeResistanceScore::zero(); n_residues];
         }
 
@@ -425,11 +462,12 @@ impl EscapeResistanceScorer {
         let contact_cutoff_sq = 64.0f32; // 8Å for CA-CA contact
 
         for i in 0..n_residues {
-            for j in (i+3)..n_residues { // Skip i+1, i+2 (bonded neighbors)
+            for j in (i + 3)..n_residues {
+                // Skip i+1, i+2 (bonded neighbors)
                 let dx = coords[i][0] - coords[j][0];
                 let dy = coords[i][1] - coords[j][1];
                 let dz = coords[i][2] - coords[j][2];
-                let dist_sq = dx*dx + dy*dy + dz*dz;
+                let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq < contact_cutoff_sq {
                     contact_matrix[i][j] = true;
@@ -439,79 +477,89 @@ impl EscapeResistanceScorer {
         }
 
         // Compute contact counts
-        let contact_counts: Vec<usize> = contact_matrix.iter()
+        let contact_counts: Vec<usize> = contact_matrix
+            .iter()
             .map(|row| row.iter().filter(|&&x| x).count())
             .collect();
 
         let max_contacts = *contact_counts.iter().max().unwrap_or(&1) as f64;
 
         // Compute structure info for each residue
-        (0..n_residues).map(|i| {
-            let aa = aa_vec.get(i).copied().unwrap_or('X');
-            let n_contacts = contact_counts[i];
+        (0..n_residues)
+            .map(|i| {
+                let aa = aa_vec.get(i).copied().unwrap_or('X');
+                let n_contacts = contact_counts[i];
 
-            // Burial fraction from contact count (normalized)
-            let burial_fraction = (n_contacts as f64 / max_contacts.max(1.0)).min(1.0);
+                // Burial fraction from contact count (normalized)
+                let burial_fraction = (n_contacts as f64 / max_contacts.max(1.0)).min(1.0);
 
-            // Estimate H-bonds based on amino acid type and burial
-            let base_hbonds = match aa {
-                'S' | 'T' | 'N' | 'Q' => 2,
-                'D' | 'E' | 'K' | 'R' | 'H' => 1,
-                'Y' | 'W' => 1,
-                _ => 0,
-            };
-            // More buried = more likely to have backbone H-bonds
-            let n_hbonds = base_hbonds + if burial_fraction > 0.5 { 2 } else { 0 };
+                // Estimate H-bonds based on amino acid type and burial
+                let base_hbonds = match aa {
+                    'S' | 'T' | 'N' | 'Q' => 2,
+                    'D' | 'E' | 'K' | 'R' | 'H' => 1,
+                    'Y' | 'W' => 1,
+                    _ => 0,
+                };
+                // More buried = more likely to have backbone H-bonds
+                let n_hbonds = base_hbonds + if burial_fraction > 0.5 { 2 } else { 0 };
 
-            // Salt bridge detection: charged residue with nearby opposite charge
-            let has_salt_bridge = if AminoAcidProperties::is_charged(aa) {
-                let my_charge = AminoAcidProperties::charge(aa);
-                // Check neighbors for opposite charge
-                contact_matrix[i].iter().enumerate()
-                    .filter(|(_, &has_contact)| has_contact)
-                    .any(|(j, _)| {
-                        let neighbor_aa = aa_vec.get(j).copied().unwrap_or('X');
-                        let neighbor_charge = AminoAcidProperties::charge(neighbor_aa);
-                        my_charge * neighbor_charge < -0.5 // Opposite charges
+                // Salt bridge detection: charged residue with nearby opposite charge
+                let has_salt_bridge = if AminoAcidProperties::is_charged(aa) {
+                    let my_charge = AminoAcidProperties::charge(aa);
+                    // Check neighbors for opposite charge
+                    contact_matrix[i]
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, &has_contact)| has_contact)
+                        .any(|(j, _)| {
+                            let neighbor_aa = aa_vec.get(j).copied().unwrap_or('X');
+                            let neighbor_charge = AminoAcidProperties::charge(neighbor_aa);
+                            my_charge * neighbor_charge < -0.5 // Opposite charges
+                        })
+                } else {
+                    false
+                };
+
+                // Secondary structure estimation from contact pattern
+                // Helices: contacts at i±3,4
+                // Sheets: long-range parallel contacts
+                let has_helix_contacts = (i >= 3 && contact_matrix[i][i - 3])
+                    || (i >= 4 && contact_matrix[i][i - 4])
+                    || (i + 3 < n_residues && contact_matrix[i][i + 3])
+                    || (i + 4 < n_residues && contact_matrix[i][i + 4]);
+
+                let has_sheet_contacts = contact_matrix[i]
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, &has_contact)| has_contact && (*j as i32 - i as i32).abs() > 5)
+                    .count()
+                    >= 2;
+
+                let in_secondary_structure = has_helix_contacts || has_sheet_contacts;
+
+                // Core contacts: contacts with highly buried residues
+                let core_contacts = contact_matrix[i]
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, &has_contact)| {
+                        has_contact && (contact_counts[*j] as f64 / max_contacts) > 0.6
                     })
-            } else {
-                false
-            };
+                    .count();
 
-            // Secondary structure estimation from contact pattern
-            // Helices: contacts at i±3,4
-            // Sheets: long-range parallel contacts
-            let has_helix_contacts = (i >= 3 && contact_matrix[i][i-3]) ||
-                                      (i >= 4 && contact_matrix[i][i-4]) ||
-                                      (i+3 < n_residues && contact_matrix[i][i+3]) ||
-                                      (i+4 < n_residues && contact_matrix[i][i+4]);
+                // Interface detection (would need multi-chain info, estimate from pattern)
+                let at_interface = burial_fraction > 0.3 && burial_fraction < 0.7 && n_contacts > 4;
 
-            let has_sheet_contacts = contact_matrix[i].iter().enumerate()
-                .filter(|(j, &has_contact)| has_contact && (*j as i32 - i as i32).abs() > 5)
-                .count() >= 2;
-
-            let in_secondary_structure = has_helix_contacts || has_sheet_contacts;
-
-            // Core contacts: contacts with highly buried residues
-            let core_contacts = contact_matrix[i].iter().enumerate()
-                .filter(|(j, &has_contact)| {
-                    has_contact && (contact_counts[*j] as f64 / max_contacts) > 0.6
-                })
-                .count();
-
-            // Interface detection (would need multi-chain info, estimate from pattern)
-            let at_interface = burial_fraction > 0.3 && burial_fraction < 0.7 && n_contacts > 4;
-
-            ResidueStructureInfo {
-                n_contacts,
-                n_hbonds,
-                has_salt_bridge,
-                burial_fraction,
-                in_secondary_structure,
-                core_contacts,
-                at_interface,
-            }
-        }).collect()
+                ResidueStructureInfo {
+                    n_contacts,
+                    n_hbonds,
+                    has_salt_bridge,
+                    burial_fraction,
+                    in_secondary_structure,
+                    core_contacts,
+                    at_interface,
+                }
+            })
+            .collect()
     }
 }
 
@@ -539,7 +587,7 @@ pub mod control_structures {
         name: "SARS-CoV-2 Spike Glycoprotein (Closed)",
         organism: "SARS-CoV-2",
         resolution: 2.8, // Angstroms
-        n_chains: 3, // Trimeric
+        n_chains: 3,     // Trimeric
         n_residues_per_chain: 1273,
         rcsb_url: "https://www.rcsb.org/structure/6VXX",
 
@@ -553,13 +601,36 @@ pub mod control_structures {
 
         // Known epitope classes (based on literature)
         epitope_classes: &[
-            EpitopeClass { name: "RBD Class 1", residues: &[417, 455, 456, 484, 486, 487, 489, 493] },
-            EpitopeClass { name: "RBD Class 2", residues: &[452, 484, 490, 493, 494] },
-            EpitopeClass { name: "RBD Class 3", residues: &[440, 443, 444, 445, 446, 499, 500, 501, 502, 505] },
-            EpitopeClass { name: "RBD Class 4", residues: &[368, 369, 370, 371, 372, 373, 374, 375, 376, 377] },
-            EpitopeClass { name: "NTD Site i", residues: &[14, 15, 16, 17, 18, 19, 20] },
-            EpitopeClass { name: "NTD Site ii", residues: &[141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156] },
-            EpitopeClass { name: "S2 Stem", residues: &[1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148] },
+            EpitopeClass {
+                name: "RBD Class 1",
+                residues: &[417, 455, 456, 484, 486, 487, 489, 493],
+            },
+            EpitopeClass {
+                name: "RBD Class 2",
+                residues: &[452, 484, 490, 493, 494],
+            },
+            EpitopeClass {
+                name: "RBD Class 3",
+                residues: &[440, 443, 444, 445, 446, 499, 500, 501, 502, 505],
+            },
+            EpitopeClass {
+                name: "RBD Class 4",
+                residues: &[368, 369, 370, 371, 372, 373, 374, 375, 376, 377],
+            },
+            EpitopeClass {
+                name: "NTD Site i",
+                residues: &[14, 15, 16, 17, 18, 19, 20],
+            },
+            EpitopeClass {
+                name: "NTD Site ii",
+                residues: &[
+                    141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156,
+                ],
+            },
+            EpitopeClass {
+                name: "S2 Stem",
+                residues: &[1140, 1141, 1142, 1143, 1144, 1145, 1146, 1147, 1148],
+            },
         ],
 
         // Key escape mutation positions (from CoV-RDB)
@@ -585,16 +656,16 @@ pub mod control_structures {
         name: "Nipah Virus G Protein (Attachment Glycoprotein)",
         organism: "Nipah virus",
         resolution: 3.5, // Angstroms
-        n_chains: 2, // Dimer in asymmetric unit, tetramer in biological assembly
+        n_chains: 2,     // Dimer in asymmetric unit, tetramer in biological assembly
         n_residues_per_chain: 419,
         rcsb_url: "https://www.rcsb.org/structure/2VWD",
 
         // Key structural regions for NiV G
-        rbd_start: 183,  // Receptor binding domain start
-        rbd_end: 602,    // Receptor binding domain end
-        ntd_start: 0,    // Not applicable
+        rbd_start: 183, // Receptor binding domain start
+        rbd_end: 602,   // Receptor binding domain end
+        ntd_start: 0,   // Not applicable
         ntd_end: 0,
-        s2_start: 0,     // Not applicable (no S2 in paramyxovirus)
+        s2_start: 0, // Not applicable (no S2 in paramyxovirus)
         s2_end: 0,
 
         // Known epitope classes for Nipah G
@@ -605,22 +676,25 @@ pub mod control_structures {
             // This is the PRIMARY validation target for cryptic site detection
             EpitopeClass {
                 name: "m102.4 Central Cavity",
-                residues: &[507, 508, 509, 510, 511, 512, 529, 530, 531, 532, 533]
+                residues: &[507, 508, 509, 510, 511, 512, 529, 530, 531, 532, 533],
             },
             // Ephrin-B2/B3 receptor binding site
             EpitopeClass {
                 name: "Ephrin Binding Site",
-                residues: &[236, 239, 240, 458, 459, 460, 504, 505, 506, 507, 530, 531]
+                residues: &[236, 239, 240, 458, 459, 460, 504, 505, 506, 507, 530, 531],
             },
             // Dimeric interface (cryptic - only exposed in monomer)
             EpitopeClass {
                 name: "Dimeric Interface",
-                residues: &[252, 253, 254, 255, 256, 257, 258, 268, 269, 270, 271]
+                residues: &[252, 253, 254, 255, 256, 257, 258, 268, 269, 270, 271],
             },
             // Beta-propeller blades (structural core)
             EpitopeClass {
                 name: "Beta-Propeller Core",
-                residues: &[376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396]
+                residues: &[
+                    376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391,
+                    392, 393, 394, 395, 396,
+                ],
             },
         ],
 
@@ -642,21 +716,19 @@ pub mod control_structures {
     /// Reference: Xu K, et al. (2008) PNAS 105(29):9953-9958
     pub const M102_4_EPITOPE: &[usize] = &[
         // Core epitope (directly contacted by m102.4 CDRs)
-        507, 508, 509, 510, 511, 512,
-        529, 530, 531, 532, 533,
+        507, 508, 509, 510, 511, 512, 529, 530, 531, 532, 533,
         // Extended epitope (within 5Å of antibody)
-        504, 505, 506, 513, 514,
-        527, 528, 534, 535,
+        504, 505, 506, 513, 514, 527, 528, 534, 535,
     ];
 
     /// Antibody validation dataset for Henipavirus
     #[derive(Debug, Clone)]
     pub struct AntibodyBinding {
         pub name: &'static str,
-        pub pdb_complex: &'static str,  // PDB ID of antibody-antigen complex
-        pub target: &'static str,        // Target protein
+        pub pdb_complex: &'static str, // PDB ID of antibody-antigen complex
+        pub target: &'static str,      // Target protein
         pub epitope_residues: &'static [usize],
-        pub kd_nm: Option<f64>,          // Binding affinity (nanomolar)
+        pub kd_nm: Option<f64>, // Binding affinity (nanomolar)
         pub neutralizing: bool,
         pub reference: &'static str,
     }
@@ -708,14 +780,16 @@ pub mod control_structures {
     impl ControlStructure {
         /// Get all epitope residues as a flat vector
         pub fn all_epitope_residues(&self) -> Vec<usize> {
-            self.epitope_classes.iter()
+            self.epitope_classes
+                .iter()
                 .flat_map(|ec| ec.residues.iter().copied())
                 .collect()
         }
 
         /// Check if a residue is in a known epitope
         pub fn is_epitope_residue(&self, residue: usize) -> bool {
-            self.epitope_classes.iter()
+            self.epitope_classes
+                .iter()
                 .any(|ec| ec.residues.contains(&residue))
         }
 
@@ -798,29 +872,31 @@ pub fn compute_msa_entropy(sequences: &[&str]) -> Vec<f64> {
         aa_to_idx.insert(aa, i);
     }
 
-    (0..seq_len).map(|pos| {
-        // Count amino acids at this position
-        let mut counts = vec![0.0; 20];
-        let mut valid = 0.0;
+    (0..seq_len)
+        .map(|pos| {
+            // Count amino acids at this position
+            let mut counts = vec![0.0; 20];
+            let mut valid = 0.0;
 
-        for seq in sequences {
-            if let Some(aa) = seq.chars().nth(pos) {
-                if let Some(&idx) = aa_to_idx.get(&aa.to_ascii_uppercase()) {
-                    counts[idx] += 1.0;
-                    valid += 1.0;
+            for seq in sequences {
+                if let Some(aa) = seq.chars().nth(pos) {
+                    if let Some(&idx) = aa_to_idx.get(&aa.to_ascii_uppercase()) {
+                        counts[idx] += 1.0;
+                        valid += 1.0;
+                    }
                 }
             }
-        }
 
-        if valid == 0.0 {
-            return 4.32; // Maximum entropy for undefined
-        }
+            if valid == 0.0 {
+                return 4.32; // Maximum entropy for undefined
+            }
 
-        // Convert to frequencies
-        let freqs: Vec<f64> = counts.iter().map(|c| c / valid).collect();
+            // Convert to frequencies
+            let freqs: Vec<f64> = counts.iter().map(|c| c / valid).collect();
 
-        compute_column_entropy(&freqs)
-    }).collect()
+            compute_column_entropy(&freqs)
+        })
+        .collect()
 }
 
 /// Estimate structure info from CA coordinates
@@ -841,11 +917,12 @@ pub fn estimate_structure_info_from_ca(
     let contact_cutoff_sq = 64.0f32; // 8Å²
 
     for i in 0..n_residues {
-        for j in (i+4)..n_residues { // Skip neighbors in sequence
+        for j in (i + 4)..n_residues {
+            // Skip neighbors in sequence
             let dx = ca_coords[i][0] - ca_coords[j][0];
             let dy = ca_coords[i][1] - ca_coords[j][1];
             let dz = ca_coords[i][2] - ca_coords[j][2];
-            let dist_sq = dx*dx + dy*dy + dz*dz;
+            let dist_sq = dx * dx + dy * dy + dz * dz;
 
             if dist_sq < contact_cutoff_sq {
                 contact_counts[i] += 1;
@@ -857,34 +934,42 @@ pub fn estimate_structure_info_from_ca(
     // Estimate burial from contact counts
     let max_contacts = *contact_counts.iter().max().unwrap_or(&1) as f64;
 
-    sequence.chars().enumerate().map(|(i, aa)| {
-        let n_contacts = contact_counts[i];
-        let burial_fraction = n_contacts as f64 / max_contacts.max(1.0);
+    sequence
+        .chars()
+        .enumerate()
+        .map(|(i, aa)| {
+            let n_contacts = contact_counts[i];
+            let burial_fraction = n_contacts as f64 / max_contacts.max(1.0);
 
-        // Estimate H-bonds from sequence (rough approximation)
-        let n_hbonds = match aa {
-            'S' | 'T' | 'N' | 'Q' => 2,
-            'D' | 'E' | 'K' | 'R' => 1,
-            'Y' | 'W' | 'H' => 1,
-            _ => 0,
-        };
+            // Estimate H-bonds from sequence (rough approximation)
+            let n_hbonds = match aa {
+                'S' | 'T' | 'N' | 'Q' => 2,
+                'D' | 'E' | 'K' | 'R' => 1,
+                'Y' | 'W' | 'H' => 1,
+                _ => 0,
+            };
 
-        // Charged residues might form salt bridges
-        let has_salt_bridge = AminoAcidProperties::is_charged(aa) && burial_fraction > 0.5;
+            // Charged residues might form salt bridges
+            let has_salt_bridge = AminoAcidProperties::is_charged(aa) && burial_fraction > 0.5;
 
-        // Core contacts (contacts with high burial residues)
-        let core_contacts = if burial_fraction > 0.6 { n_contacts / 2 } else { 0 };
+            // Core contacts (contacts with high burial residues)
+            let core_contacts = if burial_fraction > 0.6 {
+                n_contacts / 2
+            } else {
+                0
+            };
 
-        ResidueStructureInfo {
-            n_contacts,
-            n_hbonds,
-            has_salt_bridge,
-            burial_fraction,
-            in_secondary_structure: n_contacts >= 4, // Rough estimate
-            core_contacts,
-            at_interface: false, // Can't determine from CA alone
-        }
-    }).collect()
+            ResidueStructureInfo {
+                n_contacts,
+                n_hbonds,
+                has_salt_bridge,
+                burial_fraction,
+                in_secondary_structure: n_contacts >= 4, // Rough estimate
+                core_contacts,
+                at_interface: false, // Can't determine from CA alone
+            }
+        })
+        .collect()
 }
 
 /// Combined cryptic score with escape resistance
@@ -920,9 +1005,7 @@ impl CrypticEscapeScore {
         // Priority: weighted combination
         // High cryptic + high escape resistance + good druggability = high priority
         let priority_score =
-            0.40 * cryptic_score +
-            0.35 * escape_resistance.combined +
-            0.25 * druggability;
+            0.40 * cryptic_score + 0.35 * escape_resistance.combined + 0.25 * druggability;
 
         Self {
             cryptic_score,
@@ -941,11 +1024,11 @@ mod tests {
     #[test]
     fn test_escape_resistance_score() {
         let score = EscapeResistanceScore::compute(
-            0.9,   // High conservation
-            5,     // 5 critical contacts
-            2.5,   // 2.5 kcal/mol estimated ΔΔG
-            0.7,   // 70% buried
-            None,  // No epitope info
+            0.9,  // High conservation
+            5,    // 5 critical contacts
+            2.5,  // 2.5 kcal/mol estimated ΔΔG
+            0.7,  // 70% buried
+            None, // No epitope info
         );
 
         assert!(score.conservation > 0.8);
@@ -968,8 +1051,10 @@ mod tests {
     #[test]
     fn test_column_entropy() {
         // All same amino acid = 0 entropy
-        let uniform_one = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let uniform_one = vec![
+            1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+        ];
         assert!((compute_column_entropy(&uniform_one) - 0.0).abs() < 0.01);
 
         // Equal distribution = max entropy
@@ -991,7 +1076,11 @@ mod tests {
 
         // All positions should have low entropy (identical sequences)
         for e in entropy {
-            assert!(e < 0.1, "Expected low entropy for identical sequences, got {}", e);
+            assert!(
+                e < 0.1,
+                "Expected low entropy for identical sequences, got {}",
+                e
+            );
         }
     }
 
@@ -1002,12 +1091,44 @@ mod tests {
         let sequence = "ACDEFG";
         let msa_entropy = vec![0.5, 0.1, 2.0, 0.3, 1.5, 0.2]; // Varying conservation
         let structure_info = vec![
-            ResidueStructureInfo { n_contacts: 6, n_hbonds: 2, burial_fraction: 0.8, ..Default::default() },
-            ResidueStructureInfo { n_contacts: 2, n_hbonds: 0, burial_fraction: 0.2, ..Default::default() },
-            ResidueStructureInfo { n_contacts: 8, n_hbonds: 1, burial_fraction: 0.9, has_salt_bridge: true, ..Default::default() },
-            ResidueStructureInfo { n_contacts: 4, n_hbonds: 1, burial_fraction: 0.5, ..Default::default() },
-            ResidueStructureInfo { n_contacts: 10, n_hbonds: 3, burial_fraction: 0.95, in_secondary_structure: true, ..Default::default() },
-            ResidueStructureInfo { n_contacts: 3, n_hbonds: 0, burial_fraction: 0.3, ..Default::default() },
+            ResidueStructureInfo {
+                n_contacts: 6,
+                n_hbonds: 2,
+                burial_fraction: 0.8,
+                ..Default::default()
+            },
+            ResidueStructureInfo {
+                n_contacts: 2,
+                n_hbonds: 0,
+                burial_fraction: 0.2,
+                ..Default::default()
+            },
+            ResidueStructureInfo {
+                n_contacts: 8,
+                n_hbonds: 1,
+                burial_fraction: 0.9,
+                has_salt_bridge: true,
+                ..Default::default()
+            },
+            ResidueStructureInfo {
+                n_contacts: 4,
+                n_hbonds: 1,
+                burial_fraction: 0.5,
+                ..Default::default()
+            },
+            ResidueStructureInfo {
+                n_contacts: 10,
+                n_hbonds: 3,
+                burial_fraction: 0.95,
+                in_secondary_structure: true,
+                ..Default::default()
+            },
+            ResidueStructureInfo {
+                n_contacts: 3,
+                n_hbonds: 0,
+                burial_fraction: 0.3,
+                ..Default::default()
+            },
         ];
 
         let scores = scorer.score_residues(sequence, &msa_entropy, &structure_info);
@@ -1015,8 +1136,10 @@ mod tests {
         assert_eq!(scores.len(), 6);
 
         // Residue with salt bridge and good conservation should have higher escape resistance
-        assert!(scores[2].combined > scores[1].combined,
-            "Residue 2 (salt bridge, buried) should score higher than residue 1 (exposed)");
+        assert!(
+            scores[2].combined > scores[1].combined,
+            "Residue 2 (salt bridge, buried) should score higher than residue 1 (exposed)"
+        );
 
         // Residue 4 (high contacts, secondary structure) should also score well
         assert!(scores[4].combined > 0.4);
@@ -1027,9 +1150,9 @@ mod tests {
         let escape_resistance = EscapeResistanceScore::compute(0.8, 4, 2.0, 0.7, None);
 
         let combined = CrypticEscapeScore::compute(
-            0.85,  // High cryptic score
+            0.85, // High cryptic score
             escape_resistance,
-            0.75,  // Good druggability
+            0.75, // Good druggability
         );
 
         assert!(combined.cryptic_score > 0.8);

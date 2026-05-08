@@ -31,35 +31,36 @@
 //! Predictions are LOCKED before ground truth comparison.
 //! This ensures no data leakage and valid retrospective validation.
 
-use std::path::Path;
-use std::collections::HashMap;
-use anyhow::{Result, anyhow};
-use serde::{Deserialize, Serialize};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
 
-use crate::kabsch_alignment::{align_and_compute_displacement, compute_rmsf, align_ensemble};
+use crate::anm_ensemble_v2::{AnmEnsembleConfigV2, AnmEnsembleGeneratorV2};
+use crate::antibody_validation::{validate_against_epitope, AntibodyEpitope};
 use crate::escape_resistance_scorer::{
-    EscapeResistanceScorer, EscapeResistanceScore, CrypticEscapeScore,
-    control_structures::{ControlStructure, get_control_structure, CONTROL_6VXX, CONTROL_2VWD, M102_4_EPITOPE},
+    control_structures::{
+        get_control_structure, ControlStructure, CONTROL_2VWD, CONTROL_6VXX, M102_4_EPITOPE,
+    },
+    CrypticEscapeScore, EscapeResistanceScore, EscapeResistanceScorer,
 };
-use crate::anm_ensemble_v2::{AnmEnsembleGeneratorV2, AnmEnsembleConfigV2};
-use crate::antibody_validation::{AntibodyEpitope, validate_against_epitope};
+use crate::kabsch_alignment::{align_and_compute_displacement, align_ensemble, compute_rmsf};
 
 // Phase 5.1: TDA-guided conformational sampling for void detection
 use crate::tda_guided_sampling::{
-    TdaGuidedSampler, TdaGuidedSamplingConfig, TdaGuidedEnsemble,
-    VoidFormationScores, apply_void_formation_boost,
+    apply_void_formation_boost, TdaGuidedEnsemble, TdaGuidedSampler, TdaGuidedSamplingConfig,
+    VoidFormationScores,
 };
 
 // Phase 5.3: PRISM-ZrO SNN-based adaptive cryptic scoring
 use crate::zro_cryptic_integration::{
-    ZroCrypticScorer, ZroCrypticConfig, ResidueFeatures,
-    apply_zro_scoring, ZroScoringStats,
+    apply_zro_scoring, ResidueFeatures, ZroCrypticConfig, ZroCrypticScorer, ZroScoringStats,
 };
 
 // HMC-refined ensemble with full AMBER ff14SB (bonds, angles, dihedrals) + TDA
 #[cfg(feature = "cryptic-gpu")]
-use crate::hmc_refined_ensemble::{HmcRefinedEnsembleGenerator, HmcRefinedConfig};
+use crate::hmc_refined_ensemble::{HmcRefinedConfig, HmcRefinedEnsembleGenerator};
 
 /// Configuration for blind validation pipeline
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,8 +101,8 @@ impl Default for BlindValidationConfig {
             n_ensemble_conformations: 100,
             hmc_temperature: 310.0, // 37°C
             alignment_rmsd_cutoff: 5.0,
-            cryptic_z_threshold: 0.0,     // Disabled: use fixed threshold for best ROC AUC
-            cryptic_min_threshold: 0.30,   // Best ROC AUC (0.7562) with 82% recall
+            cryptic_z_threshold: 0.0, // Disabled: use fixed threshold for best ROC AUC
+            cryptic_min_threshold: 0.30, // Best ROC AUC (0.7562) with 82% recall
             use_gpu: true,
             verbose: false,
         }
@@ -417,48 +418,65 @@ impl BlindValidationPipeline {
     /// Load ground truth for control structures
     pub fn load_ground_truth(&mut self) {
         // 6VXX ground truth from literature
-        self.ground_truth.insert("6VXX".to_string(), GroundTruthEntry {
-            pdb_id: "6VXX".to_string(),
-            cryptic_residues: vec![
-                // RBD cryptic pockets (from holo structures with inhibitors)
-                373, 374, 375, 376, 377, 378, 379,
-                503, 504, 505, 506, 507, 508, 509,
-                // Fusion peptide region
-                816, 817, 818, 819, 820, 821, 822, 823,
-            ],
-            epitope_residues: CONTROL_6VXX.all_epitope_residues()
-                .into_iter().map(|x| x as i32).collect(),
-            escape_mutations: vec![
-                (417, 'K', 'N'), (452, 'L', 'R'), (484, 'E', 'K'),
-                (501, 'N', 'Y'), (614, 'D', 'G'), (681, 'P', 'H'),
-            ],
-            holo_binding_site: vec![
-                417, 449, 453, 455, 456, 484, 486, 487, 489, 493, 494, 500, 501, 502, 505,
-            ],
-            source: "PDB holo structures + CoV-RDB escape data".to_string(),
-        });
+        self.ground_truth.insert(
+            "6VXX".to_string(),
+            GroundTruthEntry {
+                pdb_id: "6VXX".to_string(),
+                cryptic_residues: vec![
+                    // RBD cryptic pockets (from holo structures with inhibitors)
+                    373, 374, 375, 376, 377, 378, 379, 503, 504, 505, 506, 507, 508, 509,
+                    // Fusion peptide region
+                    816, 817, 818, 819, 820, 821, 822, 823,
+                ],
+                epitope_residues: CONTROL_6VXX
+                    .all_epitope_residues()
+                    .into_iter()
+                    .map(|x| x as i32)
+                    .collect(),
+                escape_mutations: vec![
+                    (417, 'K', 'N'),
+                    (452, 'L', 'R'),
+                    (484, 'E', 'K'),
+                    (501, 'N', 'Y'),
+                    (614, 'D', 'G'),
+                    (681, 'P', 'H'),
+                ],
+                holo_binding_site: vec![
+                    417, 449, 453, 455, 456, 484, 486, 487, 489, 493, 494, 500, 501, 502, 505,
+                ],
+                source: "PDB holo structures + CoV-RDB escape data".to_string(),
+            },
+        );
 
         // 2VWD ground truth
-        self.ground_truth.insert("2VWD".to_string(), GroundTruthEntry {
-            pdb_id: "2VWD".to_string(),
-            cryptic_residues: vec![
-                // CD4 binding site pocket
-                124, 125, 126, 279, 280, 281, 365, 366, 367, 368, 369, 370,
-                427, 428, 429, 430, 431,
-                // V3 loop base
-                296, 297, 298, 299, 300,
-            ],
-            epitope_residues: CONTROL_2VWD.all_epitope_residues()
-                .into_iter().map(|x| x as i32).collect(),
-            escape_mutations: vec![
-                (169, 'N', 'D'), (197, 'V', 'D'), (276, 'N', 'D'),
-                (279, 'D', 'N'), (362, 'Q', 'H'),
-            ],
-            holo_binding_site: vec![
-                124, 125, 126, 127, 279, 280, 281, 365, 366, 367, 368, 369, 370, 371,
-            ],
-            source: "PDB holo structures + LANL HIV escape data".to_string(),
-        });
+        self.ground_truth.insert(
+            "2VWD".to_string(),
+            GroundTruthEntry {
+                pdb_id: "2VWD".to_string(),
+                cryptic_residues: vec![
+                    // CD4 binding site pocket
+                    124, 125, 126, 279, 280, 281, 365, 366, 367, 368, 369, 370, 427, 428, 429, 430,
+                    431, // V3 loop base
+                    296, 297, 298, 299, 300,
+                ],
+                epitope_residues: CONTROL_2VWD
+                    .all_epitope_residues()
+                    .into_iter()
+                    .map(|x| x as i32)
+                    .collect(),
+                escape_mutations: vec![
+                    (169, 'N', 'D'),
+                    (197, 'V', 'D'),
+                    (276, 'N', 'D'),
+                    (279, 'D', 'N'),
+                    (362, 'Q', 'H'),
+                ],
+                holo_binding_site: vec![
+                    124, 125, 126, 127, 279, 280, 281, 365, 366, 367, 368, 369, 370, 371,
+                ],
+                source: "PDB holo structures + LANL HIV escape data".to_string(),
+            },
+        );
     }
 
     /// Run blind validation on a structure
@@ -481,8 +499,12 @@ impl BlindValidationPipeline {
             return Err(anyhow!("Coordinate/sequence length mismatch"));
         }
 
-        log::info!("Running blind validation on {} (chain {}, {} residues)",
-                   pdb_id, chain_id, n_residues);
+        log::info!(
+            "Running blind validation on {} (chain {}, {} residues)",
+            pdb_id,
+            chain_id,
+            n_residues
+        );
 
         // Get control structure info if available
         let control_info = get_control_structure(pdb_id);
@@ -506,11 +528,9 @@ impl BlindValidationPipeline {
 
         // STAGE 4: Feature extraction
         let feature_start = std::time::Instant::now();
-        let escape_scores = self.escape_scorer.score_from_structure(
-            reference_coords,
-            sequence,
-            msa_entropy,
-        );
+        let escape_scores =
+            self.escape_scorer
+                .score_from_structure(reference_coords, sequence, msa_entropy);
         timing.feature_extraction_ms = feature_start.elapsed().as_millis() as u64;
 
         // STAGE 5: Cryptic scoring
@@ -526,16 +546,26 @@ impl BlindValidationPipeline {
             Ok(tda_ensemble) => {
                 // Apply 50% weight boost for void-forming residues
                 // Multiplicative: score *= (1 + 0.5 * void_score)
-                apply_void_formation_boost(&mut cryptic_scores, &tda_ensemble.void_formation_scores, 0.5);
+                apply_void_formation_boost(
+                    &mut cryptic_scores,
+                    &tda_ensemble.void_formation_scores,
+                    0.5,
+                );
 
                 log::info!(
                     "TDA boost applied: {} void-forming residues, mean burial variance = {:.4}",
-                    tda_ensemble.void_formation_scores.void_forming_residues.len(),
+                    tda_ensemble
+                        .void_formation_scores
+                        .void_forming_residues
+                        .len(),
                     tda_ensemble.mean_burial_variance
                 );
             }
             Err(e) => {
-                log::warn!("TDA-guided sampling failed, continuing without boost: {}", e);
+                log::warn!(
+                    "TDA-guided sampling failed, continuing without boost: {}",
+                    e
+                );
             }
         }
         timing.tda_sampling_ms = tda_start.elapsed().as_millis() as u64;
@@ -544,13 +574,19 @@ impl BlindValidationPipeline {
         // Uses reservoir computing to learn cryptic patterns from features
         let zro_start = std::time::Instant::now();
         let zro_features: Vec<ResidueFeatures> = (0..n_residues)
-            .map(|i| ResidueFeatures::from_prediction(
-                escape_scores[i].burial_depth,
-                rmsf[i],
-                escape_scores[i].combined,
-                0.0,  // void_score (already applied via TDA boost)
-                if pdb_id.to_uppercase() == "2VWD" { 0.0 } else { 0.0 },  // interface_score
-            ))
+            .map(|i| {
+                ResidueFeatures::from_prediction(
+                    escape_scores[i].burial_depth,
+                    rmsf[i],
+                    escape_scores[i].combined,
+                    0.0, // void_score (already applied via TDA boost)
+                    if pdb_id.to_uppercase() == "2VWD" {
+                        0.0
+                    } else {
+                        0.0
+                    }, // interface_score
+                )
+            })
             .collect();
 
         // Apply ZrO scoring with 30% weight (blends with existing scores)
@@ -558,7 +594,9 @@ impl BlindValidationPipeline {
             Ok(stats) => {
                 log::info!(
                     "ZrO scoring applied: {} updates, mean boost = {:.4}, max boost = {:.4}",
-                    stats.updates_performed, stats.mean_boost, stats.max_boost
+                    stats.updates_performed,
+                    stats.mean_boost,
+                    stats.max_boost
                 );
             }
             Err(e) => {
@@ -573,14 +611,20 @@ impl BlindValidationPipeline {
             log::info!("Applying m102.4 epitope proximity boost for Nipah G protein");
 
             // Build residue number to index map
-            let res_to_idx: HashMap<i32, usize> = residue_numbers.iter()
+            let res_to_idx: HashMap<i32, usize> = residue_numbers
+                .iter()
                 .enumerate()
                 .map(|(idx, &res)| (res, idx))
                 .collect();
 
             // Get epitope coordinates
-            let epitope_coords: Vec<[f32; 3]> = M102_4_EPITOPE.iter()
-                .filter_map(|&res| res_to_idx.get(&(res as i32)).map(|&idx| reference_coords[idx]))
+            let epitope_coords: Vec<[f32; 3]> = M102_4_EPITOPE
+                .iter()
+                .filter_map(|&res| {
+                    res_to_idx
+                        .get(&(res as i32))
+                        .map(|&idx| reference_coords[idx])
+                })
                 .collect();
 
             if !epitope_coords.is_empty() {
@@ -591,19 +635,21 @@ impl BlindValidationPipeline {
                 let mut boosted_count = 0;
                 for (idx, coord) in reference_coords.iter().enumerate() {
                     // Find minimum distance to any epitope residue
-                    let min_dist_sq = epitope_coords.iter()
+                    let min_dist_sq = epitope_coords
+                        .iter()
                         .map(|ec| {
                             let dx = coord[0] - ec[0];
                             let dy = coord[1] - ec[1];
                             let dz = coord[2] - ec[2];
-                            dx*dx + dy*dy + dz*dz
+                            dx * dx + dy * dy + dz * dz
                         })
                         .fold(f32::MAX, f32::min);
 
                     if min_dist_sq < max_dist_sq {
                         // Gaussian decay boost
                         let dist = min_dist_sq.sqrt() as f64;
-                        let boost = max_boost * (-dist * dist / (2.0 * (max_dist as f64).powi(2))).exp();
+                        let boost =
+                            max_boost * (-dist * dist / (2.0 * (max_dist as f64).powi(2))).exp();
                         cryptic_scores[idx] = (cryptic_scores[idx] + boost).min(1.0);
                         boosted_count += 1;
                     }
@@ -614,44 +660,49 @@ impl BlindValidationPipeline {
 
         // Build per-residue predictions
         let aa_vec: Vec<char> = sequence.chars().collect();
-        let residue_predictions: Vec<ResiduePrediction> = (0..n_residues).map(|i| {
-            let domain = control_info.and_then(|c| c.get_domain(residue_numbers[i] as usize))
-                .map(|s| s.to_string());
+        let residue_predictions: Vec<ResiduePrediction> = (0..n_residues)
+            .map(|i| {
+                let domain = control_info
+                    .and_then(|c| c.get_domain(residue_numbers[i] as usize))
+                    .map(|s| s.to_string());
 
-            ResiduePrediction {
-                residue_idx: i,
-                residue_num: residue_numbers.get(i).copied().unwrap_or(i as i32),
-                amino_acid: aa_vec.get(i).copied().unwrap_or('X'),
-                chain_id: chain_id.to_string(),
-                cryptic_score: cryptic_scores[i],
-                escape_resistance: escape_scores[i].combined,
-                priority_score: (cryptic_scores[i] * escape_scores[i].combined).sqrt(),
-                rmsf: rmsf[i],
-                burial_fraction: escape_scores[i].burial_depth,
-                domain,
-            }
-        }).collect();
+                ResiduePrediction {
+                    residue_idx: i,
+                    residue_num: residue_numbers.get(i).copied().unwrap_or(i as i32),
+                    amino_acid: aa_vec.get(i).copied().unwrap_or('X'),
+                    chain_id: chain_id.to_string(),
+                    cryptic_score: cryptic_scores[i],
+                    escape_resistance: escape_scores[i].combined,
+                    priority_score: (cryptic_scores[i] * escape_scores[i].combined).sqrt(),
+                    rmsf: rmsf[i],
+                    burial_fraction: escape_scores[i].burial_depth,
+                    domain,
+                }
+            })
+            .collect();
 
         // Compute adaptive threshold
-        let scores: Vec<f64> = residue_predictions.iter().map(|r| r.cryptic_score).collect();
+        let scores: Vec<f64> = residue_predictions
+            .iter()
+            .map(|r| r.cryptic_score)
+            .collect();
         let mean_score = scores.iter().sum::<f64>() / scores.len() as f64;
         let std_score = (scores.iter().map(|s| (s - mean_score).powi(2)).sum::<f64>()
-                        / scores.len() as f64).sqrt();
+            / scores.len() as f64)
+            .sqrt();
 
         let adaptive_threshold = mean_score + self.config.cryptic_z_threshold * std_score;
         let threshold = adaptive_threshold.max(self.config.cryptic_min_threshold);
 
         // Filter cryptic residues
-        let cryptic_residue_preds: Vec<&ResiduePrediction> = residue_predictions.iter()
+        let cryptic_residue_preds: Vec<&ResiduePrediction> = residue_predictions
+            .iter()
             .filter(|r| r.cryptic_score >= threshold)
             .collect();
 
         // STAGE 6: Clustering
         let cluster_start = std::time::Instant::now();
-        let predicted_sites = self.cluster_predictions(
-            &cryptic_residue_preds,
-            reference_coords,
-        );
+        let predicted_sites = self.cluster_predictions(&cryptic_residue_preds, reference_coords);
         timing.clustering_ms = cluster_start.elapsed().as_millis() as u64;
 
         timing.total_ms = start_time.elapsed().as_millis() as u64;
@@ -661,7 +712,10 @@ impl BlindValidationPipeline {
         let cryptic_escape_mean = if cryptic_residue_preds.is_empty() {
             0.0
         } else {
-            cryptic_residue_preds.iter().map(|r| r.escape_resistance).sum::<f64>()
+            cryptic_residue_preds
+                .iter()
+                .map(|r| r.escape_resistance)
+                .sum::<f64>()
                 / cryptic_residue_preds.len() as f64
         };
 
@@ -672,15 +726,23 @@ impl BlindValidationPipeline {
             mean_cryptic_score: mean_score,
             max_cryptic_score: max_score,
             mean_escape_resistance: cryptic_escape_mean,
-            mean_priority_score: if cryptic_residue_preds.is_empty() { 0.0 } else {
-                cryptic_residue_preds.iter().map(|r| r.priority_score).sum::<f64>()
+            mean_priority_score: if cryptic_residue_preds.is_empty() {
+                0.0
+            } else {
+                cryptic_residue_preds
+                    .iter()
+                    .map(|r| r.priority_score)
+                    .sum::<f64>()
                     / cryptic_residue_preds.len() as f64
             },
             threshold_used: threshold,
         };
 
-        log::info!("Blind prediction complete: {} cryptic residues, {} sites",
-                   summary.n_cryptic_residues, summary.n_predicted_sites);
+        log::info!(
+            "Blind prediction complete: {} cryptic residues, {} sites",
+            summary.n_cryptic_residues,
+            summary.n_predicted_sites
+        );
 
         Ok(BlindPrediction {
             pdb_id: pdb_id.to_string(),
@@ -707,8 +769,8 @@ impl BlindValidationPipeline {
     /// Falls back to ANM v2 when GPU features not available.
     #[cfg(feature = "cryptic-gpu")]
     fn generate_anm_ensemble(&self, coords: &[[f32; 3]]) -> Result<Vec<Vec<[f32; 3]>>> {
-        use crate::hmc_refined_ensemble::{HmcRefinedEnsembleGenerator, HmcRefinedConfig};
         use crate::anm_ensemble_v2::AnmEnsembleConfigV2;
+        use crate::hmc_refined_ensemble::{HmcRefinedConfig, HmcRefinedEnsembleGenerator};
 
         // Check if we have full-atom PDB data for proper AMBER physics
         let has_full_atom = self.pdb_content.is_some();
@@ -745,8 +807,8 @@ impl BlindValidationPipeline {
             include_original_anm: true,
             // Full-atom AMBER ff14SB with O(N) neighbor lists for non-bonded
             // Uses bonds, angles, dihedrals, LJ, and Coulomb on GPU
-            use_full_atom: true,         // ENABLED: Full AMBER ff14SB with bonds, angles, dihedrals
-            use_gpu_mega_fused: true,    // ENABLED: GPU mega-fused kernel with O(N) neighbor lists
+            use_full_atom: true, // ENABLED: Full AMBER ff14SB with bonds, angles, dihedrals
+            use_gpu_mega_fused: true, // ENABLED: GPU mega-fused kernel with O(N) neighbor lists
         };
 
         let mut generator = HmcRefinedEnsembleGenerator::new(hmc_config);
@@ -760,7 +822,10 @@ impl BlindValidationPipeline {
         // Generate ensemble with HMC refinement
         let ensemble_result = generator.generate_ensemble(coords)?;
 
-        log::info!("✅ Generated {} conformations with AMBER + TDA", ensemble_result.conformations.len());
+        log::info!(
+            "✅ Generated {} conformations with AMBER + TDA",
+            ensemble_result.conformations.len()
+        );
 
         Ok(ensemble_result.conformations)
     }
@@ -806,12 +871,13 @@ impl BlindValidationPipeline {
         // Compute dynamic prior based on protein characteristics
         // Larger proteins have more cryptic site potential
         let size_factor = (n_residues as f64 / 300.0).clamp(0.5, 1.5);
-        let mean_burial: f64 = escape_scores.iter()
-            .map(|e| e.burial_depth)
-            .sum::<f64>() / n_residues as f64;
-        let burial_variance: f64 = escape_scores.iter()
+        let mean_burial: f64 =
+            escape_scores.iter().map(|e| e.burial_depth).sum::<f64>() / n_residues as f64;
+        let burial_variance: f64 = escape_scores
+            .iter()
             .map(|e| (e.burial_depth - mean_burial).powi(2))
-            .sum::<f64>() / n_residues as f64;
+            .sum::<f64>()
+            / n_residues as f64;
         let dynamic_prior = 0.07 * size_factor * (1.0 + burial_variance * 0.5);
 
         // EFE weights (from ensemble_pocket_detector_v2)
@@ -819,47 +885,61 @@ impl BlindValidationPipeline {
         let pragmatic_weight = 0.45;
 
         // Compute EFE-based cryptic score for each residue
-        (0..n_residues).map(|i| {
-            let burial = escape_scores[i].burial_depth;
-            let variance_score = variance_scores[i];
-            let structural_constraint = escape_scores[i].structural_constraint;
+        (0..n_residues)
+            .map(|i| {
+                let burial = escape_scores[i].burial_depth;
+                let variance_score = variance_scores[i];
+                let structural_constraint = escape_scores[i].structural_constraint;
 
-            // Neighbor flexibility (approximated from RMSF neighbors)
-            let neighbor_flex = self.compute_neighbor_flexibility(i, &variance_scores, n_residues);
+                // Neighbor flexibility (approximated from RMSF neighbors)
+                let neighbor_flex =
+                    self.compute_neighbor_flexibility(i, &variance_scores, n_residues);
 
-            // Burial potential: peaks at intermediate burial
-            let burial_potential = burial * (1.0 - burial).max(0.01);
+                // Burial potential: peaks at intermediate burial
+                let burial_potential = burial * (1.0 - burial).max(0.01);
 
-            // Epistemic value: information gain from observing this residue
-            // High when: variance is high, features are rare/surprising
-            let rarity = 1.0 - (burial * 0.3 + neighbor_flex * 0.7);
-            let surprise = variance_score * (1.0 + rarity);
-            let epistemic = surprise * (1.0 - dynamic_prior);
+                // Epistemic value: information gain from observing this residue
+                // High when: variance is high, features are rare/surprising
+                let rarity = 1.0 - (burial * 0.3 + neighbor_flex * 0.7);
+                let surprise = variance_score * (1.0 + rarity);
+                let epistemic = surprise * (1.0 - dynamic_prior);
 
-            // Pragmatic value: alignment with pocket formation goal
-            let posterior = burial * 0.35 + neighbor_flex * 0.35
-                + burial_potential * 0.2 + variance_score * 0.1;
+                // Pragmatic value: alignment with pocket formation goal
+                let posterior = burial * 0.35
+                    + neighbor_flex * 0.35
+                    + burial_potential * 0.2
+                    + variance_score * 0.1;
 
-            // KL divergence from dynamic prior
-            let kl_divergence = if posterior > 0.001 && dynamic_prior > 0.001 {
-                posterior * (posterior / dynamic_prior).ln()
-            } else {
-                0.0
-            };
-            let pragmatic = kl_divergence.max(0.0) + posterior * 0.5;
+                // KL divergence from dynamic prior
+                let kl_divergence = if posterior > 0.001 && dynamic_prior > 0.001 {
+                    posterior * (posterior / dynamic_prior).ln()
+                } else {
+                    0.0
+                };
+                let pragmatic = kl_divergence.max(0.0) + posterior * 0.5;
 
-            // Combined EFE score
-            let efe_score = epistemic_weight * epistemic + pragmatic_weight * pragmatic;
+                // Combined EFE score
+                let efe_score = epistemic_weight * epistemic + pragmatic_weight * pragmatic;
 
-            // Boost for structurally constrained regions (likely functional)
-            let struct_boost = if structural_constraint > 0.5 { 0.05 } else { 0.0 };
+                // Boost for structurally constrained regions (likely functional)
+                let struct_boost = if structural_constraint > 0.5 {
+                    0.05
+                } else {
+                    0.0
+                };
 
-            (efe_score + struct_boost).clamp(0.0, 1.0)
-        }).collect()
+                (efe_score + struct_boost).clamp(0.0, 1.0)
+            })
+            .collect()
     }
 
     /// Compute local neighbor flexibility score
-    fn compute_neighbor_flexibility(&self, idx: usize, variance_scores: &[f64], n_residues: usize) -> f64 {
+    fn compute_neighbor_flexibility(
+        &self,
+        idx: usize,
+        variance_scores: &[f64],
+        n_residues: usize,
+    ) -> f64 {
         let window = 3; // ±3 residues
         let start = idx.saturating_sub(window);
         let end = (idx + window + 1).min(n_residues);
@@ -888,13 +968,15 @@ impl BlindValidationPipeline {
         }
 
         let distance_cutoff = 10.0f32; // 10Å for clustering
-        let max_cluster_size = 25;     // Maximum cluster size
+        let max_cluster_size = 25; // Maximum cluster size
 
         // Seed-based clustering: start from highest-scoring residues
         // Sort predictions by score (descending)
         let mut sorted_indices: Vec<usize> = (0..predictions.len()).collect();
         sorted_indices.sort_by(|&a, &b| {
-            predictions[b].cryptic_score.partial_cmp(&predictions[a].cryptic_score)
+            predictions[b]
+                .cryptic_score
+                .partial_cmp(&predictions[a].cryptic_score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
@@ -924,8 +1006,8 @@ impl BlindValidationPipeline {
                     let coord_j = &coords[predictions[j].residue_idx];
 
                     let dist_sq = (coord_k[0] - coord_j[0]).powi(2)
-                                + (coord_k[1] - coord_j[1]).powi(2)
-                                + (coord_k[2] - coord_j[2]).powi(2);
+                        + (coord_k[1] - coord_j[1]).powi(2)
+                        + (coord_k[2] - coord_j[2]).powi(2);
 
                     if dist_sq < distance_cutoff.powi(2) {
                         is_close = true;
@@ -939,95 +1021,113 @@ impl BlindValidationPipeline {
                 }
             }
 
-            if cluster.len() >= 3 { // Minimum 3 residues for a site
+            if cluster.len() >= 3 {
+                // Minimum 3 residues for a site
                 clusters.push(cluster);
             }
         }
 
-        log::info!("Seed-based clustering: {} clusters (max size {})", clusters.len(), max_cluster_size);
+        log::info!(
+            "Seed-based clustering: {} clusters (max size {})",
+            clusters.len(),
+            max_cluster_size
+        );
 
         // Convert to PredictedCrypticSite
-        let mut sites: Vec<PredictedCrypticSite> = clusters.into_iter().enumerate().map(|(cluster_id, indices)| {
-            let residues: Vec<ResiduePrediction> = indices.iter()
-                .map(|&i| predictions[i].clone())
-                .collect();
+        let mut sites: Vec<PredictedCrypticSite> = clusters
+            .into_iter()
+            .enumerate()
+            .map(|(cluster_id, indices)| {
+                let residues: Vec<ResiduePrediction> =
+                    indices.iter().map(|&i| predictions[i].clone()).collect();
 
-            let representative = residues.iter()
-                .max_by(|a, b| a.priority_score.partial_cmp(&b.priority_score).unwrap())
-                .unwrap()
-                .clone();
+                let representative = residues
+                    .iter()
+                    .max_by(|a, b| a.priority_score.partial_cmp(&b.priority_score).unwrap())
+                    .unwrap()
+                    .clone();
 
-            // Compute center
-            let mut center = [0.0f32; 3];
-            for res in &residues {
-                let coord = &coords[res.residue_idx];
-                center[0] += coord[0];
-                center[1] += coord[1];
-                center[2] += coord[2];
-            }
-            let n = residues.len() as f32;
-            center[0] /= n;
-            center[1] /= n;
-            center[2] /= n;
-
-            // Compute radius
-            let radius: f64 = residues.iter()
-                .map(|res| {
+                // Compute center
+                let mut center = [0.0f32; 3];
+                for res in &residues {
                     let coord = &coords[res.residue_idx];
-                    let dx = coord[0] - center[0];
-                    let dy = coord[1] - center[1];
-                    let dz = coord[2] - center[2];
-                    ((dx*dx + dy*dy + dz*dz) as f64).sqrt()
-                })
-                .fold(0.0, f64::max);
+                    center[0] += coord[0];
+                    center[1] += coord[1];
+                    center[2] += coord[2];
+                }
+                let n = residues.len() as f32;
+                center[0] /= n;
+                center[1] /= n;
+                center[2] /= n;
 
-            let mean_cryptic = residues.iter().map(|r| r.cryptic_score).sum::<f64>() / n as f64;
-            let mean_escape = residues.iter().map(|r| r.escape_resistance).sum::<f64>() / n as f64;
-            let mean_priority = residues.iter().map(|r| r.priority_score).sum::<f64>() / n as f64;
+                // Compute radius
+                let radius: f64 = residues
+                    .iter()
+                    .map(|res| {
+                        let coord = &coords[res.residue_idx];
+                        let dx = coord[0] - center[0];
+                        let dy = coord[1] - center[1];
+                        let dz = coord[2] - center[2];
+                        ((dx * dx + dy * dy + dz * dz) as f64).sqrt()
+                    })
+                    .fold(0.0, f64::max);
 
-            // Druggability based on size, radius, burial, and escape resistance
-            let mean_burial = residues.iter().map(|r| r.burial_fraction).sum::<f64>() / n as f64;
+                let mean_cryptic = residues.iter().map(|r| r.cryptic_score).sum::<f64>() / n as f64;
+                let mean_escape =
+                    residues.iter().map(|r| r.escape_resistance).sum::<f64>() / n as f64;
+                let mean_priority =
+                    residues.iter().map(|r| r.priority_score).sum::<f64>() / n as f64;
 
-            // Size score: 5-15 residues is ideal for drug targets
-            let size = residues.len();
-            let size_score = if size >= 5 && size <= 15 {
-                1.0
-            } else if size >= 3 && size <= 25 {
-                0.7
-            } else {
-                0.4
-            };
+                // Druggability based on size, radius, burial, and escape resistance
+                let mean_burial =
+                    residues.iter().map(|r| r.burial_fraction).sum::<f64>() / n as f64;
 
-            // Radius score: 5-12Å is ideal for small molecule binding
-            let radius_score = if radius >= 5.0 && radius <= 12.0 {
-                1.0
-            } else if radius >= 3.0 && radius <= 18.0 {
-                0.7
-            } else {
-                0.4
-            };
+                // Size score: 5-15 residues is ideal for drug targets
+                let size = residues.len();
+                let size_score = if size >= 5 && size <= 15 {
+                    1.0
+                } else if size >= 3 && size <= 25 {
+                    0.7
+                } else {
+                    0.4
+                };
 
-            // Combine druggability factors
-            let druggability = 0.3 * size_score + 0.3 * radius_score + 0.2 * mean_burial + 0.2 * mean_escape;
+                // Radius score: 5-12Å is ideal for small molecule binding
+                let radius_score = if radius >= 5.0 && radius <= 12.0 {
+                    1.0
+                } else if radius >= 3.0 && radius <= 18.0 {
+                    0.7
+                } else {
+                    0.4
+                };
 
-            PredictedCrypticSite {
-                cluster_id,
-                residues,
-                representative,
-                mean_cryptic_score: mean_cryptic,
-                mean_escape_resistance: mean_escape,
-                mean_priority_score: mean_priority,
-                druggability_score: druggability,
-                center,
-                radius,
-            }
-        }).collect();
+                // Combine druggability factors
+                let druggability =
+                    0.3 * size_score + 0.3 * radius_score + 0.2 * mean_burial + 0.2 * mean_escape;
+
+                PredictedCrypticSite {
+                    cluster_id,
+                    residues,
+                    representative,
+                    mean_cryptic_score: mean_cryptic,
+                    mean_escape_resistance: mean_escape,
+                    mean_priority_score: mean_priority,
+                    druggability_score: druggability,
+                    center,
+                    radius,
+                }
+            })
+            .collect();
 
         // Sort by combined ranking score (druggability * cryptic * escape resistance)
         sites.sort_by(|a, b| {
-            let score_a = a.druggability_score * a.mean_cryptic_score * (1.0 + a.mean_escape_resistance);
-            let score_b = b.druggability_score * b.mean_cryptic_score * (1.0 + b.mean_escape_resistance);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            let score_a =
+                a.druggability_score * a.mean_cryptic_score * (1.0 + a.mean_escape_resistance);
+            let score_b =
+                b.druggability_score * b.mean_cryptic_score * (1.0 + b.mean_escape_resistance);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Update cluster IDs after sorting
@@ -1045,32 +1145,52 @@ impl BlindValidationPipeline {
         &self,
         prediction: &BlindPrediction,
     ) -> Result<ValidationMetrics> {
-        let ground_truth = self.ground_truth.get(&prediction.pdb_id)
+        let ground_truth = self
+            .ground_truth
+            .get(&prediction.pdb_id)
             .ok_or_else(|| anyhow!("No ground truth for {}", prediction.pdb_id))?;
 
         // Compute metrics
-        let predicted_residues: Vec<i32> = prediction.residue_predictions.iter()
+        let predicted_residues: Vec<i32> = prediction
+            .residue_predictions
+            .iter()
             .filter(|r| r.cryptic_score >= prediction.summary.threshold_used)
             .map(|r| r.residue_num)
             .collect();
 
         // True positives, false positives, false negatives
-        let tp = predicted_residues.iter()
-            .filter(|r| ground_truth.cryptic_residues.contains(r)
-                     || ground_truth.holo_binding_site.contains(r))
+        let tp = predicted_residues
+            .iter()
+            .filter(|r| {
+                ground_truth.cryptic_residues.contains(r)
+                    || ground_truth.holo_binding_site.contains(r)
+            })
             .count();
 
-        let fp = predicted_residues.iter()
-            .filter(|r| !ground_truth.cryptic_residues.contains(r)
-                     && !ground_truth.holo_binding_site.contains(r))
+        let fp = predicted_residues
+            .iter()
+            .filter(|r| {
+                !ground_truth.cryptic_residues.contains(r)
+                    && !ground_truth.holo_binding_site.contains(r)
+            })
             .count();
 
-        let fn_ = ground_truth.cryptic_residues.iter()
+        let fn_ = ground_truth
+            .cryptic_residues
+            .iter()
             .filter(|r| !predicted_residues.contains(r))
             .count();
 
-        let precision = if tp + fp > 0 { tp as f64 / (tp + fp) as f64 } else { 0.0 };
-        let recall = if tp + fn_ > 0 { tp as f64 / (tp + fn_) as f64 } else { 0.0 };
+        let precision = if tp + fp > 0 {
+            tp as f64 / (tp + fp) as f64
+        } else {
+            0.0
+        };
+        let recall = if tp + fn_ > 0 {
+            tp as f64 / (tp + fn_) as f64
+        } else {
+            0.0
+        };
         let f1 = if precision + recall > 0.0 {
             2.0 * precision * recall / (precision + recall)
         } else {
@@ -1079,16 +1199,26 @@ impl BlindValidationPipeline {
 
         // Epitope overlap
         let epitope_overlap = if !ground_truth.epitope_residues.is_empty() {
-            let overlapping = predicted_residues.iter()
+            let overlapping = predicted_residues
+                .iter()
                 .filter(|r| ground_truth.epitope_residues.contains(r))
                 .count();
-            overlapping as f64 / ground_truth.epitope_residues.len().min(predicted_residues.len()).max(1) as f64
+            overlapping as f64
+                / ground_truth
+                    .epitope_residues
+                    .len()
+                    .min(predicted_residues.len())
+                    .max(1) as f64
         } else {
             0.0
         };
 
         // Simple ROC AUC estimation (would use proper ranking in production)
-        let roc_auc = if recall > 0.0 { 0.5 + recall * 0.3 + precision * 0.2 } else { 0.5 };
+        let roc_auc = if recall > 0.0 {
+            0.5 + recall * 0.3 + precision * 0.2
+        } else {
+            0.5
+        };
 
         Ok(ValidationMetrics {
             cryptic_roc_auc: roc_auc,
@@ -1167,12 +1297,27 @@ impl BlindValidationPipeline {
 
         // Compute aggregate metrics
         let n = structure_results.len().max(1) as f64;
-        let total_recall: f64 = structure_results.iter().map(|r| r.metrics.cryptic_recall).sum();
-        let total_precision: f64 = structure_results.iter().map(|r| r.metrics.cryptic_precision).sum();
-        let total_roc: f64 = structure_results.iter().map(|r| r.metrics.cryptic_roc_auc).sum();
-        let total_pr: f64 = structure_results.iter().map(|r| r.metrics.cryptic_pr_auc).sum();
+        let total_recall: f64 = structure_results
+            .iter()
+            .map(|r| r.metrics.cryptic_recall)
+            .sum();
+        let total_precision: f64 = structure_results
+            .iter()
+            .map(|r| r.metrics.cryptic_precision)
+            .sum();
+        let total_roc: f64 = structure_results
+            .iter()
+            .map(|r| r.metrics.cryptic_roc_auc)
+            .sum();
+        let total_pr: f64 = structure_results
+            .iter()
+            .map(|r| r.metrics.cryptic_pr_auc)
+            .sum();
         let total_f1: f64 = structure_results.iter().map(|r| r.metrics.cryptic_f1).sum();
-        let successes = structure_results.iter().filter(|r| r.metrics.success).count();
+        let successes = structure_results
+            .iter()
+            .filter(|r| r.metrics.success)
+            .count();
 
         let aggregate = ValidationMetrics {
             cryptic_roc_auc: total_roc / n,
@@ -1181,7 +1326,11 @@ impl BlindValidationPipeline {
             cryptic_precision: total_precision / n,
             cryptic_f1: total_f1 / n,
             success: successes as f64 / n >= 0.5,
-            epitope_overlap: structure_results.iter().map(|r| r.metrics.epitope_overlap).sum::<f64>() / n,
+            epitope_overlap: structure_results
+                .iter()
+                .map(|r| r.metrics.epitope_overlap)
+                .sum::<f64>()
+                / n,
             escape_prediction_accuracy: 0.0,
         };
 
@@ -1242,20 +1391,13 @@ mod tests {
         let pipeline = BlindValidationPipeline::new();
 
         // Create simple test structure
-        let coords: Vec<[f32; 3]> = (0..50).map(|i| {
-            [i as f32 * 3.8, 0.0, 0.0]
-        }).collect();
+        let coords: Vec<[f32; 3]> = (0..50).map(|i| [i as f32 * 3.8, 0.0, 0.0]).collect();
         let sequence: String = "A".repeat(50);
         let residue_numbers: Vec<i32> = (1..=50).collect();
 
-        let prediction = pipeline.run_blind(
-            &coords,
-            &sequence,
-            "TEST",
-            "A",
-            &residue_numbers,
-            None,
-        ).unwrap();
+        let prediction = pipeline
+            .run_blind(&coords, &sequence, "TEST", "A", &residue_numbers, None)
+            .unwrap();
 
         assert_eq!(prediction.pdb_id, "TEST");
         assert_eq!(prediction.residue_predictions.len(), 50);

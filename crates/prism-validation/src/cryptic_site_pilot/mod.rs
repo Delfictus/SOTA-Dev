@@ -34,26 +34,26 @@
 //! ```
 
 pub mod config;
-pub mod pipeline;
-pub mod volume_tracker;
 pub mod druggability;
 pub mod outputs;
-pub mod utils;
+pub mod pipeline;
 pub mod topology_loader;
+pub mod utils;
+pub mod volume_tracker;
 
 // MD-based pipeline (Langevin dynamics + Jaccard matching)
 pub mod md_cryptic_pipeline;
 
 // Re-exports for convenience
 pub use config::CrypticPilotConfig;
-pub use pipeline::{CrypticPilotPipeline, CrypticPilotResult};
-pub use volume_tracker::{VolumeFrame, VolumeTimeSeries};
 pub use druggability::{DruggabilityScore, DruggabilityScorer};
 pub use outputs::{MultiModelPdbWriter, ReportGenerator};
+pub use pipeline::{CrypticPilotPipeline, CrypticPilotResult};
+pub use volume_tracker::{VolumeFrame, VolumeTimeSeries};
 
 // MD pipeline exports
 #[cfg(feature = "cryptic-gpu")]
 pub use md_cryptic_pipeline::{
-    MdCrypticConfig, MdCrypticPipeline, MdCrypticResult,
-    CrypticSite, ResidueBasedVolumeTracker, TrackerDiagnostics,
+    CrypticSite, MdCrypticConfig, MdCrypticPipeline, MdCrypticResult, ResidueBasedVolumeTracker,
+    TrackerDiagnostics,
 };

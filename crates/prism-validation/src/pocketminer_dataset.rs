@@ -20,7 +20,7 @@
 //! PocketMiner: Nature Communications 2023
 //! https://github.com/Mickdub/gvp/tree/pocket_pred
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -127,7 +127,11 @@ impl PocketMinerDataset {
 
         // Update counts
         dataset.n_structures = dataset.entries.len();
-        dataset.n_pockets = dataset.entries.iter().map(|e| e.cryptic_residues.len().max(1)).sum();
+        dataset.n_pockets = dataset
+            .entries
+            .iter()
+            .map(|e| e.cryptic_residues.len().max(1))
+            .sum();
 
         Ok(dataset)
     }
@@ -148,7 +152,11 @@ impl PocketMinerDataset {
     pub fn add_entry(&mut self, entry: PocketMinerEntry) {
         self.entries.push(entry);
         self.n_structures = self.entries.len();
-        self.n_pockets = self.entries.iter().map(|e| e.cryptic_residues.len().max(1)).sum();
+        self.n_pockets = self
+            .entries
+            .iter()
+            .map(|e| e.cryptic_residues.len().max(1))
+            .sum();
     }
 
     /// Get all PDB IDs in the dataset
@@ -164,7 +172,9 @@ impl PocketMinerDataset {
     /// Get entry by PDB ID
     pub fn get_entry(&self, pdb_id: &str) -> Option<&PocketMinerEntry> {
         let normalized = pdb_id.to_lowercase();
-        self.entries.iter().find(|e| e.pdb_id.to_lowercase() == normalized)
+        self.entries
+            .iter()
+            .find(|e| e.pdb_id.to_lowercase() == normalized)
     }
 
     /// Validate all entries exist on disk
@@ -209,7 +219,10 @@ impl PocketMinerDataset {
         let mean_residues = if self.entries.is_empty() {
             0.0
         } else {
-            self.entries.iter().map(|e| e.n_pocket_residues).sum::<usize>() as f64
+            self.entries
+                .iter()
+                .map(|e| e.n_pocket_residues)
+                .sum::<usize>() as f64
                 / self.entries.len() as f64
         };
 
@@ -240,10 +253,12 @@ pub fn extract_ligand_coords(pdb_path: &Path) -> Result<Vec<[f64; 3]>> {
 
     // Common non-ligand HETATM residue names to skip
     let skip_residues: HashSet<&str> = [
-        "HOH", "WAT", "H2O", "DOD", "D2O",  // Water
-        "NA", "CL", "K", "CA", "MG", "ZN", "FE", "CU", "MN",  // Ions
-        "SO4", "PO4", "ACT", "GOL", "EDO", "PEG",  // Common crystallization additives
-    ].into_iter().collect();
+        "HOH", "WAT", "H2O", "DOD", "D2O", // Water
+        "NA", "CL", "K", "CA", "MG", "ZN", "FE", "CU", "MN", // Ions
+        "SO4", "PO4", "ACT", "GOL", "EDO", "PEG", // Common crystallization additives
+    ]
+    .into_iter()
+    .collect();
 
     for line in content.lines() {
         if line.starts_with("HETATM") && line.len() >= 54 {

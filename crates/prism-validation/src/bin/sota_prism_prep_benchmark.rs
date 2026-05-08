@@ -18,7 +18,7 @@
 //!     --output results/sota_benchmark
 //! ```
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -95,7 +95,7 @@ struct BondEntry {
 struct AngleEntry {
     i: usize,
     j: usize,
-    k_idx: usize,  // Third atom index (middle atom is j)
+    k_idx: usize, // Third atom index (middle atom is j)
     theta0: f64,
     force_k: f64,
 }
@@ -104,7 +104,7 @@ struct AngleEntry {
 struct DihedralEntry {
     i: usize,
     j: usize,
-    k_idx: usize,  // Third atom index
+    k_idx: usize, // Third atom index
     l: usize,
     periodicity: i32,
     phase: f64,
@@ -191,7 +191,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "cuda")]
     {
         use cudarc::driver::CudaContext;
-        use prism_gpu::{AmberSimdBatch, StructureTopology, OptimizationConfig};
+        use prism_gpu::{AmberSimdBatch, OptimizationConfig, StructureTopology};
         use std::sync::Arc;
 
         // Initialize CUDA
@@ -262,10 +262,16 @@ fn main() -> Result<()> {
             let structure_topo = convert_prism_prep_to_structure_topology(&prep_topo);
             let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
 
-            println!("   ✓ {} atoms, {} residues, {} chains ({:.1}ms)",
-                     prep_topo.n_atoms, prep_topo.n_residues, prep_topo.n_chains, load_ms);
-            println!("     {} bonds, {} angles, {} dihedrals",
-                     prep_topo.bonds.len(), prep_topo.angles.len(), prep_topo.dihedrals.len());
+            println!(
+                "   ✓ {} atoms, {} residues, {} chains ({:.1}ms)",
+                prep_topo.n_atoms, prep_topo.n_residues, prep_topo.n_chains, load_ms
+            );
+            println!(
+                "     {} bonds, {} angles, {} dihedrals",
+                prep_topo.bonds.len(),
+                prep_topo.angles.len(),
+                prep_topo.dihedrals.len()
+            );
 
             results.push(StructureResult {
                 name: topo_name.clone(),
@@ -298,7 +304,8 @@ fn main() -> Result<()> {
         println!("║           SEQUENTIAL BASELINE (One-by-One Processing)        ║");
         println!("╚══════════════════════════════════════════════════════════════╝");
 
-        let max_atoms = loaded_topos.iter()
+        let max_atoms = loaded_topos
+            .iter()
             .map(|(_, t)| t.positions.len() / 3)
             .max()
             .unwrap_or(0);
@@ -333,23 +340,32 @@ fn main() -> Result<()> {
                 let pe = struct_result[0].potential_energy;
                 let temp = struct_result[0].temperature;
                 seq_results_data.push((pe, temp));
-                println!("     ✓ Done in {:.1}ms | PE: {:.1} kcal/mol | T: {:.1} K",
-                         elapsed_ms, pe, temp);
+                println!(
+                    "     ✓ Done in {:.1}ms | PE: {:.1} kcal/mol | T: {:.1} K",
+                    elapsed_ms, pe, temp
+                );
             }
         }
 
         let seq_total_ms = seq_start.elapsed().as_secs_f64() * 1000.0;
-        println!("\n   SEQUENTIAL TOTAL: {:.1}ms ({:.1}ms per structure)",
-                 seq_total_ms, seq_total_ms / successful_count as f64);
+        println!(
+            "\n   SEQUENTIAL TOTAL: {:.1}ms ({:.1}ms per structure)",
+            seq_total_ms,
+            seq_total_ms / successful_count as f64
+        );
 
         // ============================================================
         // PARALLEL BATCHED (all structures in single kernel)
         // ============================================================
         println!("\n╔══════════════════════════════════════════════════════════════╗");
-        println!("║           PARALLEL BATCHED (All {} Structures Together)      ║", successful_count);
+        println!(
+            "║           PARALLEL BATCHED (All {} Structures Together)      ║",
+            successful_count
+        );
         println!("╚══════════════════════════════════════════════════════════════╝");
 
-        let total_atoms: usize = loaded_topos.iter()
+        let total_atoms: usize = loaded_topos
+            .iter()
             .map(|(_, t)| t.positions.len() / 3)
             .sum();
 
@@ -383,12 +399,17 @@ fn main() -> Result<()> {
         println!("\n   Batched Results:");
         for (i, res) in batch_results_data.iter().enumerate() {
             let name = &loaded_topos[i].0;
-            println!("     {} | PE: {:.1} kcal/mol | T: {:.1} K",
-                     name, res.potential_energy, res.temperature);
+            println!(
+                "     {} | PE: {:.1} kcal/mol | T: {:.1} K",
+                name, res.potential_energy, res.temperature
+            );
         }
 
-        println!("\n   BATCHED TOTAL: {:.1}ms ({:.1}ms effective per structure)",
-                 batch_total_ms, batch_total_ms / successful_count as f64);
+        println!(
+            "\n   BATCHED TOTAL: {:.1}ms ({:.1}ms effective per structure)",
+            batch_total_ms,
+            batch_total_ms / successful_count as f64
+        );
         println!("   Verlet rebuilds: {}", batch_stats.verlet_rebuild_count);
 
         // Calculate speedup
@@ -397,9 +418,18 @@ fn main() -> Result<()> {
         println!("\n╔══════════════════════════════════════════════════════════════╗");
         println!("║                    TRUE BATCHED SPEEDUP                       ║");
         println!("╠══════════════════════════════════════════════════════════════╣");
-        println!("║   Sequential: {:>10.1}ms                                   ║", seq_total_ms);
-        println!("║   Batched:    {:>10.1}ms                                   ║", batch_total_ms);
-        println!("║   SPEEDUP:    {:>10.2}× 🚀                                 ║", speedup);
+        println!(
+            "║   Sequential: {:>10.1}ms                                   ║",
+            seq_total_ms
+        );
+        println!(
+            "║   Batched:    {:>10.1}ms                                   ║",
+            batch_total_ms
+        );
+        println!(
+            "║   SPEEDUP:    {:>10.2}× 🚀                                 ║",
+            speedup
+        );
         println!("╚══════════════════════════════════════════════════════════════╝");
 
         // Update results with final values
@@ -453,7 +483,11 @@ fn main() -> Result<()> {
         println!("║                    BENCHMARK COMPLETE                         ║");
         println!("╚══════════════════════════════════════════════════════════════╝");
         println!("\n📊 Summary:");
-        println!("   Structures: {}/{} successful", successful_count, args.topos.len());
+        println!(
+            "   Structures: {}/{} successful",
+            successful_count,
+            args.topos.len()
+        );
         println!("   Total atoms: {}", total_atoms);
         println!("   Sequential: {:.1}ms total", seq_total_ms);
         println!("   Batched: {:.1}ms total", batch_total_ms);
@@ -487,23 +521,41 @@ fn convert_prism_prep_to_structure_topology(
     let epsilons: Vec<f32> = prep.lj_params.iter().map(|p| p.epsilon as f32).collect();
 
     // Bonds: (i, j, k, r0)
-    let bonds: Vec<(usize, usize, f32, f32)> = prep.bonds.iter()
+    let bonds: Vec<(usize, usize, f32, f32)> = prep
+        .bonds
+        .iter()
         .map(|b| (b.i, b.j, b.k as f32, b.r0 as f32))
         .collect();
 
     // Angles: (i, j, k, force_k, theta0)
     // Note: j is the middle atom (vertex), i and k are the end atoms
-    let angles: Vec<(usize, usize, usize, f32, f32)> = prep.angles.iter()
+    let angles: Vec<(usize, usize, usize, f32, f32)> = prep
+        .angles
+        .iter()
         .map(|a| (a.i, a.j, a.k_idx, a.force_k as f32, a.theta0 as f32))
         .collect();
 
     // Dihedrals: (i, j, k, l, force_k, periodicity, phase)
-    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = prep.dihedrals.iter()
-        .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k as f32, d.periodicity as f32, d.phase as f32))
+    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = prep
+        .dihedrals
+        .iter()
+        .map(|d| {
+            (
+                d.i,
+                d.j,
+                d.k_idx,
+                d.l,
+                d.force_k as f32,
+                d.periodicity as f32,
+                d.phase as f32,
+            )
+        })
         .collect();
 
     // Exclusions: Vec<Vec<usize>> -> Vec<HashSet<usize>>
-    let exclusions: Vec<HashSet<usize>> = prep.exclusions.iter()
+    let exclusions: Vec<HashSet<usize>> = prep
+        .exclusions
+        .iter()
         .map(|exc| exc.iter().cloned().collect())
         .collect();
 

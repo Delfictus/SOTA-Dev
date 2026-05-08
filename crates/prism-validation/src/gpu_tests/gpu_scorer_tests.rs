@@ -103,11 +103,7 @@ fn test_rls_stability_1000_updates() {
         scores.push(score);
 
         // Verify score validity
-        assert!(
-            score.is_finite(),
-            "Score became NaN/Inf at iteration {}",
-            i
-        );
+        assert!(score.is_finite(), "Score became NaN/Inf at iteration {}", i);
         assert!(
             score >= 0.0 && score <= 1.0,
             "Score {} out of [0,1] at iteration {}",

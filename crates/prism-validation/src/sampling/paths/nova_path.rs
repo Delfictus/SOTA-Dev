@@ -25,9 +25,11 @@ use crate::sampling::result::{
 #[cfg(feature = "cryptic-gpu")]
 use cudarc::driver::CudaContext;
 #[cfg(feature = "cryptic-gpu")]
-use prism_gpu::prism_nova::{PrismNova, NovaConfig, NovaStepResult, MAX_ATOMS};
+use prism_gpu::prism_nova::{NovaConfig, NovaStepResult, PrismNova, MAX_ATOMS};
 #[cfg(feature = "cryptic-gpu")]
-use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom, get_bond_param, get_angle_param, get_lj_param, get_dihedral_params};
+use prism_physics::amber_ff14sb::{
+    get_angle_param, get_bond_param, get_dihedral_params, get_lj_param, AmberTopology, PdbAtom,
+};
 
 /// NOVA atom limit (shared memory constraint)
 pub const NOVA_MAX_ATOMS: usize = 512;
@@ -135,10 +137,10 @@ impl SamplingBackend for NovaPath {
             n_atoms: structure.n_atoms() as i32,
             n_residues: structure.n_residues() as i32,
             temperature: 310.0,
-            dt: 0.0005,  // 0.5 fs (reduced from 2 fs for stability)
+            dt: 0.0005, // 0.5 fs (reduced from 2 fs for stability)
             goal_strength: 0.1,
             lambda: 0.99,
-            leapfrog_steps: 10,  // Increased from 3 for better sampling
+            leapfrog_steps: 10, // Increased from 3 for better sampling
             ..Default::default()
         };
 
@@ -150,8 +152,15 @@ impl SamplingBackend for NovaPath {
         let (positions, masses, charges, lj_params, atom_types, residue_atoms) =
             topology_to_nova_arrays(structure, &topology);
 
-        nova.upload_system(&positions, &masses, &charges, &lj_params, &atom_types, &residue_atoms)
-            .context("NovaPath: Failed to upload system to GPU")?;
+        nova.upload_system(
+            &positions,
+            &masses,
+            &charges,
+            &lj_params,
+            &atom_types,
+            &residue_atoms,
+        )
+        .context("NovaPath: Failed to upload system to GPU")?;
 
         // Upload bonds
         let (bond_list, bond_params) = topology_to_bond_arrays(&topology);
@@ -217,15 +226,20 @@ impl SamplingBackend for NovaPath {
         for sample_idx in 0..config.n_samples {
             // Reinitialize momenta at the start of each sample to maintain canonical ensemble
             // This compensates for numerical drift and energy accumulation
-            nova.initialize_momenta()
-                .with_context(|| format!("NovaPath: Momenta reinitialization failed at sample {}", sample_idx))?;
+            nova.initialize_momenta().with_context(|| {
+                format!(
+                    "NovaPath: Momenta reinitialization failed at sample {}",
+                    sample_idx
+                )
+            })?;
 
             let mut last_result: Option<NovaStepResult> = None;
 
             // Run decorrelation steps
             for _ in 0..config.steps_per_sample {
-                let result = nova.step()
-                    .with_context(|| format!("NovaPath: GPU step failed at sample {}", sample_idx))?;
+                let result = nova.step().with_context(|| {
+                    format!("NovaPath: GPU step failed at sample {}", sample_idx)
+                })?;
 
                 if result.accepted {
                     total_accepted += 1;
@@ -235,7 +249,8 @@ impl SamplingBackend for NovaPath {
             }
 
             // Collect conformation after decorrelation
-            let positions = nova.download_positions()
+            let positions = nova
+                .download_positions()
                 .context("NovaPath: Failed to download positions from GPU")?;
             conformations.push(flat_to_3d(&positions, structure.n_residues()));
 
@@ -365,7 +380,9 @@ fn parse_pdb_to_atoms(pdb_content: &str) -> Vec<PdbAtom> {
                 residue_name,
                 residue_id,
                 chain_id,
-                x, y, z,
+                x,
+                y,
+                z,
             });
             index += 1;
         }
@@ -380,17 +397,19 @@ fn topology_to_nova_arrays(
     structure: &SanitizedStructure,
     topology: &AmberTopology,
 ) -> (
-    Vec<f32>,  // positions [n*3]
-    Vec<f32>,  // masses
-    Vec<f32>,  // charges
-    Vec<f32>,  // lj_params [n*2] (epsilon, rmin_half)
-    Vec<i32>,  // atom_types
-    Vec<i32>,  // residue_atoms (representative CA per residue)
+    Vec<f32>, // positions [n*3]
+    Vec<f32>, // masses
+    Vec<f32>, // charges
+    Vec<f32>, // lj_params [n*2] (epsilon, rmin_half)
+    Vec<i32>, // atom_types
+    Vec<i32>, // residue_atoms (representative CA per residue)
 ) {
     let n_atoms = structure.atoms.len();
 
     // Flatten positions from SanitizedStructure
-    let positions: Vec<f32> = structure.atoms.iter()
+    let positions: Vec<f32> = structure
+        .atoms
+        .iter()
         .flat_map(|a| a.position.iter().copied())
         .collect();
 
@@ -401,14 +420,14 @@ fn topology_to_nova_arrays(
     let charges: Vec<f32> = topology.charges.clone();
 
     // Get LJ parameters (epsilon, rmin_half) from topology
-    let lj_params: Vec<f32> = topology.lj_params.iter()
+    let lj_params: Vec<f32> = topology
+        .lj_params
+        .iter()
         .flat_map(|lj| [lj.epsilon, lj.rmin_half])
         .collect();
 
     // Atom types as integers
-    let atom_types: Vec<i32> = topology.atom_types.iter()
-        .map(|t| *t as i32)
-        .collect();
+    let atom_types: Vec<i32> = topology.atom_types.iter().map(|t| *t as i32).collect();
 
     // Find representative CA atom for each residue
     let mut residue_atoms: Vec<i32> = Vec::new();
@@ -420,7 +439,14 @@ fn topology_to_nova_arrays(
         }
     }
 
-    (positions, masses, charges, lj_params, atom_types, residue_atoms)
+    (
+        positions,
+        masses,
+        charges,
+        lj_params,
+        atom_types,
+        residue_atoms,
+    )
 }
 
 /// Convert topology bonds to flat arrays for PrismNova
@@ -552,7 +578,10 @@ END
         // load_structure MUST fail without GPU
         let result = path.load_structure(&structure);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Zero Fallback Policy"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Zero Fallback Policy"));
     }
 
     /// Test that sampling fails without GPU (Zero Fallback Policy)
@@ -564,7 +593,10 @@ END
 
         let result = path.sample(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Zero Fallback Policy"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Zero Fallback Policy"));
     }
 
     #[test]

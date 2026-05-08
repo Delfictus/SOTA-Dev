@@ -341,22 +341,38 @@ pub fn create_retrospective_targets() -> Vec<Target> {
             .description("KRAS G12C mutant with cryptic Switch-II pocket - Sotorasib target")
             .apo_pdb("data/validation/retrospective/oncology/4OBE.pdb")
             .holo_pdb("data/validation/retrospective/oncology/6OIM.pdb")
-            .pocket(vec![60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72], true)
-            .drug("Sotorasib", DrugStatus::Approved, Some(2021), "Covalent inhibitor of G12C mutant")
+            .pocket(
+                vec![60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72],
+                true,
+            )
+            .drug(
+                "Sotorasib",
+                DrugStatus::Approved,
+                Some(2021),
+                "Covalent inhibitor of G12C mutant",
+            )
             .difficulty(Difficulty::Hard)
             .build(),
-
         RetrospectiveTargetBuilder::new("BTK")
             .family("kinase")
             .therapeutic_area("Oncology")
             .description("Bruton's Tyrosine Kinase - Ibrutinib target")
             .apo_pdb("data/validation/retrospective/oncology/3GEN.pdb")
             .holo_pdb("data/validation/retrospective/oncology/5P9J.pdb")
-            .pocket(vec![408, 409, 410, 411, 412, 413, 414, 474, 475, 476, 477, 478, 481], true)
-            .drug("Ibrutinib", DrugStatus::Approved, Some(2013), "Covalent C481 inhibitor")
+            .pocket(
+                vec![
+                    408, 409, 410, 411, 412, 413, 414, 474, 475, 476, 477, 478, 481,
+                ],
+                true,
+            )
+            .drug(
+                "Ibrutinib",
+                DrugStatus::Approved,
+                Some(2013),
+                "Covalent C481 inhibitor",
+            )
             .difficulty(Difficulty::Medium)
             .build(),
-
         RetrospectiveTargetBuilder::new("BCR_ABL")
             .family("kinase")
             .therapeutic_area("Oncology")
@@ -364,10 +380,14 @@ pub fn create_retrospective_targets() -> Vec<Target> {
             .apo_pdb("data/validation/retrospective/oncology/1IEP.pdb")
             .holo_pdb("data/validation/retrospective/oncology/1OPJ.pdb")
             .pocket(vec![271, 286, 290, 315, 317, 318, 380, 381, 382, 383], true)
-            .drug("Imatinib", DrugStatus::Approved, Some(2001), "Type II DFG-out inhibitor")
+            .drug(
+                "Imatinib",
+                DrugStatus::Approved,
+                Some(2001),
+                "Type II DFG-out inhibitor",
+            )
             .difficulty(Difficulty::Medium)
             .build(),
-
         RetrospectiveTargetBuilder::new("SHP2")
             .family("phosphatase")
             .therapeutic_area("Oncology")
@@ -375,10 +395,14 @@ pub fn create_retrospective_targets() -> Vec<Target> {
             .apo_pdb("data/validation/retrospective/oncology/2SHP.pdb")
             .holo_pdb("data/validation/retrospective/oncology/6BMU.pdb")
             .pocket(vec![100, 101, 102, 103, 104, 105, 106, 107, 108, 109], true)
-            .drug("TNO155", DrugStatus::Phase3, None, "Allosteric tunnel inhibitor")
+            .drug(
+                "TNO155",
+                DrugStatus::Phase3,
+                None,
+                "Allosteric tunnel inhibitor",
+            )
             .difficulty(Difficulty::Hard)
             .build(),
-
         // === METABOLIC ===
         RetrospectiveTargetBuilder::new("PTP1B")
             .family("phosphatase")
@@ -386,11 +410,18 @@ pub fn create_retrospective_targets() -> Vec<Target> {
             .description("PTP1B phosphatase - Allosteric C-terminal site for diabetes")
             .apo_pdb("data/validation/retrospective/metabolic/2HNP.pdb")
             .holo_pdb("data/validation/retrospective/metabolic/1T49.pdb")
-            .pocket(vec![280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290], true)
-            .drug("Trodusquemine", DrugStatus::Phase2, None, "Allosteric C-term inhibitor")
+            .pocket(
+                vec![280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290],
+                true,
+            )
+            .drug(
+                "Trodusquemine",
+                DrugStatus::Phase2,
+                None,
+                "Allosteric C-term inhibitor",
+            )
             .difficulty(Difficulty::Hard)
             .build(),
-
         RetrospectiveTargetBuilder::new("PCSK9")
             .family("protease")
             .therapeutic_area("Metabolic")
@@ -398,10 +429,14 @@ pub fn create_retrospective_targets() -> Vec<Target> {
             .apo_pdb("data/validation/retrospective/metabolic/2PMW.pdb")
             .holo_pdb("data/validation/retrospective/metabolic/3BPS.pdb")
             .pocket(vec![153, 155, 157, 194, 197, 198, 199, 238, 239, 240], true)
-            .drug("Evolocumab", DrugStatus::Approved, Some(2015), "mAb blocking LDLR binding")
+            .drug(
+                "Evolocumab",
+                DrugStatus::Approved,
+                Some(2015),
+                "mAb blocking LDLR binding",
+            )
             .difficulty(Difficulty::Hard)
             .build(),
-
         // === INFECTIOUS DISEASE ===
         RetrospectiveTargetBuilder::new("HIV_RT")
             .family("polymerase")
@@ -409,30 +444,54 @@ pub fn create_retrospective_targets() -> Vec<Target> {
             .description("HIV-1 Reverse Transcriptase - NNRTI allosteric pocket")
             .apo_pdb("data/validation/retrospective/infectious/1DLO.pdb")
             .holo_pdb("data/validation/retrospective/infectious/4G1Q.pdb")
-            .pocket(vec![100, 101, 103, 106, 181, 188, 190, 227, 229, 230, 318], true)
-            .drug("Rilpivirine", DrugStatus::Approved, Some(2011), "NNRTI allosteric inhibitor")
+            .pocket(
+                vec![100, 101, 103, 106, 181, 188, 190, 227, 229, 230, 318],
+                true,
+            )
+            .drug(
+                "Rilpivirine",
+                DrugStatus::Approved,
+                Some(2011),
+                "NNRTI allosteric inhibitor",
+            )
             .difficulty(Difficulty::Hard)
             .build(),
-
         RetrospectiveTargetBuilder::new("HCV_NS3")
             .family("protease")
             .therapeutic_area("Infectious")
             .description("HCV NS3/4A Protease - Allosteric site")
             .apo_pdb("data/validation/retrospective/infectious/1A1R.pdb")
             .holo_pdb("data/validation/retrospective/infectious/4NWL.pdb")
-            .pocket(vec![41, 42, 43, 55, 57, 132, 135, 136, 137, 139, 155, 156, 168], true)
-            .drug("Glecaprevir", DrugStatus::Approved, Some(2017), "NS3/4A protease inhibitor")
+            .pocket(
+                vec![41, 42, 43, 55, 57, 132, 135, 136, 137, 139, 155, 156, 168],
+                true,
+            )
+            .drug(
+                "Glecaprevir",
+                DrugStatus::Approved,
+                Some(2017),
+                "NS3/4A protease inhibitor",
+            )
             .difficulty(Difficulty::Medium)
             .build(),
-
         RetrospectiveTargetBuilder::new("SARS2_Spike")
             .family("viral_glycoprotein")
             .therapeutic_area("Infectious")
             .description("SARS-CoV-2 Spike RBD - Cryptic sites for broad-spectrum antivirals")
             .apo_pdb("data/validation/retrospective/infectious/6VXX.pdb")
             .holo_pdb("data/validation/retrospective/infectious/6VYB.pdb")
-            .pocket(vec![417, 453, 455, 456, 473, 475, 476, 477, 484, 486, 487, 489, 493], true)
-            .drug("Research", DrugStatus::Research, None, "RBD cryptic site targeting")
+            .pocket(
+                vec![
+                    417, 453, 455, 456, 473, 475, 476, 477, 484, 486, 487, 489, 493,
+                ],
+                true,
+            )
+            .drug(
+                "Research",
+                DrugStatus::Research,
+                None,
+                "RBD cryptic site targeting",
+            )
             .difficulty(Difficulty::VeryHard)
             .build(),
     ]
@@ -464,19 +523,34 @@ mod tests {
         // Check we have targets from each therapeutic area
         let oncology: Vec<_> = targets
             .iter()
-            .filter(|t| t.therapeutic_area.as_ref().map(|a| a == "Oncology").unwrap_or(false))
+            .filter(|t| {
+                t.therapeutic_area
+                    .as_ref()
+                    .map(|a| a == "Oncology")
+                    .unwrap_or(false)
+            })
             .collect();
         assert!(!oncology.is_empty());
 
         let metabolic: Vec<_> = targets
             .iter()
-            .filter(|t| t.therapeutic_area.as_ref().map(|a| a == "Metabolic").unwrap_or(false))
+            .filter(|t| {
+                t.therapeutic_area
+                    .as_ref()
+                    .map(|a| a == "Metabolic")
+                    .unwrap_or(false)
+            })
             .collect();
         assert!(!metabolic.is_empty());
 
         let infectious: Vec<_> = targets
             .iter()
-            .filter(|t| t.therapeutic_area.as_ref().map(|a| a == "Infectious").unwrap_or(false))
+            .filter(|t| {
+                t.therapeutic_area
+                    .as_ref()
+                    .map(|a| a == "Infectious")
+                    .unwrap_or(false)
+            })
             .collect();
         assert!(!infectious.is_empty());
     }

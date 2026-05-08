@@ -43,12 +43,12 @@
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 
-use crate::pdb_sanitizer::{SanitizedAtom, SanitizedStructure, SanitizationStats, CalphaResidue};
+use crate::pdb_sanitizer::{CalphaResidue, SanitizationStats, SanitizedAtom, SanitizedStructure};
 
 /// Bond lengths in Angstroms (from AMBER ff14SB)
-pub const N_H_BOND_LENGTH: f32 = 1.01;   // Amide N-H
-pub const CA_H_BOND_LENGTH: f32 = 1.09;  // Cα-H
-pub const C_H_BOND_LENGTH: f32 = 1.09;   // Aliphatic C-H
+pub const N_H_BOND_LENGTH: f32 = 1.01; // Amide N-H
+pub const CA_H_BOND_LENGTH: f32 = 1.09; // Cα-H
+pub const C_H_BOND_LENGTH: f32 = 1.09; // Aliphatic C-H
 pub const AROMATIC_H_BOND_LENGTH: f32 = 1.08; // Aromatic C-H
 
 /// Geometric hydrogen placement for AMBER ff14SB
@@ -142,7 +142,8 @@ impl Protonator {
             // Get previous residue's C (for N-H placement)
             let prev_c_pos = if i > 0 {
                 let prev_res_idx = residue_indices[i - 1];
-                residue_atoms.get(&prev_res_idx)
+                residue_atoms
+                    .get(&prev_res_idx)
                     .and_then(|prev_atoms| prev_atoms.get("C"))
                     .map(|a| a.position)
             } else {
@@ -172,9 +173,8 @@ impl Protonator {
             self.stats.residues_processed += 1;
         }
 
-        self.stats.total_h_added = self.stats.backbone_nh_added
-            + self.stats.ca_h_added
-            + self.stats.sidechain_h_added;
+        self.stats.total_h_added =
+            self.stats.backbone_nh_added + self.stats.ca_h_added + self.stats.sidechain_h_added;
 
         log::info!(
             "Protonator: Added {} hydrogens ({} N-H, {} Cα-H, {} sidechain)",
@@ -209,7 +209,7 @@ impl Protonator {
     /// Build a map from residue index to atoms by name
     fn build_residue_atom_map<'a>(
         &self,
-        structure: &'a SanitizedStructure
+        structure: &'a SanitizedStructure,
     ) -> HashMap<usize, HashMap<&'a str, &'a SanitizedAtom>> {
         let mut map: HashMap<usize, HashMap<&str, &SanitizedAtom>> = HashMap::new();
 
@@ -342,11 +342,7 @@ impl Protonator {
 
         let h_direction = if let Some(cb) = cb_pos {
             // With CB: H is opposite to the sum of N, C, CB directions
-            let ca_to_cb = normalize([
-                cb[0] - ca_pos[0],
-                cb[1] - ca_pos[1],
-                cb[2] - ca_pos[2],
-            ]);
+            let ca_to_cb = normalize([cb[0] - ca_pos[0], cb[1] - ca_pos[1], cb[2] - ca_pos[2]]);
             normalize([
                 -(ca_to_n[0] + ca_to_c[0] + ca_to_cb[0]),
                 -(ca_to_n[1] + ca_to_c[1] + ca_to_cb[1]),
@@ -422,9 +418,15 @@ impl Protonator {
                     if !has_h("HB") {
                         let n_pos = atoms.get("N").map(|a| a.position);
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            ca.position, cb.position, n_pos,
-                            &["HB1", "HB2", "HB3"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            n_pos,
+                            &["HB1", "HB2", "HB3"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -436,8 +438,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg1_pos = atoms.get("CG1").map(|a| a.position);
                         if let Some(h) = self.add_single_hydrogen(
-                            ca.position, cb.position, cg1_pos, atoms.get("CG2").map(|a| a.position),
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            cg1_pos,
+                            atoms.get("CG2").map(|a| a.position),
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -447,9 +457,15 @@ impl Protonator {
                 if let (Some(cb), Some(cg1)) = (atoms.get("CB"), atoms.get("CG1")) {
                     if !atoms.keys().any(|k| k.starts_with("HG1")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            cb.position, cg1.position, None,
-                            &["HG11", "HG12", "HG13"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg1.position,
+                            None,
+                            &["HG11", "HG12", "HG13"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -457,9 +473,15 @@ impl Protonator {
                 if let (Some(cb), Some(cg2)) = (atoms.get("CB"), atoms.get("CG2")) {
                     if !atoms.keys().any(|k| k.starts_with("HG2")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            cb.position, cg2.position, None,
-                            &["HG21", "HG22", "HG23"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg2.position,
+                            None,
+                            &["HG21", "HG22", "HG23"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -471,8 +493,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -484,8 +514,16 @@ impl Protonator {
                         let cd1_pos = atoms.get("CD1").map(|a| a.position);
                         let cd2_pos = atoms.get("CD2").map(|a| a.position);
                         if let Some(h) = self.add_single_hydrogen(
-                            cb.position, cg.position, cd1_pos, cd2_pos,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg.position,
+                            cd1_pos,
+                            cd2_pos,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -495,9 +533,15 @@ impl Protonator {
                 if let (Some(cg), Some(cd1)) = (atoms.get("CG"), atoms.get("CD1")) {
                     if !atoms.keys().any(|k| k.starts_with("HD1")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            cg.position, cd1.position, None,
-                            &["HD11", "HD12", "HD13"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cg.position,
+                            cd1.position,
+                            None,
+                            &["HD11", "HD12", "HD13"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -505,9 +549,15 @@ impl Protonator {
                 if let (Some(cg), Some(cd2)) = (atoms.get("CG"), atoms.get("CD2")) {
                     if !atoms.keys().any(|k| k.starts_with("HD2")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            cg.position, cd2.position, None,
-                            &["HD21", "HD22", "HD23"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cg.position,
+                            cd2.position,
+                            None,
+                            &["HD21", "HD22", "HD23"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -520,8 +570,16 @@ impl Protonator {
                         let cg1_pos = atoms.get("CG1").map(|a| a.position);
                         let cg2_pos = atoms.get("CG2").map(|a| a.position);
                         if let Some(h) = self.add_single_hydrogen(
-                            ca.position, cb.position, cg1_pos, cg2_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            cg1_pos,
+                            cg2_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -532,8 +590,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HG1")) {
                         let cd1_pos = atoms.get("CD1").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cb.position, cg1.position, Some(cb.position), cd1_pos,
-                            "HG1", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg1.position,
+                            Some(cb.position),
+                            cd1_pos,
+                            "HG1",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -543,9 +609,15 @@ impl Protonator {
                 if let (Some(cb), Some(cg2)) = (atoms.get("CB"), atoms.get("CG2")) {
                     if !atoms.keys().any(|k| k.starts_with("HG2")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            cb.position, cg2.position, None,
-                            &["HG21", "HG22", "HG23"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg2.position,
+                            None,
+                            &["HG21", "HG22", "HG23"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -553,9 +625,15 @@ impl Protonator {
                 if let (Some(cg1), Some(cd1)) = (atoms.get("CG1"), atoms.get("CD1")) {
                     if !atoms.keys().any(|k| k.starts_with("HD1")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            cg1.position, cd1.position, None,
-                            &["HD11", "HD12", "HD13"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cg1.position,
+                            cd1.position,
+                            None,
+                            &["HD11", "HD12", "HD13"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -567,8 +645,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -583,10 +669,21 @@ impl Protonator {
                     ("CZ", "HZ", "CE1", "CE2"),
                 ] {
                     if !atoms.contains_key(h_name) {
-                        if let (Some(c), Some(n1), Some(n2)) = (atoms.get(c_atom), atoms.get(neighbor1), atoms.get(neighbor2)) {
+                        if let (Some(c), Some(n1), Some(n2)) = (
+                            atoms.get(c_atom),
+                            atoms.get(neighbor1),
+                            atoms.get(neighbor2),
+                        ) {
                             if let Some(h) = self.add_aromatic_hydrogen(
-                                c.position, n1.position, n2.position,
-                                h_name, res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                                c.position,
+                                n1.position,
+                                n2.position,
+                                h_name,
+                                res_name,
+                                res_idx,
+                                chain_id,
+                                orig_seq,
+                                existing.len() + new_hydrogens.len(),
                             ) {
                                 new_hydrogens.push(h);
                             }
@@ -601,8 +698,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -616,10 +721,21 @@ impl Protonator {
                     ("CE2", "HE2", "CD2", "CZ"),
                 ] {
                     if !atoms.contains_key(h_name) {
-                        if let (Some(c), Some(n1), Some(n2)) = (atoms.get(c_atom), atoms.get(neighbor1), atoms.get(neighbor2)) {
+                        if let (Some(c), Some(n1), Some(n2)) = (
+                            atoms.get(c_atom),
+                            atoms.get(neighbor1),
+                            atoms.get(neighbor2),
+                        ) {
                             if let Some(h) = self.add_aromatic_hydrogen(
-                                c.position, n1.position, n2.position,
-                                h_name, res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                                c.position,
+                                n1.position,
+                                n2.position,
+                                h_name,
+                                res_name,
+                                res_idx,
+                                chain_id,
+                                orig_seq,
+                                existing.len() + new_hydrogens.len(),
                             ) {
                                 new_hydrogens.push(h);
                             }
@@ -630,8 +746,14 @@ impl Protonator {
                 if let (Some(cz), Some(oh)) = (atoms.get("CZ"), atoms.get("OH")) {
                     if !atoms.contains_key("HH") {
                         if let Some(h) = self.add_hydroxyl_hydrogen(
-                            cz.position, oh.position,
-                            "HH", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cz.position,
+                            oh.position,
+                            "HH",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -645,8 +767,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -657,8 +787,16 @@ impl Protonator {
                     if !atoms.contains_key("HE1") {
                         let ce2_pos = atoms.get("CE2").map(|a| a.position);
                         if let Some(h) = self.add_single_hydrogen(
-                            cd1.position, ne1.position, ce2_pos, None,
-                            "HE1", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cd1.position,
+                            ne1.position,
+                            ce2_pos,
+                            None,
+                            "HE1",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -672,10 +810,21 @@ impl Protonator {
                     ("CE3", "HE3", "CZ3", "CD2"),
                 ] {
                     if !atoms.contains_key(h_name) {
-                        if let (Some(c), Some(n1), Some(n2)) = (atoms.get(c_atom), atoms.get(neighbor1), atoms.get(neighbor2)) {
+                        if let (Some(c), Some(n1), Some(n2)) = (
+                            atoms.get(c_atom),
+                            atoms.get(neighbor1),
+                            atoms.get(neighbor2),
+                        ) {
                             if let Some(h) = self.add_aromatic_hydrogen(
-                                c.position, n1.position, n2.position,
-                                h_name, res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                                c.position,
+                                n1.position,
+                                n2.position,
+                                h_name,
+                                res_name,
+                                res_idx,
+                                chain_id,
+                                orig_seq,
+                                existing.len() + new_hydrogens.len(),
                             ) {
                                 new_hydrogens.push(h);
                             }
@@ -690,8 +839,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let og_pos = atoms.get("OG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), og_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            og_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -701,8 +858,14 @@ impl Protonator {
                 if let (Some(cb), Some(og)) = (atoms.get("CB"), atoms.get("OG")) {
                     if !atoms.contains_key("HG") {
                         if let Some(h) = self.add_hydroxyl_hydrogen(
-                            cb.position, og.position,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            og.position,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -717,8 +880,16 @@ impl Protonator {
                         let og1_pos = atoms.get("OG1").map(|a| a.position);
                         let cg2_pos = atoms.get("CG2").map(|a| a.position);
                         if let Some(h) = self.add_single_hydrogen(
-                            ca.position, cb.position, og1_pos, cg2_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            og1_pos,
+                            cg2_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -728,8 +899,14 @@ impl Protonator {
                 if let (Some(cb), Some(og1)) = (atoms.get("CB"), atoms.get("OG1")) {
                     if !atoms.contains_key("HG1") {
                         if let Some(h) = self.add_hydroxyl_hydrogen(
-                            cb.position, og1.position,
-                            "HG1", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            og1.position,
+                            "HG1",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -739,9 +916,15 @@ impl Protonator {
                 if let (Some(cb), Some(cg2)) = (atoms.get("CB"), atoms.get("CG2")) {
                     if !atoms.keys().any(|k| k.starts_with("HG2")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            cb.position, cg2.position, None,
-                            &["HG21", "HG22", "HG23"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg2.position,
+                            None,
+                            &["HG21", "HG22", "HG23"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -753,8 +936,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let sg_pos = atoms.get("SG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), sg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            sg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -764,8 +955,14 @@ impl Protonator {
                 if let (Some(cb), Some(sg)) = (atoms.get("CB"), atoms.get("SG")) {
                     if !atoms.contains_key("HG") {
                         if let Some(h) = self.add_hydroxyl_hydrogen(
-                            cb.position, sg.position,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            sg.position,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -779,8 +976,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -791,8 +996,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HG")) {
                         let sd_pos = atoms.get("SD").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cb.position, cg.position, Some(cb.position), sd_pos,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg.position,
+                            Some(cb.position),
+                            sd_pos,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -802,9 +1015,15 @@ impl Protonator {
                 if let (Some(sd), Some(ce)) = (atoms.get("SD"), atoms.get("CE")) {
                     if !atoms.keys().any(|k| k.starts_with("HE")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            sd.position, ce.position, None,
-                            &["HE1", "HE2", "HE3"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            sd.position,
+                            ce.position,
+                            None,
+                            &["HE1", "HE2", "HE3"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -816,8 +1035,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -828,9 +1055,15 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HD2")) {
                         let od1_pos = atoms.get("OD1").map(|a| a.position);
                         new_hydrogens.extend(self.add_amide_nh2_hydrogens(
-                            cg.position, nd2.position, od1_pos,
-                            &["HD21", "HD22"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cg.position,
+                            nd2.position,
+                            od1_pos,
+                            &["HD21", "HD22"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -842,8 +1075,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -854,8 +1095,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HG")) {
                         let cd_pos = atoms.get("CD").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cb.position, cg.position, Some(cb.position), cd_pos,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg.position,
+                            Some(cb.position),
+                            cd_pos,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -866,9 +1115,15 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HE2")) {
                         let oe1_pos = atoms.get("OE1").map(|a| a.position);
                         new_hydrogens.extend(self.add_amide_nh2_hydrogens(
-                            cd.position, ne2.position, oe1_pos,
-                            &["HE21", "HE22"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cd.position,
+                            ne2.position,
+                            oe1_pos,
+                            &["HE21", "HE22"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -880,8 +1135,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -896,8 +1159,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -908,8 +1179,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HG")) {
                         let cd_pos = atoms.get("CD").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cb.position, cg.position, Some(cb.position), cd_pos,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg.position,
+                            Some(cb.position),
+                            cd_pos,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -924,8 +1203,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -936,8 +1223,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HG")) {
                         let cd_pos = atoms.get("CD").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cb.position, cg.position, Some(cb.position), cd_pos,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg.position,
+                            Some(cb.position),
+                            cd_pos,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -948,8 +1243,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HD")) {
                         let ce_pos = atoms.get("CE").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cg.position, cd.position, Some(cg.position), ce_pos,
-                            "HD", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cg.position,
+                            cd.position,
+                            Some(cg.position),
+                            ce_pos,
+                            "HD",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -960,8 +1263,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HE")) {
                         let nz_pos = atoms.get("NZ").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cd.position, ce.position, Some(cd.position), nz_pos,
-                            "HE", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cd.position,
+                            ce.position,
+                            Some(cd.position),
+                            nz_pos,
+                            "HE",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -971,9 +1282,15 @@ impl Protonator {
                 if let (Some(ce), Some(nz)) = (atoms.get("CE"), atoms.get("NZ")) {
                     if !atoms.keys().any(|k| k.starts_with("HZ")) {
                         new_hydrogens.extend(self.add_methyl_hydrogens(
-                            ce.position, nz.position, None,
-                            &["HZ1", "HZ2", "HZ3"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            ce.position,
+                            nz.position,
+                            None,
+                            &["HZ1", "HZ2", "HZ3"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -985,8 +1302,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -997,8 +1322,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HG")) {
                         let cd_pos = atoms.get("CD").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cb.position, cg.position, Some(cb.position), cd_pos,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg.position,
+                            Some(cb.position),
+                            cd_pos,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -1009,8 +1342,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HD")) {
                         let ne_pos = atoms.get("NE").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cg.position, cd.position, Some(cg.position), ne_pos,
-                            "HD", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cg.position,
+                            cd.position,
+                            Some(cg.position),
+                            ne_pos,
+                            "HD",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -1021,8 +1362,16 @@ impl Protonator {
                     if !atoms.contains_key("HE") {
                         let cz_pos = atoms.get("CZ").map(|a| a.position);
                         if let Some(h) = self.add_single_hydrogen(
-                            cd.position, ne.position, cz_pos, None,
-                            "HE", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cd.position,
+                            ne.position,
+                            cz_pos,
+                            None,
+                            "HE",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -1033,9 +1382,15 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HH1")) {
                         let ne_pos = atoms.get("NE").map(|a| a.position);
                         new_hydrogens.extend(self.add_amide_nh2_hydrogens(
-                            cz.position, nh1.position, ne_pos,
-                            &["HH11", "HH12"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cz.position,
+                            nh1.position,
+                            ne_pos,
+                            &["HH11", "HH12"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -1044,9 +1399,15 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HH2")) {
                         let ne_pos = atoms.get("NE").map(|a| a.position);
                         new_hydrogens.extend(self.add_amide_nh2_hydrogens(
-                            cz.position, nh2.position, ne_pos,
-                            &["HH21", "HH22"], res_name, res_idx, chain_id, orig_seq,
-                            existing.len() + new_hydrogens.len()
+                            cz.position,
+                            nh2.position,
+                            ne_pos,
+                            &["HH21", "HH22"],
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ));
                     }
                 }
@@ -1058,30 +1419,56 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
                     }
                 }
                 // HD2 on CD2
-                if let (Some(cg), Some(cd2), Some(ne2)) = (atoms.get("CG"), atoms.get("CD2"), atoms.get("NE2")) {
+                if let (Some(cg), Some(cd2), Some(ne2)) =
+                    (atoms.get("CG"), atoms.get("CD2"), atoms.get("NE2"))
+                {
                     if !atoms.contains_key("HD2") {
                         if let Some(h) = self.add_aromatic_hydrogen(
-                            cd2.position, cg.position, ne2.position,
-                            "HD2", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cd2.position,
+                            cg.position,
+                            ne2.position,
+                            "HD2",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
                     }
                 }
                 // HE1 on CE1
-                if let (Some(nd1), Some(ce1), Some(ne2)) = (atoms.get("ND1"), atoms.get("CE1"), atoms.get("NE2")) {
+                if let (Some(nd1), Some(ce1), Some(ne2)) =
+                    (atoms.get("ND1"), atoms.get("CE1"), atoms.get("NE2"))
+                {
                     if !atoms.contains_key("HE1") {
                         if let Some(h) = self.add_aromatic_hydrogen(
-                            ce1.position, nd1.position, ne2.position,
-                            "HE1", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ce1.position,
+                            nd1.position,
+                            ne2.position,
+                            "HE1",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.push(h);
                         }
@@ -1093,8 +1480,16 @@ impl Protonator {
                         if !atoms.contains_key("HD1") {
                             let ce1_pos = atoms.get("CE1").map(|a| a.position);
                             if let Some(h) = self.add_single_hydrogen(
-                                cg.position, nd1.position, ce1_pos, None,
-                                "HD1", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                                cg.position,
+                                nd1.position,
+                                ce1_pos,
+                                None,
+                                "HD1",
+                                res_name,
+                                res_idx,
+                                chain_id,
+                                orig_seq,
+                                existing.len() + new_hydrogens.len(),
                             ) {
                                 new_hydrogens.push(h);
                             }
@@ -1107,8 +1502,16 @@ impl Protonator {
                         if !atoms.contains_key("HE2") {
                             let ce1_pos = atoms.get("CE1").map(|a| a.position);
                             if let Some(h) = self.add_single_hydrogen(
-                                cd2.position, ne2.position, ce1_pos, None,
-                                "HE2", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                                cd2.position,
+                                ne2.position,
+                                ce1_pos,
+                                None,
+                                "HE2",
+                                res_name,
+                                res_idx,
+                                chain_id,
+                                orig_seq,
+                                existing.len() + new_hydrogens.len(),
                             ) {
                                 new_hydrogens.push(h);
                             }
@@ -1123,8 +1526,16 @@ impl Protonator {
                     if !has_h("HB") {
                         let cg_pos = atoms.get("CG").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            ca.position, cb.position, atoms.get("N").map(|a| a.position), cg_pos,
-                            "HB", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            ca.position,
+                            cb.position,
+                            atoms.get("N").map(|a| a.position),
+                            cg_pos,
+                            "HB",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -1135,8 +1546,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HG")) {
                         let cd_pos = atoms.get("CD").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cb.position, cg.position, Some(cb.position), cd_pos,
-                            "HG", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cb.position,
+                            cg.position,
+                            Some(cb.position),
+                            cd_pos,
+                            "HG",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -1147,8 +1566,16 @@ impl Protonator {
                     if !atoms.keys().any(|k| k.starts_with("HD")) {
                         let n_pos = atoms.get("N").map(|a| a.position);
                         if let Some(hs) = self.add_methylene_hydrogens(
-                            cg.position, cd.position, Some(cg.position), n_pos,
-                            "HD", res_name, res_idx, chain_id, orig_seq, existing.len() + new_hydrogens.len()
+                            cg.position,
+                            cd.position,
+                            Some(cg.position),
+                            n_pos,
+                            "HD",
+                            res_name,
+                            res_idx,
+                            chain_id,
+                            orig_seq,
+                            existing.len() + new_hydrogens.len(),
                         ) {
                             new_hydrogens.extend(hs);
                         }
@@ -1192,7 +1619,7 @@ impl Protonator {
                     // Tetrahedral angle: H atoms at ~109.5° from base
                     // HA2 is on +normal side, HA3 is on -normal side
                     let tetrahedral_factor = 0.816f32; // sin(109.5/2)
-                    let lift_factor = 0.577f32;        // cos(109.5/2)
+                    let lift_factor = 0.577f32; // cos(109.5/2)
 
                     // HA2 direction (+normal)
                     let ha2_dir = normalize([
@@ -1242,7 +1669,10 @@ impl Protonator {
 
             _ => {
                 // Unknown residue - skip sidechain H
-                log::warn!("Protonator: Unknown residue type '{}', skipping sidechain H", res_name);
+                log::warn!(
+                    "Protonator: Unknown residue type '{}', skipping sidechain H",
+                    res_name
+                );
             }
         }
 
@@ -1295,11 +1725,7 @@ impl Protonator {
         // Hydrogens are perpendicular to backbone, in the plane
         // Tetrahedral angle: ~109.5°, so H-C-H angle is also ~109.5°
         // The Hs are at ±54.75° from the normal
-        let h_base = normalize([
-            -backbone[0],
-            -backbone[1],
-            -backbone[2],
-        ]);
+        let h_base = normalize([-backbone[0], -backbone[1], -backbone[2]]);
 
         // Rotate around backbone axis by ±60° to get two H positions
         let cos60: f32 = 0.5;
@@ -1394,7 +1820,7 @@ impl Protonator {
         // Tetrahedral angle from axis: 109.5° from bond, so cos(180-109.5) = cos(70.5) ≈ 0.333
         // H points away from prev atom
         let cos_tet: f32 = -0.333; // cos(109.5°)
-        let sin_tet: f32 = 0.943;  // sin(109.5°)
+        let sin_tet: f32 = 0.943; // sin(109.5°)
 
         let mut hydrogens = Vec::with_capacity(3);
 
@@ -1462,17 +1888,25 @@ impl Protonator {
         ]);
 
         // Vectors to neighbors
-        let to_n1 = neighbor1.map(|n| normalize([
-            n[0] - center_pos[0],
-            n[1] - center_pos[1],
-            n[2] - center_pos[2],
-        ])).unwrap_or([0.0, 0.0, 0.0]);
+        let to_n1 = neighbor1
+            .map(|n| {
+                normalize([
+                    n[0] - center_pos[0],
+                    n[1] - center_pos[1],
+                    n[2] - center_pos[2],
+                ])
+            })
+            .unwrap_or([0.0, 0.0, 0.0]);
 
-        let to_n2 = neighbor2.map(|n| normalize([
-            n[0] - center_pos[0],
-            n[1] - center_pos[1],
-            n[2] - center_pos[2],
-        ])).unwrap_or([0.0, 0.0, 0.0]);
+        let to_n2 = neighbor2
+            .map(|n| {
+                normalize([
+                    n[0] - center_pos[0],
+                    n[1] - center_pos[1],
+                    n[2] - center_pos[2],
+                ])
+            })
+            .unwrap_or([0.0, 0.0, 0.0]);
 
         // H points opposite to the sum of all three neighbor directions
         let h_dir = normalize([
@@ -1576,7 +2010,7 @@ impl Protonator {
 
         // Angle from axis: ~70° (180° - 109°)
         let cos_angle: f32 = -0.326; // cos(109°)
-        let sin_angle: f32 = 0.945;  // sin(109°)
+        let sin_angle: f32 = 0.945; // sin(109°)
 
         let h_dir = normalize([
             cos_angle * (-to_prev[0]) + sin_angle * perp[0],

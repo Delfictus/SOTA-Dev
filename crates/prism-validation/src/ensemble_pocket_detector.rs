@@ -55,7 +55,6 @@ pub struct EnsemblePocketConfig {
     pub sasa_variance_threshold: f64,
 
     // === Active Inference Parameters ===
-
     /// Enable Active Inference EFE scoring (improves ranking for class imbalance)
     pub use_active_inference: bool,
 
@@ -70,7 +69,6 @@ pub struct EnsemblePocketConfig {
     pub pragmatic_weight: f64,
 
     // === Spatial Clustering Parameters ===
-
     /// Enable RLS spatial clustering to reduce false positives
     pub use_spatial_clustering: bool,
 
@@ -84,24 +82,24 @@ pub struct EnsemblePocketConfig {
 impl Default for EnsemblePocketConfig {
     fn default() -> Self {
         Self {
-            surface_sasa_threshold: 50.0,  // Å² - typical for exposed residues
-            buried_sasa_threshold: 10.0,   // Å² - typical for buried residues
-            min_pocket_frequency: 0.2,     // At least 20% of conformations
-            probe_radius: 1.4,             // Water probe
-            neighbor_cutoff: 8.0,          // Å for neighbor detection
-            min_neighbors_for_burial: 12,  // Typical for core residues
+            surface_sasa_threshold: 50.0,   // Å² - typical for exposed residues
+            buried_sasa_threshold: 10.0,    // Å² - typical for buried residues
+            min_pocket_frequency: 0.2,      // At least 20% of conformations
+            probe_radius: 1.4,              // Water probe
+            neighbor_cutoff: 8.0,           // Å for neighbor detection
+            min_neighbors_for_burial: 12,   // Typical for core residues
             sasa_variance_threshold: 100.0, // Å² variance threshold
 
             // Active Inference defaults (enabled by default for better ranking)
             use_active_inference: true,
-            pocket_formation_prior: 0.07,  // ~7% of residues are cryptic (class prior)
-            epistemic_weight: 0.4,         // Weight for uncertainty reduction
-            pragmatic_weight: 0.6,         // Weight for goal achievement
+            pocket_formation_prior: 0.07, // ~7% of residues are cryptic (class prior)
+            epistemic_weight: 0.4,        // Weight for uncertainty reduction
+            pragmatic_weight: 0.6,        // Weight for goal achievement
 
             // Spatial clustering defaults (enabled for precision improvement)
             use_spatial_clustering: true,
-            cluster_distance: 8.0,         // Å - typical pocket radius
-            min_cluster_size: 2,           // At least 2 residues per cluster
+            cluster_distance: 8.0, // Å - typical pocket radius
+            min_cluster_size: 2,   // At least 2 residues per cluster
         }
     }
 }
@@ -167,7 +165,6 @@ pub struct CrypticSiteResult {
     pub mean_cryptic_score: f64,
 
     // === Active Inference Results ===
-
     /// EFE scores per residue (if Active Inference enabled)
     pub efe_scores: HashMap<i32, f64>,
 
@@ -178,7 +175,6 @@ pub struct CrypticSiteResult {
     pub pragmatic_values: HashMap<i32, f64>,
 
     // === Clustering Results ===
-
     /// Spatial clusters of cryptic predictions
     pub clusters: Vec<CrypticCluster>,
 
@@ -238,7 +234,10 @@ impl EnsemblePocketDetector {
 
         // Detect APO pockets using stringent criteria
         let apo_pockets = self.detect_pockets_stringent(&ensemble.original_coords, residue_map)?;
-        log::info!("APO has {} pocket residues (stringent)", apo_pockets.n_pocket_residues);
+        log::info!(
+            "APO has {} pocket residues (stringent)",
+            apo_pockets.n_pocket_residues
+        );
 
         // Step 2: Compute exposure scores for each conformation
         let mut exposure_per_residue: Vec<Vec<f64>> = vec![Vec::new(); n_residues];
@@ -256,7 +255,11 @@ impl EnsemblePocketDetector {
             }
 
             if (conf_idx + 1) % 10 == 0 {
-                log::debug!("Processed conformation {}/{}", conf_idx + 1, n_conformations);
+                log::debug!(
+                    "Processed conformation {}/{}",
+                    conf_idx + 1,
+                    n_conformations
+                );
             }
         }
 
@@ -278,23 +281,24 @@ impl EnsemblePocketDetector {
         let rmsf: Vec<f64> = (0..n_residues)
             .map(|i| {
                 let orig = &ensemble.original_coords[i];
-                let mean_sq_disp: f64 = ensemble.conformations.iter()
+                let mean_sq_disp: f64 = ensemble
+                    .conformations
+                    .iter()
                     .map(|conf| {
                         let dx = (conf[i][0] - orig[0]) as f64;
                         let dy = (conf[i][1] - orig[1]) as f64;
                         let dz = (conf[i][2] - orig[2]) as f64;
                         dx * dx + dy * dy + dz * dz
                     })
-                    .sum::<f64>() / n_conformations as f64;
+                    .sum::<f64>()
+                    / n_conformations as f64;
                 mean_sq_disp.sqrt()
             })
             .collect();
 
         // Normalize RMSF
         let max_rmsf = rmsf.iter().cloned().fold(0.0f64, f64::max);
-        let rmsf_normalized: Vec<f64> = rmsf.iter()
-            .map(|&r| r / max_rmsf.max(0.01))
-            .collect();
+        let rmsf_normalized: Vec<f64> = rmsf.iter().map(|&r| r / max_rmsf.max(0.01)).collect();
 
         // Compute burial scores (normalized neighbor count)
         let max_neighbors = *apo_neighbors.iter().max().unwrap_or(&1).max(&1);
@@ -345,7 +349,11 @@ impl EnsemblePocketDetector {
                     .map(|j| rmsf_normalized[j])
                     .sum();
                 let count = (end - start) as f64;
-                if count > 0.0 { sum / count } else { 0.0 }
+                if count > 0.0 {
+                    sum / count
+                } else {
+                    0.0
+                }
             };
 
             // Spatial neighbor flexibility (residues within 10Å)
@@ -354,7 +362,9 @@ impl EnsemblePocketDetector {
                 let mut sum = 0.0;
                 let mut count = 0;
                 for j in 0..n_residues {
-                    if j == i { continue; }
+                    if j == i {
+                        continue;
+                    }
                     let other_pos = ensemble.original_coords[j];
                     let dx = (other_pos[0] - orig_pos[0]) as f64;
                     let dy = (other_pos[1] - orig_pos[1]) as f64;
@@ -365,11 +375,16 @@ impl EnsemblePocketDetector {
                         count += 1;
                     }
                 }
-                if count > 0 { sum / count as f64 } else { 0.0 }
+                if count > 0 {
+                    sum / count as f64
+                } else {
+                    0.0
+                }
             };
 
             // Combined neighbor flexibility
-            let combined_neighbor_flex = neighbor_flexibility * 0.4 + spatial_neighbor_flexibility * 0.6;
+            let combined_neighbor_flex =
+                neighbor_flexibility * 0.4 + spatial_neighbor_flexibility * 0.6;
 
             // Burial potential (favoring moderately buried residues)
             let burial_potential_score = {
@@ -390,17 +405,20 @@ impl EnsemblePocketDetector {
             // - Matches prior expectation of cryptic sites (buried + flexible neighbors)
             // - Penalize common patterns (surface residues)
 
-            let (cryptic_score, epistemic_val, pragmatic_val) = if self.config.use_active_inference {
+            let (cryptic_score, epistemic_val, pragmatic_val) = if self.config.use_active_inference
+            {
                 // Epistemic value: information gain from observing this residue
                 // High when: variance is high, features are rare/surprising
                 let rarity = 1.0 - (burial * 0.3 + combined_neighbor_flex * 0.7);
-                let surprise = variance_score * (1.0 + rarity);  // Variance weighted by rarity
+                let surprise = variance_score * (1.0 + rarity); // Variance weighted by rarity
                 let epistemic = surprise * (1.0 - self.config.pocket_formation_prior);
 
                 // Pragmatic value: alignment with pocket formation goal
                 // Goal prior P(pocket|features) approximated by our feature model
-                let posterior = burial * 0.35 + combined_neighbor_flex * 0.35
-                    + burial_potential_score * 0.2 + variance_score * 0.1;
+                let posterior = burial * 0.35
+                    + combined_neighbor_flex * 0.35
+                    + burial_potential_score * 0.2
+                    + variance_score * 0.1;
 
                 // KL divergence from goal prior (prefer high posterior)
                 // D_KL = posterior * log(posterior / prior)
@@ -445,7 +463,9 @@ impl EnsemblePocketDetector {
         cryptic_residues.sort_by(|a, b| {
             let score_a = cryptic_scores.get(a).unwrap_or(&0.0);
             let score_b = cryptic_scores.get(b).unwrap_or(&0.0);
-            score_b.partial_cmp(score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // === Step 4: Spatial Clustering (RLS-inspired) ===
@@ -614,7 +634,11 @@ impl EnsemblePocketDetector {
         }
 
         // Sort clusters by score
-        clusters.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        clusters.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Generate clustered predictions (one per cluster)
         let clustered_predictions: Vec<(i32, f64)> = clusters
@@ -659,7 +683,8 @@ impl EnsemblePocketDetector {
         let neighbor_counts = self.compute_neighbor_counts(ca_coords);
         let max_neighbors = *neighbor_counts.iter().max().unwrap_or(&1).max(&1);
 
-        neighbor_counts.iter()
+        neighbor_counts
+            .iter()
             .map(|&n| 1.0 - (n as f64 / max_neighbors as f64))
             .collect()
     }
@@ -779,7 +804,7 @@ impl EnsemblePocketDetector {
         for (i, &dist) in distances_to_centroid.iter().enumerate() {
             let res_id = residue_map.get(&i).cloned().unwrap_or(i as i32);
             // Higher distance = more exposed = higher "SASA"
-            let normalized_sasa = (dist / max_dist) * 100.0;  // Scale to ~0-100 range
+            let normalized_sasa = (dist / max_dist) * 100.0; // Scale to ~0-100 range
             sasa_values.insert(res_id, normalized_sasa);
         }
 
@@ -902,11 +927,7 @@ mod tests {
         (0..n)
             .map(|i| {
                 let angle = 2.0 * std::f32::consts::PI * i as f32 / residues_per_turn;
-                [
-                    radius * angle.cos(),
-                    radius * angle.sin(),
-                    rise * i as f32,
-                ]
+                [radius * angle.cos(), radius * angle.sin(), rise * i as f32]
             })
             .collect()
     }
@@ -917,7 +938,9 @@ mod tests {
         let residue_map: HashMap<usize, i32> = (0..30).map(|i| (i, i as i32)).collect();
 
         let detector = EnsemblePocketDetector::default_config();
-        let result = detector.detect_pockets_ca_only(&coords, &residue_map).unwrap();
+        let result = detector
+            .detect_pockets_ca_only(&coords, &residue_map)
+            .unwrap();
 
         assert!(result.burial_scores.len() == 30);
         assert!(result.sasa_values.len() == 30);
@@ -928,10 +951,11 @@ mod tests {
         let predictions = vec![1, 2, 3, 4, 5];
         let ground_truth: HashSet<i32> = vec![3, 4, 5, 6, 7].into_iter().collect();
 
-        let (precision, recall, f1, overlap) = compute_prediction_overlap(&predictions, &ground_truth);
+        let (precision, recall, f1, overlap) =
+            compute_prediction_overlap(&predictions, &ground_truth);
 
         assert_eq!(overlap, 3); // {3, 4, 5}
         assert!((precision - 0.6).abs() < 0.01); // 3/5
-        assert!((recall - 0.6).abs() < 0.01);    // 3/5
+        assert!((recall - 0.6).abs() < 0.01); // 3/5
     }
 }

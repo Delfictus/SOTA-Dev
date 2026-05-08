@@ -28,12 +28,12 @@ use std::time::Instant;
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use log::{info, warn, error};
+use log::{error, info, warn};
 use serde::Serialize;
 
 use prism_physics::{
-    DynamicsEngine, DynamicsConfig, DynamicsMode, StructureInput,
-    NmrEnsemble, load_nmr_ensemble, CURATED_NMR_PDBS,
+    load_nmr_ensemble, DynamicsConfig, DynamicsEngine, DynamicsMode, NmrEnsemble, StructureInput,
+    CURATED_NMR_PDBS,
 };
 
 /// Dynamics mode for CLI
@@ -158,9 +158,7 @@ struct BenchmarkSummary {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -189,14 +187,19 @@ async fn main() -> Result<()> {
         error!("No NMR ensembles found in {:?}", args.data_dir);
         error!("");
         error!("To download curated NMR ensembles, run:");
-        error!("  cargo run --release -p prism-validation --bin run-dynamics-bench -- --download-nmr");
+        error!(
+            "  cargo run --release -p prism-validation --bin run-dynamics-bench -- --download-nmr"
+        );
         error!("");
         error!("Or manually place multi-model PDB files in the data directory.");
         anyhow::bail!("No NMR ensembles found");
     }
 
     let n_targets = args.limit.unwrap_or(ensembles.len()).min(ensembles.len());
-    info!("  📈 Loaded {} NMR ensembles with ≥{} models each", n_targets, args.min_models);
+    info!(
+        "  📈 Loaded {} NMR ensembles with ≥{} models each",
+        n_targets, args.min_models
+    );
     info!("");
 
     // Determine modes to run
@@ -217,17 +220,14 @@ async fn main() -> Result<()> {
         info!("═══════════════════════════════════════════════════════════════════════════");
         info!("");
 
-        let summary = run_benchmark_for_mode(
-            *mode,
-            &ensembles[..n_targets],
-            &args,
-        )?;
+        let summary = run_benchmark_for_mode(*mode, &ensembles[..n_targets], &args)?;
 
         all_summaries.push(summary);
     }
 
     // Find best mode (clone values before moving all_summaries)
-    let (best_mode_name, best_correlation) = all_summaries.iter()
+    let (best_mode_name, best_correlation) = all_summaries
+        .iter()
         .max_by(|a, b| a.mean_pearson.partial_cmp(&b.mean_pearson).unwrap())
         .map(|s| (s.mode.clone(), s.mean_pearson))
         .unwrap_or(("None".to_string(), 0.0));
@@ -251,12 +251,14 @@ async fn main() -> Result<()> {
         let is_best = summary.mode == best_mode_name;
         let marker = if is_best { "★" } else { " " };
 
-        info!("║ {} {:<24} │ {:>8.3} │ {:>8.1}% │ {:>10.1} ms          ║",
-              marker,
-              summary.mode,
-              summary.mean_pearson,
-              summary.pass_rate * 100.0,
-              time_per_protein);
+        info!(
+            "║ {} {:<24} │ {:>8.3} │ {:>8.1}% │ {:>10.1} ms          ║",
+            marker,
+            summary.mode,
+            summary.mean_pearson,
+            summary.pass_rate * 100.0,
+            time_per_protein
+        );
     }
 
     info!("╚═══════════════════════════════════════════════════════════════════════════╝");
@@ -270,10 +272,16 @@ async fn main() -> Result<()> {
     info!("");
 
     if best_correlation >= 0.50 {
-        info!("  ✅ Best mode ({}) achieves good NMR correlation!", &best_mode_name);
+        info!(
+            "  ✅ Best mode ({}) achieves good NMR correlation!",
+            &best_mode_name
+        );
     }
     if best_correlation >= 0.60 {
-        info!("  🏆 Best mode ({}) achieves MD-quality correlation!", &best_mode_name);
+        info!(
+            "  🏆 Best mode ({}) achieves MD-quality correlation!",
+            &best_mode_name
+        );
     }
 
     // Save results
@@ -310,7 +318,10 @@ async fn download_curated_nmr_ensembles(data_dir: &PathBuf) -> Result<()> {
             continue;
         }
 
-        let url = format!("https://files.rcsb.org/download/{}.pdb", pdb_id.to_uppercase());
+        let url = format!(
+            "https://files.rcsb.org/download/{}.pdb",
+            pdb_id.to_uppercase()
+        );
 
         match client.get(&url).send().await {
             Ok(response) => {
@@ -318,7 +329,8 @@ async fn download_curated_nmr_ensembles(data_dir: &PathBuf) -> Result<()> {
                     let content = response.text().await?;
 
                     // Verify it's an NMR structure with multiple models
-                    let model_count = content.lines()
+                    let model_count = content
+                        .lines()
                         .filter(|line| line.starts_with("MODEL"))
                         .count();
 
@@ -340,7 +352,10 @@ async fn download_curated_nmr_ensembles(data_dir: &PathBuf) -> Result<()> {
     }
 
     info!("");
-    info!("  📊 Downloaded {} NMR ensembles to {:?}", success_count, data_dir);
+    info!(
+        "  📊 Downloaded {} NMR ensembles to {:?}",
+        success_count, data_dir
+    );
     info!("");
     info!("  Now run the benchmark:");
     info!("    cargo run --release -p prism-validation --bin run-dynamics-bench -- \\");
@@ -350,10 +365,7 @@ async fn download_curated_nmr_ensembles(data_dir: &PathBuf) -> Result<()> {
 }
 
 /// Load all NMR ensembles from a directory
-fn load_all_nmr_ensembles(
-    data_dir: &PathBuf,
-    min_models: usize,
-) -> Result<Vec<NmrEnsemble>> {
+fn load_all_nmr_ensembles(data_dir: &PathBuf, min_models: usize) -> Result<Vec<NmrEnsemble>> {
     let mut ensembles = Vec::new();
 
     // Find all PDB files
@@ -362,24 +374,29 @@ fn load_all_nmr_ensembles(
 
     for entry in glob::glob(&pattern_str)? {
         match entry {
-            Ok(path) => {
-                match load_nmr_ensemble(&path) {
-                    Ok(ensemble) => {
-                        if ensemble.n_models() >= min_models {
-                            info!("    ✓ {} - {} residues, {} models",
-                                  ensemble.name, ensemble.n_residues, ensemble.n_models());
-                            ensembles.push(ensemble);
-                        } else {
-                            info!("    ⏭  {} - only {} models (need ≥{})",
-                                  path.file_name().unwrap_or_default().to_string_lossy(),
-                                  ensemble.n_models(), min_models);
-                        }
-                    }
-                    Err(e) => {
-                        warn!("    ✗ {} - {}", path.display(), e);
+            Ok(path) => match load_nmr_ensemble(&path) {
+                Ok(ensemble) => {
+                    if ensemble.n_models() >= min_models {
+                        info!(
+                            "    ✓ {} - {} residues, {} models",
+                            ensemble.name,
+                            ensemble.n_residues,
+                            ensemble.n_models()
+                        );
+                        ensembles.push(ensemble);
+                    } else {
+                        info!(
+                            "    ⏭  {} - only {} models (need ≥{})",
+                            path.file_name().unwrap_or_default().to_string_lossy(),
+                            ensemble.n_models(),
+                            min_models
+                        );
                     }
                 }
-            }
+                Err(e) => {
+                    warn!("    ✗ {} - {}", path.display(), e);
+                }
+            },
             Err(e) => {
                 warn!("    Glob error: {}", e);
             }
@@ -433,9 +450,11 @@ fn run_benchmark_for_mode(
         let result = match engine.predict_flexibility(&structure) {
             Ok(r) => r,
             Err(e) => {
-                error!("  │ {:<8} │ FAIL  │        │ {:27} │",
-                       &ensemble.name[..ensemble.name.len().min(8)],
-                       format!("{}", e));
+                error!(
+                    "  │ {:<8} │ FAIL  │        │ {:27} │",
+                    &ensemble.name[..ensemble.name.len().min(8)],
+                    format!("{}", e)
+                );
                 continue;
             }
         };
@@ -454,17 +473,19 @@ fn run_benchmark_for_mode(
         let mean_exp = exp_slice.iter().sum::<f64>() / exp_slice.len() as f64;
         let max_exp = exp_slice.iter().cloned().fold(0.0, f64::max);
 
-        let passed = pearson > 0.3;  // Liberal threshold
+        let passed = pearson > 0.3; // Liberal threshold
         let status = if passed { "✅ PASS" } else { "❌ FAIL" };
 
-        info!("  │ {:<8} │ {:>5} │ {:>6} │ {:>8.3} │ {:>8.3} │ {:>8} │ {} │",
-              &ensemble.name[..ensemble.name.len().min(8)],
-              ensemble.n_residues,
-              ensemble.n_models(),
-              pearson,
-              spearman,
-              elapsed_ms,
-              status);
+        info!(
+            "  │ {:<8} │ {:>5} │ {:>6} │ {:>8.3} │ {:>8.3} │ {:>8} │ {} │",
+            &ensemble.name[..ensemble.name.len().min(8)],
+            ensemble.n_residues,
+            ensemble.n_models(),
+            pearson,
+            spearman,
+            elapsed_ms,
+            status
+        );
 
         results.push(ProteinResult {
             name: ensemble.name.clone(),
@@ -490,27 +511,42 @@ fn run_benchmark_for_mode(
 
     let mean_pearson = if n_proteins > 0 {
         results.iter().map(|r| r.pearson_correlation).sum::<f64>() / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let mean_spearman = if n_proteins > 0 {
         results.iter().map(|r| r.spearman_correlation).sum::<f64>() / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let std_pearson = if n_proteins > 1 {
-        let variance = results.iter()
+        let variance = results
+            .iter()
             .map(|r| (r.pearson_correlation - mean_pearson).powi(2))
-            .sum::<f64>() / n_proteins as f64;
+            .sum::<f64>()
+            / n_proteins as f64;
         variance.sqrt()
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let pass_rate = if n_proteins > 0 {
         n_passed as f64 / n_proteins as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     info!("");
-    info!("  {} Summary (TRUE NMR RMSF): ρ={:.3}±{:.3}, pass rate={:.1}%, time={:.1}s",
-          mode.name(), mean_pearson, std_pearson, pass_rate * 100.0,
-          total_time_ms as f64 / 1000.0);
+    info!(
+        "  {} Summary (TRUE NMR RMSF): ρ={:.3}±{:.3}, pass rate={:.1}%, time={:.1}s",
+        mode.name(),
+        mean_pearson,
+        std_pearson,
+        pass_rate * 100.0,
+        total_time_ms as f64 / 1000.0
+    );
 
     Ok(ModeSummary {
         mode: mode.name().to_string(),
@@ -529,7 +565,9 @@ fn nmr_ensemble_to_structure(ensemble: &NmrEnsemble) -> StructureInput {
     let mean_structure = ensemble.mean_structure();
 
     // Convert chain IDs from String to char (take first char of each)
-    let chain_chars: Vec<char> = ensemble.chain_ids.iter()
+    let chain_chars: Vec<char> = ensemble
+        .chain_ids
+        .iter()
         .map(|s| s.chars().next().unwrap_or('A'))
         .collect();
 
@@ -542,8 +580,8 @@ fn nmr_ensemble_to_structure(ensemble: &NmrEnsemble) -> StructureInput {
         atom_names: None,
         atom_residue_indices: None,
         chain_ids: Some(chain_chars),
-        residue_seqs: Some(ensemble.residue_numbers.clone()),  // Already Vec<i32>
-        b_factors: None,  // NO B-FACTORS - we use TRUE NMR RMSF!
+        residue_seqs: Some(ensemble.residue_numbers.clone()), // Already Vec<i32>
+        b_factors: None, // NO B-FACTORS - we use TRUE NMR RMSF!
     }
 }
 

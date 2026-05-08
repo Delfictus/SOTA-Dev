@@ -12,7 +12,7 @@
 //!     --steps 10000
 //! ```
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -116,7 +116,7 @@ struct HCluster {
     #[serde(rename = "type")]
     cluster_type: u32,
     central_atom: usize,
-    hydrogen_atoms: Vec<i32>,  // -1 used as padding for smaller clusters
+    hydrogen_atoms: Vec<i32>, // -1 used as padding for smaller clusters
     bond_lengths: Vec<f32>,
     n_hydrogens: u32,
     inv_mass_central: f32,
@@ -191,7 +191,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "cuda")]
     {
         use cudarc::driver::CudaContext;
-        use prism_gpu::{AmberSimdBatch, StructureTopology, OptimizationConfig};
+        use prism_gpu::{AmberSimdBatch, OptimizationConfig, StructureTopology};
         use std::sync::Arc;
 
         // Initialize CUDA
@@ -240,9 +240,13 @@ fn main() -> Result<()> {
             // Convert to StructureTopology format
             let structure_topo = convert_prism_prep_to_structure_topology(&prism_topo);
 
-            println!("   ✓ {} atoms, {} bonds, {} angles, {} dihedrals",
-                     prism_topo.n_atoms, prism_topo.bonds.len(),
-                     prism_topo.angles.len(), prism_topo.dihedrals.len());
+            println!(
+                "   ✓ {} atoms, {} bonds, {} angles, {} dihedrals",
+                prism_topo.n_atoms,
+                prism_topo.bonds.len(),
+                prism_topo.angles.len(),
+                prism_topo.dihedrals.len()
+            );
 
             topologies.push((name.clone(), structure_topo, prism_topo));
         }
@@ -252,8 +256,15 @@ fn main() -> Result<()> {
         }
 
         let n_batch = topologies.len();
-        let max_atoms = topologies.iter().map(|(_, t, _)| t.positions.len() / 3).max().unwrap_or(0);
-        let total_atoms: usize = topologies.iter().map(|(_, t, _)| t.positions.len() / 3).sum();
+        let max_atoms = topologies
+            .iter()
+            .map(|(_, t, _)| t.positions.len() / 3)
+            .max()
+            .unwrap_or(0);
+        let total_atoms: usize = topologies
+            .iter()
+            .map(|(_, t, _)| t.positions.len() / 3)
+            .sum();
 
         println!("\n📊 Batch Summary:");
         println!("   Structures: {}", n_batch);
@@ -292,10 +303,17 @@ fn main() -> Result<()> {
                 let struct_elapsed = struct_start.elapsed().as_secs_f64() * 1000.0;
                 let batch_results = batch.get_all_results()?;
 
-                println!("   {} ({} atoms): {:.1}ms, PE={:.1} kcal/mol, T={:.1}K",
-                         name, n_atoms, struct_elapsed,
-                         batch_results.get(0).map(|r| r.potential_energy).unwrap_or(0.0),
-                         batch_results.get(0).map(|r| r.temperature).unwrap_or(0.0));
+                println!(
+                    "   {} ({} atoms): {:.1}ms, PE={:.1} kcal/mol, T={:.1}K",
+                    name,
+                    n_atoms,
+                    struct_elapsed,
+                    batch_results
+                        .get(0)
+                        .map(|r| r.potential_energy)
+                        .unwrap_or(0.0),
+                    batch_results.get(0).map(|r| r.temperature).unwrap_or(0.0)
+                );
 
                 // Store sequential result
                 results.push(StructureResult {
@@ -316,15 +334,21 @@ fn main() -> Result<()> {
             }
 
             sequential_total_ms = seq_start.elapsed().as_secs_f64() * 1000.0;
-            println!("\n   Sequential total: {:.1}ms ({:.1}ms per structure)",
-                     sequential_total_ms, sequential_total_ms / n_batch as f64);
+            println!(
+                "\n   Sequential total: {:.1}ms ({:.1}ms per structure)",
+                sequential_total_ms,
+                sequential_total_ms / n_batch as f64
+            );
         }
 
         // ============================================================
         // BATCHED PARALLEL (all structures simultaneously)
         // ============================================================
         println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        println!("  🚀 BATCHED PARALLEL ({} structures in single kernel)", n_batch);
+        println!(
+            "  🚀 BATCHED PARALLEL ({} structures in single kernel)",
+            n_batch
+        );
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
         let batch_start = Instant::now();
@@ -349,8 +373,11 @@ fn main() -> Result<()> {
         let batch_results = batch.get_all_results()?;
         let batch_stats = batch.sota_stats();
 
-        println!("   Batched total: {:.1}ms ({:.1}ms effective per structure)",
-                 batched_total_ms, batched_total_ms / n_batch as f64);
+        println!(
+            "   Batched total: {:.1}ms ({:.1}ms effective per structure)",
+            batched_total_ms,
+            batched_total_ms / n_batch as f64
+        );
         println!("   Verlet rebuilds: {}", batch_stats.verlet_rebuild_count);
 
         // Update results with batched times
@@ -380,8 +407,13 @@ fn main() -> Result<()> {
             }
 
             if let Some(br) = batch_results.get(i) {
-                println!("   {} ({} atoms): PE={:.1} kcal/mol, T={:.1}K",
-                         name, topo.positions.len() / 3, br.potential_energy, br.temperature);
+                println!(
+                    "   {} ({} atoms): PE={:.1} kcal/mol, T={:.1}K",
+                    name,
+                    topo.positions.len() / 3,
+                    br.potential_energy,
+                    br.temperature
+                );
             }
         }
 
@@ -397,11 +429,20 @@ fn main() -> Result<()> {
         println!("║                    BENCHMARK RESULTS                          ║");
         println!("╠══════════════════════════════════════════════════════════════╣");
         if !args.skip_sequential {
-            println!("║   Sequential: {:>10.1}ms                                   ║", sequential_total_ms);
+            println!(
+                "║   Sequential: {:>10.1}ms                                   ║",
+                sequential_total_ms
+            );
         }
-        println!("║   Batched:    {:>10.1}ms                                   ║", batched_total_ms);
+        println!(
+            "║   Batched:    {:>10.1}ms                                   ║",
+            batched_total_ms
+        );
         if !args.skip_sequential {
-            println!("║   SPEEDUP:    {:>10.2}× 🚀                                 ║", speedup);
+            println!(
+                "║   SPEEDUP:    {:>10.2}× 🚀                                 ║",
+                speedup
+            );
         }
         println!("╚══════════════════════════════════════════════════════════════╝");
 
@@ -458,23 +499,41 @@ fn convert_prism_prep_to_structure_topology(
     let epsilons: Vec<f32> = prism_topo.lj_params.iter().map(|p| p.epsilon).collect();
 
     // Bonds: (i, j, k, r0)
-    let bonds: Vec<(usize, usize, f32, f32)> = prism_topo.bonds.iter()
+    let bonds: Vec<(usize, usize, f32, f32)> = prism_topo
+        .bonds
+        .iter()
         .map(|b| (b.i, b.j, b.k, b.r0))
         .collect();
 
     // Angles: (i, j, k, force_k, theta0)
     // Note: prism-prep uses k_idx for the middle atom
-    let angles: Vec<(usize, usize, usize, f32, f32)> = prism_topo.angles.iter()
+    let angles: Vec<(usize, usize, usize, f32, f32)> = prism_topo
+        .angles
+        .iter()
         .map(|a| (a.i, a.j, a.k_idx, a.force_k, a.theta0))
         .collect();
 
     // Dihedrals: (i, j, k, l, force_k, periodicity, phase)
-    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = prism_topo.dihedrals.iter()
-        .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k, d.periodicity as f32, d.phase))
+    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = prism_topo
+        .dihedrals
+        .iter()
+        .map(|d| {
+            (
+                d.i,
+                d.j,
+                d.k_idx,
+                d.l,
+                d.force_k,
+                d.periodicity as f32,
+                d.phase,
+            )
+        })
         .collect();
 
     // Exclusions: convert Vec<Vec<usize>> to Vec<HashSet<usize>>
-    let exclusions: Vec<HashSet<usize>> = prism_topo.exclusions.iter()
+    let exclusions: Vec<HashSet<usize>> = prism_topo
+        .exclusions
+        .iter()
         .map(|e| e.iter().cloned().collect())
         .collect();
 

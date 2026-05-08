@@ -29,7 +29,7 @@
 //! }
 //! ```
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -58,9 +58,12 @@ impl Matrix4x4 {
         let y = point[1] as f64;
         let z = point[2] as f64;
 
-        let new_x = self.data[0][0] * x + self.data[0][1] * y + self.data[0][2] * z + self.data[0][3];
-        let new_y = self.data[1][0] * x + self.data[1][1] * y + self.data[1][2] * z + self.data[1][3];
-        let new_z = self.data[2][0] * x + self.data[2][1] * y + self.data[2][2] * z + self.data[2][3];
+        let new_x =
+            self.data[0][0] * x + self.data[0][1] * y + self.data[0][2] * z + self.data[0][3];
+        let new_y =
+            self.data[1][0] * x + self.data[1][1] * y + self.data[1][2] * z + self.data[1][3];
+        let new_z =
+            self.data[2][0] * x + self.data[2][1] * y + self.data[2][2] * z + self.data[2][3];
 
         [new_x as f32, new_y as f32, new_z as f32]
     }
@@ -303,14 +306,16 @@ impl OligomerTopology {
                 let chain_key = transformed_atom.full_chain_id();
 
                 // Add to chains map
-                topology.chains
+                topology
+                    .chains
                     .entry(chain_key.clone())
                     .or_insert_with(Vec::new)
                     .push(transformed_atom.clone());
 
                 // Track CA coordinates separately
                 if transformed_atom.name == "CA" {
-                    topology.ca_coords
+                    topology
+                        .ca_coords
                         .entry(chain_key)
                         .or_insert_with(Vec::new)
                         .push((transformed_atom.residue_num, transformed_atom.coords));
@@ -325,13 +330,15 @@ impl OligomerTopology {
 
                 // Track CA coordinates
                 if atom.name == "CA" {
-                    topology.ca_coords
+                    topology
+                        .ca_coords
                         .entry(chain_key.clone())
                         .or_insert_with(Vec::new)
                         .push((atom.residue_num, atom.coords));
                 }
 
-                topology.chains
+                topology
+                    .chains
                     .entry(chain_key)
                     .or_insert_with(Vec::new)
                     .push(OligomerAtom {
@@ -491,9 +498,7 @@ impl OligomerTopology {
     /// Get statistics about the oligomer
     pub fn stats(&self) -> OligomerStats {
         let total_residues: usize = self.ca_coords.values().map(|v| v.len()).sum();
-        let interface_residues: usize = self.interface_residues.values()
-            .map(|s| s.len())
-            .sum();
+        let interface_residues: usize = self.interface_residues.values().map(|s| s.len()).sum();
 
         OligomerStats {
             n_chains: self.n_chains,
@@ -541,7 +546,9 @@ pub fn parse_remark_350(pdb_content: &str) -> Vec<BiologicalAssembly> {
                 let num_str = content[start + 12..].trim().split_whitespace().next();
                 if let Some(num) = num_str.and_then(|s| s.parse::<u32>().ok()) {
                     current_biomol = Some(num);
-                    assemblies.entry(num).or_insert_with(|| BiologicalAssembly::new(num));
+                    assemblies
+                        .entry(num)
+                        .or_insert_with(|| BiologicalAssembly::new(num));
                 }
             }
         }
@@ -603,7 +610,9 @@ pub fn parse_remark_350(pdb_content: &str) -> Vec<BiologicalAssembly> {
                         if row_idx == 2 {
                             if let Some(biomol) = current_biomol {
                                 if let Some(assembly) = assemblies.get_mut(&biomol) {
-                                    assembly.add_transform(Matrix4x4 { data: current_matrix });
+                                    assembly.add_transform(Matrix4x4 {
+                                        data: current_matrix,
+                                    });
                                 }
                             }
                         }
@@ -634,7 +643,10 @@ pub fn parse_remark_350(pdb_content: &str) -> Vec<BiologicalAssembly> {
 }
 
 /// Parse a biological assembly by ID
-pub fn parse_biological_assembly(pdb_content: &str, assembly_id: u32) -> Result<BiologicalAssembly> {
+pub fn parse_biological_assembly(
+    pdb_content: &str,
+    assembly_id: u32,
+) -> Result<BiologicalAssembly> {
     let assemblies = parse_remark_350(pdb_content);
 
     assemblies
@@ -867,10 +879,16 @@ REMARK 350   BIOMT3   2  0.000000  0.000000  1.000000        0.00000
         topology.n_chains = 4;
         topology.oligomeric_state = "tetramer".to_string();
 
-        topology.ca_coords.insert("A".to_string(), vec![(1, [0.0, 0.0, 0.0])]);
-        topology.ca_coords.insert("B".to_string(), vec![(1, [0.0, 0.0, 0.0])]);
+        topology
+            .ca_coords
+            .insert("A".to_string(), vec![(1, [0.0, 0.0, 0.0])]);
+        topology
+            .ca_coords
+            .insert("B".to_string(), vec![(1, [0.0, 0.0, 0.0])]);
 
-        topology.interface_residues.insert("A".to_string(), [1].into_iter().collect());
+        topology
+            .interface_residues
+            .insert("A".to_string(), [1].into_iter().collect());
 
         let stats = topology.stats();
         assert_eq!(stats.n_chains, 4);

@@ -93,7 +93,9 @@ impl ReportGenerator {
     }
 
     fn write_header<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        write!(writer, r#"<!DOCTYPE html>
+        write!(
+            writer,
+            r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -320,20 +322,38 @@ impl ReportGenerator {
 </head>
 <body>
     <div class="container">
-"#, self.title)
+"#,
+            self.title
+        )
     }
 
-    fn write_title_section<W: Write>(&self, writer: &mut W, metadata: &SimulationMetadata) -> std::io::Result<()> {
-        write!(writer, r#"
+    fn write_title_section<W: Write>(
+        &self,
+        writer: &mut W,
+        metadata: &SimulationMetadata,
+    ) -> std::io::Result<()> {
+        write!(
+            writer,
+            r#"
         <div class="header">
             <h1>{}</h1>
             <div class="subtitle">Target: <strong>{}</strong> | Generated: {}</div>
         </div>
-"#, self.title, metadata.pdb_id, self.timestamp.format("%Y-%m-%d %H:%M UTC"))
+"#,
+            self.title,
+            metadata.pdb_id,
+            self.timestamp.format("%Y-%m-%d %H:%M UTC")
+        )
     }
 
-    fn write_simulation_summary<W: Write>(&self, writer: &mut W, metadata: &SimulationMetadata) -> std::io::Result<()> {
-        write!(writer, r#"
+    fn write_simulation_summary<W: Write>(
+        &self,
+        writer: &mut W,
+        metadata: &SimulationMetadata,
+    ) -> std::io::Result<()> {
+        write!(
+            writer,
+            r#"
         <div class="section">
             <h2>Simulation Summary</h2>
             <div class="stats-grid">
@@ -359,21 +379,40 @@ impl ReportGenerator {
                 </div>
             </div>
         </div>
-"#, metadata.duration_ns, metadata.temperature_k, metadata.n_frames, metadata.mean_rmsd, metadata.rmsd_std)
+"#,
+            metadata.duration_ns,
+            metadata.temperature_k,
+            metadata.n_frames,
+            metadata.mean_rmsd,
+            metadata.rmsd_std
+        )
     }
 
-    fn write_cryptic_sites_section<W: Write>(&self, writer: &mut W, sites: &[CrypticSiteReport]) -> std::io::Result<()> {
-        write!(writer, r#"
+    fn write_cryptic_sites_section<W: Write>(
+        &self,
+        writer: &mut W,
+        sites: &[CrypticSiteReport],
+    ) -> std::io::Result<()> {
+        write!(
+            writer,
+            r#"
         <div class="section">
             <h2>Cryptic Sites Detected: {}</h2>
-"#, sites.len())?;
+"#,
+            sites.len()
+        )?;
 
         if sites.is_empty() {
-            write!(writer, r#"
+            write!(
+                writer,
+                r#"
             <p style="color: #64748b; font-style: italic;">No cryptic binding sites detected in this structure.</p>
-"#)?;
+"#
+            )?;
         } else {
-            write!(writer, r#"
+            write!(
+                writer,
+                r#"
             <table>
                 <thead>
                     <tr>
@@ -386,7 +425,8 @@ impl ReportGenerator {
                     </tr>
                 </thead>
                 <tbody>
-"#)?;
+"#
+            )?;
 
             for site in sites {
                 let drug_class = site.druggability.classification;
@@ -397,7 +437,9 @@ impl ReportGenerator {
                     DruggabilityClass::Difficult => "badge-danger",
                 };
 
-                write!(writer, r#"
+                write!(
+                    writer,
+                    r#"
                     <tr>
                         <td><strong>#{}</strong></td>
                         <td>{}</td>
@@ -417,24 +459,36 @@ impl ReportGenerator {
                 )?;
             }
 
-            write!(writer, r#"
+            write!(
+                writer,
+                r#"
                 </tbody>
             </table>
-"#)?;
+"#
+            )?;
         }
 
-        write!(writer, r#"
+        write!(
+            writer,
+            r#"
         </div>
-"#)
+"#
+        )
     }
 
-    fn write_site_detail<W: Write>(&self, writer: &mut W, site: &CrypticSiteReport) -> std::io::Result<()> {
+    fn write_site_detail<W: Write>(
+        &self,
+        writer: &mut W,
+        site: &CrypticSiteReport,
+    ) -> std::io::Result<()> {
         let drug = &site.druggability;
         let stats = &site.volume_stats;
 
         let drug_color = drug.classification.color();
 
-        write!(writer, r#"
+        write!(
+            writer,
+            r#"
         <div class="section">
             <h2>Site {}: "{}"</h2>
             <div class="site-card">
@@ -513,7 +567,11 @@ impl ReportGenerator {
             stats.open_frequency * 100.0,
             stats.cv_volume * 100.0,
             site.representative_frame,
-            site.residues.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(", "),
+            site.residues
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
             drug.hydrophobicity,
             drug.hydrophobicity * 100.0,
             drug.enclosure,
@@ -527,8 +585,14 @@ impl ReportGenerator {
         )
     }
 
-    fn write_deliverables_section<W: Write>(&self, writer: &mut W, metadata: &SimulationMetadata) -> std::io::Result<()> {
-        write!(writer, r#"
+    fn write_deliverables_section<W: Write>(
+        &self,
+        writer: &mut W,
+        metadata: &SimulationMetadata,
+    ) -> std::io::Result<()> {
+        write!(
+            writer,
+            r#"
         <div class="section">
             <h2>Deliverables</h2>
             <table>
@@ -579,7 +643,9 @@ impl ReportGenerator {
     }
 
     fn write_footer<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        write!(writer, r#"
+        write!(
+            writer,
+            r#"
         <div class="footer">
             <p>Generated by <strong>PRISM-4D</strong> Cryptic Binding Site Detection Pipeline</p>
             <p>&copy; {} {}</p>
@@ -587,7 +653,10 @@ impl ReportGenerator {
     </div>
 </body>
 </html>
-"#, self.timestamp.format("%Y"), self.organization)
+"#,
+            self.timestamp.format("%Y"),
+            self.organization
+        )
     }
 }
 
@@ -613,7 +682,9 @@ mod tests {
 
         let scorer = DruggabilityScorer::default();
         let residue_names: Vec<String> = vec!["LEU", "ILE", "VAL", "PHE", "SER"]
-            .into_iter().map(String::from).collect();
+            .into_iter()
+            .map(String::from)
+            .collect();
         let drug_score = scorer.score_simple(&residue_names, 300.0);
 
         let sites = vec![CrypticSiteReport {

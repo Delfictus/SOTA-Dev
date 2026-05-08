@@ -298,11 +298,11 @@ mod tests {
     #[test]
     fn test_normalize() {
         let mut features = CrypticFeatures {
-            burial_change: 2.0,   // Should become ~0.88 via sigmoid
-            rmsf: 15.0,           // Should clamp to 1.0
-            variance: -5.0,       // Should become ~0.007 via sigmoid
-            net_charge: -1.0,     // Should become 0.0
-            hydrophobicity: 4.5,  // Should become 1.0
+            burial_change: 2.0,    // Should become ~0.88 via sigmoid
+            rmsf: 15.0,            // Should clamp to 1.0
+            variance: -5.0,        // Should become ~0.007 via sigmoid
+            net_charge: -1.0,      // Should become 0.0
+            hydrophobicity: 4.5,   // Should become 1.0
             contact_density: 50.0, // Should clamp to 1.0
             ..Default::default()
         };

@@ -31,22 +31,22 @@
 //! Supports both CA-only (fallback) and full-atom (preferred) modes.
 //! GPU acceleration via `cuda` feature flag.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use crate::anm_ensemble_v2::{AnmEnsembleGeneratorV2, AnmEnsembleConfigV2, AnmEnsembleV2};
+use crate::anm_ensemble_v2::{AnmEnsembleConfigV2, AnmEnsembleGeneratorV2, AnmEnsembleV2};
 
 // Import REAL PRISM-NOVA infrastructure
-use prism_physics::amber_dynamics::{AmberSimulator, AmberSimConfig};
+use prism_physics::amber_dynamics::{AmberSimConfig, AmberSimulator};
 use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom};
 
 // Import GPU mega-fused AMBER HMC (Phase 3 enhancement)
 #[cfg(feature = "cuda")]
-use prism_gpu::{AmberMegaFusedHmc, build_amber_exclusions, AMBER_MAX_EXCLUSIONS};
-#[cfg(feature = "cuda")]
 use cudarc::driver::CudaContext;
+#[cfg(feature = "cuda")]
+use prism_gpu::{build_amber_exclusions, AmberMegaFusedHmc, AMBER_MAX_EXCLUSIONS};
 
 /// Configuration for HMC-refined ensemble generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,16 +103,16 @@ impl Default for HmcRefinedConfig {
         Self {
             anm_config: AnmEnsembleConfigV2::default(),
             top_k_for_refinement: 10,
-            hmc_n_steps: 100,  // Short refinement
-            hmc_temperature: 310.0,  // Body temperature
-            hmc_timestep: 0.5,  // 0.5 fs - small timestep for stability with ANM-displaced structures
+            hmc_n_steps: 100,       // Short refinement
+            hmc_temperature: 310.0, // Body temperature
+            hmc_timestep: 0.5, // 0.5 fs - small timestep for stability with ANM-displaced structures
             hmc_n_leapfrog: 10,
             use_langevin: true,
-            contact_cutoff: 8.0,  // Standard ANM cutoff
+            contact_cutoff: 8.0, // Standard ANM cutoff
             seed: None,
             include_original_anm: true,
-            use_full_atom: true,  // Phase 3: full-atom by default
-            use_gpu_mega_fused: true,  // GPU mega-fused kernel with RESPA, TDA biasing, soft limiting
+            use_full_atom: true,      // Phase 3: full-atom by default
+            use_gpu_mega_fused: true, // GPU mega-fused kernel with RESPA, TDA biasing, soft limiting
         }
     }
 }
@@ -156,7 +156,8 @@ impl FullAtomPdb {
             }
 
             // Parse chain (column 21)
-            let chain_id = line.get(21..22)
+            let chain_id = line
+                .get(21..22)
                 .and_then(|s| s.chars().next())
                 .unwrap_or(' ');
 
@@ -180,16 +181,27 @@ impl FullAtomPdb {
             let residue_name = line.get(17..20).unwrap_or("").trim().to_string();
 
             // Parse residue ID (columns 22-26)
-            let residue_id: i32 = line.get(22..26)
+            let residue_id: i32 = line.get(22..26).unwrap_or("0").trim().parse().unwrap_or(0);
+
+            // Parse coordinates (columns 30-54)
+            let x: f32 = line
+                .get(30..38)
                 .unwrap_or("0")
                 .trim()
                 .parse()
-                .unwrap_or(0);
-
-            // Parse coordinates (columns 30-54)
-            let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-            let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-            let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+                .unwrap_or(0.0);
+            let y: f32 = line
+                .get(38..46)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
+            let z: f32 = line
+                .get(46..54)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0.0);
 
             let atom_idx = atoms.len();
 
@@ -210,10 +222,7 @@ impl FullAtomPdb {
             }
 
             // Track all atoms per residue
-            residue_atoms
-                .entry(residue_id)
-                .or_default()
-                .push(atom_idx);
+            residue_atoms.entry(residue_id).or_default().push(atom_idx);
         }
 
         Self {
@@ -233,7 +242,8 @@ impl FullAtomPdb {
         let mut res_ids: Vec<i32> = self.ca_indices.keys().copied().collect();
         res_ids.sort();
 
-        res_ids.iter()
+        res_ids
+            .iter()
             .filter_map(|&res_id| self.ca_indices.get(&res_id))
             .map(|&idx| {
                 let atom = &self.atoms[idx];
@@ -279,7 +289,8 @@ impl FullAtomPdb {
         let mut res_ids: Vec<i32> = self.ca_indices.keys().copied().collect();
         res_ids.sort();
 
-        res_ids.iter()
+        res_ids
+            .iter()
             .filter_map(|&res_id| self.ca_indices.get(&res_id))
             .map(|&idx| {
                 let atom = &atoms[idx];
@@ -339,39 +350,67 @@ impl HmcRefinedEnsembleGenerator {
         let n_residues = ca_coords.len();
 
         if n_residues < 10 {
-            return Err(anyhow!("Protein too small for HMC refinement: {} residues", n_residues));
+            return Err(anyhow!(
+                "Protein too small for HMC refinement: {} residues",
+                n_residues
+            ));
         }
 
         // Step 1: Generate base ANM ensemble
-        log::debug!("Generating base ANM ensemble ({} conformations)...",
-                   self.config.anm_config.n_conformations);
+        log::debug!(
+            "Generating base ANM ensemble ({} conformations)...",
+            self.config.anm_config.n_conformations
+        );
         let anm_start = std::time::Instant::now();
         let anm_ensemble = self.anm_generator.generate_ensemble(ca_coords)?;
         let anm_time = anm_start.elapsed().as_millis();
-        log::debug!("ANM generation complete in {}ms, mean RMSD = {:.2}Å",
-                   anm_time, anm_ensemble.mean_rmsd);
+        log::debug!(
+            "ANM generation complete in {}ms, mean RMSD = {:.2}Å",
+            anm_time,
+            anm_ensemble.mean_rmsd
+        );
 
         // Step 2: Score conformations for HMC selection
-        log::debug!("Scoring {} conformations for HMC selection...", anm_ensemble.conformations.len());
+        log::debug!(
+            "Scoring {} conformations for HMC selection...",
+            anm_ensemble.conformations.len()
+        );
         let scores = self.score_conformations(&anm_ensemble, ca_coords);
 
         // Step 3: Select top-K conformations
         let mut ranked_scores = scores;
-        ranked_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        ranked_scores.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
-        let top_k = ranked_scores.iter()
+        let top_k = ranked_scores
+            .iter()
             .take(self.config.top_k_for_refinement)
             .collect::<Vec<_>>();
 
-        log::debug!("Selected top {} conformations for HMC refinement", top_k.len());
+        log::debug!(
+            "Selected top {} conformations for HMC refinement",
+            top_k.len()
+        );
         for (i, s) in top_k.iter().enumerate() {
-            log::debug!("  {:2}. conf[{}]: score={:.3}, RMSD={:.2}Å, burial_change={:.3}",
-                       i + 1, s.index, s.score, s.rmsd, s.burial_change);
+            log::debug!(
+                "  {:2}. conf[{}]: score={:.3}, RMSD={:.2}Å, burial_change={:.3}",
+                i + 1,
+                s.index,
+                s.score,
+                s.rmsd,
+                s.burial_change
+            );
         }
 
         // Step 4: Run HMC refinement on selected conformations
-        log::debug!("Running HMC refinement ({} steps each, T={}K)...",
-                   self.config.hmc_n_steps, self.config.hmc_temperature);
+        log::debug!(
+            "Running HMC refinement ({} steps each, T={}K)...",
+            self.config.hmc_n_steps,
+            self.config.hmc_temperature
+        );
 
         let hmc_start = std::time::Instant::now();
         let mut refined_conformations = Vec::new();
@@ -392,8 +431,11 @@ impl HmcRefinedEnsembleGenerator {
         }
 
         let hmc_time = hmc_start.elapsed().as_millis();
-        log::debug!("HMC refinement complete in {}ms ({} conformations)",
-                   hmc_time, refined_conformations.len());
+        log::debug!(
+            "HMC refinement complete in {}ms ({} conformations)",
+            hmc_time,
+            refined_conformations.len()
+        );
 
         // Step 5: Build combined ensemble
         let mut combined_conformations = if self.config.include_original_anm {
@@ -418,8 +460,13 @@ impl HmcRefinedEnsembleGenerator {
         let max_rmsd = rmsds.iter().cloned().fold(0.0_f64, f64::max);
         let min_rmsd = rmsds.iter().cloned().fold(f64::INFINITY, f64::min);
 
-        log::info!("HMC-refined ensemble: {} conformations, RMSD: {:.2}Å (range: {:.2}-{:.2}Å)",
-                  n_conformations, mean_rmsd, min_rmsd, max_rmsd);
+        log::info!(
+            "HMC-refined ensemble: {} conformations, RMSD: {:.2}Å (range: {:.2}-{:.2}Å)",
+            n_conformations,
+            mean_rmsd,
+            min_rmsd,
+            max_rmsd
+        );
 
         // Compute per-residue RMSF and variance for combined ensemble
         let n_conf = combined_conformations.len();
@@ -584,19 +631,24 @@ impl HmcRefinedEnsembleGenerator {
         anm_ca_coords: &[[f32; 3]],
         reference_ca: &[[f32; 3]],
     ) -> Result<Vec<[f32; 3]>> {
-        let full_atom = self.full_atom_pdb.as_ref()
+        let full_atom = self
+            .full_atom_pdb
+            .as_ref()
             .ok_or_else(|| anyhow!("Full-atom PDB not set"))?;
 
         let n_residues = anm_ca_coords.len();
 
         // Compute CA displacement from reference to ANM conformation
-        let displacements: Vec<[f32; 3]> = anm_ca_coords.iter()
+        let displacements: Vec<[f32; 3]> = anm_ca_coords
+            .iter()
             .zip(reference_ca.iter())
-            .map(|(anm, ref_coord)| [
-                anm[0] - ref_coord[0],
-                anm[1] - ref_coord[1],
-                anm[2] - ref_coord[2],
-            ])
+            .map(|(anm, ref_coord)| {
+                [
+                    anm[0] - ref_coord[0],
+                    anm[1] - ref_coord[1],
+                    anm[2] - ref_coord[2],
+                ]
+            })
             .collect();
 
         // Apply displacement to all atoms (sidechains move with backbone)
@@ -611,7 +663,12 @@ impl HmcRefinedEnsembleGenerator {
         // Try GPU mega-fused kernel first if enabled
         #[cfg(feature = "cuda")]
         if self.config.use_gpu_mega_fused {
-            match self.hmc_refine_gpu_mega_fused(&displaced_atoms, full_atom, n_residues, anm_ca_coords) {
+            match self.hmc_refine_gpu_mega_fused(
+                &displaced_atoms,
+                full_atom,
+                n_residues,
+                anm_ca_coords,
+            ) {
                 Ok(refined_ca) => return Ok(refined_ca),
                 Err(e) => {
                     log::warn!("GPU mega-fused HMC failed, falling back to CPU: {}", e);
@@ -637,15 +694,19 @@ impl HmcRefinedEnsembleGenerator {
         displaced_atoms: &[PdbAtom],
         full_atom: &FullAtomPdb,
         n_residues: usize,
-        anm_ca_coords: &[[f32; 3]],  // Original ANM coords for fallback
+        anm_ca_coords: &[[f32; 3]], // Original ANM coords for fallback
     ) -> Result<Vec<[f32; 3]>> {
         let n_atoms = displaced_atoms.len();
 
-        log::debug!("🚀 GPU mega-fused HMC: {} atoms, {} steps", n_atoms, self.config.hmc_n_steps);
+        log::debug!(
+            "🚀 GPU mega-fused HMC: {} atoms, {} steps",
+            n_atoms,
+            self.config.hmc_n_steps
+        );
 
         // Get CUDA context directly (device 0)
-        let cuda_context = CudaContext::new(0)
-            .map_err(|e| anyhow!("Failed to create CUDA context: {}", e))?;
+        let cuda_context =
+            CudaContext::new(0).map_err(|e| anyhow!("Failed to create CUDA context: {}", e))?;
 
         // Create mega-fused HMC simulator
         let mut hmc = AmberMegaFusedHmc::new(cuda_context, n_atoms)
@@ -656,13 +717,17 @@ impl HmcRefinedEnsembleGenerator {
 
         // Extract bonds as tuples: (atom_i, atom_j, k, r0)
         // AmberTopology has bonds: Vec<(u32, u32)> and bond_params: Vec<BondParam>
-        let bonds: Vec<(usize, usize, f32, f32)> = topology.bonds.iter()
+        let bonds: Vec<(usize, usize, f32, f32)> = topology
+            .bonds
+            .iter()
             .zip(&topology.bond_params)
             .map(|(&(i, j), p)| (i as usize, j as usize, p.k, p.r0))
             .collect();
 
         // Extract angles as tuples: (atom_i, atom_j, atom_k, k, theta0)
-        let angles: Vec<(usize, usize, usize, f32, f32)> = topology.angles.iter()
+        let angles: Vec<(usize, usize, usize, f32, f32)> = topology
+            .angles
+            .iter()
             .zip(&topology.angle_params)
             .map(|(&(i, j, k), p)| (i as usize, j as usize, k as usize, p.k, p.theta0))
             .collect();
@@ -670,19 +735,17 @@ impl HmcRefinedEnsembleGenerator {
         // Extract dihedrals as tuples: (atom_i, atom_j, atom_k, atom_l, k, n, phase)
         // Note: dihedral_params is Vec<Vec<DihedralParam>> since dihedrals can have multiple terms
         // For GPU, we flatten - take first term of each or sum contributions
-        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology.dihedrals.iter()
+        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology
+            .dihedrals
+            .iter()
             .zip(&topology.dihedral_params)
             .filter_map(|(&(i, j, k, l), params)| {
                 // Take first term (dominant contribution)
-                params.first().map(|p| (
-                    i as usize,
-                    j as usize,
-                    k as usize,
-                    l as usize,
-                    p.k,
-                    p.n as f32,
-                    p.phase
-                ))
+                params.first().map(|p| {
+                    (
+                        i as usize, j as usize, k as usize, l as usize, p.k, p.n as f32, p.phase,
+                    )
+                })
             })
             .collect();
 
@@ -702,35 +765,48 @@ impl HmcRefinedEnsembleGenerator {
         let exclusions = build_amber_exclusions(&bonds, &angles, n_atoms);
 
         // Flatten positions
-        let positions: Vec<f32> = displaced_atoms.iter()
+        let positions: Vec<f32> = displaced_atoms
+            .iter()
             .flat_map(|a| [a.x, a.y, a.z])
             .collect();
 
         // Upload topology
-        hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-            .map_err(|e| anyhow!("Failed to upload topology: {}", e))?;
+        hmc.upload_topology(
+            &positions,
+            &bonds,
+            &angles,
+            &dihedrals,
+            &nb_params,
+            &exclusions,
+        )
+        .map_err(|e| anyhow!("Failed to upload topology: {}", e))?;
 
         log::debug!(
             "📤 GPU topology: {} bonds, {} angles, {} dihedrals",
-            bonds.len(), angles.len(), dihedrals.len()
+            bonds.len(),
+            angles.len(),
+            dihedrals.len()
         );
 
         // CRITICAL: Energy minimization before HMC
         // ANM conformations often have steric clashes that cause force explosions.
         // 10 steps of steepest descent with 0.01 Å step size relaxes worst clashes.
         // (Reduced from 200 for performance with large systems)
-        let _min_energy = hmc.minimize(10, 0.01)
+        let _min_energy = hmc
+            .minimize(10, 0.01)
             .map_err(|e| anyhow!("GPU minimization failed: {}", e))?;
 
         // Run HMC on GPU with production friction
         // gamma = 0.001 fs⁻¹ (1 ps⁻¹) preserves natural protein dynamics
         let gamma_production = 0.001f32;
-        let result = hmc.run(
-            self.config.hmc_n_steps,
-            self.config.hmc_timestep as f32,
-            self.config.hmc_temperature as f32,
-            gamma_production,
-        ).map_err(|e| anyhow!("GPU HMC run failed: {}", e))?;
+        let result = hmc
+            .run(
+                self.config.hmc_n_steps,
+                self.config.hmc_timestep as f32,
+                self.config.hmc_temperature as f32,
+                gamma_production,
+            )
+            .map_err(|e| anyhow!("GPU HMC run failed: {}", e))?;
 
         // Extract CA coordinates from refined positions
         // IMPORTANT: The full-atom PDB may have fewer CA atoms than the initial CA coord array
@@ -741,7 +817,8 @@ impl HmcRefinedEnsembleGenerator {
         let mut ca_res_ids: Vec<i32> = full_atom.ca_indices.keys().copied().collect();
         ca_res_ids.sort();
 
-        let refined_ca: Vec<[f32; 3]> = ca_res_ids.iter()
+        let refined_ca: Vec<[f32; 3]> = ca_res_ids
+            .iter()
             .filter_map(|&res_id| full_atom.ca_indices.get(&res_id))
             .map(|&idx| {
                 [
@@ -775,11 +852,13 @@ impl HmcRefinedEnsembleGenerator {
         if n_ca_full_atom < n_residues {
             log::info!(
                 "📐 Mapping {} GPU-refined CAs back to {} input residues",
-                n_ca_full_atom, n_residues
+                n_ca_full_atom,
+                n_residues
             );
 
             // Build a map from residue ID to refined coordinate
-            let refined_map: HashMap<i32, [f32; 3]> = ca_res_ids.iter()
+            let refined_map: HashMap<i32, [f32; 3]> = ca_res_ids
+                .iter()
                 .zip(refined_ca.iter())
                 .map(|(&res_id, &coord)| (res_id, coord))
                 .collect();
@@ -791,7 +870,7 @@ impl HmcRefinedEnsembleGenerator {
                 .map(|i| {
                     // Try to find this residue in refined map
                     // We check a few possible residue ID schemes
-                    let res_id = (i + 1) as i32;  // 1-indexed
+                    let res_id = (i + 1) as i32; // 1-indexed
                     if let Some(&coord) = refined_map.get(&res_id) {
                         coord
                     } else {
@@ -819,10 +898,10 @@ impl HmcRefinedEnsembleGenerator {
             temperature: self.config.hmc_temperature,
             timestep: self.config.hmc_timestep,
             n_leapfrog_steps: self.config.hmc_n_leapfrog,
-            friction: 1.0,  // Langevin friction
+            friction: 1.0, // Langevin friction
             use_langevin: self.config.use_langevin,
             seed: self.config.seed.unwrap_or(42),
-            use_gpu: false,  // CPU fallback
+            use_gpu: false, // CPU fallback
         };
 
         // Create AmberSimulator with FULL-ATOM topology
@@ -833,7 +912,8 @@ impl HmcRefinedEnsembleGenerator {
         let n_moves = self.config.hmc_n_steps;
         let save_every = n_moves.max(1);
 
-        let result = simulator.run(n_moves, save_every)
+        let result = simulator
+            .run(n_moves, save_every)
             .map_err(|e| anyhow!("Full-atom HMC simulation failed: {}", e))?;
 
         // Extract final frame
@@ -844,7 +924,8 @@ impl HmcRefinedEnsembleGenerator {
         let final_frame = result.trajectory.last().unwrap();
 
         // Create displaced PdbAtom with final positions
-        let final_atoms: Vec<PdbAtom> = displaced_atoms.iter()
+        let final_atoms: Vec<PdbAtom> = displaced_atoms
+            .iter()
             .enumerate()
             .map(|(i, orig)| {
                 let pos = &final_frame.positions[i];
@@ -888,28 +969,32 @@ impl HmcRefinedEnsembleGenerator {
         let n_residues = start_coords.len();
 
         // Convert CA coordinates to PdbAtom format for AmberSimulator
-        let pdb_atoms: Vec<PdbAtom> = start_coords.iter().enumerate().map(|(i, coord)| {
-            PdbAtom {
-                index: i,
-                name: "CA".to_string(),
-                residue_name: "ALA".to_string(),  // Generic amino acid for CA-only
-                residue_id: i as i32 + 1,
-                chain_id: 'A',
-                x: coord[0],
-                y: coord[1],
-                z: coord[2],
-            }
-        }).collect();
+        let pdb_atoms: Vec<PdbAtom> = start_coords
+            .iter()
+            .enumerate()
+            .map(|(i, coord)| {
+                PdbAtom {
+                    index: i,
+                    name: "CA".to_string(),
+                    residue_name: "ALA".to_string(), // Generic amino acid for CA-only
+                    residue_id: i as i32 + 1,
+                    chain_id: 'A',
+                    x: coord[0],
+                    y: coord[1],
+                    z: coord[2],
+                }
+            })
+            .collect();
 
         // Configure AmberSimulator for short HMC refinement
         let amber_config = AmberSimConfig {
             temperature: self.config.hmc_temperature,
             timestep: self.config.hmc_timestep,
             n_leapfrog_steps: self.config.hmc_n_leapfrog,
-            friction: 1.0,  // Langevin friction
+            friction: 1.0, // Langevin friction
             use_langevin: self.config.use_langevin,
             seed: self.config.seed.unwrap_or(42),
-            use_gpu: true,  // Enable GPU acceleration when available
+            use_gpu: true, // Enable GPU acceleration when available
         };
 
         // Create AmberSimulator from CA-only atoms
@@ -919,9 +1004,10 @@ impl HmcRefinedEnsembleGenerator {
 
         // Run short HMC/Langevin trajectory
         let n_moves = self.config.hmc_n_steps;
-        let save_every = n_moves.max(1);  // Save only final frame
+        let save_every = n_moves.max(1); // Save only final frame
 
-        let result = simulator.run(n_moves, save_every)
+        let result = simulator
+            .run(n_moves, save_every)
             .map_err(|e| anyhow!("HMC simulation failed: {}", e))?;
 
         // Extract final frame positions
@@ -932,9 +1018,11 @@ impl HmcRefinedEnsembleGenerator {
         let final_frame = result.trajectory.last().unwrap();
 
         // Convert back to [f32; 3] format
-        let refined_coords: Vec<[f32; 3]> = final_frame.positions.iter().map(|p| {
-            [p[0] as f32, p[1] as f32, p[2] as f32]
-        }).collect();
+        let refined_coords: Vec<[f32; 3]> = final_frame
+            .positions
+            .iter()
+            .map(|p| [p[0] as f32, p[1] as f32, p[2] as f32])
+            .collect();
 
         // Log HMC statistics
         log::debug!(
@@ -997,7 +1085,7 @@ mod tests {
         // Simple linear chain
         let coords: Vec<[f32; 3]> = vec![
             [0.0, 0.0, 0.0],
-            [3.8, 0.0, 0.0],  // ~3.8Å apart (CA-CA distance)
+            [3.8, 0.0, 0.0], // ~3.8Å apart (CA-CA distance)
             [7.6, 0.0, 0.0],
             [11.4, 0.0, 0.0],
         ];
@@ -1014,21 +1102,13 @@ mod tests {
 
     #[test]
     fn test_rmsd_computation() {
-        let ref_coords = vec![
-            [0.0_f32, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [2.0, 0.0, 0.0],
-        ];
+        let ref_coords = vec![[0.0_f32, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
 
         let same_coords = ref_coords.clone();
         assert!((compute_rmsd(&ref_coords, &same_coords)).abs() < 0.001);
 
-        let shifted_coords = vec![
-            [1.0_f32, 0.0, 0.0],
-            [2.0, 0.0, 0.0],
-            [3.0, 0.0, 0.0],
-        ];
+        let shifted_coords = vec![[1.0_f32, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]];
         let rmsd = compute_rmsd(&ref_coords, &shifted_coords);
-        assert!((rmsd - 1.0).abs() < 0.001);  // Shifted by 1Å
+        assert!((rmsd - 1.0).abs() < 0.001); // Shifted by 1Å
     }
 }

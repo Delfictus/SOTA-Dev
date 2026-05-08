@@ -11,7 +11,7 @@
 //!     --steps 100000 --dt 2.0 --save-interval 500 \
 //!     --output-dir ensembles/
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -179,8 +179,7 @@ fn main() -> Result<()> {
     }
 
     // Create output directory
-    std::fs::create_dir_all(&args.output_dir)
-        .context("Failed to create output directory")?;
+    std::fs::create_dir_all(&args.output_dir).context("Failed to create output directory")?;
 
     let start_time = Instant::now();
 
@@ -213,10 +212,12 @@ fn main() -> Result<()> {
             batch_idx += 1;
             if !args.quiet {
                 println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                println!("  Batch {}/{}: Processing {} structures",
-                         batch_idx,
-                         (n_structures + max_concurrent - 1) / max_concurrent,
-                         chunk.len());
+                println!(
+                    "  Batch {}/{}: Processing {} structures",
+                    batch_idx,
+                    (n_structures + max_concurrent - 1) / max_concurrent,
+                    chunk.len()
+                );
                 println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             }
 
@@ -224,11 +225,7 @@ fn main() -> Result<()> {
             // Note: For true parallelism, we would use CUDA streams here
             // Currently processing sequentially within batch (still faster than loading/unloading)
             for topology_path in chunk {
-                let result = process_single_structure(
-                    topology_path,
-                    &args,
-                    context.clone(),
-                );
+                let result = process_single_structure(topology_path, &args, context.clone());
                 results.push(result);
             }
         }
@@ -245,15 +242,25 @@ fn main() -> Result<()> {
         println!("   Structures processed: {}/{}", successful, n_structures);
         println!("   Total snapshots: {}", total_snapshots);
         println!("   Total time: {:.2}s", total_elapsed);
-        println!("   Throughput: {:.2} structures/minute", n_structures as f64 / (total_elapsed / 60.0));
-        println!("   Avg time/structure: {:.2}s", total_elapsed / n_structures as f64);
+        println!(
+            "   Throughput: {:.2} structures/minute",
+            n_structures as f64 / (total_elapsed / 60.0)
+        );
+        println!(
+            "   Avg time/structure: {:.2}s",
+            total_elapsed / n_structures as f64
+        );
 
         // List failures
         let failures: Vec<_> = results.iter().filter(|r| !r.success).collect();
         if !failures.is_empty() {
             println!("\n⚠️  Failures ({}):", failures.len());
             for f in failures {
-                println!("   - {}: {}", f.name, f.error.as_ref().unwrap_or(&"Unknown".to_string()));
+                println!(
+                    "   - {}: {}",
+                    f.name,
+                    f.error.as_ref().unwrap_or(&"Unknown".to_string())
+                );
             }
         }
 
@@ -261,8 +268,10 @@ fn main() -> Result<()> {
         println!("\n📁 Output directory: {:?}", args.output_dir);
         for result in &results {
             if result.success {
-                println!("   ✓ {}_ensemble.pdb ({} snapshots)",
-                         result.name, result.n_snapshots);
+                println!(
+                    "   ✓ {}_ensemble.pdb ({} snapshots)",
+                    result.name, result.n_snapshots
+                );
             }
         }
     }
@@ -300,45 +309,56 @@ fn process_single_structure(
     // Load topology
     let topology_json = match std::fs::read_to_string(topology_path) {
         Ok(s) => s,
-        Err(e) => return StructureResult {
-            name: struct_name,
-            n_atoms: 0,
-            n_snapshots: 0,
-            elapsed_secs: start.elapsed().as_secs_f64(),
-            success: false,
-            error: Some(format!("Failed to read file: {}", e)),
-        },
+        Err(e) => {
+            return StructureResult {
+                name: struct_name,
+                n_atoms: 0,
+                n_snapshots: 0,
+                elapsed_secs: start.elapsed().as_secs_f64(),
+                success: false,
+                error: Some(format!("Failed to read file: {}", e)),
+            }
+        }
     };
 
     let topology: TopologyJson = match serde_json::from_str(&topology_json) {
         Ok(t) => t,
-        Err(e) => return StructureResult {
-            name: struct_name,
-            n_atoms: 0,
-            n_snapshots: 0,
-            elapsed_secs: start.elapsed().as_secs_f64(),
-            success: false,
-            error: Some(format!("Failed to parse JSON: {}", e)),
-        },
+        Err(e) => {
+            return StructureResult {
+                name: struct_name,
+                n_atoms: 0,
+                n_snapshots: 0,
+                elapsed_secs: start.elapsed().as_secs_f64(),
+                success: false,
+                error: Some(format!("Failed to parse JSON: {}", e)),
+            }
+        }
     };
 
     let n_atoms = topology.n_atoms;
     if !args.quiet {
-        println!("   Atoms: {}, Bonds: {}, Angles: {}, Dihedrals: {}",
-                 n_atoms, topology.bonds.len(), topology.angles.len(), topology.dihedrals.len());
+        println!(
+            "   Atoms: {}, Bonds: {}, Angles: {}, Dihedrals: {}",
+            n_atoms,
+            topology.bonds.len(),
+            topology.angles.len(),
+            topology.dihedrals.len()
+        );
     }
 
     // Create MD engine
     let mut hmc = match AmberMegaFusedHmc::new(context.clone(), n_atoms) {
         Ok(h) => h,
-        Err(e) => return StructureResult {
-            name: struct_name,
-            n_atoms,
-            n_snapshots: 0,
-            elapsed_secs: start.elapsed().as_secs_f64(),
-            success: false,
-            error: Some(format!("Failed to create MD engine: {}", e)),
-        },
+        Err(e) => {
+            return StructureResult {
+                name: struct_name,
+                n_atoms,
+                n_snapshots: 0,
+                elapsed_secs: start.elapsed().as_secs_f64(),
+                success: false,
+                error: Some(format!("Failed to create MD engine: {}", e)),
+            }
+        }
     };
 
     // Convert and upload topology (same as generate_ensemble.rs)
@@ -357,13 +377,28 @@ fn process_single_structure(
     let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology
         .dihedrals
         .iter()
-        .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k, d.periodicity as f32, d.phase))
+        .map(|d| {
+            (
+                d.i,
+                d.j,
+                d.k_idx,
+                d.l,
+                d.force_k,
+                d.periodicity as f32,
+                d.phase,
+            )
+        })
         .collect();
 
     let nb_params: Vec<(f32, f32, f32, f32)> = (0..n_atoms)
         .map(|i| {
             let lj = &topology.lj_params[i];
-            (lj.sigma, lj.epsilon, topology.charges[i], topology.masses[i])
+            (
+                lj.sigma,
+                lj.epsilon,
+                topology.charges[i],
+                topology.masses[i],
+            )
         })
         .collect();
 
@@ -431,9 +466,7 @@ fn process_single_structure(
 
     // Position restraints
     if args.restraint_k > 0.0 {
-        let heavy_atoms: Vec<usize> = (0..n_atoms)
-            .filter(|&i| topology.masses[i] > 2.0)
-            .collect();
+        let heavy_atoms: Vec<usize> = (0..n_atoms).filter(|&i| topology.masses[i] > 2.0).collect();
         let _ = hmc.set_position_restraints(&heavy_atoms, args.restraint_k);
     }
 
@@ -484,17 +517,21 @@ fn process_single_structure(
     let atom_info = generate_atom_info_from_masses(&topology.masses);
 
     // Create output file
-    let output_path = args.output_dir.join(format!("{}_ensemble.pdb", struct_name));
+    let output_path = args
+        .output_dir
+        .join(format!("{}_ensemble.pdb", struct_name));
     let output_file = match File::create(&output_path) {
         Ok(f) => f,
-        Err(e) => return StructureResult {
-            name: struct_name,
-            n_atoms,
-            n_snapshots: 0,
-            elapsed_secs: start.elapsed().as_secs_f64(),
-            success: false,
-            error: Some(format!("Failed to create output: {}", e)),
-        },
+        Err(e) => {
+            return StructureResult {
+                name: struct_name,
+                n_atoms,
+                n_snapshots: 0,
+                elapsed_secs: start.elapsed().as_secs_f64(),
+                success: false,
+                error: Some(format!("Failed to create output: {}", e)),
+            }
+        }
     };
     let mut output = BufWriter::new(output_file);
 
@@ -512,12 +549,7 @@ fn process_single_structure(
     while steps_run < production_steps {
         let steps_this_round = args.save_interval.min(production_steps - steps_run) as usize;
 
-        let result = match hmc.run_verlet(
-            steps_this_round,
-            args.dt,
-            args.temperature,
-            args.gamma,
-        ) {
+        let result = match hmc.run_verlet(steps_this_round, args.dt, args.temperature, args.gamma) {
             Ok(r) => r,
             Err(e) => {
                 let _ = writeln!(output, "END");
@@ -551,7 +583,10 @@ fn process_single_structure(
                 n_snapshots: model_number - 1,
                 elapsed_secs: start.elapsed().as_secs_f64(),
                 success: false,
-                error: Some(format!("Temperature exploded: {:.0} K", result.avg_temperature)),
+                error: Some(format!(
+                    "Temperature exploded: {:.0} K",
+                    result.avg_temperature
+                )),
             };
         }
     }
@@ -563,7 +598,10 @@ fn process_single_structure(
     let n_snapshots = model_number - 1;
 
     if !args.quiet {
-        println!("   ✓ Complete: {} snapshots in {:.1}s", n_snapshots, elapsed);
+        println!(
+            "   ✓ Complete: {} snapshots in {:.1}s",
+            n_snapshots, elapsed
+        );
     }
 
     StructureResult {
@@ -616,42 +654,45 @@ fn generate_atom_info_from_masses(masses: &[f32]) -> Vec<AtomInfo> {
     let mut residue_id = 1;
     let mut atoms_in_residue = 0;
 
-    masses.iter().map(|&mass| {
-        let (element, name_prefix) = if mass < 1.5 {
-            ("H", "H")
-        } else if mass < 13.0 {
-            ("C", "C")
-        } else if mass < 15.0 {
-            ("N", "N")
-        } else if mass < 17.0 {
-            ("O", "O")
-        } else if mass < 33.0 {
-            ("S", "S")
-        } else {
-            ("X", "X")
-        };
+    masses
+        .iter()
+        .map(|&mass| {
+            let (element, name_prefix) = if mass < 1.5 {
+                ("H", "H")
+            } else if mass < 13.0 {
+                ("C", "C")
+            } else if mass < 15.0 {
+                ("N", "N")
+            } else if mass < 17.0 {
+                ("O", "O")
+            } else if mass < 33.0 {
+                ("S", "S")
+            } else {
+                ("X", "X")
+            };
 
-        *atom_count.entry(element).or_insert(0) += 1;
-        let count = atom_count[element];
+            *atom_count.entry(element).or_insert(0) += 1;
+            let count = atom_count[element];
 
-        let name = if count < 100 {
-            format!("{}{}", name_prefix, count)
-        } else {
-            format!("{}{}", name_prefix, count % 100)
-        };
+            let name = if count < 100 {
+                format!("{}{}", name_prefix, count)
+            } else {
+                format!("{}{}", name_prefix, count % 100)
+            };
 
-        atoms_in_residue += 1;
-        if atoms_in_residue > 20 && element != "H" {
-            residue_id += 1;
-            atoms_in_residue = 1;
-        }
+            atoms_in_residue += 1;
+            if atoms_in_residue > 20 && element != "H" {
+                residue_id += 1;
+                atoms_in_residue = 1;
+            }
 
-        AtomInfo {
-            name,
-            element: element.to_string(),
-            residue_name: "UNK".to_string(),
-            residue_id,
-            chain: "A".to_string(),
-        }
-    }).collect()
+            AtomInfo {
+                name,
+                element: element.to_string(),
+                residue_name: "UNK".to_string(),
+                residue_id,
+                chain: "A".to_string(),
+            }
+        })
+        .collect()
 }

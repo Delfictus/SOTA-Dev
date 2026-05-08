@@ -19,13 +19,13 @@
 //! - **NOVA Path**: Evolves through Phase 7-8 with enhanced capabilities
 //! - **AMBER Path**: FROZEN after Phase 6 release - serves as stable reference
 
-mod nova_path;
 mod amber_path;
 mod mock_path;
+mod nova_path;
 
-pub use nova_path::{NovaPath, NOVA_MAX_ATOMS};
 pub use amber_path::AmberPath;
 pub use mock_path::MockPath;
+pub use nova_path::{NovaPath, NOVA_MAX_ATOMS};
 
 #[cfg(test)]
 mod tests {

@@ -22,10 +22,10 @@
 //! - Deposition date from PDB header
 //! - All atomic metadata mapped
 
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use chrono::{DateTime, Utc, NaiveDate};
 
 /// BLAKE3 hash (32 bytes, hex-encoded = 64 chars)
 pub type Blake3Hash = String;
@@ -406,7 +406,15 @@ impl DataCurator {
     }
 
     /// Parse PDB header for metadata
-    fn parse_pdb_header(content: &str) -> (Option<NaiveDate>, Option<NaiveDate>, Option<f32>, Option<String>, Option<String>) {
+    fn parse_pdb_header(
+        content: &str,
+    ) -> (
+        Option<NaiveDate>,
+        Option<NaiveDate>,
+        Option<f32>,
+        Option<String>,
+        Option<String>,
+    ) {
         let mut deposition_date = None;
         let mut release_date = None;
         let mut resolution = None;
@@ -458,9 +466,18 @@ impl DataCurator {
     /// Parse PDB date format (DD-MMM-YY or DD-MMM-YYYY)
     fn parse_pdb_date(s: &str) -> Option<NaiveDate> {
         let months = [
-            ("JAN", 1), ("FEB", 2), ("MAR", 3), ("APR", 4),
-            ("MAY", 5), ("JUN", 6), ("JUL", 7), ("AUG", 8),
-            ("SEP", 9), ("OCT", 10), ("NOV", 11), ("DEC", 12),
+            ("JAN", 1),
+            ("FEB", 2),
+            ("MAR", 3),
+            ("APR", 4),
+            ("MAY", 5),
+            ("JUN", 6),
+            ("JUL", 7),
+            ("AUG", 8),
+            ("SEP", 9),
+            ("OCT", 10),
+            ("NOV", 11),
+            ("DEC", 12),
         ];
 
         let parts: Vec<&str> = s.split('-').collect();
@@ -469,14 +486,19 @@ impl DataCurator {
         }
 
         let day: u32 = parts[0].parse().ok()?;
-        let month = months.iter()
+        let month = months
+            .iter()
             .find(|(m, _)| *m == parts[1].to_uppercase())
             .map(|(_, n)| *n)?;
         let year: i32 = parts[2].parse().ok()?;
 
         // Handle 2-digit years
         let year = if year < 100 {
-            if year > 50 { 1900 + year } else { 2000 + year }
+            if year > 50 {
+                1900 + year
+            } else {
+                2000 + year
+            }
         } else {
             year
         };
@@ -512,7 +534,11 @@ impl DataCurator {
     }
 
     /// Extract full atomic metadata from PDB
-    pub fn extract_atomic_metadata(content: &str, pdb_id: &str, blake3_hash: &str) -> AtomicMetadata {
+    pub fn extract_atomic_metadata(
+        content: &str,
+        pdb_id: &str,
+        blake3_hash: &str,
+    ) -> AtomicMetadata {
         let mut atoms = Vec::new();
         let mut residue_map: HashMap<String, Vec<usize>> = HashMap::new();
         let mut ss_records = Vec::new();
@@ -522,58 +548,72 @@ impl DataCurator {
             if (line.starts_with("ATOM") || line.starts_with("HETATM")) && line.len() >= 54 {
                 let is_hetatm = line.starts_with("HETATM");
 
-                let serial: u32 = line.get(6..11)
+                let serial: u32 = line
+                    .get(6..11)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0);
                 let name = line.get(12..16).unwrap_or("").trim().to_string();
                 let alt_loc = line.chars().nth(16).filter(|&c| c != ' ');
                 let res_name = line.get(17..20).unwrap_or("").trim().to_string();
                 let chain_id = line.get(21..22).unwrap_or(" ").to_string();
-                let res_seq: i32 = line.get(22..26)
+                let res_seq: i32 = line
+                    .get(22..26)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0);
                 let i_code = line.chars().nth(26).filter(|&c| c != ' ');
 
-                let x: f32 = line.get(30..38)
+                let x: f32 = line
+                    .get(30..38)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0.0);
-                let y: f32 = line.get(38..46)
+                let y: f32 = line
+                    .get(38..46)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0.0);
-                let z: f32 = line.get(46..54)
+                let z: f32 = line
+                    .get(46..54)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0.0);
 
-                let occupancy: f32 = line.get(54..60)
+                let occupancy: f32 = line
+                    .get(54..60)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(1.0);
-                let b_factor: f32 = line.get(60..66)
+                let b_factor: f32 = line
+                    .get(60..66)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0.0);
 
-                let element = line.get(76..78)
+                let element = line
+                    .get(76..78)
                     .map(|s| s.trim().to_string())
-                    .unwrap_or_else(|| name.chars().next().map(|c| c.to_string()).unwrap_or_default());
-
-                let charge: Option<i8> = line.get(78..80)
-                    .and_then(|s| {
-                        let s = s.trim();
-                        if s.is_empty() { return None; }
-                        // Handle formats like "2+" or "+2"
-                        let (num, sign) = if s.ends_with('+') || s.ends_with('-') {
-                            (&s[..s.len()-1], s.chars().last())
-                        } else if s.starts_with('+') || s.starts_with('-') {
-                            (&s[1..], s.chars().next())
-                        } else {
-                            return None;
-                        };
-                        let n: i8 = num.parse().unwrap_or(1);
-                        match sign {
-                            Some('+') => Some(n),
-                            Some('-') => Some(-n),
-                            _ => None,
-                        }
+                    .unwrap_or_else(|| {
+                        name.chars()
+                            .next()
+                            .map(|c| c.to_string())
+                            .unwrap_or_default()
                     });
+
+                let charge: Option<i8> = line.get(78..80).and_then(|s| {
+                    let s = s.trim();
+                    if s.is_empty() {
+                        return None;
+                    }
+                    // Handle formats like "2+" or "+2"
+                    let (num, sign) = if s.ends_with('+') || s.ends_with('-') {
+                        (&s[..s.len() - 1], s.chars().last())
+                    } else if s.starts_with('+') || s.starts_with('-') {
+                        (&s[1..], s.chars().next())
+                    } else {
+                        return None;
+                    };
+                    let n: i8 = num.parse().unwrap_or(1);
+                    match sign {
+                        Some('+') => Some(n),
+                        Some('-') => Some(-n),
+                        _ => None,
+                    }
+                });
 
                 let atom_idx = atoms.len();
 
@@ -603,11 +643,13 @@ impl DataCurator {
             // Parse HELIX records
             if line.starts_with("HELIX") && line.len() >= 38 {
                 let start_chain = line.get(19..20).unwrap_or(" ").to_string();
-                let start_res: i32 = line.get(21..25)
+                let start_res: i32 = line
+                    .get(21..25)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0);
                 let end_chain = line.get(31..32).unwrap_or(" ").to_string();
-                let end_res: i32 = line.get(33..37)
+                let end_res: i32 = line
+                    .get(33..37)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0);
 
@@ -623,11 +665,13 @@ impl DataCurator {
             // Parse SHEET records
             if line.starts_with("SHEET") && line.len() >= 38 {
                 let start_chain = line.get(21..22).unwrap_or(" ").to_string();
-                let start_res: i32 = line.get(22..26)
+                let start_res: i32 = line
+                    .get(22..26)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0);
                 let end_chain = line.get(32..33).unwrap_or(" ").to_string();
-                let end_res: i32 = line.get(33..37)
+                let end_res: i32 = line
+                    .get(33..37)
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0);
 
@@ -643,8 +687,8 @@ impl DataCurator {
 
         // Build residue records
         let standard_aa = [
-            "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
-            "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+            "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS",
+            "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
         ];
 
         let mut residues: Vec<ResidueRecord> = residue_map
@@ -653,7 +697,10 @@ impl DataCurator {
                 let parts: Vec<&str> = key.split(':').collect();
                 let chain_id = parts.get(0).unwrap_or(&" ").to_string();
                 let res_seq: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-                let i_code = parts.get(2).and_then(|s| s.chars().next()).filter(|&c| c != ' ');
+                let i_code = parts
+                    .get(2)
+                    .and_then(|s| s.chars().next())
+                    .filter(|&c| c != ' ');
 
                 let first_atom = indices.first().map(|&i| &atoms[i]);
                 let res_name = first_atom.map(|a| a.res_name.clone()).unwrap_or_default();
@@ -675,10 +722,7 @@ impl DataCurator {
             .collect();
 
         // Sort residues by chain and sequence
-        residues.sort_by(|a, b| {
-            a.chain_id.cmp(&b.chain_id)
-                .then(a.res_seq.cmp(&b.res_seq))
-        });
+        residues.sort_by(|a, b| a.chain_id.cmp(&b.chain_id).then(a.res_seq.cmp(&b.res_seq)));
 
         // Build chain records
         let mut chain_map: HashMap<String, Vec<usize>> = HashMap::new();
@@ -688,10 +732,26 @@ impl DataCurator {
 
         let aa_to_one = |three: &str| -> char {
             match three {
-                "ALA" => 'A', "ARG" => 'R', "ASN" => 'N', "ASP" => 'D', "CYS" => 'C',
-                "GLN" => 'Q', "GLU" => 'E', "GLY" => 'G', "HIS" => 'H', "ILE" => 'I',
-                "LEU" => 'L', "LYS" => 'K', "MET" => 'M', "PHE" => 'F', "PRO" => 'P',
-                "SER" => 'S', "THR" => 'T', "TRP" => 'W', "TYR" => 'Y', "VAL" => 'V',
+                "ALA" => 'A',
+                "ARG" => 'R',
+                "ASN" => 'N',
+                "ASP" => 'D',
+                "CYS" => 'C',
+                "GLN" => 'Q',
+                "GLU" => 'E',
+                "GLY" => 'G',
+                "HIS" => 'H',
+                "ILE" => 'I',
+                "LEU" => 'L',
+                "LYS" => 'K',
+                "MET" => 'M',
+                "PHE" => 'F',
+                "PRO" => 'P',
+                "SER" => 'S',
+                "THR" => 'T',
+                "TRP" => 'W',
+                "TYR" => 'Y',
+                "VAL" => 'V',
                 _ => 'X',
             }
         };
@@ -730,10 +790,7 @@ impl DataCurator {
     }
 
     /// Validate temporal integrity (apo deposited before drug)
-    pub fn validate_temporal(
-        provenance: &mut PdbProvenance,
-        drug_discovery_date: NaiveDate,
-    ) {
+    pub fn validate_temporal(provenance: &mut PdbProvenance, drug_discovery_date: NaiveDate) {
         provenance.validation.drug_discovery_date = Some(drug_discovery_date);
 
         if let Some(deposition_date) = provenance.deposition_date {
@@ -755,13 +812,18 @@ impl DataCurator {
             }
         } else {
             provenance.validation.warnings.push(
-                "WARNING: Could not determine deposition date. Temporal validation not possible.".to_string()
+                "WARNING: Could not determine deposition date. Temporal validation not possible."
+                    .to_string(),
             );
         }
     }
 
     /// Save manifest with integrity hash
-    pub fn save_manifest(&self, manifest: &mut CurationManifest, path: &Path) -> anyhow::Result<()> {
+    pub fn save_manifest(
+        &self,
+        manifest: &mut CurationManifest,
+        path: &Path,
+    ) -> anyhow::Result<()> {
         // Compute hash of manifest (excluding the hash field itself)
         manifest.manifest_hash = None;
         let temp_json = serde_json::to_string(manifest)?;
@@ -771,7 +833,11 @@ impl DataCurator {
         let json = serde_json::to_string_pretty(manifest)?;
         std::fs::write(path, json)?;
 
-        log::info!("Saved manifest to {:?} with hash {}", path, manifest.manifest_hash.as_ref().unwrap());
+        log::info!(
+            "Saved manifest to {:?} with hash {}",
+            path,
+            manifest.manifest_hash.as_ref().unwrap()
+        );
 
         Ok(())
     }
@@ -801,7 +867,9 @@ pub fn get_validation_targets() -> Vec<TargetDefinition> {
             drug_discovery_date: NaiveDate::from_ymd_opt(2007, 1, 1).unwrap(),
             apo_pdb: "1K2P".to_string(), // Deposited 2001 - BEFORE discovery ✓
             holo_pdb: "5P9J".to_string(),
-            pocket_residues: vec![408, 409, 410, 411, 412, 413, 414, 474, 475, 476, 477, 478, 481],
+            pocket_residues: vec![
+                408, 409, 410, 411, 412, 413, 414, 474, 475, 476, 477, 478, 481,
+            ],
             notes: vec!["C481 covalent site".to_string()],
         },
         TargetDefinition {
@@ -814,10 +882,11 @@ pub fn get_validation_targets() -> Vec<TargetDefinition> {
             apo_pdb: "1UWH".to_string(),
             // 3OG7: BRAF V600E with Vemurafenib
             holo_pdb: "3OG7".to_string(),
-            pocket_residues: vec![464, 466, 468, 471, 505, 508, 529, 530, 531, 532, 535, 593, 594, 595],
+            pocket_residues: vec![
+                464, 466, 468, 471, 505, 508, 529, 530, 531, 532, 535, 593, 594, 595,
+            ],
             notes: vec!["DFG-out/αC-helix-out pocket".to_string()],
         },
-
         // === METABOLIC ===
         TargetDefinition {
             name: "PTP1B".to_string(),
@@ -830,7 +899,6 @@ pub fn get_validation_targets() -> Vec<TargetDefinition> {
             pocket_residues: vec![280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290],
             notes: vec!["Allosteric C-terminal site".to_string()],
         },
-
         // === INFECTIOUS ===
         TargetDefinition {
             name: "HIV_RT".to_string(),
@@ -916,10 +984,7 @@ mod tests {
         };
 
         // Drug discovered in 2010, structure from 2000 - VALID
-        DataCurator::validate_temporal(
-            &mut prov,
-            NaiveDate::from_ymd_opt(2010, 1, 1).unwrap(),
-        );
+        DataCurator::validate_temporal(&mut prov, NaiveDate::from_ymd_opt(2010, 1, 1).unwrap());
 
         assert!(prov.validation.temporal_valid);
         assert!(prov.validation.safe_for_blind);
@@ -952,10 +1017,7 @@ mod tests {
         };
 
         // Drug discovered in 2010, structure from 2015 - LEAKAGE!
-        DataCurator::validate_temporal(
-            &mut prov,
-            NaiveDate::from_ymd_opt(2010, 1, 1).unwrap(),
-        );
+        DataCurator::validate_temporal(&mut prov, NaiveDate::from_ymd_opt(2010, 1, 1).unwrap());
 
         assert!(!prov.validation.temporal_valid);
         assert!(!prov.validation.safe_for_blind);

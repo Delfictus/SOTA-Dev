@@ -26,9 +26,15 @@ pub fn write_rmsf_csv<W: Write>(
 ) -> std::io::Result<()> {
     // Header
     if bfactors.is_some() {
-        writeln!(writer, "chain,residue_id,residue_name,rmsf_angstrom,bfactor,flexibility_class")?;
+        writeln!(
+            writer,
+            "chain,residue_id,residue_name,rmsf_angstrom,bfactor,flexibility_class"
+        )?;
     } else {
-        writeln!(writer, "chain,residue_id,residue_name,rmsf_angstrom,flexibility_class")?;
+        writeln!(
+            writer,
+            "chain,residue_id,residue_name,rmsf_angstrom,flexibility_class"
+        )?;
     }
 
     // Compute global statistics for classification
@@ -53,9 +59,17 @@ pub fn write_rmsf_csv<W: Write>(
 
         if let Some(bf) = bfactors {
             let bfactor = bf.get(i).copied().unwrap_or(0.0);
-            writeln!(writer, "{},{},{},{:.4},{:.2},{}", chain, res_id, res_name, rmsf, bfactor, flex_class)?;
+            writeln!(
+                writer,
+                "{},{},{},{:.4},{:.2},{}",
+                chain, res_id, res_name, rmsf, bfactor, flex_class
+            )?;
         } else {
-            writeln!(writer, "{},{},{},{:.4},{}", chain, res_id, res_name, rmsf, flex_class)?;
+            writeln!(
+                writer,
+                "{},{},{},{:.4},{}",
+                chain, res_id, res_name, rmsf, flex_class
+            )?;
         }
     }
 
@@ -140,13 +154,17 @@ pub fn generate_pymol_selection(site_id: &str, contacts: &[ContactResidue]) -> S
     // Group residues by chain
     let mut by_chain: std::collections::HashMap<char, Vec<i32>> = std::collections::HashMap::new();
     for contact in contacts {
-        by_chain.entry(contact.chain_id).or_default().push(contact.residue_id);
+        by_chain
+            .entry(contact.chain_id)
+            .or_default()
+            .push(contact.residue_id);
     }
 
     // Build selection
     let mut selections = Vec::new();
     for (chain, residues) in by_chain {
-        let resi_list = residues.iter()
+        let resi_list = residues
+            .iter()
             .map(|r| r.to_string())
             .collect::<Vec<_>>()
             .join("+");
@@ -154,9 +172,19 @@ pub fn generate_pymol_selection(site_id: &str, contacts: &[ContactResidue]) -> S
     }
 
     let selection_str = selections.join(" or ");
-    script.push_str(&format!("select {}_site, {}\n", site_id.replace(" ", "_").to_lowercase(), selection_str));
-    script.push_str(&format!("show sticks, {}_site\n", site_id.replace(" ", "_").to_lowercase()));
-    script.push_str(&format!("color yellow, {}_site\n", site_id.replace(" ", "_").to_lowercase()));
+    script.push_str(&format!(
+        "select {}_site, {}\n",
+        site_id.replace(" ", "_").to_lowercase(),
+        selection_str
+    ));
+    script.push_str(&format!(
+        "show sticks, {}_site\n",
+        site_id.replace(" ", "_").to_lowercase()
+    ));
+    script.push_str(&format!(
+        "color yellow, {}_site\n",
+        site_id.replace(" ", "_").to_lowercase()
+    ));
 
     script
 }
@@ -170,7 +198,10 @@ pub fn write_rmsf_heatmap_data<W: Write>(
     secondary_structure: Option<&[char]>, // H=helix, E=sheet, C=coil
     rmsf_values: &[f64],
 ) -> std::io::Result<()> {
-    writeln!(writer, "residue_id,secondary_structure,rmsf,rmsf_normalized")?;
+    writeln!(
+        writer,
+        "residue_id,secondary_structure,rmsf,rmsf_normalized"
+    )?;
 
     // Normalize RMSF to 0-1
     let max_rmsf = rmsf_values.iter().cloned().fold(0.0f64, f64::max);
@@ -179,7 +210,9 @@ pub fn write_rmsf_heatmap_data<W: Write>(
 
     for (i, &res_id) in residue_ids.iter().enumerate() {
         let rmsf = rmsf_values.get(i).copied().unwrap_or(0.0);
-        let ss = secondary_structure.and_then(|s| s.get(i).copied()).unwrap_or('C');
+        let ss = secondary_structure
+            .and_then(|s| s.get(i).copied())
+            .unwrap_or('C');
         let normalized = (rmsf - min_rmsf) / range;
 
         writeln!(writer, "{},{},{:.4},{:.4}", res_id, ss, rmsf, normalized)?;
@@ -207,15 +240,22 @@ pub fn extract_contacts(
 ) -> Vec<ContactResidue> {
     let hydrophobic_set: std::collections::HashSet<&str> =
         ["ILE", "VAL", "LEU", "PHE", "MET", "ALA", "TRP", "PRO"]
-        .iter().cloned().collect();
+            .iter()
+            .cloned()
+            .collect();
 
-    let donor_set: std::collections::HashSet<&str> =
-        ["ARG", "LYS", "ASN", "GLN", "HIS", "SER", "THR", "TYR", "TRP"]
-        .iter().cloned().collect();
+    let donor_set: std::collections::HashSet<&str> = [
+        "ARG", "LYS", "ASN", "GLN", "HIS", "SER", "THR", "TYR", "TRP",
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let acceptor_set: std::collections::HashSet<&str> =
         ["ASP", "GLU", "ASN", "GLN", "HIS", "SER", "THR", "TYR"]
-        .iter().cloned().collect();
+            .iter()
+            .cloned()
+            .collect();
 
     let mut contacts = Vec::new();
 
@@ -227,12 +267,21 @@ pub fn extract_contacts(
         let distance = (dx * dx + dy * dy + dz * dz).sqrt();
 
         if distance <= cutoff_distance {
-            let res_name = residue_names.get(i).cloned().unwrap_or_else(|| "UNK".to_string());
+            let res_name = residue_names
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| "UNK".to_string());
             let res_upper = res_name.to_uppercase();
 
             let hydrophobicity = match res_upper.as_str() {
-                "ILE" => 1.0, "VAL" => 0.97, "LEU" => 0.92, "PHE" => 0.81,
-                "MET" => 0.71, "ALA" => 0.70, "TRP" => 0.40, "PRO" => 0.32,
+                "ILE" => 1.0,
+                "VAL" => 0.97,
+                "LEU" => 0.92,
+                "PHE" => 0.81,
+                "MET" => 0.71,
+                "ALA" => 0.70,
+                "TRP" => 0.40,
+                "PRO" => 0.32,
                 _ => 0.3,
             };
 
@@ -242,7 +291,7 @@ pub fn extract_contacts(
                 chain_id: chain_ids.get(i).copied().unwrap_or('A'),
                 distance_to_centroid: distance,
                 is_surface: distance <= cutoff_distance * 0.7,
-                sasa_open: 0.0,  // To be filled by caller
+                sasa_open: 0.0, // To be filled by caller
                 sasa_closed: 0.0,
                 contact_frequency: 1.0,
                 hydrophobicity,
@@ -253,8 +302,11 @@ pub fn extract_contacts(
     }
 
     // Sort by distance
-    contacts.sort_by(|a, b| a.distance_to_centroid.partial_cmp(&b.distance_to_centroid)
-        .unwrap_or(std::cmp::Ordering::Equal));
+    contacts.sort_by(|a, b| {
+        a.distance_to_centroid
+            .partial_cmp(&b.distance_to_centroid)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     contacts
 }
@@ -267,12 +319,22 @@ mod tests {
     fn test_write_rmsf_csv() {
         let residue_ids = vec![1, 2, 3, 4, 5];
         let residue_names: Vec<String> = vec!["ALA", "GLY", "LEU", "ASP", "PHE"]
-            .into_iter().map(String::from).collect();
+            .into_iter()
+            .map(String::from)
+            .collect();
         let chain_ids = vec!['A'; 5];
         let rmsf_values = vec![0.5, 1.0, 2.0, 0.8, 1.5];
 
         let mut output = Vec::new();
-        write_rmsf_csv(&mut output, &residue_ids, &residue_names, &chain_ids, &rmsf_values, None).unwrap();
+        write_rmsf_csv(
+            &mut output,
+            &residue_ids,
+            &residue_names,
+            &chain_ids,
+            &rmsf_values,
+            None,
+        )
+        .unwrap();
 
         let csv = String::from_utf8(output).unwrap();
         assert!(csv.contains("chain,residue_id"));
@@ -360,15 +422,22 @@ mod tests {
     fn test_extract_contacts() {
         let centroid = [10.0, 10.0, 10.0];
         let coords = vec![
-            [10.0, 10.0, 10.0],  // Distance 0 - definitely contact
-            [12.0, 10.0, 10.0],  // Distance 2 - contact
-            [20.0, 10.0, 10.0],  // Distance 10 - outside
+            [10.0, 10.0, 10.0], // Distance 0 - definitely contact
+            [12.0, 10.0, 10.0], // Distance 2 - contact
+            [20.0, 10.0, 10.0], // Distance 10 - outside
         ];
         let residue_ids = vec![1, 2, 3];
         let residue_names = vec!["ALA".to_string(), "GLY".to_string(), "LEU".to_string()];
         let chain_ids = vec!['A', 'A', 'A'];
 
-        let contacts = extract_contacts(centroid, &coords, &residue_ids, &residue_names, &chain_ids, 8.0);
+        let contacts = extract_contacts(
+            centroid,
+            &coords,
+            &residue_ids,
+            &residue_names,
+            &chain_ids,
+            8.0,
+        );
 
         assert_eq!(contacts.len(), 2);
         assert_eq!(contacts[0].residue_id, 1);

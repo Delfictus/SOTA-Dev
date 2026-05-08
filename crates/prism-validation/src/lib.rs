@@ -17,16 +17,16 @@
 //! - **Head-to-head AF3 comparison**: Demonstrate clear differentiation
 //! - **Pharma-relevant metrics**: Focus on what matters for drug discovery
 
-pub mod benchmarks;
-pub mod metrics;
-pub mod targets;
-pub mod comparison;
-pub mod reports;
-pub mod data_curation;
-pub mod pipeline;
-pub mod benchmark_integration;
 pub mod alphaflow_compat;
+pub mod benchmark_integration;
+pub mod benchmarks;
+pub mod comparison;
+pub mod data_curation;
+pub mod metrics;
+pub mod pipeline;
 pub mod prism_bench;
+pub mod reports;
+pub mod targets;
 
 // GNM-enhanced cryptic site detection
 pub mod cryptic_sites;
@@ -138,14 +138,14 @@ mod gpu_tests;
 
 // Re-export AlphaFlow compatibility for easy access
 pub use alphaflow_compat::{
-    AlphaFlowEnsemble, AlphaFlowMetrics, AtlasBenchmarkRunner,
-    AtlasBenchmarkResult, AtlasBenchmarkSummary, AtlasTarget,
+    AlphaFlowEnsemble, AlphaFlowMetrics, AtlasBenchmarkResult, AtlasBenchmarkRunner,
+    AtlasBenchmarkSummary, AtlasTarget,
 };
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use chrono::{DateTime, Utc};
 
 /// Result from running a benchmark
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -354,7 +354,11 @@ pub trait ValidationBenchmark: Send + Sync {
     fn score(&self, result: &BenchmarkResult) -> ValidationScore;
 
     /// Compare with AF3 result
-    fn compare_af3(&self, result: &BenchmarkResult, af3_result: Option<&BenchmarkMetrics>) -> Af3Comparison;
+    fn compare_af3(
+        &self,
+        result: &BenchmarkResult,
+        af3_result: Option<&BenchmarkMetrics>,
+    ) -> Af3Comparison;
 }
 
 /// Configuration for validation runs
@@ -449,9 +453,15 @@ impl ValidationRunner {
         for name in &config.benchmarks {
             match name.as_str() {
                 "atlas" => benchmarks.push(Box::new(benchmarks::AtlasBenchmark::new(&config)?)),
-                "apo_holo" => benchmarks.push(Box::new(benchmarks::ApoHoloBenchmark::new(&config)?)),
-                "retrospective" => benchmarks.push(Box::new(benchmarks::RetrospectiveBenchmark::new(&config)?)),
-                "novel" => benchmarks.push(Box::new(benchmarks::NovelCrypticBenchmark::new(&config)?)),
+                "apo_holo" => {
+                    benchmarks.push(Box::new(benchmarks::ApoHoloBenchmark::new(&config)?))
+                }
+                "retrospective" => {
+                    benchmarks.push(Box::new(benchmarks::RetrospectiveBenchmark::new(&config)?))
+                }
+                "novel" => {
+                    benchmarks.push(Box::new(benchmarks::NovelCrypticBenchmark::new(&config)?))
+                }
                 _ => log::warn!("Unknown benchmark: {}", name),
             }
         }
@@ -546,7 +556,10 @@ impl ValidationRunner {
         let overall_score = if benchmark_summaries.is_empty() {
             0.0
         } else {
-            benchmark_summaries.iter().map(|s| s.mean_score).sum::<f64>()
+            benchmark_summaries
+                .iter()
+                .map(|s| s.mean_score)
+                .sum::<f64>()
                 / benchmark_summaries.len() as f64
         };
 
@@ -562,14 +575,22 @@ impl ValidationRunner {
     }
 
     fn load_targets_for_benchmark(&self, benchmark_name: &str) -> Result<Vec<targets::Target>> {
-        let targets_file = self.config.data_dir.join(benchmark_name).join("targets.json");
+        let targets_file = self
+            .config
+            .data_dir
+            .join(benchmark_name)
+            .join("targets.json");
 
         if targets_file.exists() {
             let content = std::fs::read_to_string(&targets_file)?;
             let targets: Vec<targets::Target> = serde_json::from_str(&content)?;
             Ok(targets)
         } else {
-            log::warn!("No targets file found for {}: {:?}", benchmark_name, targets_file);
+            log::warn!(
+                "No targets file found for {}: {:?}",
+                benchmark_name,
+                targets_file
+            );
             Ok(Vec::new())
         }
     }

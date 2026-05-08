@@ -65,9 +65,14 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(if std::env::args().any(|a| a == "-v" || a == "--verbose") { "debug" } else { "info" })
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
+        if std::env::args().any(|a| a == "-v" || a == "--verbose") {
+            "debug"
+        } else {
+            "info"
+        },
+    ))
+    .init();
 
     let args = Args::parse();
 
@@ -93,22 +98,43 @@ async fn main() -> Result<()> {
         info!("  │ Dataset             │ Available │ Complete │ Description             │");
         info!("  ├─────────────────────┼───────────┼──────────┼─────────────────────────┤");
 
-        let atlas_status = if availability.atlas_complete { "✅" } else { "⚠️ " };
-        info!("  │ ATLAS (MD RMSF)     │ {:>9} │    {}    │ SOTA comparability      │",
-              availability.atlas_targets, atlas_status);
+        let atlas_status = if availability.atlas_complete {
+            "✅"
+        } else {
+            "⚠️ "
+        };
+        info!(
+            "  │ ATLAS (MD RMSF)     │ {:>9} │    {}    │ SOTA comparability      │",
+            availability.atlas_targets, atlas_status
+        );
 
-        let nmr_status = if availability.nmr_complete { "✅" } else { "⚠️ " };
-        info!("  │ NMR Ensembles       │ {:>9} │    {}    │ Experimental grounding  │",
-              availability.nmr_ensembles, nmr_status);
+        let nmr_status = if availability.nmr_complete {
+            "✅"
+        } else {
+            "⚠️ "
+        };
+        info!(
+            "  │ NMR Ensembles       │ {:>9} │    {}    │ Experimental grounding  │",
+            availability.nmr_ensembles, nmr_status
+        );
 
-        let misato_status = if availability.misato_complete { "✅" } else { "⚠️ " };
-        info!("  │ MISATO (Drug)       │ {:>9} │    {}    │ Drug discovery          │",
-              availability.misato_complexes, misato_status);
+        let misato_status = if availability.misato_complete {
+            "✅"
+        } else {
+            "⚠️ "
+        };
+        info!(
+            "  │ MISATO (Drug)       │ {:>9} │    {}    │ Drug discovery          │",
+            availability.misato_complexes, misato_status
+        );
 
         info!("  └─────────────────────┴───────────┴──────────┴─────────────────────────┘");
         info!("");
 
-        if !availability.atlas_complete || !availability.nmr_complete || !availability.misato_complete {
+        if !availability.atlas_complete
+            || !availability.nmr_complete
+            || !availability.misato_complete
+        {
             info!("  💡 To download missing data, run:");
             info!("     cargo run --release -p prism-validation --bin acquire-data -- --all");
         } else {

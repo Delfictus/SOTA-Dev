@@ -13,16 +13,16 @@
 //!     --output results/6vxx_blind_prediction.json
 //! ```
 
-use std::path::PathBuf;
+use anyhow::{anyhow, Context, Result};
+use chrono::Utc;
+use clap::Parser;
 use std::collections::HashMap;
 use std::fs;
-use anyhow::{Result, Context, anyhow};
-use clap::Parser;
-use chrono::Utc;
+use std::path::PathBuf;
 
 use prism_validation::blind_validation_pipeline::{
-    BlindValidationPipeline, BlindValidationConfig, BlindPrediction,
-    ValidationReport, StructureValidationResult, ValidationMetrics,
+    BlindPrediction, BlindValidationConfig, BlindValidationPipeline, StructureValidationResult,
+    ValidationMetrics, ValidationReport,
 };
 
 #[derive(Parser, Debug)]
@@ -63,7 +63,10 @@ struct Args {
 }
 
 /// Parse PDB file to extract CA coordinates and sequence
-fn parse_pdb_chain(pdb_path: &PathBuf, chain_id: &str) -> Result<(Vec<[f32; 3]>, String, Vec<i32>)> {
+fn parse_pdb_chain(
+    pdb_path: &PathBuf,
+    chain_id: &str,
+) -> Result<(Vec<[f32; 3]>, String, Vec<i32>)> {
     let content = fs::read_to_string(pdb_path)
         .with_context(|| format!("Failed to read PDB file: {:?}", pdb_path))?;
 
@@ -111,11 +114,16 @@ fn parse_pdb_chain(pdb_path: &PathBuf, chain_id: &str) -> Result<(Vec<[f32; 3]>,
     }
 
     if ca_coords.is_empty() {
-        return Err(anyhow!("No CA atoms found for chain {} in {:?}", chain_id, pdb_path));
+        return Err(anyhow!(
+            "No CA atoms found for chain {} in {:?}",
+            chain_id,
+            pdb_path
+        ));
     }
 
     // Build sequence from residue map
-    let sequence: String = residue_numbers.iter()
+    let sequence: String = residue_numbers
+        .iter()
         .map(|r| residue_map.get(r).copied().unwrap_or('X'))
         .collect();
 
@@ -125,11 +133,26 @@ fn parse_pdb_chain(pdb_path: &PathBuf, chain_id: &str) -> Result<(Vec<[f32; 3]>,
 /// Convert 3-letter amino acid code to 1-letter code
 fn residue_name_to_char(name: &str) -> char {
     match name {
-        "ALA" => 'A', "CYS" => 'C', "ASP" => 'D', "GLU" => 'E',
-        "PHE" => 'F', "GLY" => 'G', "HIS" => 'H', "ILE" => 'I',
-        "LYS" => 'K', "LEU" => 'L', "MET" => 'M', "ASN" => 'N',
-        "PRO" => 'P', "GLN" => 'Q', "ARG" => 'R', "SER" => 'S',
-        "THR" => 'T', "VAL" => 'V', "TRP" => 'W', "TYR" => 'Y',
+        "ALA" => 'A',
+        "CYS" => 'C',
+        "ASP" => 'D',
+        "GLU" => 'E',
+        "PHE" => 'F',
+        "GLY" => 'G',
+        "HIS" => 'H',
+        "ILE" => 'I',
+        "LYS" => 'K',
+        "LEU" => 'L',
+        "MET" => 'M',
+        "ASN" => 'N',
+        "PRO" => 'P',
+        "GLN" => 'Q',
+        "ARG" => 'R',
+        "SER" => 'S',
+        "THR" => 'T',
+        "VAL" => 'V',
+        "TRP" => 'W',
+        "TYR" => 'Y',
         // Non-standard
         "MSE" => 'M', // Selenomethionine
         "SEC" => 'U', // Selenocysteine
@@ -202,7 +225,8 @@ fn export_pymol_pdb(
     let mut final_output = Vec::new();
     final_output.push("REMARK PRISM-Delta Cryptic Site Prediction".to_string());
     final_output.push("REMARK B-factor = Cryptic Score (0-100 scale)".to_string());
-    final_output.push("REMARK PyMOL: spectrum b, blue_white_red, minimum=0, maximum=100".to_string());
+    final_output
+        .push("REMARK PyMOL: spectrum b, blue_white_red, minimum=0, maximum=100".to_string());
     final_output.push("REMARK        or: color red, b > 50".to_string());
     final_output.extend(output_lines);
 
@@ -222,7 +246,9 @@ fn main() -> Result<()> {
     println!();
 
     // Parse PDB file
-    let pdb_filename = args.pdb.file_stem()
+    let pdb_filename = args
+        .pdb
+        .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
 
@@ -231,7 +257,11 @@ fn main() -> Result<()> {
 
     let (ca_coords, sequence, residue_numbers) = parse_pdb_chain(&args.pdb, &args.chain)?;
 
-    println!("Parsed {} residues from chain {}", ca_coords.len(), args.chain);
+    println!(
+        "Parsed {} residues from chain {}",
+        ca_coords.len(),
+        args.chain
+    );
     println!("Sequence length: {}", sequence.len());
     println!();
 
@@ -247,8 +277,12 @@ fn main() -> Result<()> {
     pipeline.load_ground_truth();
 
     // Read full PDB content for AMBER ff14SB physics (bonds, angles, dihedrals)
-    let pdb_content = fs::read_to_string(&args.pdb)
-        .with_context(|| format!("Failed to read PDB file for full-atom physics: {:?}", args.pdb))?;
+    let pdb_content = fs::read_to_string(&args.pdb).with_context(|| {
+        format!(
+            "Failed to read PDB file for full-atom physics: {:?}",
+            args.pdb
+        )
+    })?;
 
     // Pass full-atom PDB to pipeline for proper AMBER force field
     // This enables bonds, angles, dihedrals instead of CA-only elastic network
@@ -280,21 +314,48 @@ fn main() -> Result<()> {
     println!("PREDICTION LOCKED");
     println!("-----------------");
     println!("Total residues analyzed: {}", prediction.summary.n_residues);
-    println!("Cryptic residues predicted: {}", prediction.summary.n_cryptic_residues);
-    println!("Predicted binding sites: {}", prediction.summary.n_predicted_sites);
-    println!("Mean cryptic score: {:.4}", prediction.summary.mean_cryptic_score);
-    println!("Max cryptic score: {:.4}", prediction.summary.max_cryptic_score);
-    println!("Mean escape resistance: {:.4}", prediction.summary.mean_escape_resistance);
-    println!("Mean priority score: {:.4}", prediction.summary.mean_priority_score);
+    println!(
+        "Cryptic residues predicted: {}",
+        prediction.summary.n_cryptic_residues
+    );
+    println!(
+        "Predicted binding sites: {}",
+        prediction.summary.n_predicted_sites
+    );
+    println!(
+        "Mean cryptic score: {:.4}",
+        prediction.summary.mean_cryptic_score
+    );
+    println!(
+        "Max cryptic score: {:.4}",
+        prediction.summary.max_cryptic_score
+    );
+    println!(
+        "Mean escape resistance: {:.4}",
+        prediction.summary.mean_escape_resistance
+    );
+    println!(
+        "Mean priority score: {:.4}",
+        prediction.summary.mean_priority_score
+    );
     println!("Threshold used: {:.4}", prediction.summary.threshold_used);
     println!();
 
     // Print timing breakdown
     println!("Timing Breakdown:");
-    println!("  Ensemble generation: {} ms", prediction.timing.ensemble_generation_ms);
+    println!(
+        "  Ensemble generation: {} ms",
+        prediction.timing.ensemble_generation_ms
+    );
     println!("  Kabsch alignment: {} ms", prediction.timing.alignment_ms);
-    println!("  Feature extraction: {} ms", prediction.timing.feature_extraction_ms);
-    println!("  Cryptic scoring: {} ms", prediction.timing.cryptic_scoring_ms);
+    println!(
+        "  Feature extraction: {} ms",
+        prediction.timing.feature_extraction_ms
+    );
+    println!(
+        "  Cryptic scoring: {} ms",
+        prediction.timing.cryptic_scoring_ms
+    );
     println!("  Clustering: {} ms", prediction.timing.clustering_ms);
     println!("  Total: {} ms", prediction.timing.total_ms);
     println!();
@@ -304,15 +365,18 @@ fn main() -> Result<()> {
         println!("TOP PREDICTED CRYPTIC SITES:");
         println!("{:-<80}", "");
         for (i, site) in prediction.predicted_sites.iter().take(5).enumerate() {
-            let residue_nums: Vec<i32> = site.residues.iter()
-                .map(|r| r.residue_num)
-                .collect();
-            println!("  Site {}: {} residues, score={:.3}, escape_resistance={:.3}",
-                     i + 1,
-                     site.residues.len(),
-                     site.mean_cryptic_score,
-                     site.mean_escape_resistance);
-            println!("    Residues: {:?}", &residue_nums[..residue_nums.len().min(10)]);
+            let residue_nums: Vec<i32> = site.residues.iter().map(|r| r.residue_num).collect();
+            println!(
+                "  Site {}: {} residues, score={:.3}, escape_resistance={:.3}",
+                i + 1,
+                site.residues.len(),
+                site.mean_cryptic_score,
+                site.mean_escape_resistance
+            );
+            println!(
+                "    Residues: {:?}",
+                &residue_nums[..residue_nums.len().min(10)]
+            );
             if let Some(ref domain) = site.representative.domain {
                 println!("    Domain: {}", domain);
             }
@@ -335,9 +399,13 @@ fn main() -> Result<()> {
     // Validate against ground truth if requested
     if args.validate {
         println!();
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!("  STAGE 6: VALIDATION (Comparing to hidden ground truth)");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
         println!();
 
         let report = pipeline.validate(&[prediction.clone()])?;
@@ -351,12 +419,18 @@ fn main() -> Result<()> {
             println!("  Recall: {:.4}", result.metrics.cryptic_recall);
             println!("  Precision: {:.4}", result.metrics.cryptic_precision);
             println!("  F1 Score: {:.4}", result.metrics.cryptic_f1);
-            println!("  Success: {}", if result.metrics.success { "YES" } else { "NO" });
+            println!(
+                "  Success: {}",
+                if result.metrics.success { "YES" } else { "NO" }
+            );
             println!("  Epitope overlap: {:.4}", result.metrics.epitope_overlap);
             println!();
 
             println!("Ground Truth:");
-            println!("  Cryptic residues: {:?}", &result.ground_truth.cryptic_residues);
+            println!(
+                "  Cryptic residues: {:?}",
+                &result.ground_truth.cryptic_residues
+            );
             println!("  Source: {}", result.ground_truth.source);
         }
 

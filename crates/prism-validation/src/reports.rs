@@ -2,7 +2,7 @@
 //!
 //! Generates publication-ready reports, figures, and supplementary data.
 
-use crate::{ValidationSummary, BenchmarkResult, BenchmarkSummary};
+use crate::{BenchmarkResult, BenchmarkSummary, ValidationSummary};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -45,7 +45,8 @@ pub struct TableData {
 impl ValidationReport {
     /// Generate report from validation summary
     pub fn from_summary(summary: &ValidationSummary) -> Self {
-        let title = "PRISM-4D NOVA Validation: Dynamics-Based Drug Discovery Beyond AlphaFold3".to_string();
+        let title =
+            "PRISM-4D NOVA Validation: Dynamics-Based Drug Discovery Beyond AlphaFold3".to_string();
 
         let exec_summary = Self::generate_executive_summary(summary);
         let methods = Self::generate_methods(summary);
@@ -313,7 +314,12 @@ impl ValidationReport {
             content.push_str(&format!("| {} |\n", table.headers.join(" | ")));
             content.push_str(&format!(
                 "| {} |\n",
-                table.headers.iter().map(|_| "---").collect::<Vec<_>>().join(" | ")
+                table
+                    .headers
+                    .iter()
+                    .map(|_| "---")
+                    .collect::<Vec<_>>()
+                    .join(" | ")
             ));
             for row in &table.rows {
                 content.push_str(&format!("| {} |\n", row.join(" | ")));

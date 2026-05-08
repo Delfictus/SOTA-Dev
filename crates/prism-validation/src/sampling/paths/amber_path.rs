@@ -27,15 +27,17 @@ use crate::sampling::result::{
 #[cfg(feature = "cryptic-gpu")]
 use cudarc::driver::CudaContext;
 #[cfg(feature = "cryptic-gpu")]
-use prism_gpu::amber_mega_fused::{AmberMegaFusedHmc, HmcRunResult, build_exclusion_lists};
+use prism_gpu::amber_mega_fused::{build_exclusion_lists, AmberMegaFusedHmc, HmcRunResult};
 #[cfg(feature = "cryptic-gpu")]
-use prism_physics::amber_ff14sb::{AmberTopology, PdbAtom, get_bond_param, get_angle_param, get_dihedral_params, get_lj_param};
+use prism_physics::amber_ff14sb::{
+    get_angle_param, get_bond_param, get_dihedral_params, get_lj_param, AmberTopology, PdbAtom,
+};
 
 // Explicit solvent imports (optional feature)
 #[cfg(feature = "cryptic-gpu")]
-use prism_physics::solvation::{SolvationBox, SolvationConfig};
+use prism_gpu::{Settle, PME};
 #[cfg(feature = "cryptic-gpu")]
-use prism_gpu::{PME, Settle};
+use prism_physics::solvation::{SolvationBox, SolvationConfig};
 
 // ============================================================================
 // LANGEVIN FRICTION COEFFICIENTS (SOTA Physics Parameters)
@@ -208,7 +210,8 @@ impl SamplingBackend for AmberPath {
             // imbalances that keep energy positive.
             log::info!("AmberPath: Missing hydrogens detected - running FULL protonation");
             let mut protonator = Protonator::new();
-            let protonated = protonator.add_hydrogens(structure)
+            let protonated = protonator
+                .add_hydrogens(structure)
                 .context("AmberPath: Protonation failed")?;
             log::info!(
                 "AmberPath: Added {} hydrogens ({} N-H, {} Cα-H, {} sidechain)",
@@ -224,7 +227,10 @@ impl SamplingBackend for AmberPath {
         };
 
         let n_atoms = structure.n_atoms();
-        log::info!("AmberPath: Proceeding with {} atoms after protonation", n_atoms);
+        log::info!(
+            "AmberPath: Proceeding with {} atoms after protonation",
+            n_atoms
+        );
 
         // Parse topology from structure
         let pdb_content = structure.to_pdb_string();
@@ -244,8 +250,12 @@ impl SamplingBackend for AmberPath {
         // - Preserves local flexibility (sidechains still move freely)
         // - Allows cryptic pockets to open (weak k = 1.0 kcal/mol/Å²)
         let enm_bonds = add_native_contacts(&pdb_atoms, &mut topology);
-        log::info!("🔗 ENM: Added {} native contact bonds (k={}, cutoff={}Å)", enm_bonds, ENM_FORCE_CONSTANT, ENM_CUTOFF);
-
+        log::info!(
+            "🔗 ENM: Added {} native contact bonds (k={}, cutoff={}Å)",
+            enm_bonds,
+            ENM_FORCE_CONSTANT,
+            ENM_CUTOFF
+        );
 
         // Create AmberMegaFusedHmc GPU kernel
         let mut hmc = AmberMegaFusedHmc::new(self.context.clone(), n_atoms)
@@ -267,8 +277,12 @@ impl SamplingBackend for AmberPath {
         let mut h_bonds_checked = 0;
         for (ai, aj, k, r0) in &bonds {
             // Check if this is a hydrogen bond
-            let is_h_bond = pdb_atoms.get(*ai).map_or(false, |a| a.name.starts_with('H'))
-                || pdb_atoms.get(*aj).map_or(false, |a| a.name.starts_with('H'));
+            let is_h_bond = pdb_atoms
+                .get(*ai)
+                .map_or(false, |a| a.name.starts_with('H'))
+                || pdb_atoms
+                    .get(*aj)
+                    .map_or(false, |a| a.name.starts_with('H'));
 
             if is_h_bond {
                 h_bonds_checked += 1;
@@ -280,7 +294,11 @@ impl SamplingBackend for AmberPath {
                 }
             }
         }
-        log::info!("✅ Physics Check: All {} bonds valid ({} H-bonds verified)", bonds.len(), h_bonds_checked);
+        log::info!(
+            "✅ Physics Check: All {} bonds valid ({} H-bonds verified)",
+            bonds.len(),
+            h_bonds_checked
+        );
 
         // ========================================================================
         // BOUNDS CHECK: Verify all atom indices are valid
@@ -297,15 +315,27 @@ impl SamplingBackend for AmberPath {
         for (ai, aj, ak, al, _, _, _) in &dihedrals {
             max_dihedral_idx = max_dihedral_idx.max(*ai).max(*aj).max(*ak).max(*al);
         }
-        log::info!("🔍 Bounds Check: n_atoms={}, max_bond_idx={}, max_angle_idx={}, max_dihedral_idx={}",
-            n_atoms, max_bond_idx, max_angle_idx, max_dihedral_idx);
+        log::info!(
+            "🔍 Bounds Check: n_atoms={}, max_bond_idx={}, max_angle_idx={}, max_dihedral_idx={}",
+            n_atoms,
+            max_bond_idx,
+            max_angle_idx,
+            max_dihedral_idx
+        );
         if max_bond_idx >= n_atoms || max_angle_idx >= n_atoms || max_dihedral_idx >= n_atoms {
             bail!("CRITICAL: Atom index out of bounds! n_atoms={}, max indices: bond={}, angle={}, dihedral={}",
                 n_atoms, max_bond_idx, max_angle_idx, max_dihedral_idx);
         }
 
-        hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)
-            .context("AmberPath: Failed to upload topology to GPU")?;
+        hmc.upload_topology(
+            &positions,
+            &bonds,
+            &angles,
+            &dihedrals,
+            &nb_params,
+            &exclusions,
+        )
+        .context("AmberPath: Failed to upload topology to GPU")?;
 
         // =========================================================================
         // STAGED INITIALIZATION: Minimize → Gradual Heating → Equilibration
@@ -317,24 +347,36 @@ impl SamplingBackend for AmberPath {
         // - VERY small step size (0.0001 Å) for debugging
         // - CUDA kernel has dual safety: force clamping (300) + displacement clamping (0.2 Å)
         log::info!("AmberPath: Stage 1/3 - Energy minimization (10000 steps, 0.0001 Å)...");
-        let final_energy = hmc.minimize(10000, 0.0001)
+        let final_energy = hmc
+            .minimize(10000, 0.0001)
             .context("AmberPath: Energy minimization failed")?;
-        log::info!("AmberPath: Minimization complete, PE = {:.2} kcal/mol", final_energy);
+        log::info!(
+            "AmberPath: Minimization complete, PE = {:.2} kcal/mol",
+            final_energy
+        );
 
         // Stage 2: Gentle Heating to target temperature
         // - dt = 0.2 fs: small timestep during heating for stability
         // - γ = 0.01 fs⁻¹ (10 ps⁻¹): faster coupling for equilibration
         // - Temperatures: 50K → 100K → 150K → 200K → 300K (implicit) or 310K (explicit)
-        log::info!("AmberPath: Stage 2/3 - Gentle heating (γ={} fs⁻¹, τ={:.0} ps)...",
-            GAMMA_HEATING, 1.0 / GAMMA_HEATING / 1000.0);
+        log::info!(
+            "AmberPath: Stage 2/3 - Gentle heating (γ={} fs⁻¹, τ={:.0} ps)...",
+            GAMMA_HEATING,
+            1.0 / GAMMA_HEATING / 1000.0
+        );
         const HEATING_STEPS_PER_STAGE: usize = 500;
-        const HEATING_DT: f32 = 0.2;  // Conservative timestep during heating
+        const HEATING_DT: f32 = 0.2; // Conservative timestep during heating
         let heating_temps = [50.0f32, 100.0, 150.0, 200.0, 300.0];
         for temp in heating_temps {
-            let result = hmc.run(HEATING_STEPS_PER_STAGE, HEATING_DT, temp, GAMMA_HEATING)
+            let result = hmc
+                .run(HEATING_STEPS_PER_STAGE, HEATING_DT, temp, GAMMA_HEATING)
                 .with_context(|| format!("AmberPath: Heating at {}K failed", temp))?;
-            log::info!("  Heating {}K: PE={:.1} kcal/mol, T_avg={:.1}K",
-                temp, result.potential_energy, result.avg_temperature);
+            log::info!(
+                "  Heating {}K: PE={:.1} kcal/mol, T_avg={:.1}K",
+                temp,
+                result.potential_energy,
+                result.avg_temperature
+            );
         }
         log::info!("AmberPath: Heating complete to 300K");
 
@@ -355,10 +397,9 @@ impl SamplingBackend for AmberPath {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("AmberPath: No structure loaded"))?;
 
-        let hmc = self
-            .hmc
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("AmberPath: AmberMegaFusedHmc kernel not initialized"))?;
+        let hmc = self.hmc.as_mut().ok_or_else(|| {
+            anyhow::anyhow!("AmberPath: AmberMegaFusedHmc kernel not initialized")
+        })?;
 
         let start_time = std::time::Instant::now();
         let mut conformations = Vec::with_capacity(config.n_samples);
@@ -379,7 +420,11 @@ impl SamplingBackend for AmberPath {
         // TEMPERATURE:
         // - Explicit solvent: 310 K (physiological)
         // - Implicit solvent: 300 K (room temperature, more stable)
-        let target_temp = if hmc.is_explicit_solvent() { 310.0 } else { 300.0 };
+        let target_temp = if hmc.is_explicit_solvent() {
+            310.0
+        } else {
+            300.0
+        };
 
         log::info!("AmberPath: Production sampling (dt={}fs, γ={} fs⁻¹, τ={:.0} ps, T_target={}K, solvent={})",
             timestep_fs, GAMMA_PRODUCTION, 1.0 / GAMMA_PRODUCTION / 1000.0, target_temp,
@@ -391,11 +436,13 @@ impl SamplingBackend for AmberPath {
 
         for sample_idx in 0..config.n_samples {
             // Run continuous Langevin dynamics (Langevin thermostat handles temperature)
-            let result = hmc.run(steps_per_sample, timestep_fs, target_temp, GAMMA_PRODUCTION)
+            let result = hmc
+                .run(steps_per_sample, timestep_fs, target_temp, GAMMA_PRODUCTION)
                 .with_context(|| format!("AmberPath: HMC run failed at sample {}", sample_idx))?;
 
             // Collect conformation
-            let positions = hmc.get_positions()
+            let positions = hmc
+                .get_positions()
                 .context("AmberPath: Failed to get positions from GPU")?;
             conformations.push(flat_to_3d(&positions, structure.n_residues()));
             energies.push(result.potential_energy as f32);
@@ -403,9 +450,11 @@ impl SamplingBackend for AmberPath {
             // Per-sample logging
             log::info!(
                 "  Sample {}/{}: PE={:.1} kcal/mol, T_avg={:.1}K (target={}K)",
-                sample_idx + 1, config.n_samples,
+                sample_idx + 1,
+                config.n_samples,
                 result.potential_energy,
-                result.avg_temperature, target_temp
+                result.avg_temperature,
+                target_temp
             );
         }
 
@@ -521,7 +570,9 @@ fn parse_pdb_to_atoms(pdb_content: &str) -> Vec<PdbAtom> {
                 residue_name,
                 residue_id,
                 chain_id,
-                x, y, z,
+                x,
+                y,
+                z,
             });
             index += 1;
         }
@@ -533,7 +584,9 @@ fn parse_pdb_to_atoms(pdb_content: &str) -> Vec<PdbAtom> {
 /// Convert SanitizedStructure to flat positions array
 #[cfg(feature = "cryptic-gpu")]
 fn topology_to_flat_positions(structure: &SanitizedStructure) -> Vec<f32> {
-    structure.atoms.iter()
+    structure
+        .atoms
+        .iter()
         .flat_map(|a| a.position.iter().copied())
         .collect()
 }
@@ -541,32 +594,50 @@ fn topology_to_flat_positions(structure: &SanitizedStructure) -> Vec<f32> {
 /// Convert topology bonds to tuple format for AmberMegaFusedHmc
 #[cfg(feature = "cryptic-gpu")]
 fn topology_to_bond_tuples(topology: &AmberTopology) -> Vec<(usize, usize, f32, f32)> {
-    topology.bonds.iter().enumerate().filter_map(|(i, (a1, a2))| {
-        if i < topology.bond_params.len() {
-            let params = &topology.bond_params[i];
-            Some((*a1 as usize, *a2 as usize, params.k, params.r0))
-        } else {
-            None
-        }
-    }).collect()
+    topology
+        .bonds
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (a1, a2))| {
+            if i < topology.bond_params.len() {
+                let params = &topology.bond_params[i];
+                Some((*a1 as usize, *a2 as usize, params.k, params.r0))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Convert topology angles to tuple format for AmberMegaFusedHmc
 #[cfg(feature = "cryptic-gpu")]
 fn topology_to_angle_tuples(topology: &AmberTopology) -> Vec<(usize, usize, usize, f32, f32)> {
-    topology.angles.iter().enumerate().filter_map(|(i, (a1, a2, a3))| {
-        if i < topology.angle_params.len() {
-            let params = &topology.angle_params[i];
-            Some((*a1 as usize, *a2 as usize, *a3 as usize, params.k, params.theta0))
-        } else {
-            None
-        }
-    }).collect()
+    topology
+        .angles
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (a1, a2, a3))| {
+            if i < topology.angle_params.len() {
+                let params = &topology.angle_params[i];
+                Some((
+                    *a1 as usize,
+                    *a2 as usize,
+                    *a3 as usize,
+                    params.k,
+                    params.theta0,
+                ))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Convert topology dihedrals to tuple format for AmberMegaFusedHmc
 #[cfg(feature = "cryptic-gpu")]
-fn topology_to_dihedral_tuples(topology: &AmberTopology) -> Vec<(usize, usize, usize, usize, f32, f32, f32)> {
+fn topology_to_dihedral_tuples(
+    topology: &AmberTopology,
+) -> Vec<(usize, usize, usize, usize, f32, f32, f32)> {
     let mut result = Vec::new();
 
     for (i, (a1, a2, a3, a4)) in topology.dihedrals.iter().enumerate() {
@@ -574,8 +645,13 @@ fn topology_to_dihedral_tuples(topology: &AmberTopology) -> Vec<(usize, usize, u
             // Take first dihedral parameter set if available
             if let Some(p) = topology.dihedral_params[i].first() {
                 result.push((
-                    *a1 as usize, *a2 as usize, *a3 as usize, *a4 as usize,
-                    p.k, p.n as f32, p.phase
+                    *a1 as usize,
+                    *a2 as usize,
+                    *a3 as usize,
+                    *a4 as usize,
+                    p.k,
+                    p.n as f32,
+                    p.phase,
                 ));
             }
         }
@@ -587,19 +663,23 @@ fn topology_to_dihedral_tuples(topology: &AmberTopology) -> Vec<(usize, usize, u
 /// Convert topology to non-bonded parameters
 #[cfg(feature = "cryptic-gpu")]
 fn topology_to_nb_params(topology: &AmberTopology) -> Vec<(f32, f32, f32, f32)> {
-    let n = topology.n_atoms.min(topology.masses.len())
+    let n = topology
+        .n_atoms
+        .min(topology.masses.len())
         .min(topology.charges.len())
         .min(topology.lj_params.len());
 
-    (0..n).map(|i| {
-        let lj = &topology.lj_params[i];
-        // rmin_half to sigma conversion:
-        // rmin = 2 * rmin_half (LB combining rule)
-        // sigma = rmin / 2^(1/6) = 2 * rmin_half / 2^(1/6)
-        // 2^(1/6) ≈ 1.122462, so sigma = rmin_half * 2 / 1.122462 ≈ rmin_half * 1.7818
-        let sigma = lj.rmin_half * 2.0 / 1.122_462_f32;
-        (sigma, lj.epsilon, topology.charges[i], topology.masses[i])
-    }).collect()
+    (0..n)
+        .map(|i| {
+            let lj = &topology.lj_params[i];
+            // rmin_half to sigma conversion:
+            // rmin = 2 * rmin_half (LB combining rule)
+            // sigma = rmin / 2^(1/6) = 2 * rmin_half / 2^(1/6)
+            // 2^(1/6) ≈ 1.122462, so sigma = rmin_half * 2 / 1.122462 ≈ rmin_half * 1.7818
+            let sigma = lj.rmin_half * 2.0 / 1.122_462_f32;
+            (sigma, lj.epsilon, topology.charges[i], topology.masses[i])
+        })
+        .collect()
 }
 
 /// Convert flat positions [x0,y0,z0,x1,y1,z1,...] to [[x,y,z],...] for n_residues
@@ -624,9 +704,9 @@ fn flat_to_3d(flat: &[f32], n_residues: usize) -> Vec<[f32; 3]> {
 // - Equilibrium distance: native CA-CA distance (structure-specific)
 
 /// ENM parameters - tuned for implicit solvent stability
-const ENM_CUTOFF: f32 = 12.0;          // Å - max CA-CA distance for contact (captures more tertiary contacts)
-const ENM_SEQ_SEP: i32 = 4;            // min residue separation (skip nearest neighbors)
-const ENM_FORCE_CONSTANT: f32 = 0.1;  // kcal/mol/Å² - weak restraint
+const ENM_CUTOFF: f32 = 12.0; // Å - max CA-CA distance for contact (captures more tertiary contacts)
+const ENM_SEQ_SEP: i32 = 4; // min residue separation (skip nearest neighbors)
+const ENM_FORCE_CONSTANT: f32 = 0.1; // kcal/mol/Å² - weak restraint
 
 /// Add native contact bonds between CA atoms for structural stability
 ///
@@ -694,11 +774,15 @@ fn add_native_contacts(pdb_atoms: &[PdbAtom], topology: &mut AmberTopology) -> u
 
             // Add native contact bond
             // Bond: (atom_i, atom_j) with params (k, r0)
-            topology.bonds.push((ca_i.atom_idx as u32, ca_j.atom_idx as u32));
-            topology.bond_params.push(prism_physics::amber_ff14sb::BondParam {
-                k: ENM_FORCE_CONSTANT,
-                r0: dist,  // Native distance as equilibrium
-            });
+            topology
+                .bonds
+                .push((ca_i.atom_idx as u32, ca_j.atom_idx as u32));
+            topology
+                .bond_params
+                .push(prism_physics::amber_ff14sb::BondParam {
+                    k: ENM_FORCE_CONSTANT,
+                    r0: dist, // Native distance as equilibrium
+                });
 
             contacts_added += 1;
         }
@@ -741,7 +825,10 @@ END
         // load_structure MUST fail without GPU
         let result = path.load_structure(&structure);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Zero Fallback Policy"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Zero Fallback Policy"));
     }
 
     /// Test that sampling fails without GPU (Zero Fallback Policy)
@@ -753,7 +840,10 @@ END
 
         let result = path.sample(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Zero Fallback Policy"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Zero Fallback Policy"));
     }
 
     #[test]

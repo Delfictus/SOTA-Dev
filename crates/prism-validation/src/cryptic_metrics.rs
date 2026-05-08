@@ -76,10 +76,7 @@ pub struct SingleProteinResult {
 ///
 /// # Returns
 /// PR AUC value in range [0, 1]
-pub fn compute_pr_auc(
-    predictions: &[(i32, f64)],
-    ground_truth: &HashSet<i32>,
-) -> f64 {
+pub fn compute_pr_auc(predictions: &[(i32, f64)], ground_truth: &HashSet<i32>) -> f64 {
     if predictions.is_empty() || ground_truth.is_empty() {
         return 0.0;
     }
@@ -131,10 +128,7 @@ pub fn compute_pr_auc(
 ///
 /// # Returns
 /// ROC AUC value in range [0, 1] where 0.5 = random, 1.0 = perfect
-pub fn compute_roc_auc(
-    predictions: &[(i32, f64)],
-    ground_truth: &HashSet<i32>,
-) -> f64 {
+pub fn compute_roc_auc(predictions: &[(i32, f64)], ground_truth: &HashSet<i32>) -> f64 {
     if predictions.is_empty() || ground_truth.is_empty() {
         return 0.5; // Random baseline
     }
@@ -289,14 +283,15 @@ pub fn aggregate_ranking_accuracy(results: &[SingleProteinResult], top_n: usize)
         return 0.0;
     }
 
-    let hits = results.iter().filter(|r| {
-        match top_n {
+    let hits = results
+        .iter()
+        .filter(|r| match top_n {
             1 => r.top1_hit,
             3 => r.top3_hit,
             5 => r.top5_hit,
             _ => r.best_rank.map(|r| r <= top_n).unwrap_or(false),
-        }
-    }).count();
+        })
+        .count();
 
     hits as f64 / results.len() as f64
 }
@@ -372,7 +367,7 @@ impl Default for SotaBaselines {
     fn default() -> Self {
         Self {
             pocketminer_roc_auc: 0.87,
-            cryptobank_pr_auc: 0.17,  // OOD test set
+            cryptobank_pr_auc: 0.17, // OOD test set
             cryptobank_roc_auc: 0.74,
             schrodinger_success: 0.83,
             cryptoth_top1: 0.78,
@@ -411,7 +406,10 @@ mod tests {
         let ground_truth: HashSet<i32> = [1, 2].into_iter().collect();
 
         let roc_auc = compute_roc_auc(&predictions, &ground_truth);
-        assert!(roc_auc > 0.95, "Perfect predictions should have high ROC AUC");
+        assert!(
+            roc_auc > 0.95,
+            "Perfect predictions should have high ROC AUC"
+        );
     }
 
     #[test]
@@ -426,7 +424,10 @@ mod tests {
         let (detected, overlap) = compute_detection(&predicted, &ligand, 0.5, 4.5);
 
         assert!(detected, "Should detect when >50% overlap");
-        assert!((overlap - 0.666).abs() < 0.01, "2/3 residues should overlap");
+        assert!(
+            (overlap - 0.666).abs() < 0.01,
+            "2/3 residues should overlap"
+        );
     }
 
     #[test]

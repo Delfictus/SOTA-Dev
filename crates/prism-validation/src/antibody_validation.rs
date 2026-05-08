@@ -77,21 +77,15 @@ impl AntibodyEpitope {
             apo_pdb_id: "2VWD".to_string(),
 
             // Core epitope - directly contacted by m102.4 CDRs
-            core_residues: vec![
-                507, 508, 509, 510, 511, 512,
-                529, 530, 531, 532, 533,
-            ],
+            core_residues: vec![507, 508, 509, 510, 511, 512, 529, 530, 531, 532, 533],
 
             // Extended epitope - within 5Å of antibody
-            extended_residues: vec![
-                504, 505, 506, 513, 514,
-                527, 528, 534, 535,
-            ],
+            extended_residues: vec![504, 505, 506, 513, 514, 527, 528, 534, 535],
 
             // All epitope residues
             all_residues: vec![
-                504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514,
-                527, 528, 529, 530, 531, 532, 533, 534, 535,
+                504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514, 527, 528, 529, 530, 531,
+                532, 533, 534, 535,
             ],
 
             kd_nm: Some(0.04), // 40 pM - extremely potent
@@ -282,8 +276,8 @@ pub fn validate_against_epitope(
         epitope_scores.iter().sum::<f64>() / epitope_scores.len() as f64
     };
 
-    let mean_prediction_score = predictions.iter().map(|(_, s)| s).sum::<f64>()
-        / predictions.len() as f64;
+    let mean_prediction_score =
+        predictions.iter().map(|(_, s)| s).sum::<f64>() / predictions.len() as f64;
 
     let score_enrichment = if mean_prediction_score > 0.0 {
         mean_epitope_score / mean_prediction_score
@@ -332,11 +326,7 @@ pub fn validate_result_against_epitope(
     result: &crate::ensemble_pocket_detector_v2::CrypticSiteResultV2,
     epitope: &AntibodyEpitope,
 ) -> AntibodyValidationMetrics {
-    validate_scores_against_epitope(
-        &result.cryptic_scores,
-        result.adaptive_threshold,
-        epitope,
-    )
+    validate_scores_against_epitope(&result.cryptic_scores, result.adaptive_threshold, epitope)
 }
 
 /// Summary of antibody validation for a benchmark run
@@ -381,10 +371,15 @@ impl AntibodyValidationSummary {
             };
         }
 
-        let mean_recall = validations.iter().map(|v| v.epitope_recall).sum::<f64>() / n_total as f64;
-        let mean_precision = validations.iter().map(|v| v.epitope_precision).sum::<f64>() / n_total as f64;
+        let mean_recall =
+            validations.iter().map(|v| v.epitope_recall).sum::<f64>() / n_total as f64;
+        let mean_precision =
+            validations.iter().map(|v| v.epitope_precision).sum::<f64>() / n_total as f64;
         let mean_f1 = validations.iter().map(|v| v.f1_score).sum::<f64>() / n_total as f64;
-        let n_passed = validations.iter().filter(|v| v.passes_threshold(0.7)).count();
+        let n_passed = validations
+            .iter()
+            .filter(|v| v.passes_threshold(0.7))
+            .count();
 
         Self {
             pdb_id: pdb_id.to_string(),
@@ -401,9 +396,13 @@ impl AntibodyValidationSummary {
     pub fn report(&self) -> String {
         let mut lines = Vec::new();
 
-        lines.push(format!("═══════════════════════════════════════════════════════════════════"));
+        lines.push(format!(
+            "═══════════════════════════════════════════════════════════════════"
+        ));
         lines.push(format!("  ANTIBODY VALIDATION SUMMARY: {}", self.pdb_id));
-        lines.push(format!("═══════════════════════════════════════════════════════════════════"));
+        lines.push(format!(
+            "═══════════════════════════════════════════════════════════════════"
+        ));
         lines.push(String::new());
 
         for v in &self.validations {
@@ -411,14 +410,19 @@ impl AntibodyValidationSummary {
         }
 
         lines.push(String::new());
-        lines.push(format!("───────────────────────────────────────────────────────────────────"));
+        lines.push(format!(
+            "───────────────────────────────────────────────────────────────────"
+        ));
         lines.push(format!(
             "  Overall: {}/{} passed (≥70% recall), Mean Recall={:.1}%, Mean F1={:.3}",
-            self.n_passed, self.n_total,
+            self.n_passed,
+            self.n_total,
             self.mean_recall * 100.0,
             self.mean_f1
         ));
-        lines.push(format!("═══════════════════════════════════════════════════════════════════"));
+        lines.push(format!(
+            "═══════════════════════════════════════════════════════════════════"
+        ));
 
         lines.join("\n")
     }
@@ -448,7 +452,8 @@ mod tests {
         let epitope = AntibodyEpitope::m102_4_nipah();
 
         // Perfect predictions: all epitope residues with high scores
-        let predictions: Vec<(i32, f64)> = epitope.all_residues
+        let predictions: Vec<(i32, f64)> = epitope
+            .all_residues
             .iter()
             .enumerate()
             .map(|(i, &res)| (res, 1.0 - i as f64 * 0.01))
@@ -467,7 +472,8 @@ mod tests {
         let epitope = AntibodyEpitope::m102_4_nipah();
 
         // Partial predictions: half of epitope plus some extras
-        let mut predictions: Vec<(i32, f64)> = epitope.all_residues
+        let mut predictions: Vec<(i32, f64)> = epitope
+            .all_residues
             .iter()
             .take(10)
             .enumerate()
@@ -508,7 +514,8 @@ mod tests {
             (0.15, "F (Failed)"),
         ] {
             let n_to_find = (epitope.all_residues.len() as f64 * recall) as usize;
-            let predictions: Vec<(i32, f64)> = epitope.all_residues
+            let predictions: Vec<(i32, f64)> = epitope
+                .all_residues
                 .iter()
                 .take(n_to_find)
                 .enumerate()
@@ -516,9 +523,14 @@ mod tests {
                 .collect();
 
             let metrics = validate_against_epitope(&predictions, &epitope);
-            assert_eq!(metrics.grade(), expected_grade,
+            assert_eq!(
+                metrics.grade(),
+                expected_grade,
                 "Expected {} for recall {:.2}, got {}",
-                expected_grade, recall, metrics.grade());
+                expected_grade,
+                recall,
+                metrics.grade()
+            );
         }
     }
 }

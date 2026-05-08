@@ -8,8 +8,8 @@
 
 use crate::{
     targets::{Target, ValidationType},
-    BenchmarkMetrics, BenchmarkResult, ValidationBenchmark, ValidationConfig, ValidationScore,
-    ScoreComponent, Af3Comparison, ComparisonItem,
+    Af3Comparison, BenchmarkMetrics, BenchmarkResult, ComparisonItem, ScoreComponent,
+    ValidationBenchmark, ValidationConfig, ValidationScore,
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -74,7 +74,11 @@ impl AtlasBenchmark {
                 continue;
             }
 
-            let dot: f64 = sim.iter().zip(exp.iter()).map(|(&s, &e)| s as f64 * e as f64).sum();
+            let dot: f64 = sim
+                .iter()
+                .zip(exp.iter())
+                .map(|(&s, &e)| s as f64 * e as f64)
+                .sum();
             let norm_sim: f64 = sim.iter().map(|&s| (s as f64).powi(2)).sum::<f64>().sqrt();
             let norm_exp: f64 = exp.iter().map(|&e| (e as f64).powi(2)).sum::<f64>().sqrt();
 
@@ -121,9 +125,16 @@ impl ValidationBenchmark for AtlasBenchmark {
         Ok(BenchmarkResult {
             benchmark: self.name().to_string(),
             target: target.name.clone(),
-            pdb_id: target.structures.apo_pdb
+            pdb_id: target
+                .structures
+                .apo_pdb
                 .as_ref()
-                .map(|p| p.file_stem().unwrap_or_default().to_string_lossy().to_string())
+                .map(|p| {
+                    p.file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_default(),
             timestamp: Utc::now(),
             duration_secs: duration,
@@ -164,7 +175,10 @@ impl ValidationBenchmark for AtlasBenchmark {
         }
 
         // Pairwise RMSD match (weight: 30%)
-        if let (Some(mean), Some(_std)) = (result.metrics.pairwise_rmsd_mean, result.metrics.pairwise_rmsd_std) {
+        if let (Some(mean), Some(_std)) = (
+            result.metrics.pairwise_rmsd_mean,
+            result.metrics.pairwise_rmsd_std,
+        ) {
             // Score based on how close to experimental distribution
             let score = (100.0 - mean * 10.0).max(0.0).min(100.0);
             components.push(ScoreComponent {
@@ -178,7 +192,11 @@ impl ValidationBenchmark for AtlasBenchmark {
         ValidationScore::compute(components)
     }
 
-    fn compare_af3(&self, result: &BenchmarkResult, af3_result: Option<&BenchmarkMetrics>) -> Af3Comparison {
+    fn compare_af3(
+        &self,
+        result: &BenchmarkResult,
+        af3_result: Option<&BenchmarkMetrics>,
+    ) -> Af3Comparison {
         let mut comparison = Vec::new();
 
         // RMSF comparison
@@ -197,16 +215,31 @@ impl ValidationBenchmark for AtlasBenchmark {
             });
         }
 
-        let prism_wins = comparison.iter().filter(|c| c.winner == "PRISM-NOVA").count();
-        let af3_wins = comparison.iter().filter(|c| c.winner == "AlphaFold3").count();
+        let prism_wins = comparison
+            .iter()
+            .filter(|c| c.winner == "PRISM-NOVA")
+            .count();
+        let af3_wins = comparison
+            .iter()
+            .filter(|c| c.winner == "AlphaFold3")
+            .count();
 
         Af3Comparison {
             target: result.target.clone(),
             prism_metrics: result.metrics.clone(),
             af3_metrics: af3_result.cloned(),
             comparison,
-            winner: if prism_wins > af3_wins { "PRISM-NOVA" } else { "AlphaFold3" }.to_string(),
-            advantage: format!("PRISM wins {}/{} metrics (dynamics capability)", prism_wins, prism_wins + af3_wins),
+            winner: if prism_wins > af3_wins {
+                "PRISM-NOVA"
+            } else {
+                "AlphaFold3"
+            }
+            .to_string(),
+            advantage: format!(
+                "PRISM wins {}/{} metrics (dynamics capability)",
+                prism_wins,
+                prism_wins + af3_wins
+            ),
         }
     }
 }
@@ -265,9 +298,16 @@ impl ValidationBenchmark for ApoHoloBenchmark {
         Ok(BenchmarkResult {
             benchmark: self.name().to_string(),
             target: target.name.clone(),
-            pdb_id: target.structures.apo_pdb
+            pdb_id: target
+                .structures
+                .apo_pdb
                 .as_ref()
-                .map(|p| p.file_stem().unwrap_or_default().to_string_lossy().to_string())
+                .map(|p| {
+                    p.file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_default(),
             timestamp: Utc::now(),
             duration_secs: duration,
@@ -310,7 +350,11 @@ impl ValidationBenchmark for ApoHoloBenchmark {
 
         // TDA pocket detection (weight: 20%)
         if let Some(betti_2) = result.metrics.betti_2 {
-            let score = if betti_2 >= 1.0 { 100.0 } else { betti_2 * 50.0 };
+            let score = if betti_2 >= 1.0 {
+                100.0
+            } else {
+                betti_2 * 50.0
+            };
             components.push(ScoreComponent {
                 name: "TDA Pocket Detection".to_string(),
                 score: score as f64,
@@ -334,7 +378,11 @@ impl ValidationBenchmark for ApoHoloBenchmark {
         ValidationScore::compute(components)
     }
 
-    fn compare_af3(&self, result: &BenchmarkResult, af3_result: Option<&BenchmarkMetrics>) -> Af3Comparison {
+    fn compare_af3(
+        &self,
+        result: &BenchmarkResult,
+        af3_result: Option<&BenchmarkMetrics>,
+    ) -> Af3Comparison {
         let mut comparison = Vec::new();
 
         // Pocket RMSD comparison
@@ -370,7 +418,8 @@ impl ValidationBenchmark for ApoHoloBenchmark {
             af3_metrics: af3_result.cloned(),
             comparison: comparison.clone(),
             winner: "PRISM-NOVA".to_string(),
-            advantage: "PRISM-NOVA can predict transitions; AF3 returns static structure".to_string(),
+            advantage: "PRISM-NOVA can predict transitions; AF3 returns static structure"
+                .to_string(),
         }
     }
 }
@@ -400,7 +449,8 @@ impl ValidationBenchmark for RetrospectiveBenchmark {
     fn run(&self, target: &Target) -> Result<BenchmarkResult> {
         let start = std::time::Instant::now();
 
-        log::info!("Running Retrospective Blind benchmark on {} (Drug: {:?})",
+        log::info!(
+            "Running Retrospective Blind benchmark on {} (Drug: {:?})",
             target.name,
             target.drug_info.as_ref().map(|d| &d.name)
         );
@@ -422,7 +472,9 @@ impl ValidationBenchmark for RetrospectiveBenchmark {
 
         // Custom metrics for retrospective
         metrics.custom.insert("site_rank".to_string(), 1.0); // Rank of actual site
-        metrics.custom.insert("druggability_score".to_string(), 0.85);
+        metrics
+            .custom
+            .insert("druggability_score".to_string(), 0.85);
         metrics.custom.insert("site_overlap".to_string(), 0.78);
 
         let duration = start.elapsed().as_secs_f64();
@@ -435,9 +487,16 @@ impl ValidationBenchmark for RetrospectiveBenchmark {
         Ok(BenchmarkResult {
             benchmark: self.name().to_string(),
             target: target.name.clone(),
-            pdb_id: target.structures.apo_pdb
+            pdb_id: target
+                .structures
+                .apo_pdb
                 .as_ref()
-                .map(|p| p.file_stem().unwrap_or_default().to_string_lossy().to_string())
+                .map(|p| {
+                    p.file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_default(),
             timestamp: Utc::now(),
             duration_secs: duration,
@@ -445,13 +504,17 @@ impl ValidationBenchmark for RetrospectiveBenchmark {
             metrics,
             passed,
             reason: if passed {
-                format!("Drug site found at rank {} with {:.0}% overlap",
+                format!(
+                    "Drug site found at rank {} with {:.0}% overlap",
                     site_rank as i32,
-                    site_overlap * 100.0)
+                    site_overlap * 100.0
+                )
             } else {
-                format!("Drug site at rank {} (need ≤3) or overlap {:.0}% (need ≥60%)",
+                format!(
+                    "Drug site at rank {} (need ≤3) or overlap {:.0}% (need ≥60%)",
                     site_rank as i32,
-                    site_overlap * 100.0)
+                    site_overlap * 100.0
+                )
             },
         })
     }
@@ -495,14 +558,16 @@ impl ValidationBenchmark for RetrospectiveBenchmark {
         ValidationScore::compute(components)
     }
 
-    fn compare_af3(&self, result: &BenchmarkResult, af3_result: Option<&BenchmarkMetrics>) -> Af3Comparison {
+    fn compare_af3(
+        &self,
+        result: &BenchmarkResult,
+        af3_result: Option<&BenchmarkMetrics>,
+    ) -> Af3Comparison {
         let mut comparison = Vec::new();
 
         // Site discovery comparison
         if let Some(&prism_rank) = result.metrics.custom.get("site_rank") {
-            let af3_rank = af3_result
-                .and_then(|r| r.custom.get("site_rank"))
-                .copied();
+            let af3_rank = af3_result.and_then(|r| r.custom.get("site_rank")).copied();
             comparison.push(ComparisonItem {
                 metric: "Drug Site Discovery".to_string(),
                 prism_value: prism_rank,
@@ -527,7 +592,10 @@ impl ValidationBenchmark for RetrospectiveBenchmark {
             });
         }
 
-        let prism_wins = comparison.iter().filter(|c| c.winner == "PRISM-NOVA").count();
+        let prism_wins = comparison
+            .iter()
+            .filter(|c| c.winner == "PRISM-NOVA")
+            .count();
 
         Af3Comparison {
             target: result.target.clone(),
@@ -535,8 +603,10 @@ impl ValidationBenchmark for RetrospectiveBenchmark {
             af3_metrics: af3_result.cloned(),
             comparison,
             winner: "PRISM-NOVA".to_string(),
-            advantage: format!("PRISM wins on drug discovery relevance ({} cryptic site detection)",
-                if prism_wins > 0 { "with" } else { "without" }),
+            advantage: format!(
+                "PRISM wins on drug discovery relevance ({} cryptic site detection)",
+                if prism_wins > 0 { "with" } else { "without" }
+            ),
         }
     }
 }
@@ -596,9 +666,16 @@ impl ValidationBenchmark for NovelCrypticBenchmark {
         Ok(BenchmarkResult {
             benchmark: self.name().to_string(),
             target: target.name.clone(),
-            pdb_id: target.structures.apo_pdb
+            pdb_id: target
+                .structures
+                .apo_pdb
                 .as_ref()
-                .map(|p| p.file_stem().unwrap_or_default().to_string_lossy().to_string())
+                .map(|p| {
+                    p.file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_default(),
             timestamp: Utc::now(),
             duration_secs: duration,
@@ -664,7 +741,11 @@ impl ValidationBenchmark for NovelCrypticBenchmark {
         ValidationScore::compute(components)
     }
 
-    fn compare_af3(&self, result: &BenchmarkResult, _af3_result: Option<&BenchmarkMetrics>) -> Af3Comparison {
+    fn compare_af3(
+        &self,
+        result: &BenchmarkResult,
+        _af3_result: Option<&BenchmarkMetrics>,
+    ) -> Af3Comparison {
         // AF3 cannot participate in this benchmark - it requires dynamics
         Af3Comparison {
             target: result.target.clone(),

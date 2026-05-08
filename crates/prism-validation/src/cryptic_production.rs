@@ -258,7 +258,9 @@ impl ShrakeRupleySASA {
                         let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
                         if let Some(cell_atoms) = grid.get(&neighbor_cell) {
                             for &j in cell_atoms {
-                                if i == j { continue; }
+                                if i == j {
+                                    continue;
+                                }
                                 let atom_j = &atoms[j];
                                 let dist_sq = (atom_i.coord[0] - atom_j.coord[0]).powi(2)
                                     + (atom_i.coord[1] - atom_j.coord[1]).powi(2)
@@ -380,7 +382,10 @@ impl ProductionCrypticDetector {
 
         // Step 1: Compute real SASA using Shrake-Rupley
         let sasa_result = self.sasa_calculator.calculate(atoms);
-        log::info!("[PROD-CRYPTIC] Shrake-Rupley SASA: {:.1} Å² total", sasa_result.total_sasa);
+        log::info!(
+            "[PROD-CRYPTIC] Shrake-Rupley SASA: {:.1} Å² total",
+            sasa_result.total_sasa
+        );
 
         // Step 2: Extract CA atoms for GNM
         let ca_atoms: Vec<&SimpleAtom> = atoms
@@ -407,10 +412,7 @@ impl ProductionCrypticDetector {
             .iter()
             .map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
             .collect();
-        let residue_names: Vec<&str> = ca_atoms
-            .iter()
-            .map(|a| a.residue_name.as_str())
-            .collect();
+        let residue_names: Vec<&str> = ca_atoms.iter().map(|a| a.residue_name.as_str()).collect();
 
         let gnm_result = self.gnm.compute_rmsf(&ca_positions, &residue_names);
         log::info!("[PROD-CRYPTIC] CA-GNM computed for {} residues", n_residues);
@@ -437,7 +439,11 @@ impl ProductionCrypticDetector {
             if !atom.is_hetatm {
                 let key = (atom.chain_id, atom.residue_seq);
                 // Get atom's SASA contribution from the sasa_result
-                let atom_sasa = sasa_result.residue_sasa.get(&atom.residue_seq).copied().unwrap_or(0.0);
+                let atom_sasa = sasa_result
+                    .residue_sasa
+                    .get(&atom.residue_seq)
+                    .copied()
+                    .unwrap_or(0.0);
                 sasa_map.entry(key).or_insert(atom_sasa);
             }
         }
@@ -445,13 +451,20 @@ impl ProductionCrypticDetector {
         // Step 5: Compute B-factor flexibility from atoms
         let bfactors: Vec<f64> = atoms.iter().map(|a| a.b_factor).collect();
         let bfactor_mean = bfactors.iter().sum::<f64>() / bfactors.len() as f64;
-        let bfactor_std = (bfactors.iter().map(|b| (b - bfactor_mean).powi(2)).sum::<f64>() / bfactors.len() as f64).sqrt().max(0.1);
+        let bfactor_std = (bfactors
+            .iter()
+            .map(|b| (b - bfactor_mean).powi(2))
+            .sum::<f64>()
+            / bfactors.len() as f64)
+            .sqrt()
+            .max(0.1);
 
         let mut bfactor_map: HashMap<ResKey, f64> = HashMap::new();
         for atom in atoms {
             let zscore = (atom.b_factor - bfactor_mean) / bfactor_std;
             let key = (atom.chain_id, atom.residue_seq);
-            bfactor_map.entry(key)
+            bfactor_map
+                .entry(key)
                 .and_modify(|v| *v = (*v + zscore) / 2.0)
                 .or_insert(zscore);
         }
@@ -461,9 +474,11 @@ impl ProductionCrypticDetector {
         for atom in atoms {
             if !atom.is_hetatm {
                 let key = (atom.chain_id, atom.residue_seq);
-                residue_data.entry(key)
+                residue_data
+                    .entry(key)
                     .or_insert_with(|| (Vec::new(), atom.residue_name.clone()))
-                    .0.push(atom.coord);
+                    .0
+                    .push(atom.coord);
             }
         }
 
@@ -504,7 +519,10 @@ impl ProductionCrypticDetector {
 
             // Combined score weighting (based on ablation studies)
             // GNM flexibility is most predictive (40%), packing deficit (25%), hydrophobicity (20%), B-factor (15%)
-            let score = 0.40 * gnm_flex + 0.25 * packing_deficit + 0.20 * hydro + 0.15 * ((bfactor / 3.0).clamp(0.0, 1.0));
+            let score = 0.40 * gnm_flex
+                + 0.25 * packing_deficit
+                + 0.20 * hydro
+                + 0.15 * ((bfactor / 3.0).clamp(0.0, 1.0));
 
             // Track all values for computing percentile-based threshold
             all_scores_data.push((res_key, score, gnm_flex, packing_deficit, burial));
@@ -514,15 +532,20 @@ impl ProductionCrypticDetector {
         }
 
         // Compute percentile-based threshold (top 30% of scores)
-        let mut sorted_scores: Vec<f64> = all_scores_data.iter().map(|(_, s, _, _, _)| *s).collect();
-        sorted_scores.sort_by(|a: &f64, b: &f64| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)); // Descending
+        let mut sorted_scores: Vec<f64> =
+            all_scores_data.iter().map(|(_, s, _, _, _)| *s).collect();
+        sorted_scores
+            .sort_by(|a: &f64, b: &f64| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)); // Descending
         let threshold_idx = (sorted_scores.len() as f64 * 0.30).ceil() as usize;
         let adaptive_threshold = if threshold_idx < sorted_scores.len() {
             sorted_scores[threshold_idx].max(0.50) // At least 0.50 minimum
         } else {
             0.50
         };
-        eprintln!("  [DEBUG] Adaptive threshold (top 30%): {:.4}", adaptive_threshold);
+        eprintln!(
+            "  [DEBUG] Adaptive threshold (top 30%): {:.4}",
+            adaptive_threshold
+        );
 
         // Apply adaptive threshold
         for (res_key, score, _gnm_flex, packing_deficit, _burial) in &all_scores_data {
@@ -545,20 +568,45 @@ impl ProductionCrypticDetector {
             let burial_mean = all_burial.iter().sum::<f64>() / all_burial.len() as f64;
 
             let packing_min = all_packing.iter().cloned().fold(f64::INFINITY, f64::min);
-            let packing_max = all_packing.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let packing_max = all_packing
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, f64::max);
             let packing_mean = all_packing.iter().sum::<f64>() / all_packing.len() as f64;
 
             let scores_only: Vec<f64> = all_scores_data.iter().map(|(_, s, _, _, _)| *s).collect();
             let score_min = scores_only.iter().cloned().fold(f64::INFINITY, f64::min);
-            let score_max = scores_only.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let score_max = scores_only
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, f64::max);
             let score_mean = scores_only.iter().sum::<f64>() / scores_only.len() as f64;
 
-            eprintln!("\n[DEBUG] Score Distribution for {} residues:", all_scores_data.len());
-            eprintln!("  GNM RMSF:        min={:.4}, max={:.4}, mean={:.4}", gnm_min, gnm_max, gnm_mean);
-            eprintln!("  Burial depth:    min={:.4}, max={:.4}, mean={:.4}", burial_min, burial_max, burial_mean);
-            eprintln!("  Packing deficit: min={:.4}, max={:.4}, mean={:.4}", packing_min, packing_max, packing_mean);
-            eprintln!("  Combined score:  min={:.4}, max={:.4}, mean={:.4}", score_min, score_max, score_mean);
-            eprintln!("  Qualifying (score>{:.2} && packing>0.25): {}", adaptive_threshold, scored_residues.len());
+            eprintln!(
+                "\n[DEBUG] Score Distribution for {} residues:",
+                all_scores_data.len()
+            );
+            eprintln!(
+                "  GNM RMSF:        min={:.4}, max={:.4}, mean={:.4}",
+                gnm_min, gnm_max, gnm_mean
+            );
+            eprintln!(
+                "  Burial depth:    min={:.4}, max={:.4}, mean={:.4}",
+                burial_min, burial_max, burial_mean
+            );
+            eprintln!(
+                "  Packing deficit: min={:.4}, max={:.4}, mean={:.4}",
+                packing_min, packing_max, packing_mean
+            );
+            eprintln!(
+                "  Combined score:  min={:.4}, max={:.4}, mean={:.4}",
+                score_min, score_max, score_mean
+            );
+            eprintln!(
+                "  Qualifying (score>{:.2} && packing>0.25): {}",
+                adaptive_threshold,
+                scored_residues.len()
+            );
         }
 
         // Step 8: Cluster spatially close residues
@@ -567,7 +615,9 @@ impl ProductionCrypticDetector {
         let mut assigned = vec![false; scored_residues.len()];
 
         for i in 0..scored_residues.len() {
-            if assigned[i] { continue; }
+            if assigned[i] {
+                continue;
+            }
 
             let mut cluster = vec![scored_residues[i].clone()];
             assigned[i] = true;
@@ -576,11 +626,15 @@ impl ProductionCrypticDetector {
             while changed {
                 changed = false;
                 for j in 0..scored_residues.len() {
-                    if assigned[j] { continue; }
+                    if assigned[j] {
+                        continue;
+                    }
 
                     let is_close = cluster.iter().any(|(_, _, c1)| {
                         let c2 = scored_residues[j].2;
-                        let dist_sq = (c1[0] - c2[0]).powi(2) + (c1[1] - c2[1]).powi(2) + (c1[2] - c2[2]).powi(2);
+                        let dist_sq = (c1[0] - c2[0]).powi(2)
+                            + (c1[1] - c2[1]).powi(2)
+                            + (c1[2] - c2[2]).powi(2);
                         dist_sq < cluster_dist_sq
                     });
 
@@ -599,15 +653,22 @@ impl ProductionCrypticDetector {
             if cluster.len() >= 3 && cluster.len() <= 50 {
                 clusters.push(cluster);
             } else if cluster.len() > 50 {
-                eprintln!("  [DEBUG] Cluster TOO LARGE ({}), splitting by chain...", cluster.len());
+                eprintln!(
+                    "  [DEBUG] Cluster TOO LARGE ({}), splitting by chain...",
+                    cluster.len()
+                );
                 // For large clusters, try to split by chain
                 let mut by_chain: HashMap<char, Vec<(ResKey, f64, [f64; 3])>> = HashMap::new();
                 for item in cluster {
-                    by_chain.entry(item.0.0).or_default().push(item);
+                    by_chain.entry(item.0 .0).or_default().push(item);
                 }
                 for (chain, chain_cluster) in by_chain {
                     if chain_cluster.len() >= 3 && chain_cluster.len() <= 50 {
-                        eprintln!("    [DEBUG] Chain {} sub-cluster: {} residues", chain, chain_cluster.len());
+                        eprintln!(
+                            "    [DEBUG] Chain {} sub-cluster: {} residues",
+                            chain,
+                            chain_cluster.len()
+                        );
                         clusters.push(chain_cluster);
                     }
                 }
@@ -635,14 +696,33 @@ impl ProductionCrypticDetector {
                 // Average scores - now using proper ResKey lookups
                 let avg_score = cluster.iter().map(|(_, s, _)| s).sum::<f64>() / n;
                 let avg_gnm = res_keys.iter().filter_map(|r| gnm_map.get(r)).sum::<f64>() / n;
-                let avg_bfactor = res_keys.iter().filter_map(|r| bfactor_map.get(r)).sum::<f64>() / n;
-                let avg_packing = res_keys.iter().filter_map(|r| burial_map.get(r)).map(|b| 1.0 - b).sum::<f64>() / n;
-                let avg_hydro = res_keys.iter().filter_map(|r| hydro_map.get(r)).sum::<f64>() / n;
+                let avg_bfactor = res_keys
+                    .iter()
+                    .filter_map(|r| bfactor_map.get(r))
+                    .sum::<f64>()
+                    / n;
+                let avg_packing = res_keys
+                    .iter()
+                    .filter_map(|r| burial_map.get(r))
+                    .map(|b| 1.0 - b)
+                    .sum::<f64>()
+                    / n;
+                let avg_hydro = res_keys
+                    .iter()
+                    .filter_map(|r| hydro_map.get(r))
+                    .sum::<f64>()
+                    / n;
                 let avg_sasa = res_keys.iter().filter_map(|r| sasa_map.get(r)).sum::<f64>() / n;
 
                 let volume = n * 150.0; // ~150 Å³ per residue
 
-                let confidence = if avg_score > 0.6 { "High" } else if avg_score > 0.5 { "Medium" } else { "Low" };
+                let confidence = if avg_score > 0.6 {
+                    "High"
+                } else if avg_score > 0.5 {
+                    "Medium"
+                } else {
+                    "Low"
+                };
 
                 ProductionCrypticCandidate {
                     rank: i + 1,
@@ -656,13 +736,20 @@ impl ProductionCrypticDetector {
                     hydrophobicity: avg_hydro,
                     sasa: avg_sasa,
                     confidence: confidence.to_string(),
-                    rationale: format!("gnm={:.2}, pack={:.2}, hydro={:.2}", avg_gnm, avg_packing, avg_hydro),
+                    rationale: format!(
+                        "gnm={:.2}, pack={:.2}, hydro={:.2}",
+                        avg_gnm, avg_packing, avg_hydro
+                    ),
                 }
             })
             .collect();
 
         // Sort by score and re-rank
-        candidates.sort_by(|a, b| b.cryptic_score.partial_cmp(&a.cryptic_score).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            b.cryptic_score
+                .partial_cmp(&a.cryptic_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for (i, c) in candidates.iter_mut().enumerate() {
             c.rank = i + 1;
         }
@@ -674,7 +761,8 @@ impl ProductionCrypticDetector {
             candidates,
             sasa_method: "Shrake-Rupley (92 Fibonacci points)".to_string(),
             gnm_method: "Chemistry-Aware GNM (ρ=0.6204, beats AlphaFlow)".to_string(),
-            detection_method: "Multi-signal fusion (GNM 40% + Packing 25% + Hydro 20% + B-factor 15%)".to_string(),
+            detection_method:
+                "Multi-signal fusion (GNM 40% + Packing 25% + Hydro 20% + B-factor 15%)".to_string(),
             computation_time_ms: start.elapsed().as_millis() as u64,
         }
     }
@@ -693,28 +781,67 @@ pub fn parse_pdb_simple(content: &str) -> Vec<SimpleAtom> {
     let mut serial = 0u32;
 
     for line in content.lines() {
-        let record = if line.len() >= 6 { &line[0..6] } else { continue };
+        let record = if line.len() >= 6 {
+            &line[0..6]
+        } else {
+            continue;
+        };
 
         if record == "ATOM  " || record == "HETATM" {
             serial += 1;
             let is_hetatm = record == "HETATM";
 
             // Parse PDB fixed-width columns
-            let name = if line.len() >= 16 { line[12..16].trim().to_string() } else { "".to_string() };
-            let res_name = if line.len() >= 20 { line[17..20].trim().to_string() } else { "UNK".to_string() };
-            let chain_id = if line.len() >= 22 { line.chars().nth(21).unwrap_or('A') } else { 'A' };
-            let res_seq = if line.len() >= 26 { line[22..26].trim().parse().unwrap_or(1) } else { 1 };
+            let name = if line.len() >= 16 {
+                line[12..16].trim().to_string()
+            } else {
+                "".to_string()
+            };
+            let res_name = if line.len() >= 20 {
+                line[17..20].trim().to_string()
+            } else {
+                "UNK".to_string()
+            };
+            let chain_id = if line.len() >= 22 {
+                line.chars().nth(21).unwrap_or('A')
+            } else {
+                'A'
+            };
+            let res_seq = if line.len() >= 26 {
+                line[22..26].trim().parse().unwrap_or(1)
+            } else {
+                1
+            };
 
-            let x = if line.len() >= 38 { line[30..38].trim().parse().unwrap_or(0.0) } else { 0.0 };
-            let y = if line.len() >= 46 { line[38..46].trim().parse().unwrap_or(0.0) } else { 0.0 };
-            let z = if line.len() >= 54 { line[46..54].trim().parse().unwrap_or(0.0) } else { 0.0 };
+            let x = if line.len() >= 38 {
+                line[30..38].trim().parse().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            let y = if line.len() >= 46 {
+                line[38..46].trim().parse().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            let z = if line.len() >= 54 {
+                line[46..54].trim().parse().unwrap_or(0.0)
+            } else {
+                0.0
+            };
 
-            let b_factor = if line.len() >= 66 { line[60..66].trim().parse().unwrap_or(20.0) } else { 20.0 };
+            let b_factor = if line.len() >= 66 {
+                line[60..66].trim().parse().unwrap_or(20.0)
+            } else {
+                20.0
+            };
 
             let element = if line.len() >= 78 {
                 line[76..78].trim().to_string()
             } else {
-                name.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "C".to_string())
+                name.chars()
+                    .next()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "C".to_string())
             };
 
             atoms.push(SimpleAtom {

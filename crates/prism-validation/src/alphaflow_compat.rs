@@ -52,9 +52,9 @@ impl AlphaFlowEnsemble {
     /// Create from PRISM-Delta simulation trajectory
     pub fn from_trajectory(
         name: &str,
-        coords: &[Vec<[f32; 3]>],  // [n_frames, n_atoms, 3]
-        ca_indices: &[usize],      // Indices of Cα atoms
-        subsample: usize,          // Take every Nth frame
+        coords: &[Vec<[f32; 3]>], // [n_frames, n_atoms, 3]
+        ca_indices: &[usize],     // Indices of Cα atoms
+        subsample: usize,         // Take every Nth frame
     ) -> Self {
         let n_models = coords.len() / subsample.max(1);
         let n_residues = ca_indices.len();
@@ -188,7 +188,8 @@ impl AlphaFlowEnsemble {
     pub fn compute_global_rmsd(&self) -> Option<GlobalRmsdStats> {
         let reference = self.reference_coords.as_ref()?;
 
-        let rmsds: Vec<f32> = self.ca_coords
+        let rmsds: Vec<f32> = self
+            .ca_coords
             .iter()
             .map(|frame| self.compute_rmsd_between(frame, reference))
             .collect();
@@ -504,7 +505,11 @@ impl AtlasBenchmarkRunner {
     }
 
     /// Run ATLAS benchmark on an ensemble
-    pub fn evaluate(&self, ensemble: &AlphaFlowEnsemble, target: &AtlasTarget) -> AtlasBenchmarkResult {
+    pub fn evaluate(
+        &self,
+        ensemble: &AlphaFlowEnsemble,
+        target: &AtlasTarget,
+    ) -> AtlasBenchmarkResult {
         // Set reference for comparison
         let ensemble_with_ref = AlphaFlowEnsemble {
             reference_coords: Some(target.reference_coords.clone()),
@@ -588,15 +593,23 @@ impl AtlasBenchmarkSummary {
     pub fn to_comparison_table(&self, method_name: &str) -> String {
         let mut table = String::new();
 
-        table.push_str(&format!("| Method | N | Pass Rate | Mean ρ | Best | Worst |\n"));
-        table.push_str(&format!("|--------|---|-----------|--------|------|-------|\n"));
+        table.push_str(&format!(
+            "| Method | N | Pass Rate | Mean ρ | Best | Worst |\n"
+        ));
+        table.push_str(&format!(
+            "|--------|---|-----------|--------|------|-------|\n"
+        ));
 
-        let best = self.results.iter()
+        let best = self
+            .results
+            .iter()
             .max_by(|a, b| a.rmsf_pearson.partial_cmp(&b.rmsf_pearson).unwrap())
             .map(|r| r.rmsf_pearson)
             .unwrap_or(0.0);
 
-        let worst = self.results.iter()
+        let worst = self
+            .results
+            .iter()
             .min_by(|a, b| a.rmsf_pearson.partial_cmp(&b.rmsf_pearson).unwrap())
             .map(|r| r.rmsf_pearson)
             .unwrap_or(0.0);

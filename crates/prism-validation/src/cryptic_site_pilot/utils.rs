@@ -33,7 +33,11 @@ pub fn parse_pdb_simple(content: &str) -> Vec<SimpleAtom> {
     let mut atoms = Vec::new();
 
     for line in content.lines() {
-        let record_type = if line.len() >= 6 { &line[0..6] } else { continue };
+        let record_type = if line.len() >= 6 {
+            &line[0..6]
+        } else {
+            continue;
+        };
 
         let is_hetatm = match record_type {
             "ATOM  " => false,
@@ -132,12 +136,14 @@ impl ShrakeRupleySASA {
         let golden_ratio = (1.0 + 5.0_f64.sqrt()) / 2.0;
         let golden_angle = 2.0 * PI / golden_ratio;
 
-        (0..n).map(|i| {
-            let theta = golden_angle * i as f64;
-            let z = 1.0 - (2.0 * i as f64 + 1.0) / n as f64;
-            let r = (1.0 - z * z).sqrt();
-            [r * theta.cos(), r * theta.sin(), z]
-        }).collect()
+        (0..n)
+            .map(|i| {
+                let theta = golden_angle * i as f64;
+                let z = 1.0 - (2.0 * i as f64 + 1.0) / n as f64;
+                let r = (1.0 - z * z).sqrt();
+                [r * theta.cos(), r * theta.sin(), z]
+            })
+            .collect()
     }
 
     /// Get van der Waals radius for an element
@@ -164,7 +170,8 @@ impl ShrakeRupleySASA {
         let mut per_atom_sasa = vec![0.0f64; n_atoms];
 
         // Pre-compute atom radii (vdW + probe)
-        let radii: Vec<f64> = atoms.iter()
+        let radii: Vec<f64> = atoms
+            .iter()
             .map(|a| Self::vdw_radius(&a.element) + self.probe_radius)
             .collect();
 

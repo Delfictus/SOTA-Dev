@@ -232,8 +232,8 @@ pub fn compute_sasa(coords: &[f32], radii: &[f32], probe_radius: f32) -> f32 {
             let z = 1.0 - 2.0 * k as f64 / (n_points - 1) as f64;
             let r_xy = (1.0 - z * z).sqrt();
 
-            let point = pos_i
-                + r_i as f64 * Vector3::new(r_xy * theta.cos(), r_xy * theta.sin(), z);
+            let point =
+                pos_i + r_i as f64 * Vector3::new(r_xy * theta.cos(), r_xy * theta.sin(), z);
 
             // Check if point is buried
             let mut buried = false;
@@ -304,8 +304,8 @@ pub fn compute_pocket_sasa(
             let z = 1.0 - 2.0 * k as f64 / (n_points - 1) as f64;
             let r_xy = (1.0 - z * z).sqrt();
 
-            let point = pos_i
-                + r_i as f64 * Vector3::new(r_xy * theta.cos(), r_xy * theta.sin(), z);
+            let point =
+                pos_i + r_i as f64 * Vector3::new(r_xy * theta.cos(), r_xy * theta.sin(), z);
 
             let mut buried = false;
             for j in 0..n_atoms {

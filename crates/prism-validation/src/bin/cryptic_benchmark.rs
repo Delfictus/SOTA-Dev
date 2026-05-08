@@ -20,11 +20,11 @@
 //! - SOTA comparison
 //! - BLAKE3 integrity audit trail
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{info, warn, error};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -32,29 +32,27 @@ use std::path::{Path, PathBuf};
 
 use prism_validation::{
     cryptic_metrics::{
-        AggregateMetrics, SingleProteinResult, SotaBaselines,
-        compute_pr_auc, compute_roc_auc, compute_detection, compute_ranking_accuracy,
-        CrypticCandidate,
+        compute_detection, compute_pr_auc, compute_ranking_accuracy, compute_roc_auc,
+        AggregateMetrics, CrypticCandidate, SingleProteinResult, SotaBaselines,
     },
     druggability::{
-        DruggabilityAssessment, DruggabilityClass, DruggabilityValidation,
-        PocketGeometry, ResidueInfo, compute_druggability,
+        compute_druggability, DruggabilityAssessment, DruggabilityClass, DruggabilityValidation,
+        PocketGeometry, ResidueInfo,
     },
     integrity::{
-        IntegrityAudit, BatchIntegrityAudit, MethodologyRecord,
-        VerificationSummary, verify_no_leakage, hash_file,
+        hash_file, verify_no_leakage, BatchIntegrityAudit, IntegrityAudit, MethodologyRecord,
+        VerificationSummary,
     },
     pocketminer_dataset::{
-        PocketMinerDataset, PocketMinerEntry, PocketType,
-        extract_ligand_coords, extract_cryptic_residues, compute_centroid,
+        compute_centroid, extract_cryptic_residues, extract_ligand_coords, PocketMinerDataset,
+        PocketMinerEntry, PocketType,
     },
 };
 
 // Production cryptic site detector (requires 'cryptic' feature)
 #[cfg(feature = "cryptic")]
 use prism_validation::cryptic_production::{
-    ProductionCrypticDetector, ProductionCrypticResult,
-    parse_pdb_simple, SimpleAtom,
+    parse_pdb_simple, ProductionCrypticDetector, ProductionCrypticResult, SimpleAtom,
 };
 
 #[derive(Parser, Debug)]
@@ -204,7 +202,10 @@ fn main() -> Result<()> {
     let summary = dataset.summary();
     println!("  Structures: {}", summary.n_structures);
     println!("  Pockets: {}", summary.n_pockets);
-    println!("  Mean pocket residues: {:.1}", summary.mean_pocket_residues);
+    println!(
+        "  Mean pocket residues: {:.1}",
+        summary.mean_pocket_residues
+    );
     println!();
 
     // Initialize integrity audit
@@ -221,15 +222,15 @@ fn main() -> Result<()> {
     };
 
     let test_ids = dataset.pdb_ids();
-    let leakage_errors = verify_no_leakage(
-        &test_ids,
-        &[("ATLAS", &excluded_ids)],
-    )?;
+    let leakage_errors = verify_no_leakage(&test_ids, &[("ATLAS", &excluded_ids)])?;
 
     if leakage_errors.is_empty() {
         println!("  ✓ Data isolation check PASSED (0 conflicts)");
     } else {
-        warn!("  ⚠ Data isolation check found {} conflicts:", leakage_errors.len());
+        warn!(
+            "  ⚠ Data isolation check found {} conflicts:",
+            leakage_errors.len()
+        );
         for err in &leakage_errors {
             warn!("    - {}: {}", err.pdb_id, err.description);
         }
@@ -238,7 +239,9 @@ fn main() -> Result<()> {
 
     // Filter entries if single protein requested
     let entries: Vec<_> = if let Some(ref single_id) = args.single {
-        dataset.entries.iter()
+        dataset
+            .entries
+            .iter()
             .filter(|e| e.pdb_id.to_lowercase() == single_id.to_lowercase())
             .cloned()
             .collect()
@@ -262,9 +265,13 @@ fn main() -> Result<()> {
     println!("  WARNING: cryptic feature not enabled - results will be empty");
 
     let progress = ProgressBar::new(entries.len() as u64);
-    progress.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")?
-        .progress_chars("#>-"));
+    progress.set_style(
+        ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+            )?
+            .progress_chars("#>-"),
+    );
 
     let mut results: Vec<SingleProteinResult> = Vec::new();
     let mut structure_results: Vec<StructureResult> = Vec::new();
@@ -292,8 +299,7 @@ fn main() -> Result<()> {
                 run_real_detection(&detector, entry)?;
 
             #[cfg(not(feature = "cryptic"))]
-            let (detected, overlap, rank, predictions_for_entry) =
-                (false, 0.0, None, Vec::new());
+            let (detected, overlap, rank, predictions_for_entry) = (false, 0.0, None, Vec::new());
 
             // Track predictions for aggregate metrics with UNIQUE keys
             // Use (protein_index * 100000 + res_id) to avoid collision across proteins
@@ -311,10 +317,8 @@ fn main() -> Result<()> {
                 let residues = create_residue_info_from_pdb(entry);
                 if !residues.is_empty() {
                     // Use actual residue positions from PDB
-                    let pocket_residue_positions: Vec<_> = residues
-                        .iter()
-                        .map(|r| (r.res_seq, r.position))
-                        .collect();
+                    let pocket_residue_positions: Vec<_> =
+                        residues.iter().map(|r| (r.res_seq, r.position)).collect();
                     let geometry = PocketGeometry::from_residues(
                         &pocket_residue_positions,
                         &[], // All residues would be passed here for better enclosure calc
@@ -366,11 +370,8 @@ fn main() -> Result<()> {
     println!();
 
     // Compute aggregate metrics
-    let aggregate_metrics = AggregateMetrics::from_results(
-        &results,
-        &all_predictions,
-        &all_ground_truth,
-    );
+    let aggregate_metrics =
+        AggregateMetrics::from_results(&results, &all_predictions, &all_ground_truth);
 
     // Druggability summary
     let druggability_summary = if !druggability_assessments.is_empty() {
@@ -414,7 +415,10 @@ fn main() -> Result<()> {
         date: Utc::now().format("%Y-%m-%d").to_string(),
         detector: "PRISM Production (CA-GNM ρ=0.6204 + Shrake-Rupley SASA)".to_string(),
         n_structures: entries.len(),
-        n_pockets: entries.iter().map(|e| e.cryptic_residues.len().max(1)).sum(),
+        n_pockets: entries
+            .iter()
+            .map(|e| e.cryptic_residues.len().max(1))
+            .sum(),
         aggregate_metrics: aggregate_metrics.clone(),
         per_structure_results: structure_results,
         sota_comparison: SotaBaselines::default(),
@@ -427,16 +431,30 @@ fn main() -> Result<()> {
     println!("                     BENCHMARK RESULTS                          ");
     println!("═══════════════════════════════════════════════════════════════");
     println!();
-    println!("  Success Rate:    {:.1}% ({}/{})",
+    println!(
+        "  Success Rate:    {:.1}% ({}/{})",
         aggregate_metrics.success_rate * 100.0,
         aggregate_metrics.n_detected,
-        aggregate_metrics.n_structures);
+        aggregate_metrics.n_structures
+    );
     println!("  ROC AUC:         {:.4}", aggregate_metrics.roc_auc);
     println!("  PR AUC:          {:.4}", aggregate_metrics.pr_auc);
-    println!("  Top-1 Accuracy:  {:.1}%", aggregate_metrics.top1_accuracy * 100.0);
-    println!("  Top-3 Accuracy:  {:.1}%", aggregate_metrics.top3_accuracy * 100.0);
-    println!("  Top-5 Accuracy:  {:.1}%", aggregate_metrics.top5_accuracy * 100.0);
-    println!("  Mean Overlap:    {:.1}%", aggregate_metrics.mean_overlap * 100.0);
+    println!(
+        "  Top-1 Accuracy:  {:.1}%",
+        aggregate_metrics.top1_accuracy * 100.0
+    );
+    println!(
+        "  Top-3 Accuracy:  {:.1}%",
+        aggregate_metrics.top3_accuracy * 100.0
+    );
+    println!(
+        "  Top-5 Accuracy:  {:.1}%",
+        aggregate_metrics.top5_accuracy * 100.0
+    );
+    println!(
+        "  Mean Overlap:    {:.1}%",
+        aggregate_metrics.mean_overlap * 100.0
+    );
     println!();
 
     // SOTA comparison
@@ -448,16 +466,31 @@ fn main() -> Result<()> {
     println!("  ┌────────────────┬──────────┬─────────┬────────┬────────┐");
     println!("  │ Method         │ Success% │ ROC AUC │ PR AUC │ Top-3% │");
     println!("  ├────────────────┼──────────┼─────────┼────────┼────────┤");
-    println!("  │ PocketMiner    │    -     │  {:.2}   │   -    │   -    │", sota.pocketminer_roc_auc);
-    println!("  │ CryptoBank PLM │    -     │  {:.2}   │  {:.2}  │   -    │", sota.cryptobank_roc_auc, sota.cryptobank_pr_auc);
-    println!("  │ CrypToth       │  {:.1}%  │    -    │   -    │  {:.0}%  │", sota.cryptoth_top1 * 100.0, sota.cryptoth_top3 * 100.0);
-    println!("  │ Schrödinger    │  {:.0}%   │    -    │   -    │   -    │", sota.schrodinger_success * 100.0);
+    println!(
+        "  │ PocketMiner    │    -     │  {:.2}   │   -    │   -    │",
+        sota.pocketminer_roc_auc
+    );
+    println!(
+        "  │ CryptoBank PLM │    -     │  {:.2}   │  {:.2}  │   -    │",
+        sota.cryptobank_roc_auc, sota.cryptobank_pr_auc
+    );
+    println!(
+        "  │ CrypToth       │  {:.1}%  │    -    │   -    │  {:.0}%  │",
+        sota.cryptoth_top1 * 100.0,
+        sota.cryptoth_top3 * 100.0
+    );
+    println!(
+        "  │ Schrödinger    │  {:.0}%   │    -    │   -    │   -    │",
+        sota.schrodinger_success * 100.0
+    );
     println!("  ├────────────────┼──────────┼─────────┼────────┼────────┤");
-    println!("  │ **PRISM**      │  {:.1}%  │  {:.2}   │  {:.2}  │  {:.0}%  │",
+    println!(
+        "  │ **PRISM**      │  {:.1}%  │  {:.2}   │  {:.2}  │  {:.0}%  │",
         aggregate_metrics.success_rate * 100.0,
         aggregate_metrics.roc_auc,
         aggregate_metrics.pr_auc,
-        aggregate_metrics.top3_accuracy * 100.0);
+        aggregate_metrics.top3_accuracy * 100.0
+    );
     println!("  └────────────────┴──────────┴─────────┴────────┴────────┘");
     println!();
 
@@ -472,11 +505,14 @@ fn main() -> Result<()> {
     }
 
     println!();
-    println!("Integrity Check: {}", if batch_audit.data_isolation_passed {
-        "✓ PASSED"
-    } else {
-        "✗ FAILED"
-    });
+    println!(
+        "Integrity Check: {}",
+        if batch_audit.data_isolation_passed {
+            "✓ PASSED"
+        } else {
+            "✗ FAILED"
+        }
+    );
 
     Ok(())
 }
@@ -501,16 +537,23 @@ fn run_real_detection(
     let index_to_resnum = build_residue_index_map(&atoms, &entry.chain_ids);
 
     // Convert ground truth from 0-indexed positions to PDB residue numbers
-    let ground_truth: HashSet<i32> = entry.cryptic_residues
+    let ground_truth: HashSet<i32> = entry
+        .cryptic_residues
         .iter()
         .filter_map(|&idx| index_to_resnum.get(&idx).copied())
         .collect();
 
     if ground_truth.is_empty() && !entry.cryptic_residues.is_empty() {
-        warn!("[{}] Could not map any ground truth indices to residue numbers", entry.pdb_id);
-        info!("[{}] Ground truth indices: {:?}, index map size: {}",
-              entry.pdb_id, &entry.cryptic_residues[..5.min(entry.cryptic_residues.len())],
-              index_to_resnum.len());
+        warn!(
+            "[{}] Could not map any ground truth indices to residue numbers",
+            entry.pdb_id
+        );
+        info!(
+            "[{}] Ground truth indices: {:?}, index map size: {}",
+            entry.pdb_id,
+            &entry.cryptic_residues[..5.min(entry.cryptic_residues.len())],
+            index_to_resnum.len()
+        );
     }
 
     // Run production detector
@@ -568,15 +611,23 @@ fn run_real_detection(
     info!(
         "[{}] Detected: {}, Precision-overlap: {:.1}%, Recall-overlap: {:.1}%, \
          Predictions: {} residues, Ground truth: {} residues, Rank: {:?}, Candidates: {}",
-        entry.pdb_id, detected, precision_overlap * 100.0, recall_overlap * 100.0,
-        predicted_residues.len(), ground_truth.len(), rank, result.n_candidates
+        entry.pdb_id,
+        detected,
+        precision_overlap * 100.0,
+        recall_overlap * 100.0,
+        predicted_residues.len(),
+        ground_truth.len(),
+        rank,
+        result.n_candidates
     );
 
     // Log sample residue IDs for debugging
     let sample_pred: Vec<_> = predicted_residues.iter().take(5).collect();
     let sample_gt: Vec<_> = ground_truth.iter().take(5).collect();
-    info!("[{}] Sample predictions: {:?}, Sample ground truth: {:?}",
-        entry.pdb_id, sample_pred, sample_gt);
+    info!(
+        "[{}] Sample predictions: {:?}, Sample ground truth: {:?}",
+        entry.pdb_id, sample_pred, sample_gt
+    );
 
     Ok((detected, recall_overlap, rank, predictions))
 }
@@ -586,7 +637,9 @@ fn run_real_detection(
 fn run_real_detection(
     _entry: &PocketMinerEntry,
 ) -> Result<(bool, f64, Option<usize>, Vec<(i32, f64)>)> {
-    Err(anyhow!("cryptic feature not enabled - rebuild with --features cryptic"))
+    Err(anyhow!(
+        "cryptic feature not enabled - rebuild with --features cryptic"
+    ))
 }
 
 /// Create residue info from PDB file for druggability assessment
@@ -608,23 +661,23 @@ fn create_residue_info_from_pdb(entry: &PocketMinerEntry) -> Vec<ResidueInfo> {
         if atom.name == "CA" && !atom.is_hetatm {
             // Only include cryptic residues
             if entry.cryptic_residues.contains(&atom.residue_seq) {
-                residue_map.insert(
-                    atom.residue_seq,
-                    (atom.residue_name.clone(), atom.coord),
-                );
+                residue_map.insert(atom.residue_seq, (atom.residue_name.clone(), atom.coord));
             }
         }
     }
 
     // Convert to ResidueInfo
-    residue_map.into_iter().map(|(res_seq, (res_name, position))| {
-        ResidueInfo {
-            res_name,
-            res_seq,
-            position,
-            sasa: None, // SASA computed separately by detector
-        }
-    }).collect()
+    residue_map
+        .into_iter()
+        .map(|(res_seq, (res_name, position))| {
+            ResidueInfo {
+                res_name,
+                res_seq,
+                position,
+                sasa: None, // SASA computed separately by detector
+            }
+        })
+        .collect()
 }
 
 /// Fallback when cryptic feature not enabled
@@ -635,23 +688,31 @@ fn create_residue_info_from_pdb(_entry: &PocketMinerEntry) -> Vec<ResidueInfo> {
 
 /// Compute druggability summary
 fn compute_druggability_summary(assessments: &[DruggabilityAssessment]) -> DruggabilitySummary {
-    let n_highly_druggable = assessments.iter()
+    let n_highly_druggable = assessments
+        .iter()
         .filter(|a| matches!(a.druggability_class, DruggabilityClass::HighlyDruggable))
         .count();
-    let n_druggable = assessments.iter()
+    let n_druggable = assessments
+        .iter()
         .filter(|a| matches!(a.druggability_class, DruggabilityClass::Druggable))
         .count();
-    let n_difficult = assessments.iter()
+    let n_difficult = assessments
+        .iter()
         .filter(|a| matches!(a.druggability_class, DruggabilityClass::Difficult))
         .count();
-    let n_undruggable = assessments.iter()
+    let n_undruggable = assessments
+        .iter()
         .filter(|a| matches!(a.druggability_class, DruggabilityClass::Undruggable))
         .count();
 
     let mean_score = if assessments.is_empty() {
         0.0
     } else {
-        assessments.iter().map(|a| a.druggability_score).sum::<f64>() / assessments.len() as f64
+        assessments
+            .iter()
+            .map(|a| a.druggability_score)
+            .sum::<f64>()
+            / assessments.len() as f64
     };
 
     DruggabilitySummary {
@@ -676,14 +737,13 @@ fn build_residue_index_map(
     use std::collections::HashMap;
 
     let mut index_map: HashMap<i32, i32> = HashMap::new();
-    let mut seen_residues: std::collections::HashSet<(char, i32)> = std::collections::HashSet::new();
+    let mut seen_residues: std::collections::HashSet<(char, i32)> =
+        std::collections::HashSet::new();
     let mut sequential_index: i32 = 0;
 
     // Filter to target chain(s)
-    let target_chains: std::collections::HashSet<char> = chain_ids
-        .iter()
-        .filter_map(|s| s.chars().next())
-        .collect();
+    let target_chains: std::collections::HashSet<char> =
+        chain_ids.iter().filter_map(|s| s.chars().next()).collect();
 
     for atom in atoms {
         // Skip if not in target chain (unless no chains specified)

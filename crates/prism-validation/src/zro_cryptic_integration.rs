@@ -35,14 +35,14 @@
 //!
 //! +0.05 ROC AUC improvement from adaptive scoring
 
-use anyhow::{Result, anyhow};
-use serde::{Serialize, Deserialize};
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 
 /// Number of input features per residue
 pub const NUM_FEATURES: usize = 10;
 
 /// Default reservoir size (matches prism-gpu/dendritic_snn.rs)
-pub const DEFAULT_RESERVOIR_SIZE: usize = 64;  // Smaller for CPU (512 for GPU)
+pub const DEFAULT_RESERVOIR_SIZE: usize = 64; // Smaller for CPU (512 for GPU)
 
 /// Default RLS forgetting factor
 pub const DEFAULT_LAMBDA: f64 = 0.99;
@@ -124,7 +124,7 @@ impl ResidueFeatures {
     pub fn to_array(&self) -> [f64; NUM_FEATURES] {
         [
             self.burial,
-            self.rmsf / 5.0,  // Normalize RMSF (typical range 0-5Å)
+            self.rmsf / 5.0, // Normalize RMSF (typical range 0-5Å)
             self.sasa_variance,
             self.neighbor_flexibility,
             self.void_formation_score,
@@ -147,14 +147,14 @@ impl ResidueFeatures {
         Self {
             burial,
             rmsf,
-            sasa_variance: 0.0,  // Default, computed if ensemble available
-            neighbor_flexibility: rmsf * 0.8,  // Proxy
+            sasa_variance: 0.0, // Default, computed if ensemble available
+            neighbor_flexibility: rmsf * 0.8, // Proxy
             void_formation_score: void_score,
             interface_score,
-            druggability: (1.0 - burial) * 0.5,  // Exposed residues more druggable
+            druggability: (1.0 - burial) * 0.5, // Exposed residues more druggable
             escape_resistance,
-            curvature: burial * 0.7,  // Buried residues often in pockets
-            hydrophobicity: 0.5,  // Default, could be computed from AA type
+            curvature: burial * 0.7, // Buried residues often in pockets
+            hydrophobicity: 0.5,     // Default, could be computed from AA type
         }
     }
 }
@@ -206,7 +206,8 @@ impl ZroCrypticScorer {
             for j in 0..NUM_FEATURES {
                 // Deterministic hash-based connectivity
                 let hash = ((i * 31 + j * 17) % 100) as f64 / 100.0;
-                if hash < 0.1 {  // 10% connectivity
+                if hash < 0.1 {
+                    // 10% connectivity
                     let sign = if (i + j) % 2 == 0 { 1.0 } else { -1.0 };
                     input_weights[i][j] = sign * config.initial_weight_scale;
                 }
@@ -218,9 +219,10 @@ impl ZroCrypticScorer {
         for i in 0..n {
             for j in 0..n {
                 let hash = ((i * 47 + j * 23) % 100) as f64 / 100.0;
-                if hash < 0.05 {  // 5% connectivity
+                if hash < 0.05 {
+                    // 5% connectivity
                     let sign = if (i * j) % 2 == 0 { 1.0 } else { -1.0 };
-                    recurrent_weights[i][j] = sign * 0.1;  // Small for stability
+                    recurrent_weights[i][j] = sign * 0.1; // Small for stability
                 }
             }
         }
@@ -264,18 +266,16 @@ impl ZroCrypticScorer {
     ///
     /// # Returns
     /// Cryptic score in [0, 1]
-    pub fn score_residue(
-        &mut self,
-        features: &ResidueFeatures,
-        ground_truth: Option<bool>,
-    ) -> f64 {
+    pub fn score_residue(&mut self, features: &ResidueFeatures, ground_truth: Option<bool>) -> f64 {
         let input = features.to_array();
 
         // Step 1: Update reservoir state (leaky integration)
         self.update_reservoir_state(&input);
 
         // Step 2: Compute output via linear readout
-        let score: f64 = self.state.iter()
+        let score: f64 = self
+            .state
+            .iter()
             .zip(&self.output_weights)
             .map(|(s, w)| s * w)
             .sum();
@@ -296,7 +296,8 @@ impl ZroCrypticScorer {
 
     /// Score multiple residues in batch (no learning)
     pub fn score_residues(&mut self, features: &[ResidueFeatures]) -> Vec<f64> {
-        features.iter()
+        features
+            .iter()
             .map(|f| self.score_residue(f, None))
             .collect()
     }
@@ -308,20 +309,22 @@ impl ZroCrypticScorer {
 
         for i in 0..n {
             // Input contribution
-            let input_sum: f64 = self.input_weights[i].iter()
+            let input_sum: f64 = self.input_weights[i]
+                .iter()
                 .zip(input.iter())
                 .map(|(w, x)| w * x)
                 .sum();
 
             // Recurrent contribution
-            let recurrent_sum: f64 = self.recurrent_weights[i].iter()
+            let recurrent_sum: f64 = self.recurrent_weights[i]
+                .iter()
                 .zip(self.state.iter())
                 .map(|(w, s)| w * s)
                 .sum();
 
             // Leaky integration with tanh activation
             new_state[i] = (1.0 - self.leak_rate) * self.state[i]
-                         + self.leak_rate * (input_sum + recurrent_sum).tanh();
+                + self.leak_rate * (input_sum + recurrent_sum).tanh();
         }
 
         self.state = new_state;
@@ -347,7 +350,9 @@ impl ZroCrypticScorer {
         }
 
         // Step 2: Compute x^T @ P @ x
-        let xtpx: f64 = self.state.iter()
+        let xtpx: f64 = self
+            .state
+            .iter()
             .zip(px.iter())
             .map(|(xi, pxi)| xi * pxi)
             .sum();
@@ -360,7 +365,9 @@ impl ZroCrypticScorer {
         }
 
         // Step 4: Compute prediction error
-        let prediction: f64 = self.output_weights.iter()
+        let prediction: f64 = self
+            .output_weights
+            .iter()
             .zip(self.state.iter())
             .map(|(w, s)| w * s)
             .sum();
@@ -453,7 +460,7 @@ pub fn apply_zro_scoring(
         for (f, &is_cryptic) in features.iter().zip(labels.iter()) {
             scorer.score_residue(f, Some(is_cryptic));
         }
-        scorer.reset_state();  // Reset state after training
+        scorer.reset_state(); // Reset state after training
         log::info!("ZrO: Completed {} RLS updates", scorer.update_count());
     }
 
@@ -465,7 +472,7 @@ pub fn apply_zro_scoring(
     let mut max_boost = 0.0f64;
     for (i, score) in cryptic_scores.iter_mut().enumerate() {
         if i < zro_scores.len() {
-            let boost = boost_weight * (zro_scores[i] - 0.5);  // Center around 0
+            let boost = boost_weight * (zro_scores[i] - 0.5); // Center around 0
             *score = (*score + boost).clamp(0.0, 1.0);
             mean_boost += boost.abs();
             max_boost = max_boost.max(boost.abs());
@@ -520,8 +527,8 @@ mod tests {
         };
         let arr = features.to_array();
         assert_eq!(arr.len(), NUM_FEATURES);
-        assert!((arr[0] - 0.8).abs() < 0.01);  // burial
-        assert!((arr[1] - 0.5).abs() < 0.01);  // rmsf normalized
+        assert!((arr[0] - 0.8).abs() < 0.01); // burial
+        assert!((arr[1] - 0.5).abs() < 0.01); // rmsf normalized
     }
 
     #[test]
@@ -530,7 +537,11 @@ mod tests {
         let features = ResidueFeatures::from_prediction(0.5, 1.0, 0.7, 0.3, 0.0);
 
         let score = scorer.score_residue(&features, None);
-        assert!(score >= 0.0 && score <= 1.0, "Score {} out of bounds", score);
+        assert!(
+            score >= 0.0 && score <= 1.0,
+            "Score {} out of bounds",
+            score
+        );
     }
 
     #[test]

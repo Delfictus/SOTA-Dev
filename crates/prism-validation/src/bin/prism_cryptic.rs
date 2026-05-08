@@ -52,9 +52,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 #[cfg(feature = "cryptic-gpu")]
-use prism_validation::cryptic_site_pilot::{
-    MdCrypticConfig, MdCrypticPipeline, MdCrypticResult,
-};
+use prism_validation::cryptic_site_pilot::{MdCrypticConfig, MdCrypticPipeline, MdCrypticResult};
 
 const VERSION: &str = "1.0.0";
 const BANNER: &str = r#"
@@ -242,10 +240,19 @@ fn cmd_detect(args: DetectArgs) -> Result<()> {
         println!("  Replicas:     {}", config.n_replicas);
         println!();
         println!("  CLASSIFICATION THRESHOLDS (Literature-Derived, Pre-Set):");
-        println!("    CV threshold:       {:.2} (CryptoSite, PocketMiner)", config.cv_threshold);
-        println!("    Open frequency:     {:.0}% - {:.0}%",
-            config.min_open_frequency * 100.0, config.max_open_frequency * 100.0);
-        println!("    Jaccard threshold:  {:.0}%", config.jaccard_threshold * 100.0);
+        println!(
+            "    CV threshold:       {:.2} (CryptoSite, PocketMiner)",
+            config.cv_threshold
+        );
+        println!(
+            "    Open frequency:     {:.0}% - {:.0}%",
+            config.min_open_frequency * 100.0,
+            config.max_open_frequency * 100.0
+        );
+        println!(
+            "    Jaccard threshold:  {:.0}%",
+            config.jaccard_threshold * 100.0
+        );
         println!("    Min volume:         {:.0} Å³", config.min_pocket_volume);
         println!();
     }
@@ -276,7 +283,13 @@ fn cmd_detect(args: DetectArgs) -> Result<()> {
     let elapsed = start.elapsed();
 
     // Print results
-    print_results(&result, &config, elapsed.as_secs_f64(), args.verbose, args.quiet)?;
+    print_results(
+        &result,
+        &config,
+        elapsed.as_secs_f64(),
+        args.verbose,
+        args.quiet,
+    )?;
 
     // Write outputs
     write_outputs(&result, &args.output_dir, &config)?;
@@ -302,7 +315,12 @@ fn print_results(
 ) -> Result<()> {
     if quiet {
         // Minimal output for scripting
-        println!("{},{},{}", result.pdb_id, result.cryptic_sites.len(), elapsed_secs);
+        println!(
+            "{},{},{}",
+            result.pdb_id,
+            result.cryptic_sites.len(),
+            elapsed_secs
+        );
         return Ok(());
     }
 
@@ -312,21 +330,38 @@ fn print_results(
     println!("{}", "─".repeat(80));
     println!();
     println!("  PDB ID:           {}", result.pdb_id);
-    println!("  Simulation Time:  {:.1} ns", result.total_time_ps / 1000.0);
+    println!(
+        "  Simulation Time:  {:.1} ns",
+        result.total_time_ps / 1000.0
+    );
     println!("  Frames Analyzed:  {}", result.n_frames);
-    println!("  Wall Time:        {:.1} s ({:.1} min)", elapsed_secs, elapsed_secs / 60.0);
+    println!(
+        "  Wall Time:        {:.1} s ({:.1} min)",
+        elapsed_secs,
+        elapsed_secs / 60.0
+    );
     println!();
     println!("  POCKET STATISTICS:");
     println!("    Total pockets tracked:  {}", result.all_pockets.len());
-    println!("    CV range:               {:.3} - {:.3}",
-        result.diagnostics.cv_min, result.diagnostics.cv_max);
-    println!("    CV mean:                {:.3}", result.diagnostics.cv_mean);
-    println!("    Freq range:             {:.1}% - {:.1}%",
-        result.diagnostics.freq_min * 100.0, result.diagnostics.freq_max * 100.0);
+    println!(
+        "    CV range:               {:.3} - {:.3}",
+        result.diagnostics.cv_min, result.diagnostics.cv_max
+    );
+    println!(
+        "    CV mean:                {:.3}",
+        result.diagnostics.cv_mean
+    );
+    println!(
+        "    Freq range:             {:.1}% - {:.1}%",
+        result.diagnostics.freq_min * 100.0,
+        result.diagnostics.freq_max * 100.0
+    );
     println!();
     println!("  ┌─────────────────────────────────────────────────────────────────┐");
-    println!("  │  CRYPTIC SITES DETECTED: {:>3}                                    │",
-        result.cryptic_sites.len());
+    println!(
+        "  │  CRYPTIC SITES DETECTED: {:>3}                                    │",
+        result.cryptic_sites.len()
+    );
     println!("  └─────────────────────────────────────────────────────────────────┘");
     println!();
 
@@ -334,8 +369,10 @@ fn print_results(
         println!("    No cryptic sites detected.");
         println!();
         println!("    DIAGNOSTIC NOTES:");
-        println!("    Max CV observed: {:.3} (threshold: {:.3})",
-            result.diagnostics.cv_max, config.cv_threshold);
+        println!(
+            "    Max CV observed: {:.3} (threshold: {:.3})",
+            result.diagnostics.cv_max, config.cv_threshold
+        );
 
         if result.diagnostics.cv_max > 0.0 && result.diagnostics.cv_max < config.cv_threshold {
             println!("    Pockets show variance but below threshold.");
@@ -345,24 +382,34 @@ fn print_results(
             println!("    Check: is MD sampling properly? RMSD of target region?");
         }
     } else {
-        println!("  {:<6} {:<12} {:<10} {:<10} {:<10} {:<12}",
-            "Rank", "Site ID", "CV", "Open %", "Volume", "Residues");
+        println!(
+            "  {:<6} {:<12} {:<10} {:<10} {:<10} {:<12}",
+            "Rank", "Site ID", "CV", "Open %", "Volume", "Residues"
+        );
         println!("  {}", "─".repeat(66));
 
         for site in &result.cryptic_sites {
-            println!("  {:<6} {:<12} {:<10.3} {:<10.1} {:<10.0} {:<12}",
+            println!(
+                "  {:<6} {:<12} {:<10.3} {:<10.1} {:<10.0} {:<12}",
                 site.rank,
                 site.site_id,
                 site.cv_volume,
                 site.open_frequency * 100.0,
                 site.mean_volume,
-                site.residues.len());
+                site.residues.len()
+            );
 
             if verbose {
-                println!("         Residues: {:?}", &site.residues[..site.residues.len().min(10)]);
+                println!(
+                    "         Residues: {:?}",
+                    &site.residues[..site.residues.len().min(10)]
+                );
                 if let Some(ref drug) = site.druggability {
-                    println!("         Druggability: {:.2} ({})",
-                        drug.score, drug.classification.name());
+                    println!(
+                        "         Druggability: {:.2} ({})",
+                        drug.score,
+                        drug.classification.name()
+                    );
                 }
                 println!();
             }
@@ -378,11 +425,16 @@ fn print_results(
 
         let omega_residues: Vec<i32> = (214..=220).chain(244..=250).collect();
         for site in &result.cryptic_sites {
-            let overlap: usize = site.residues.iter()
+            let overlap: usize = site
+                .residues
+                .iter()
                 .filter(|r| omega_residues.contains(r))
                 .count();
             if overlap >= 3 {
-                println!("    ✓ DETECTED (Site {} contains {} Ω-loop residues)", site.site_id, overlap);
+                println!(
+                    "    ✓ DETECTED (Site {} contains {} Ω-loop residues)",
+                    site.site_id, overlap
+                );
             }
         }
     }
@@ -391,7 +443,11 @@ fn print_results(
 }
 
 #[cfg(feature = "cryptic-gpu")]
-fn write_outputs(result: &MdCrypticResult, output_dir: &PathBuf, config: &MdCrypticConfig) -> Result<()> {
+fn write_outputs(
+    result: &MdCrypticResult,
+    output_dir: &PathBuf,
+    config: &MdCrypticConfig,
+) -> Result<()> {
     // Write JSON result
     let json_path = output_dir.join(format!("{}_cryptic_result.json", result.pdb_id));
     let json_content = serde_json::to_string_pretty(&result)?;
@@ -402,7 +458,7 @@ fn write_outputs(result: &MdCrypticResult, output_dir: &PathBuf, config: &MdCryp
     // Write summary CSV
     let csv_path = output_dir.join(format!("{}_cryptic_summary.csv", result.pdb_id));
     let mut csv_content = String::from(
-        "pocket_id,cv_volume,cv_sasa,open_frequency,mean_volume,mean_sasa,n_residues,is_cryptic\n"
+        "pocket_id,cv_volume,cv_sasa,open_frequency,mean_volume,mean_sasa,n_residues,is_cryptic\n",
     );
 
     for pocket in &result.all_pockets {
@@ -429,14 +485,20 @@ fn write_outputs(result: &MdCrypticResult, output_dir: &PathBuf, config: &MdCryp
         let sites_path = output_dir.join(format!("{}_cryptic_sites.txt", result.pdb_id));
         let mut sites_content = String::new();
         sites_content.push_str(&format!("# Cryptic Sites for {}\n", result.pdb_id));
-        sites_content.push_str(&format!("# Simulation: {:.1} ns, {} frames\n",
-            result.total_time_ps / 1000.0, result.n_frames));
+        sites_content.push_str(&format!(
+            "# Simulation: {:.1} ns, {} frames\n",
+            result.total_time_ps / 1000.0,
+            result.n_frames
+        ));
         sites_content.push_str("#\n");
 
         for site in &result.cryptic_sites {
             sites_content.push_str(&format!(
                 "Site {}: CV={:.3}, Open={:.1}%, Residues={:?}\n",
-                site.rank, site.cv_volume, site.open_frequency * 100.0, site.residues
+                site.rank,
+                site.cv_volume,
+                site.open_frequency * 100.0,
+                site.residues
             ));
         }
         fs::write(&sites_path, sites_content)?;
@@ -473,10 +535,19 @@ fn cmd_batch(args: BatchArgs) -> Result<()> {
     let mut failed_list = Vec::new();
 
     for (i, topology) in topologies.iter().enumerate() {
-        println!("[{}/{}] Processing: {}", i + 1, topologies.len(), topology.display());
+        println!(
+            "[{}/{}] Processing: {}",
+            i + 1,
+            topologies.len(),
+            topology.display()
+        );
 
         let output_subdir = args.output_dir.join(
-            topology.file_stem().unwrap_or_default().to_str().unwrap_or("unknown")
+            topology
+                .file_stem()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or("unknown"),
         );
 
         let detect_args = DetectArgs {
@@ -539,32 +610,82 @@ fn cmd_validate(args: ValidateArgs) -> Result<()> {
     }
 
     // Load and validate topology
-    let content = fs::read_to_string(&args.topology)
-        .context("Failed to read topology file")?;
+    let content = fs::read_to_string(&args.topology).context("Failed to read topology file")?;
 
-    let topology: serde_json::Value = serde_json::from_str(&content)
-        .context("Failed to parse topology JSON")?;
+    let topology: serde_json::Value =
+        serde_json::from_str(&content).context("Failed to parse topology JSON")?;
 
-    let n_atoms = topology.get("n_atoms").and_then(|v| v.as_u64()).unwrap_or(0);
-    let n_residues = topology.get("n_residues").and_then(|v| v.as_u64()).unwrap_or(0);
-    let n_bonds = topology.get("bonds").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-    let has_charges = topology.get("charges").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
-    let has_masses = topology.get("masses").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
-    let has_gb_radii = topology.get("gb_radii").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
+    let n_atoms = topology
+        .get("n_atoms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let n_residues = topology
+        .get("n_residues")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let n_bonds = topology
+        .get("bonds")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let has_charges = topology
+        .get("charges")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    let has_masses = topology
+        .get("masses")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    let has_gb_radii = topology
+        .get("gb_radii")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
 
     println!("  TOPOLOGY VALIDATION");
     println!("  {}", "─".repeat(60));
-    println!("  Atoms:      {:>8}  {}", n_atoms, if n_atoms > 0 { "✓" } else { "✗" });
-    println!("  Residues:   {:>8}  {}", n_residues, if n_residues > 0 { "✓" } else { "✗" });
-    println!("  Bonds:      {:>8}  {}", n_bonds, if n_bonds > 0 { "✓" } else { "✗" });
-    println!("  Charges:    {:>8}  {}", if has_charges { "present" } else { "missing" }, if has_charges { "✓" } else { "✗" });
-    println!("  Masses:     {:>8}  {}", if has_masses { "present" } else { "missing" }, if has_masses { "✓" } else { "✗" });
-    println!("  GB Radii:   {:>8}  {}", if has_gb_radii { "present" } else { "missing" }, if has_gb_radii { "✓ (implicit solvent)" } else { "✗" });
+    println!(
+        "  Atoms:      {:>8}  {}",
+        n_atoms,
+        if n_atoms > 0 { "✓" } else { "✗" }
+    );
+    println!(
+        "  Residues:   {:>8}  {}",
+        n_residues,
+        if n_residues > 0 { "✓" } else { "✗" }
+    );
+    println!(
+        "  Bonds:      {:>8}  {}",
+        n_bonds,
+        if n_bonds > 0 { "✓" } else { "✗" }
+    );
+    println!(
+        "  Charges:    {:>8}  {}",
+        if has_charges { "present" } else { "missing" },
+        if has_charges { "✓" } else { "✗" }
+    );
+    println!(
+        "  Masses:     {:>8}  {}",
+        if has_masses { "present" } else { "missing" },
+        if has_masses { "✓" } else { "✗" }
+    );
+    println!(
+        "  GB Radii:   {:>8}  {}",
+        if has_gb_radii { "present" } else { "missing" },
+        if has_gb_radii {
+            "✓ (implicit solvent)"
+        } else {
+            "✗"
+        }
+    );
     println!();
 
     // Check for HMR (hydrogen mass repartitioning)
     if let Some(masses) = topology.get("masses").and_then(|v| v.as_array()) {
-        let heavy_h = masses.iter()
+        let heavy_h = masses
+            .iter()
             .filter_map(|m| m.as_f64())
             .filter(|&m| m > 1.5 && m < 4.0)
             .count();
@@ -582,8 +703,10 @@ fn cmd_validate(args: ValidateArgs) -> Result<()> {
         println!("  ❌ TOPOLOGY INCOMPLETE");
         println!();
         println!("  Run prism-prep to generate a complete topology:");
-        println!("    prism-prep input.pdb {} --use-amber --mode cryptic --strict",
-            args.topology.display());
+        println!(
+            "    prism-prep input.pdb {} --use-amber --mode cryptic --strict",
+            args.topology.display()
+        );
     }
     println!();
 
@@ -592,7 +715,8 @@ fn cmd_validate(args: ValidateArgs) -> Result<()> {
 
 fn cmd_info() {
     println!("{}", BANNER);
-    println!(r#"
+    println!(
+        r#"
   CLASSIFICATION METHODOLOGY
   ══════════════════════════════════════════════════════════════════════════════
 
@@ -644,7 +768,8 @@ fn cmd_info() {
   DO NOT adjust thresholds post-hoc to match expected results.
   If detection fails, investigate the physics, not the thresholds.
 
-"#);
+"#
+    );
 }
 
 fn cmd_check() -> Result<()> {
@@ -698,9 +823,7 @@ fn cmd_check() -> Result<()> {
 
 #[cfg(feature = "cryptic-gpu")]
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let cli = Cli::parse();
 
@@ -708,7 +831,10 @@ fn main() -> Result<()> {
         Commands::Detect(args) => cmd_detect(args),
         Commands::Batch(args) => cmd_batch(args),
         Commands::Validate(args) => cmd_validate(args),
-        Commands::Info => { cmd_info(); Ok(()) },
+        Commands::Info => {
+            cmd_info();
+            Ok(())
+        }
         Commands::Check => cmd_check(),
     }
 }
@@ -718,7 +844,9 @@ fn main() {
     eprintln!("Error: PRISM-Cryptic requires the 'cryptic-gpu' feature.");
     eprintln!();
     eprintln!("Rebuild with:");
-    eprintln!("  cargo build --release -p prism-validation --features cryptic-gpu --bin prism-cryptic");
+    eprintln!(
+        "  cargo build --release -p prism-validation --features cryptic-gpu --bin prism-cryptic"
+    );
     eprintln!();
     std::process::exit(1);
 }

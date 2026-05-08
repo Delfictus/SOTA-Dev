@@ -33,11 +33,11 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+use crate::targets;
 use crate::{
     Af3Comparison, BenchmarkMetrics, BenchmarkResult, ComparisonItem, ScoreComponent,
     ValidationBenchmark, ValidationScore,
 };
-use crate::targets;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -363,7 +363,11 @@ fn atoms_to_voxels(positions: &[[f64; 3]], radius: f64, spacing: f64) -> HashSet
                     let dy = cy - pos[1];
                     let dz = cz - pos[2];
                     if dx * dx + dy * dy + dz * dz <= r2 {
-                        grid.insert(Voxel { x: ix, y: iy, z: iz });
+                        grid.insert(Voxel {
+                            x: ix,
+                            y: iy,
+                            z: iz,
+                        });
                     }
                 }
             }
@@ -431,8 +435,12 @@ fn approximate_volume(positions: &[[f64; 3]]) -> f64 {
     let mut max = [f64::MIN; 3];
     for p in positions {
         for i in 0..3 {
-            if p[i] < min[i] { min[i] = p[i]; }
-            if p[i] > max[i] { max[i] = p[i]; }
+            if p[i] < min[i] {
+                min[i] = p[i];
+            }
+            if p[i] > max[i] {
+                max[i] = p[i];
+            }
         }
     }
     let dx = max[0] - min[0];
@@ -498,11 +506,11 @@ fn residue_hbond_capacity(resname: &str) -> usize {
 /// Minimal residue record extracted from a PDB ATOM line.
 #[derive(Debug, Clone)]
 struct PdbResidue {
-    index: usize,          // 0-based sequential index
-    resid: usize,          // PDB residue sequence number
-    resname: String,       // 3-letter code
+    index: usize,    // 0-based sequential index
+    resid: usize,    // PDB residue sequence number
+    resname: String, // 3-letter code
     chain: char,
-    ca_pos: [f64; 3],      // CA atom coordinates
+    ca_pos: [f64; 3], // CA atom coordinates
 }
 
 /// Parse a PDB file and return one record per residue (CA atoms only).
@@ -527,11 +535,7 @@ fn parse_pdb_ca_atoms(pdb_path: &std::path::Path) -> Result<Vec<PdbResidue>> {
         }
 
         let chain = line.as_bytes().get(21).map(|&b| b as char).unwrap_or('A');
-        let resid: usize = line.get(22..26)
-            .unwrap_or("0")
-            .trim()
-            .parse()
-            .unwrap_or(0);
+        let resid: usize = line.get(22..26).unwrap_or("0").trim().parse().unwrap_or(0);
 
         if seen_resids.contains(&(chain, resid)) {
             continue; // skip alternate conformations
@@ -540,9 +544,24 @@ fn parse_pdb_ca_atoms(pdb_path: &std::path::Path) -> Result<Vec<PdbResidue>> {
 
         let resname = line.get(17..20).unwrap_or("UNK").trim().to_string();
 
-        let x: f64 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let y: f64 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let z: f64 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+        let x: f64 = line
+            .get(30..38)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let y: f64 = line
+            .get(38..46)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let z: f64 = line
+            .get(46..54)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
 
         residues.push(PdbResidue {
             index: residues.len(),
@@ -567,10 +586,7 @@ fn parse_pdb_ca_atoms(pdb_path: &std::path::Path) -> Result<Vec<PdbResidue>> {
 /// Detect pockets from CA coordinates using burial depth, neighbor analysis,
 /// and spatial clustering. Returns pockets sorted by druggability score
 /// (highest first).
-fn detect_pockets(
-    residues: &[PdbResidue],
-    config: &DruggabilityConfig,
-) -> Vec<DetectedPocket> {
+fn detect_pockets(residues: &[PdbResidue], config: &DruggabilityConfig) -> Vec<DetectedPocket> {
     let n = residues.len();
     if n < config.min_cluster_size {
         return Vec::new();
@@ -593,7 +609,10 @@ fn detect_pockets(
     let max_neighbors = *neighbor_counts.iter().max().unwrap_or(&1).max(&1) as f64;
 
     // ---- Step 2: compute per-residue burial score ----
-    let burial: Vec<f64> = neighbor_counts.iter().map(|&c| c as f64 / max_neighbors).collect();
+    let burial: Vec<f64> = neighbor_counts
+        .iter()
+        .map(|&c| c as f64 / max_neighbors)
+        .collect();
 
     // ---- Step 3: identify pocket-candidate residues (moderately buried) ----
     // Pocket residues are typically at intermediate burial (0.25-0.75),
@@ -650,17 +669,14 @@ fn detect_pockets(
     let mut pockets: Vec<DetectedPocket> = clusters
         .into_iter()
         .map(|member_indices| {
-            let positions: Vec<[f64; 3]> = member_indices
-                .iter()
-                .map(|&i| residues[i].ca_pos)
-                .collect();
+            let positions: Vec<[f64; 3]> =
+                member_indices.iter().map(|&i| residues[i].ca_pos).collect();
             let cent = centroid(&positions);
             let vol = approximate_volume(&positions);
 
             // Mean burial
-            let mean_burial_val: f64 =
-                member_indices.iter().map(|&i| burial[i]).sum::<f64>()
-                    / member_indices.len() as f64;
+            let mean_burial_val: f64 = member_indices.iter().map(|&i| burial[i]).sum::<f64>()
+                / member_indices.len() as f64;
 
             // Mean hydrophobicity
             let mean_hydro: f64 = member_indices
@@ -674,11 +690,8 @@ fn detect_pockets(
             let enclosure = compute_enclosure(&cent, &positions, config.neighbor_cutoff);
 
             // Mean depth: average distance from centroid (proxy for pocket depth)
-            let mean_depth_val: f64 = positions
-                .iter()
-                .map(|p| distance(p, &cent))
-                .sum::<f64>()
-                / positions.len() as f64;
+            let mean_depth_val: f64 =
+                positions.iter().map(|p| distance(p, &cent)).sum::<f64>() / positions.len() as f64;
 
             // H-bond capacity
             let hbond: usize = member_indices
@@ -687,10 +700,7 @@ fn detect_pockets(
                 .sum();
 
             // Flexibility proxy: inverse of burial (surface residues are more flexible)
-            let mean_flex: f64 = member_indices
-                .iter()
-                .map(|&i| 1.0 - burial[i])
-                .sum::<f64>()
+            let mean_flex: f64 = member_indices.iter().map(|&i| 1.0 - burial[i]).sum::<f64>()
                 / member_indices.len() as f64;
 
             // ---- Composite druggability score ----
@@ -791,9 +801,9 @@ fn compute_enclosure(cent: &[f64; 3], atoms: &[[f64; 3]], cutoff: f64) -> f64 {
             cent[2] + dir[2] * cutoff,
         ];
         // An atom blocks a direction if it is within 3 angstrom of the ray line
-        let blocked_by_atom = atoms.iter().any(|atom| {
-            point_to_line_distance(atom, cent, &ray_endpoint) < 3.0
-        });
+        let blocked_by_atom = atoms
+            .iter()
+            .any(|atom| point_to_line_distance(atom, cent, &ray_endpoint) < 3.0);
         if blocked_by_atom {
             blocked += 1;
         }
@@ -878,11 +888,14 @@ fn compute_validation_metrics(
         // Residue-level overlap (Jaccard)
         let known_set: HashSet<usize> = known.residue_indices.iter().cloned().collect();
         let residue_overlap = if let Some(pi) = best_rank {
-            let pred_set: HashSet<usize> =
-                predicted[pi].residue_indices.iter().cloned().collect();
+            let pred_set: HashSet<usize> = predicted[pi].residue_indices.iter().cloned().collect();
             let inter = known_set.intersection(&pred_set).count();
             let union = known_set.union(&pred_set).count();
-            if union == 0 { 0.0 } else { inter as f64 / union as f64 }
+            if union == 0 {
+                0.0
+            } else {
+                inter as f64 / union as f64
+            }
         } else {
             0.0
         };
@@ -920,7 +933,11 @@ fn compute_validation_metrics(
             known_site_index: si,
             recovered,
             best_match_rank: best_rank.map(|pi| predicted[pi].rank),
-            centroid_distance: if best_rank.is_some() { Some(best_dist) } else { None },
+            centroid_distance: if best_rank.is_some() {
+                Some(best_dist)
+            } else {
+                None
+            },
             residue_overlap,
             dvo_jaccard,
             dvo_dice,
@@ -996,10 +1013,7 @@ fn compute_validation_metrics(
 // ---------------------------------------------------------------------------
 
 /// Build known binding sites from Target pocket metadata and the parsed PDB.
-fn extract_known_sites(
-    target: &targets::Target,
-    residues: &[PdbResidue],
-) -> Vec<KnownBindingSite> {
+fn extract_known_sites(target: &targets::Target, residues: &[PdbResidue]) -> Vec<KnownBindingSite> {
     let pocket_def = match &target.pocket {
         Some(p) => p,
         None => return Vec::new(),
@@ -1074,10 +1088,7 @@ impl DruggabilityBenchmark {
 
     /// Run pocket detection and druggability scoring on a PDB file.
     /// Returns the list of detected pockets (ranked by score).
-    pub fn detect_and_score(
-        &self,
-        pdb_path: &std::path::Path,
-    ) -> Result<Vec<DetectedPocket>> {
+    pub fn detect_and_score(&self, pdb_path: &std::path::Path) -> Result<Vec<DetectedPocket>> {
         let residues = parse_pdb_ca_atoms(pdb_path)?;
         log::info!(
             "Parsed {} residues from {}",
@@ -1174,9 +1185,10 @@ impl DruggabilityBenchmark {
             "classification_accuracy".to_string(),
             dm.classification_accuracy,
         );
-        metrics
-            .custom
-            .insert("n_predicted_pockets".to_string(), dm.n_predicted_pockets as f64);
+        metrics.custom.insert(
+            "n_predicted_pockets".to_string(),
+            dm.n_predicted_pockets as f64,
+        );
         metrics
             .custom
             .insert("n_known_sites".to_string(), dm.n_known_sites as f64);
@@ -1186,10 +1198,9 @@ impl DruggabilityBenchmark {
             metrics
                 .custom
                 .insert("top_pocket_score".to_string(), top.druggability_score);
-            metrics.custom.insert(
-                "top_pocket_volume".to_string(),
-                top.volume,
-            );
+            metrics
+                .custom
+                .insert("top_pocket_volume".to_string(), top.volume);
             metrics.custom.insert(
                 "top_pocket_class".to_string(),
                 top.classification.ordinal() as f64,
@@ -1278,7 +1289,9 @@ impl ValidationBenchmark for DruggabilityBenchmark {
                 name: "Site Recovery Rate".to_string(),
                 score: (recovery * 100.0).clamp(0.0, 100.0),
                 weight: 0.25,
-                description: "Fraction of known drug-binding sites recovered within 4A centroid distance".to_string(),
+                description:
+                    "Fraction of known drug-binding sites recovered within 4A centroid distance"
+                        .to_string(),
             });
         }
 
@@ -1298,7 +1311,8 @@ impl ValidationBenchmark for DruggabilityBenchmark {
                 name: "DVO (Volume Overlap)".to_string(),
                 score: (dvo * 100.0).clamp(0.0, 100.0),
                 weight: 0.25,
-                description: "Jaccard index of predicted vs actual pocket volumes (voxel grid)".to_string(),
+                description: "Jaccard index of predicted vs actual pocket volumes (voxel grid)"
+                    .to_string(),
             });
         }
 
@@ -1320,7 +1334,9 @@ impl ValidationBenchmark for DruggabilityBenchmark {
                 name: "Classification Accuracy".to_string(),
                 score: (acc * 100.0).clamp(0.0, 100.0),
                 weight: 0.10,
-                description: "Accuracy of HighlyDruggable/Druggable/Difficult/Undruggable classification".to_string(),
+                description:
+                    "Accuracy of HighlyDruggable/Druggable/Difficult/Undruggable classification"
+                        .to_string(),
             });
         }
 
@@ -1343,10 +1359,7 @@ impl ValidationBenchmark for DruggabilityBenchmark {
                 metric: "Site Recovery Rate".to_string(),
                 prism_value: prism_recovery,
                 af3_value: af3_recovery,
-                winner: if af3_recovery
-                    .map(|a| prism_recovery >= a)
-                    .unwrap_or(true)
-                {
+                winner: if af3_recovery.map(|a| prism_recovery >= a).unwrap_or(true) {
                     "PRISM-NOVA".to_string()
                 } else {
                     "AlphaFold3".to_string()
@@ -1357,9 +1370,7 @@ impl ValidationBenchmark for DruggabilityBenchmark {
 
         // --- F1 comparison ---
         if let Some(&prism_f1) = result.metrics.custom.get("f1") {
-            let af3_f1 = af3_result
-                .and_then(|r| r.custom.get("f1"))
-                .copied();
+            let af3_f1 = af3_result.and_then(|r| r.custom.get("f1")).copied();
             comparison.push(ComparisonItem {
                 metric: "F1 Score".to_string(),
                 prism_value: prism_f1,
@@ -1397,7 +1408,8 @@ impl ValidationBenchmark for DruggabilityBenchmark {
             prism_value: 1.0,
             af3_value: Some(0.0),
             winner: "PRISM-NOVA".to_string(),
-            significance: "AF3 cannot detect cryptic sites from apo structures (static predictor)".to_string(),
+            significance: "AF3 cannot detect cryptic sites from apo structures (static predictor)"
+                .to_string(),
         });
 
         let prism_wins = comparison
@@ -1448,21 +1460,31 @@ mod tests {
 
     #[test]
     fn test_druggability_class_from_score() {
-        assert_eq!(DruggabilityClass::from_score(0.85), DruggabilityClass::HighlyDruggable);
-        assert_eq!(DruggabilityClass::from_score(0.60), DruggabilityClass::Druggable);
-        assert_eq!(DruggabilityClass::from_score(0.40), DruggabilityClass::DifficultTarget);
-        assert_eq!(DruggabilityClass::from_score(0.15), DruggabilityClass::Undruggable);
+        assert_eq!(
+            DruggabilityClass::from_score(0.85),
+            DruggabilityClass::HighlyDruggable
+        );
+        assert_eq!(
+            DruggabilityClass::from_score(0.60),
+            DruggabilityClass::Druggable
+        );
+        assert_eq!(
+            DruggabilityClass::from_score(0.40),
+            DruggabilityClass::DifficultTarget
+        );
+        assert_eq!(
+            DruggabilityClass::from_score(0.15),
+            DruggabilityClass::Undruggable
+        );
     }
 
     #[test]
     fn test_druggability_class_ordinal() {
         assert!(
-            DruggabilityClass::HighlyDruggable.ordinal()
-                > DruggabilityClass::Druggable.ordinal()
+            DruggabilityClass::HighlyDruggable.ordinal() > DruggabilityClass::Druggable.ordinal()
         );
         assert!(
-            DruggabilityClass::Druggable.ordinal()
-                > DruggabilityClass::DifficultTarget.ordinal()
+            DruggabilityClass::Druggable.ordinal() > DruggabilityClass::DifficultTarget.ordinal()
         );
     }
 
@@ -1679,11 +1701,15 @@ mod tests {
         let bench = DruggabilityBenchmark::new();
 
         let mut metrics = BenchmarkMetrics::default();
-        metrics.custom.insert("site_recovery_rate".to_string(), 0.80);
+        metrics
+            .custom
+            .insert("site_recovery_rate".to_string(), 0.80);
         metrics.custom.insert("f1".to_string(), 0.65);
         metrics.custom.insert("mean_dvo_jaccard".to_string(), 0.45);
         metrics.custom.insert("enrichment_factor".to_string(), 3.0);
-        metrics.custom.insert("classification_accuracy".to_string(), 0.70);
+        metrics
+            .custom
+            .insert("classification_accuracy".to_string(), 0.70);
 
         let result = BenchmarkResult {
             benchmark: "druggability".to_string(),
@@ -1731,11 +1757,7 @@ mod tests {
 
     #[test]
     fn test_point_to_line_distance() {
-        let d = point_to_line_distance(
-            &[0.0, 1.0, 0.0],
-            &[0.0, 0.0, 0.0],
-            &[10.0, 0.0, 0.0],
-        );
+        let d = point_to_line_distance(&[0.0, 1.0, 0.0], &[0.0, 0.0, 0.0], &[10.0, 0.0, 0.0]);
         assert!((d - 1.0).abs() < 1e-6);
     }
 
@@ -1804,7 +1826,9 @@ mod tests {
         let bench = DruggabilityBenchmark::new();
 
         let mut metrics = BenchmarkMetrics::default();
-        metrics.custom.insert("site_recovery_rate".to_string(), 0.80);
+        metrics
+            .custom
+            .insert("site_recovery_rate".to_string(), 0.80);
         metrics.custom.insert("f1".to_string(), 0.65);
         metrics.custom.insert("mean_dvo_jaccard".to_string(), 0.45);
 

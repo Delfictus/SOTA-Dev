@@ -18,13 +18,13 @@
 
 #[cfg(feature = "simulation")]
 use crate::simulation_runner::{
-    SimulationRunner, SimulationConfig, SimulationTrajectory,
-    trajectory_to_metrics, compute_rmsf, compute_ca_rmsd, compute_pocket_rmsd,
+    compute_ca_rmsd, compute_pocket_rmsd, compute_rmsf, trajectory_to_metrics, SimulationConfig,
+    SimulationRunner, SimulationTrajectory,
 };
 
 use crate::pipeline::SimulationStructure;
-use crate::{BenchmarkResult, BenchmarkMetrics, ValidationConfig};
-use anyhow::{Result, Context};
+use crate::{BenchmarkMetrics, BenchmarkResult, ValidationConfig};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use std::collections::HashMap;
 
@@ -95,7 +95,10 @@ impl SimulationBenchmarkRunner {
     ) -> Result<BenchmarkResult> {
         let start = std::time::Instant::now();
 
-        log::info!("Running ATLAS benchmark with PRISM-NOVA on {}", apo_structure.name);
+        log::info!(
+            "Running ATLAS benchmark with PRISM-NOVA on {}",
+            apo_structure.name
+        );
 
         let trajectory = self.run_simulation(apo_structure, None)?;
         let mut metrics = trajectory_to_metrics(&trajectory, apo_structure, None);
@@ -122,8 +125,10 @@ impl SimulationBenchmarkRunner {
             metrics,
             passed,
             reason: if passed {
-                format!("RMSF correlation above threshold (acceptance={:.1}%)",
-                    trajectory.acceptance_rate * 100.0)
+                format!(
+                    "RMSF correlation above threshold (acceptance={:.1}%)",
+                    trajectory.acceptance_rate * 100.0
+                )
             } else {
                 "RMSF correlation below threshold".to_string()
             },
@@ -167,7 +172,10 @@ impl SimulationBenchmarkRunner {
         let passed = pocket_rmsd < 2.5 && betti_2 >= 0.5;
 
         let reason = if passed {
-            format!("Pocket opened: RMSD={:.2}Å, Betti-2={:.1}", pocket_rmsd, betti_2)
+            format!(
+                "Pocket opened: RMSD={:.2}Å, Betti-2={:.1}",
+                pocket_rmsd, betti_2
+            )
         } else {
             "Failed to open pocket or RMSD too high".to_string()
         };
@@ -211,8 +219,12 @@ impl SimulationBenchmarkRunner {
         let site_overlap = self.compute_site_overlap(&trajectory, drug_binding_site, apo_structure);
 
         let mut final_metrics = metrics;
-        final_metrics.custom.insert("site_rank".to_string(), site_rank as f64);
-        final_metrics.custom.insert("site_overlap".to_string(), site_overlap as f64);
+        final_metrics
+            .custom
+            .insert("site_rank".to_string(), site_rank as f64);
+        final_metrics
+            .custom
+            .insert("site_overlap".to_string(), site_overlap as f64);
 
         let duration = start.elapsed().as_secs_f64();
 
@@ -229,10 +241,17 @@ impl SimulationBenchmarkRunner {
             metrics: final_metrics,
             passed,
             reason: if passed {
-                format!("Drug site ranked #{} with {:.0}% overlap", site_rank, site_overlap * 100.0)
+                format!(
+                    "Drug site ranked #{} with {:.0}% overlap",
+                    site_rank,
+                    site_overlap * 100.0
+                )
             } else {
-                format!("Drug site ranked #{} with {:.0}% overlap (below threshold)",
-                    site_rank, site_overlap * 100.0)
+                format!(
+                    "Drug site ranked #{} with {:.0}% overlap (below threshold)",
+                    site_rank,
+                    site_overlap * 100.0
+                )
             },
         })
     }
@@ -292,7 +311,9 @@ impl SimulationBenchmarkRunner {
         structure: &SimulationStructure,
         target: Option<&SimulationStructure>,
     ) -> Result<SimulationTrajectory> {
-        let sim_runner = self.sim_runner.as_mut()
+        let sim_runner = self
+            .sim_runner
+            .as_mut()
             .context("Simulation runner not initialized")?;
 
         sim_runner.run_simulation(structure, target)
@@ -389,7 +410,13 @@ impl SimulationBenchmarkRunner {
         apo_structure: &SimulationStructure,
         _experimental_rmsf: Option<&[f32]>,
     ) -> Result<BenchmarkResult> {
-        self.placeholder_result("atlas", &apo_structure.name, &apo_structure.pdb_id, 0.75, true)
+        self.placeholder_result(
+            "atlas",
+            &apo_structure.name,
+            &apo_structure.pdb_id,
+            0.75,
+            true,
+        )
     }
 
     /// Run Apo-Holo benchmark without simulation (placeholder metrics)
@@ -399,7 +426,13 @@ impl SimulationBenchmarkRunner {
         apo_structure: &SimulationStructure,
         _holo_structure: &SimulationStructure,
     ) -> Result<BenchmarkResult> {
-        self.placeholder_result("apo_holo", &apo_structure.name, &apo_structure.pdb_id, 0.63, true)
+        self.placeholder_result(
+            "apo_holo",
+            &apo_structure.name,
+            &apo_structure.pdb_id,
+            0.63,
+            true,
+        )
     }
 
     /// Run Retrospective benchmark without simulation (placeholder metrics)
@@ -409,7 +442,13 @@ impl SimulationBenchmarkRunner {
         apo_structure: &SimulationStructure,
         _drug_binding_site: &[i32],
     ) -> Result<BenchmarkResult> {
-        self.placeholder_result("retrospective", &apo_structure.name, &apo_structure.pdb_id, 0.88, true)
+        self.placeholder_result(
+            "retrospective",
+            &apo_structure.name,
+            &apo_structure.pdb_id,
+            0.88,
+            true,
+        )
     }
 
     /// Run Novel Cryptic benchmark without simulation (placeholder metrics)
@@ -418,7 +457,13 @@ impl SimulationBenchmarkRunner {
         &mut self,
         apo_structure: &SimulationStructure,
     ) -> Result<BenchmarkResult> {
-        self.placeholder_result("novel", &apo_structure.name, &apo_structure.pdb_id, 0.57, true)
+        self.placeholder_result(
+            "novel",
+            &apo_structure.name,
+            &apo_structure.pdb_id,
+            0.57,
+            true,
+        )
     }
 
     /// Generate placeholder result for non-simulation builds
@@ -470,7 +515,10 @@ impl SimulationBenchmarkRunner {
             steps: self.config.steps_per_target,
             metrics,
             passed,
-            reason: format!("Placeholder result (simulation feature not enabled): score={}", score),
+            reason: format!(
+                "Placeholder result (simulation feature not enabled): score={}",
+                score
+            ),
         })
     }
 }

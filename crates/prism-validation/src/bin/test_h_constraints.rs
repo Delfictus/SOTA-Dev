@@ -77,7 +77,8 @@ fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
     // Use protein-only topology by default for simpler testing
-    let topology_path = args.get(1)
+    let topology_path = args
+        .get(1)
         .map(|s| s.as_str())
         .unwrap_or("data/prepared/prepared/1l2y_protein_only.json");
 
@@ -86,10 +87,10 @@ fn main() -> Result<()> {
 
     // Load topology
     println!("\nLoading topology: {}", topology_path);
-    let topology_json = std::fs::read_to_string(topology_path)
-        .context("Failed to read topology JSON")?;
-    let topology: TopologyJson = serde_json::from_str(&topology_json)
-        .context("Failed to parse topology JSON")?;
+    let topology_json =
+        std::fs::read_to_string(topology_path).context("Failed to read topology JSON")?;
+    let topology: TopologyJson =
+        serde_json::from_str(&topology_json).context("Failed to parse topology JSON")?;
 
     println!("   Atoms: {}", topology.n_atoms);
     println!("   Bonds: {}", topology.bonds.len());
@@ -97,11 +98,31 @@ fn main() -> Result<()> {
     println!("   H-bond clusters: {}", topology.h_clusters.len());
 
     // Count H-cluster types
-    let n_single = topology.h_clusters.iter().filter(|c| c.cluster_type == 1).count();
-    let n_ch2 = topology.h_clusters.iter().filter(|c| c.cluster_type == 2).count();
-    let n_ch3 = topology.h_clusters.iter().filter(|c| c.cluster_type == 3).count();
-    let n_nh2 = topology.h_clusters.iter().filter(|c| c.cluster_type == 4).count();
-    let n_nh3 = topology.h_clusters.iter().filter(|c| c.cluster_type == 5).count();
+    let n_single = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 1)
+        .count();
+    let n_ch2 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 2)
+        .count();
+    let n_ch3 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 3)
+        .count();
+    let n_nh2 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 4)
+        .count();
+    let n_nh3 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 5)
+        .count();
     println!("   H-cluster breakdown:");
     println!("     SINGLE_H: {} (C-H, N-H, O-H, S-H)", n_single);
     println!("     CH2: {} (Methylene)", n_ch2);
@@ -126,18 +147,34 @@ fn main() -> Result<()> {
 
         // Convert topology data to AmberMegaFusedHmc format
         // Bonds: (i, j, k, r0)
-        let bonds: Vec<(usize, usize, f32, f32)> = topology.bonds.iter()
+        let bonds: Vec<(usize, usize, f32, f32)> = topology
+            .bonds
+            .iter()
             .map(|b| (b.i, b.j, b.force_k, b.r0))
             .collect();
 
         // Angles: (i, j, k, force_k, theta0)
-        let angles: Vec<(usize, usize, usize, f32, f32)> = topology.angles.iter()
+        let angles: Vec<(usize, usize, usize, f32, f32)> = topology
+            .angles
+            .iter()
             .map(|a| (a.i, a.j, a.k_idx, a.force_k, a.theta0))
             .collect();
 
         // Dihedrals: (i, j, k, l, pk, n, phase)
-        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology.dihedrals.iter()
-            .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k, d.periodicity as f32, d.phase))
+        let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology
+            .dihedrals
+            .iter()
+            .map(|d| {
+                (
+                    d.i,
+                    d.j,
+                    d.k_idx,
+                    d.l,
+                    d.force_k,
+                    d.periodicity as f32,
+                    d.phase,
+                )
+            })
             .collect();
 
         // NB params: (sigma, epsilon, charge, mass)
@@ -151,7 +188,9 @@ fn main() -> Result<()> {
             .collect();
 
         // Exclusions: Vec<HashSet<usize>>
-        let exclusions: Vec<HashSet<usize>> = topology.exclusions.iter()
+        let exclusions: Vec<HashSet<usize>> = topology
+            .exclusions
+            .iter()
             .map(|e| e.iter().copied().collect())
             .collect();
 
@@ -169,8 +208,10 @@ fn main() -> Result<()> {
         // Enable PBC (implicit solvent mode - no PME, just box wrapping)
         // This keeps waters confined to the box
         if let Some(ref box_vecs) = topology.box_vectors {
-            println!("   Box: {:.2} x {:.2} x {:.2} A",
-                     box_vecs[0], box_vecs[1], box_vecs[2]);
+            println!(
+                "   Box: {:.2} x {:.2} x {:.2} A",
+                box_vecs[0], box_vecs[1], box_vecs[2]
+            );
             // Use implicit solvent (ε=4r) with PBC wrapping
             hmc.set_pbc_box([box_vecs[0], box_vecs[1], box_vecs[2]])?;
             println!("   PBC: ENABLED (implicit solvent mode, no PME)");
@@ -184,15 +225,17 @@ fn main() -> Result<()> {
         let max_force = hmc.get_max_force()?;
         println!("   Initial max force: {:.1} kcal/(mol·Å)", max_force);
 
-        let pe_initial = hmc.minimize(1, 0.0001)?;  // Just 1 step, smaller step size
+        let pe_initial = hmc.minimize(1, 0.0001)?; // Just 1 step, smaller step size
         println!("   Initial PE: {:.1} kcal/mol", pe_initial);
 
         // Try very gentle minimization
         for steps in [10, 50, 100] {
-            let pe_min = hmc.minimize(steps, 0.0001)?;  // Very small step size
+            let pe_min = hmc.minimize(steps, 0.0001)?; // Very small step size
             let max_force = hmc.get_max_force()?;
-            println!("   After {} steps: PE = {:.1} kcal/mol, max_F = {:.1} kcal/(mol·Å)",
-                steps, pe_min, max_force);
+            println!(
+                "   After {} steps: PE = {:.1} kcal/mol, max_F = {:.1} kcal/(mol·Å)",
+                steps, pe_min, max_force
+            );
             if pe_min > 100000.0 {
                 println!("   [MINIMIZER EXPLODED]");
                 break;
@@ -202,16 +245,22 @@ fn main() -> Result<()> {
         // Set up position restraints to prevent unfolding in implicit solvent
         // Restrain all heavy atoms (non-hydrogen) with moderate spring constant
         let heavy_atom_indices: Vec<usize> = (0..topology.n_atoms)
-            .filter(|&i| topology.masses[i] > 2.0)  // > 2 amu excludes hydrogen
+            .filter(|&i| topology.masses[i] > 2.0) // > 2 amu excludes hydrogen
             .collect();
-        println!("\nSetting up position restraints for {} heavy atoms...", heavy_atom_indices.len());
-        hmc.set_position_restraints(&heavy_atom_indices, 100.0)?;  // k = 100 kcal/(mol·Å²) - very strong
+        println!(
+            "\nSetting up position restraints for {} heavy atoms...",
+            heavy_atom_indices.len()
+        );
+        hmc.set_position_restraints(&heavy_atom_indices, 100.0)?; // k = 100 kcal/(mol·Å²) - very strong
         println!("   Position restraints: ENABLED (k=100.0 kcal/(mol·Å²) - very strong)");
 
         // Set up SETTLE for water
         let has_settle = !topology.water_oxygens.is_empty();
         if has_settle {
-            println!("\nSetting up SETTLE for {} water molecules...", topology.water_oxygens.len());
+            println!(
+                "\nSetting up SETTLE for {} water molecules...",
+                topology.water_oxygens.len()
+            );
             hmc.set_water_molecules(&topology.water_oxygens)?;
             println!("   SETTLE constraints enabled");
 
@@ -229,9 +278,14 @@ fn main() -> Result<()> {
         if !topology.h_clusters.is_empty() {
             use prism_gpu::HConstraintCluster;
 
-            println!("\nSetting up H-bond constraints for {} clusters...", topology.h_clusters.len());
-            let h_clusters: Vec<HConstraintCluster> = topology.h_clusters.iter().map(|c| {
-                HConstraintCluster {
+            println!(
+                "\nSetting up H-bond constraints for {} clusters...",
+                topology.h_clusters.len()
+            );
+            let h_clusters: Vec<HConstraintCluster> = topology
+                .h_clusters
+                .iter()
+                .map(|c| HConstraintCluster {
                     central_atom: c.central_atom,
                     hydrogen_atoms: [
                         c.hydrogen_atoms.get(0).copied().unwrap_or(-1),
@@ -247,8 +301,8 @@ fn main() -> Result<()> {
                     inv_mass_h: c.inv_mass_h,
                     n_hydrogens: c.n_hydrogens,
                     cluster_type: c.cluster_type,
-                }
-            }).collect();
+                })
+                .collect();
             hmc.set_h_constraints(&h_clusters)?;
             println!("   H-bond constraints enabled");
         } else {
@@ -265,7 +319,7 @@ fn main() -> Result<()> {
         let gamma_fs = 0.01; // Production-like friction (10 ps^-1)
 
         // DIAGNOSTIC: Check velocities are zero before initialization
-        let kb = 0.001987204f32;  // kcal/(mol*K)
+        let kb = 0.001987204f32; // kcal/(mol*K)
         let force_to_accel = 4.184e-4f32;
         let n_dof = (3 * topology.n_atoms - 6) as f64;
 
@@ -283,7 +337,10 @@ fn main() -> Result<()> {
             total_ke += 0.5 * (mass as f64) * v2 / (force_to_accel as f64);
         }
         let pre_temp = 2.0 * total_ke / (n_dof * kb as f64);
-        println!("1. Pre-init velocities: T = {:.1} K, KE = {:.1} kcal/mol", pre_temp, total_ke);
+        println!(
+            "1. Pre-init velocities: T = {:.1} K, KE = {:.1} kcal/mol",
+            pre_temp, total_ke
+        );
 
         // Explicitly initialize velocities WITHOUT running any steps
         hmc.initialize_velocities(target_temp as f32)?;
@@ -302,7 +359,8 @@ fn main() -> Result<()> {
             total_ke += 0.5 * (mass as f64) * v2 / (force_to_accel as f64);
 
             // Expected variance per component
-            let expected_sigma2 = (kb as f64) * target_temp * (force_to_accel as f64) / (mass as f64);
+            let expected_sigma2 =
+                (kb as f64) * target_temp * (force_to_accel as f64) / (mass as f64);
             // Actual variance (from 3 components)
             let actual_sigma2 = v2 / 3.0;
             variance_ratio_sum += actual_sigma2 / expected_sigma2;
@@ -312,18 +370,33 @@ fn main() -> Result<()> {
                 sample_vs.push(vy);
                 sample_vs.push(vz);
                 let expected_sigma = expected_sigma2.sqrt();
-                println!("     Atom {:3}: m={:6.3}, |v|={:.5}, expected σ={:.5}, v/σ={:.2}",
-                    i, mass, v2.sqrt(), expected_sigma, v2.sqrt() / (3.0_f64.sqrt() * expected_sigma));
+                println!(
+                    "     Atom {:3}: m={:6.3}, |v|={:.5}, expected σ={:.5}, v/σ={:.2}",
+                    i,
+                    mass,
+                    v2.sqrt(),
+                    expected_sigma,
+                    v2.sqrt() / (3.0_f64.sqrt() * expected_sigma)
+                );
             }
         }
         let avg_variance_ratio = variance_ratio_sum / topology.n_atoms as f64;
         let post_init_temp = 2.0 * total_ke / (n_dof * kb as f64);
         let expected_ke = 1.5 * topology.n_atoms as f64 * kb as f64 * target_temp;
         println!("2. Post-init velocities (BEFORE any integration):");
-        println!("   T = {:.1} K (target: {:.1} K)", post_init_temp, target_temp);
-        println!("   KE = {:.1} kcal/mol (expected: {:.1} kcal/mol)", total_ke, expected_ke);
+        println!(
+            "   T = {:.1} K (target: {:.1} K)",
+            post_init_temp, target_temp
+        );
+        println!(
+            "   KE = {:.1} kcal/mol (expected: {:.1} kcal/mol)",
+            total_ke, expected_ke
+        );
         println!("   Ratio: {:.2}x", post_init_temp / target_temp);
-        println!("   Avg variance ratio (actual/expected): {:.3}", avg_variance_ratio);
+        println!(
+            "   Avg variance ratio (actual/expected): {:.3}",
+            avg_variance_ratio
+        );
 
         // Compute expected sigma for a typical atom (carbon, mass=12)
         let expected_sigma = (kb * target_temp as f32 * force_to_accel / 12.0).sqrt();
@@ -345,11 +418,16 @@ fn main() -> Result<()> {
         }
         let post_1step_temp = 2.0 * total_ke / (n_dof * kb as f64);
         println!("3. After 1 OBAB step (γ={} fs⁻¹):", gamma_aggressive);
-        println!("   T = {:.1} K (kernel reports: {:.1} K)", post_1step_temp, result_1step.avg_temperature);
+        println!(
+            "   T = {:.1} K (kernel reports: {:.1} K)",
+            post_1step_temp, result_1step.avg_temperature
+        );
         println!("   KE = {:.1} kcal/mol", total_ke);
-        println!("   Change from init: {:.1} K ({:+.1}%)",
+        println!(
+            "   Change from init: {:.1} K ({:+.1}%)",
             post_1step_temp - post_init_temp,
-            100.0 * (post_1step_temp - post_init_temp) / post_init_temp);
+            100.0 * (post_1step_temp - post_init_temp) / post_init_temp
+        );
 
         // Test with NO thermostat (γ=0) - pure NVE to check energy conservation
         // FIRST: Use the OLD mega-fused kernel (single force eval - known broken)
@@ -404,8 +482,14 @@ fn main() -> Result<()> {
         for steps in [100, 200, 500, 1000] {
             let result = hmc.run_verlet(steps, dt, target_temp as f32, gamma_nvt)?;
             let temp_ratio = result.avg_temperature / target_temp;
-            println!("After {:4} steps: T={:7.1}K ({:.2}x target), PE={:10.1}, KE={:10.1}",
-                steps, result.avg_temperature, temp_ratio, result.potential_energy, result.kinetic_energy);
+            println!(
+                "After {:4} steps: T={:7.1}K ({:.2}x target), PE={:10.1}, KE={:10.1}",
+                steps,
+                result.avg_temperature,
+                temp_ratio,
+                result.potential_energy,
+                result.kinetic_energy
+            );
 
             // Stop if temperature explodes
             if result.avg_temperature > 2000.0 {
@@ -421,7 +505,10 @@ fn main() -> Result<()> {
         let total_energy = result.potential_energy + result.kinetic_energy;
         println!("\nResults:");
         println!("   Average temperature: {:.1} K", result.avg_temperature);
-        println!("   Potential energy: {:.1} kcal/mol", result.potential_energy);
+        println!(
+            "   Potential energy: {:.1} kcal/mol",
+            result.potential_energy
+        );
         println!("   Kinetic energy: {:.1} kcal/mol", result.kinetic_energy);
         println!("   Total energy: {:.1} kcal/mol", total_energy);
 
@@ -430,8 +517,10 @@ fn main() -> Result<()> {
         let temp_ok = (0.8..=1.5).contains(&temp_ratio);
 
         println!("\nValidation:");
-        println!("   Temperature ratio: {:.2}x target ({:.1} K / {:.1} K)",
-            temp_ratio, result.avg_temperature, target_temp);
+        println!(
+            "   Temperature ratio: {:.2}x target ({:.1} K / {:.1} K)",
+            temp_ratio, result.avg_temperature, target_temp
+        );
 
         if temp_ok {
             println!("   [OK] Temperature within acceptable range (0.8-1.5x target)");
@@ -447,7 +536,7 @@ fn main() -> Result<()> {
                 println!("     OH: {:.6} Å (target: 0.9572 Å)", max_oh);
                 println!("     HH: {:.6} Å (target: 1.5136 Å)", max_hh);
 
-                let oh_ok = max_oh < 0.01;  // < 0.01 Å violation
+                let oh_ok = max_oh < 0.01; // < 0.01 Å violation
                 let hh_ok = max_hh < 0.01;
 
                 if oh_ok && hh_ok {

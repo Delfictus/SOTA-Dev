@@ -23,32 +23,29 @@
 //! Phase 1.3: Dynamic EFE prior based on protein size and burial variance
 //! Phase 2.3: Graph-based label propagation clustering
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::Utc;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{info, error, debug};
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use prism_validation::{
-    anm_ensemble_v2::{AnmEnsembleGeneratorV2, AnmEnsembleConfigV2},
-    ensemble_pocket_detector_v2::{
-        EnsemblePocketDetectorV2, EnsemblePocketConfigV2,
+    anm_ensemble_v2::{AnmEnsembleConfigV2, AnmEnsembleGeneratorV2},
+    ensemble_pocket_detector_v2::{EnsemblePocketConfigV2, EnsemblePocketDetectorV2},
+    // Phase 2.1: HMC refinement - uses REAL PRISM-NOVA AmberSimulator
+    hmc_refined_ensemble::{HmcRefinedConfig, HmcRefinedEnsembleGenerator},
+    observability::{
+        AggregateMetrics, ConfigSnapshot, CrypticDetectionReport, MemoryUsage, ScoreDistribution,
+        StructureResult, TimingBreakdown, BASELINE_PR_AUC, BASELINE_ROC_AUC, BASELINE_SUCCESS_RATE,
+        TARGET_PR_AUC, TARGET_ROC_AUC, TARGET_SUCCESS_RATE,
     },
     pocketminer_dataset::{PocketMinerDataset, PocketMinerEntry},
-    observability::{
-        CrypticDetectionReport, AggregateMetrics, ConfigSnapshot,
-        StructureResult, ScoreDistribution, TimingBreakdown, MemoryUsage,
-        BASELINE_ROC_AUC, BASELINE_PR_AUC, BASELINE_SUCCESS_RATE,
-        TARGET_ROC_AUC, TARGET_PR_AUC, TARGET_SUCCESS_RATE,
-    },
-    // Phase 2.1: HMC refinement - uses REAL PRISM-NOVA AmberSimulator
-    hmc_refined_ensemble::{HmcRefinedEnsembleGenerator, HmcRefinedConfig},
     // Phase 2.2: PRISM-ZrO scoring - uses REAL GPU DendriticSNNReservoir (512 neurons)
-    prism_zro_cryptic_scorer::{ZroCrypticScorer, ZroCrypticConfig, ResidueFeatures},
+    prism_zro_cryptic_scorer::{ResidueFeatures, ZroCrypticConfig, ZroCrypticScorer},
 };
 
 // Phase 3: Enhanced features - Secondary structure and sidechain flexibility
@@ -170,12 +167,26 @@ fn main() -> Result<()> {
     info!("  Z-score threshold: {} (adaptive)", args.z_threshold);
     info!("  Min threshold floor: {}", args.min_threshold);
     info!("  Phase: {}", args.phase);
-    info!("  HMC refinement: {} (Phase 2.1)", if args.enable_hmc { "ENABLED" } else { "disabled" });
+    info!(
+        "  HMC refinement: {} (Phase 2.1)",
+        if args.enable_hmc {
+            "ENABLED"
+        } else {
+            "disabled"
+        }
+    );
     if args.enable_hmc {
         info!("    - HMC steps: {}", args.hmc_steps);
         info!("    - Top-K for refinement: {}", args.hmc_top_k);
     }
-    info!("  PRISM-ZrO scoring: {} (Phase 2.2)", if args.enable_zro { "ENABLED" } else { "disabled" });
+    info!(
+        "  PRISM-ZrO scoring: {} (Phase 2.2)",
+        if args.enable_zro {
+            "ENABLED"
+        } else {
+            "disabled"
+        }
+    );
     if let Some(seed) = args.seed {
         info!("  Random seed: {}", seed);
     }
@@ -191,7 +202,9 @@ fn main() -> Result<()> {
 
     // Filter to single structure if requested
     let entries: Vec<_> = if let Some(ref single) = args.single {
-        dataset.entries.iter()
+        dataset
+            .entries
+            .iter()
             .filter(|e| e.pdb_id.contains(single))
             .cloned()
             .collect()
@@ -210,7 +223,7 @@ fn main() -> Result<()> {
         n_conformations: args.n_conformations,
         n_modes: args.n_modes,
         amplitude_scale: args.amplitude_scale,
-        max_displacement: 8.0,  // v2: increased from 5.0
+        max_displacement: 8.0, // v2: increased from 5.0
         seed: args.seed,
         ..Default::default()
     };
@@ -219,7 +232,7 @@ fn main() -> Result<()> {
     let pocket_config = EnsemblePocketConfigV2 {
         z_threshold: args.z_threshold,
         min_threshold_floor: args.min_threshold,
-        use_graph_clustering: true,  // v2: graph-based clustering
+        use_graph_clustering: true, // v2: graph-based clustering
         ..Default::default()
     };
 
@@ -393,13 +406,11 @@ fn run_benchmark_v2(
     let n_structures = structure_results.len();
     let success_rate = n_successful as f64 / n_structures as f64;
 
-    let mean_recall = structure_results.iter()
-        .map(|r| r.recall)
-        .sum::<f64>() / n_structures as f64;
-    let mean_precision = structure_results.iter()
-        .map(|r| r.precision)
-        .sum::<f64>() / n_structures as f64;
-    let best_f1 = structure_results.iter()
+    let mean_recall = structure_results.iter().map(|r| r.recall).sum::<f64>() / n_structures as f64;
+    let mean_precision =
+        structure_results.iter().map(|r| r.precision).sum::<f64>() / n_structures as f64;
+    let best_f1 = structure_results
+        .iter()
         .map(|r| r.f1)
         .fold(0.0_f64, |a, b| a.max(b));
 
@@ -420,9 +431,9 @@ fn run_benchmark_v2(
         scoring_std: 0.0,
         clustering_ms: total_clustering_time / n_structures as f64,
         clustering_std: 0.0,
-        hmc_refinement_ms: total_hmc_time / n_structures as f64,  // Phase 2.1 - REAL AmberSimulator
+        hmc_refinement_ms: total_hmc_time / n_structures as f64, // Phase 2.1 - REAL AmberSimulator
         hmc_refinement_std: 0.0,
-        zro_scoring_ms: total_zro_time / n_structures as f64,  // Phase 2.2 - GPU DendriticSNNReservoir
+        zro_scoring_ms: total_zro_time / n_structures as f64, // Phase 2.2 - GPU DendriticSNNReservoir
         zro_scoring_std: 0.0,
         total_ms: total_time / n_structures as f64,
         total_std: 0.0,
@@ -455,10 +466,10 @@ fn run_benchmark_v2(
         use_graph_clustering: pocket_config.use_graph_clustering,
         cluster_distance: pocket_config.cluster_distance,
         min_cluster_size: pocket_config.min_cluster_size,
-        hmc_enabled: enable_hmc,  // Phase 2.1 - PRISM-NOVA AmberSimulator
+        hmc_enabled: enable_hmc, // Phase 2.1 - PRISM-NOVA AmberSimulator
         hmc_n_steps: if enable_hmc { Some(hmc_steps) } else { None },
         hmc_temperature: if enable_hmc { Some(310.0) } else { None },
-        zro_enabled: enable_zro,  // Phase 2.2 - GPU DendriticSNNReservoir
+        zro_enabled: enable_zro, // Phase 2.2 - GPU DendriticSNNReservoir
         zro_reservoir_size: if enable_zro { Some(512) } else { None },
         zro_lambda: if enable_zro { Some(0.99) } else { None },
     };
@@ -488,7 +499,11 @@ fn process_single_entry_v2(
     hmc_top_k: usize,
     enable_zro: bool,
     zro_scorer: Option<&mut ZroCrypticScorer>,
-) -> Result<(StructureResult, Vec<(i32, f64)>, (f64, f64, f64, f64, f64, f64))> {
+) -> Result<(
+    StructureResult,
+    Vec<(i32, f64)>,
+    (f64, f64, f64, f64, f64, f64),
+)> {
     // Parse APO structure to get CA coordinates, residue names, and B-factors (Phase 3)
     let pdb_info = parse_pdb_enhanced(&entry.apo_path)?;
     let ca_coords = pdb_info.coords;
@@ -507,16 +522,19 @@ fn process_single_entry_v2(
     // B-factors from crystal structure (already parsed)
     let b_factors = &pdb_info.b_factors;
 
-    debug!("{}: Phase 3 features computed - SS: {} values, SC: {} values, Bfac: {} values",
-           entry.pdb_id, ss_flexibility.len(), sidechain_flexibility.len(), b_factors.len());
+    debug!(
+        "{}: Phase 3 features computed - SS: {} values, SC: {} values, Bfac: {} values",
+        entry.pdb_id,
+        ss_flexibility.len(),
+        sidechain_flexibility.len(),
+        b_factors.len()
+    );
 
     // Build residue index map (sequential index -> sequential ID)
     // PocketMiner ground truth uses 0-indexed SEQUENTIAL positions in the cleaned structure,
     // NOT actual PDB residue numbers. See download_pocketminer.rs line 142:
     // "Note: These are 0-indexed residue positions in the cleaned structure"
-    let residue_map: HashMap<usize, i32> = (0..ca_coords.len())
-        .map(|i| (i, i as i32))
-        .collect();
+    let residue_map: HashMap<usize, i32> = (0..ca_coords.len()).map(|i| (i, i as i32)).collect();
 
     let mut hmc_time = 0.0_f64;
     let mut zro_time = 0.0_f64;
@@ -532,7 +550,7 @@ fn process_single_entry_v2(
             top_k_for_refinement: hmc_top_k,
             use_langevin: true,
             hmc_temperature: 310.0,
-            hmc_timestep: 0.5,  // Small timestep for ANM-displaced structures
+            hmc_timestep: 0.5, // Small timestep for ANM-displaced structures
             hmc_n_leapfrog: 10,
             seed: Some(42),
             ..Default::default()
@@ -548,9 +566,18 @@ fn process_single_entry_v2(
         let hmc_ensemble = hmc_generator.generate_ensemble(&ca_coords)?;
         hmc_time = hmc_start.elapsed().as_millis() as f64;
 
-        let mode = if hmc_generator.is_full_atom() { "full-atom AMBER" } else { "CA-only" };
-        debug!("{}: HMC-refined ensemble ({}), {} conformations, {:.0}ms",
-               entry.pdb_id, mode, hmc_ensemble.conformations.len(), hmc_time);
+        let mode = if hmc_generator.is_full_atom() {
+            "full-atom AMBER"
+        } else {
+            "CA-only"
+        };
+        debug!(
+            "{}: HMC-refined ensemble ({}), {} conformations, {:.0}ms",
+            entry.pdb_id,
+            mode,
+            hmc_ensemble.conformations.len(),
+            hmc_time
+        );
 
         hmc_ensemble
     } else {
@@ -561,7 +588,10 @@ fn process_single_entry_v2(
 
     let anm_time = anm_start.elapsed().as_millis() as f64 - hmc_time;
 
-    debug!("{}: v2 ensemble RMSD = {:.2}Å (target: ~3.5Å)", entry.pdb_id, ensemble.mean_rmsd);
+    debug!(
+        "{}: v2 ensemble RMSD = {:.2}Å (target: ~3.5Å)",
+        entry.pdb_id, ensemble.mean_rmsd
+    );
 
     // === Phase 2: Feature Extraction + Scoring + Clustering (timed) ===
     let feature_start = std::time::Instant::now();
@@ -581,9 +611,21 @@ fn process_single_entry_v2(
                 let idx = res_id as usize;
 
                 // Get EFE-derived features (keyed by sequential index)
-                let efe_score = cryptic_result.efe_scores.get(&res_id).copied().unwrap_or(0.5);
-                let epistemic = cryptic_result.epistemic_values.get(&res_id).copied().unwrap_or(0.5);
-                let sasa_var = cryptic_result.sasa_variance.get(&res_id).copied().unwrap_or(0.0);
+                let efe_score = cryptic_result
+                    .efe_scores
+                    .get(&res_id)
+                    .copied()
+                    .unwrap_or(0.5);
+                let epistemic = cryptic_result
+                    .epistemic_values
+                    .get(&res_id)
+                    .copied()
+                    .unwrap_or(0.5);
+                let sasa_var = cryptic_result
+                    .sasa_variance
+                    .get(&res_id)
+                    .copied()
+                    .unwrap_or(0.0);
 
                 // NEW: Phase 3 features
                 let ss_flex = ss_flexibility.get(idx).copied().unwrap_or(1.0);
@@ -591,12 +633,12 @@ fn process_single_entry_v2(
                 let bfac = b_factors.get(idx).copied();
 
                 features.push(ResidueFeatures {
-                    residue_id: res_id,  // Sequential index
+                    residue_id: res_id, // Sequential index
                     // Dynamics features (5)
-                    burial_change: efe_score - 0.5,  // Center around 0
-                    rmsf: epistemic * 5.0,  // Scale epistemic to RMSF-like range
+                    burial_change: efe_score - 0.5, // Center around 0
+                    rmsf: epistemic * 5.0,          // Scale epistemic to RMSF-like range
                     variance: sasa_var,
-                    neighbor_flexibility: efe_score,  // Use EFE as proxy
+                    neighbor_flexibility: efe_score, // Use EFE as proxy
                     burial_potential: 1.0 - efe_score,
                     // Structural features (3)
                     ss_flexibility: ss_flex,
@@ -607,7 +649,7 @@ fn process_single_entry_v2(
                     hydrophobicity: 0.0,
                     h_bond_potential: 2.0,
                     // Distance features (3)
-                    contact_density: efe_score,  // Use EFE as proxy for contact density
+                    contact_density: efe_score, // Use EFE as proxy for contact density
                     sasa_change: Some(sasa_var),
                     nearest_charged_dist: 10.0,
                     // Tertiary features (2)
@@ -617,22 +659,23 @@ fn process_single_entry_v2(
             }
 
             // Score with GPU reservoir and online learning
-            let ground_truth: HashMap<i32, bool> = entry.cryptic_residues
-                .iter()
-                .map(|&r| (r, true))
-                .collect();
+            let ground_truth: HashMap<i32, bool> =
+                entry.cryptic_residues.iter().map(|&r| (r, true)).collect();
 
             match scorer.score_structure(&features, Some(&ground_truth)) {
                 Ok(zro_scores) => {
                     // Blend ZrO scores with EFE scores (weighted average)
-                    let zro_weight = 0.4;  // 40% ZrO, 60% EFE
+                    let zro_weight = 0.4; // 40% ZrO, 60% EFE
                     for (res_id, efe_score) in cryptic_result.efe_scores.iter_mut() {
                         if let Some(&zro_score) = zro_scores.get(res_id) {
                             *efe_score = (1.0 - zro_weight) * *efe_score + zro_weight * zro_score;
                         }
                     }
-                    debug!("{}: ZrO scoring applied, {} residues scored",
-                           entry.pdb_id, zro_scores.len());
+                    debug!(
+                        "{}: ZrO scoring applied, {} residues scored",
+                        entry.pdb_id,
+                        zro_scores.len()
+                    );
                 }
                 Err(e) => {
                     debug!("{}: ZrO scoring failed: {}", entry.pdb_id, e);
@@ -643,11 +686,7 @@ fn process_single_entry_v2(
             // The initial detection used only EFE scores. Now that ZrO has modified
             // the efe_scores, we must re-apply thresholding and clustering to use
             // the blended scores for final predictions.
-            detector.redetect_from_modified_scores(
-                &mut cryptic_result,
-                &ca_coords,
-                &residue_map,
-            );
+            detector.redetect_from_modified_scores(&mut cryptic_result, &ca_coords, &residue_map);
 
             zro_time = zro_start.elapsed().as_millis() as f64;
         }
@@ -658,7 +697,8 @@ fn process_single_entry_v2(
     let clustering_time = feature_time * 0.4;
 
     // === Extract predictions for global AUC ===
-    let all_predictions: Vec<(i32, f64)> = cryptic_result.efe_scores
+    let all_predictions: Vec<(i32, f64)> = cryptic_result
+        .efe_scores
         .iter()
         .map(|(&r, &s)| (r, s))
         .collect();
@@ -667,7 +707,8 @@ fn process_single_entry_v2(
     let ground_truth: HashSet<i32> = entry.cryptic_residues.iter().cloned().collect();
 
     // Use cluster members for recall (more generous)
-    let cluster_members: Vec<i32> = cryptic_result.clusters
+    let cluster_members: Vec<i32> = cryptic_result
+        .clusters
         .iter()
         .flat_map(|c| c.residues.iter().cloned())
         .collect();
@@ -709,7 +750,18 @@ fn process_single_entry_v2(
         processing_time_ms: anm_time + feature_time,
     };
 
-    Ok((result, all_predictions, (anm_time, feature_time, scoring_time, clustering_time, hmc_time, zro_time)))
+    Ok((
+        result,
+        all_predictions,
+        (
+            anm_time,
+            feature_time,
+            scoring_time,
+            clustering_time,
+            hmc_time,
+            zro_time,
+        ),
+    ))
 }
 
 /// Enhanced PDB data for Phase 3 features
@@ -792,9 +844,9 @@ fn parse_pdb_enhanced(pdb_path: &Path) -> Result<PdbResidueInfo> {
 
         // Parse B-factor (columns 60-66) - optional
         let b_factor: f64 = if line.len() >= 66 {
-            line[60..66].trim().parse().unwrap_or(30.0)  // Default to average B-factor
+            line[60..66].trim().parse().unwrap_or(30.0) // Default to average B-factor
         } else {
-            30.0  // Default if not present
+            30.0 // Default if not present
         };
 
         coords.push([x, y, z]);
@@ -808,7 +860,7 @@ fn parse_pdb_enhanced(pdb_path: &Path) -> Result<PdbResidueInfo> {
         residue_ids,
         residue_names,
         b_factors,
-        raw_content: content,  // Store for full-atom HMC (Phase 3)
+        raw_content: content, // Store for full-atom HMC (Phase 3)
     })
 }
 
@@ -820,14 +872,18 @@ fn compute_ss_flexibility(ca_coords: &[[f32; 3]]) -> Vec<f64> {
     let analyzer = SecondaryStructureAnalyzer::default();
     let assignments = analyzer.detect(ca_coords);
 
-    assignments.iter().map(|ss| ss.flexibility_factor()).collect()
+    assignments
+        .iter()
+        .map(|ss| ss.flexibility_factor())
+        .collect()
 }
 
 /// Compute sidechain flexibility factors from residue names
 ///
 /// Uses empirical flexibility factors: GLY=1.40 (most flexible), PRO=0.60 (most rigid)
 fn compute_sidechain_flexibility(residue_names: &[String]) -> Vec<f64> {
-    residue_names.iter()
+    residue_names
+        .iter()
         .map(|name| flexibility_factor(name))
         .collect()
 }
@@ -856,10 +912,7 @@ fn compute_prediction_overlap(
 }
 
 /// Compute global ROC AUC from all predictions
-fn compute_global_roc_auc(
-    predictions: &[(i32, f64)],
-    ground_truth: &HashSet<i32>,
-) -> f64 {
+fn compute_global_roc_auc(predictions: &[(i32, f64)], ground_truth: &HashSet<i32>) -> f64 {
     if predictions.is_empty() || ground_truth.is_empty() {
         return 0.5;
     }
@@ -894,10 +947,7 @@ fn compute_global_roc_auc(
 }
 
 /// Compute global PR AUC from all predictions
-fn compute_global_pr_auc(
-    predictions: &[(i32, f64)],
-    ground_truth: &HashSet<i32>,
-) -> f64 {
+fn compute_global_pr_auc(predictions: &[(i32, f64)], ground_truth: &HashSet<i32>) -> f64 {
     if predictions.is_empty() || ground_truth.is_empty() {
         return 0.0;
     }
@@ -935,50 +985,90 @@ fn print_summary_v2(report: &CrypticDetectionReport, sota: &SotaComparison) {
     println!("║     PRISM Ensemble Cryptic Site Benchmark v2 (Enhanced)       ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Phase: {:<55} ║", report.phase);
-    println!("║ Timestamp: {:<51} ║", report.timestamp.format("%Y-%m-%d %H:%M:%S UTC"));
+    println!(
+        "║ Timestamp: {:<51} ║",
+        report.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║                    v2 CONFIGURATION                           ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║ ANM: {} modes, {} conformations, amplitude={:.1}          ║",
-             report.config.anm_n_modes, report.config.anm_n_conformations, report.config.anm_amplitude_scale);
-    println!("║ Threshold: Z={:.1}, floor={:.2} (adaptive)                    ║",
-             report.config.z_threshold, report.config.min_threshold_floor);
-    println!("║ Clustering: graph={} (distance={:.1}Å)                     ║",
-             report.config.use_graph_clustering, report.config.cluster_distance);
+    println!(
+        "║ ANM: {} modes, {} conformations, amplitude={:.1}          ║",
+        report.config.anm_n_modes,
+        report.config.anm_n_conformations,
+        report.config.anm_amplitude_scale
+    );
+    println!(
+        "║ Threshold: Z={:.1}, floor={:.2} (adaptive)                    ║",
+        report.config.z_threshold, report.config.min_threshold_floor
+    );
+    println!(
+        "║ Clustering: graph={} (distance={:.1}Å)                     ║",
+        report.config.use_graph_clustering, report.config.cluster_distance
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║                    AGGREGATE METRICS                          ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Metric          │ Baseline │ This Run │ Delta  │ Target       ║");
     println!("║─────────────────┼──────────┼──────────┼────────┼──────────────║");
 
-    let delta_str = |d: f64| if d >= 0.0 { format!("+{:.3}", d) } else { format!("{:.3}", d) };
+    let delta_str = |d: f64| {
+        if d >= 0.0 {
+            format!("+{:.3}", d)
+        } else {
+            format!("{:.3}", d)
+        }
+    };
 
-    println!("║ ROC AUC         │  {:.3}   │  {:.3}   │ {} │ >{:.2}        ║",
-             BASELINE_ROC_AUC, report.metrics.roc_auc,
-             delta_str(report.baseline_comparison.roc_auc_delta), TARGET_ROC_AUC);
-    println!("║ PR AUC          │  {:.3}   │  {:.3}   │ {} │ >{:.2}        ║",
-             BASELINE_PR_AUC, report.metrics.pr_auc,
-             delta_str(report.baseline_comparison.pr_auc_delta), TARGET_PR_AUC);
-    println!("║ Success Rate    │  {:.1}%   │  {:.1}%   │ {}% │ >{:.0}%        ║",
-             BASELINE_SUCCESS_RATE * 100.0, report.metrics.success_rate * 100.0,
-             delta_str(report.baseline_comparison.success_rate_delta * 100.0),
-             TARGET_SUCCESS_RATE * 100.0);
-    println!("║ Best F1         │  0.545   │  {:.3}   │ {} │ >0.70        ║",
-             report.metrics.best_f1,
-             delta_str(report.baseline_comparison.best_f1_delta));
+    println!(
+        "║ ROC AUC         │  {:.3}   │  {:.3}   │ {} │ >{:.2}        ║",
+        BASELINE_ROC_AUC,
+        report.metrics.roc_auc,
+        delta_str(report.baseline_comparison.roc_auc_delta),
+        TARGET_ROC_AUC
+    );
+    println!(
+        "║ PR AUC          │  {:.3}   │  {:.3}   │ {} │ >{:.2}        ║",
+        BASELINE_PR_AUC,
+        report.metrics.pr_auc,
+        delta_str(report.baseline_comparison.pr_auc_delta),
+        TARGET_PR_AUC
+    );
+    println!(
+        "║ Success Rate    │  {:.1}%   │  {:.1}%   │ {}% │ >{:.0}%        ║",
+        BASELINE_SUCCESS_RATE * 100.0,
+        report.metrics.success_rate * 100.0,
+        delta_str(report.baseline_comparison.success_rate_delta * 100.0),
+        TARGET_SUCCESS_RATE * 100.0
+    );
+    println!(
+        "║ Best F1         │  0.545   │  {:.3}   │ {} │ >0.70        ║",
+        report.metrics.best_f1,
+        delta_str(report.baseline_comparison.best_f1_delta)
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║                      SOTA COMPARISON                          ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Method              │ ROC AUC │ Success% │                    ║");
     println!("║─────────────────────┼─────────┼──────────┤                    ║");
-    println!("║ PocketMiner (ML)    │  {:.2}   │   -      │ (target)          ║",
-             sota.pocketminer_roc_auc);
-    println!("║ Schrödinger (MD)    │   -     │  {:.0}%     │ (SOTA)            ║",
-             sota.schrodinger_success * 100.0);
-    println!("║ PRISM v1 (baseline) │  {:.2}   │  {:.1}%   │                    ║",
-             sota.prism_v1_roc_auc, sota.prism_v1_success * 100.0);
-    println!("║ PRISM v2 (this run) │  {:.2}   │  {:.1}%   │ ★                  ║",
-             report.metrics.roc_auc, report.metrics.success_rate * 100.0);
+    println!(
+        "║ PocketMiner (ML)    │  {:.2}   │   -      │ (target)          ║",
+        sota.pocketminer_roc_auc
+    );
+    println!(
+        "║ Schrödinger (MD)    │   -     │  {:.0}%     │ (SOTA)            ║",
+        sota.schrodinger_success * 100.0
+    );
+    println!(
+        "║ PRISM v1 (baseline) │  {:.2}   │  {:.1}%   │                    ║",
+        sota.prism_v1_roc_auc,
+        sota.prism_v1_success * 100.0
+    );
+    println!(
+        "║ PRISM v2 (this run) │  {:.2}   │  {:.1}%   │ ★                  ║",
+        report.metrics.roc_auc,
+        report.metrics.success_rate * 100.0
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║                     RECOMMENDATIONS                           ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");

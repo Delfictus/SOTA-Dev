@@ -20,9 +20,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("==============================================");
     log::info!("  EXPLICIT SOLVENT INTEGRATION TEST");
@@ -72,17 +70,17 @@ fn run_explicit_solvent_test() -> Result<()> {
     // - γ = 0.3 fs⁻¹:  T = 1.12× target ✓ (PASSES ±20% tolerance)
     // - γ = 0.5 fs⁻¹:  T = 0.71× target (over-damped, too cold)
     //
-    const DT: f32 = 0.25;          // fs - smaller timestep for explicit solvent
-    const GAMMA: f32 = 0.3;        // fs⁻¹ = 300 ps⁻¹ - strong damping for equilibration
+    const DT: f32 = 0.25; // fs - smaller timestep for explicit solvent
+    const GAMMA: f32 = 0.3; // fs⁻¹ = 300 ps⁻¹ - strong damping for equilibration
     const TEMPERATURE: f32 = 310.0; // K - physiological temperature
-    const N_STEPS: usize = 2000;   // 0.5 ps of simulation
+    const N_STEPS: usize = 2000; // 0.5 ps of simulation
 
     // ========================================================================
     // STEP 1: Initialize GPU
     // ========================================================================
     log::info!("Step 1: Initializing GPU...");
-    let context = CudaContext::new(0)
-        .context("Failed to create CUDA context - is a GPU available?")?;
+    let context =
+        CudaContext::new(0).context("Failed to create CUDA context - is a GPU available?")?;
     let context = Arc::new(context);
     log::info!("  ✓ GPU initialized");
 
@@ -95,7 +93,7 @@ fn run_explicit_solvent_test() -> Result<()> {
 
     // PURE WATER TEST: No protein atoms to isolate water-water physics
     // This tests if water dynamics alone are stable
-    let protein_positions: Vec<f32> = vec![];  // No protein
+    let protein_positions: Vec<f32> = vec![]; // No protein
     let protein_types: Vec<AmberAtomType> = vec![];
     let protein_charges: Vec<f32> = vec![];
 
@@ -103,9 +101,9 @@ fn run_explicit_solvent_test() -> Result<()> {
     // CRITICAL: Minimum distances MUST be above LJ equilibrium to avoid clashes!
     // TIP3P O-O equilibrium = 3.54 Å, so we use 3.0 Å minimum
     let config = SolvationConfig {
-        padding: 8.0,           // 8 Å padding
-        min_protein_distance: 3.0,  // Above LJ equilibrium
-        min_water_distance: 3.0,    // Above LJ equilibrium
+        padding: 8.0,              // 8 Å padding
+        min_protein_distance: 3.0, // Above LJ equilibrium
+        min_water_distance: 3.0,   // Above LJ equilibrium
         target_density: 0.997,
         max_box_dimension: 25.0, // Small box for testing
         salt_concentration: 0.0,
@@ -124,8 +122,12 @@ fn run_explicit_solvent_test() -> Result<()> {
     log::info!("  - Protein atoms: {}", protein_positions.len() / 3);
     log::info!("  - Waters added: {} ({} atoms)", n_waters, n_waters * 3);
     log::info!("  - Ions: {} Na+, {} Cl-", n_na, n_cl);
-    log::info!("  - Box: {:.1} × {:.1} × {:.1} Å",
-        solvbox.box_dimensions[0], solvbox.box_dimensions[1], solvbox.box_dimensions[2]);
+    log::info!(
+        "  - Box: {:.1} × {:.1} × {:.1} Å",
+        solvbox.box_dimensions[0],
+        solvbox.box_dimensions[1],
+        solvbox.box_dimensions[2]
+    );
     log::info!("  - Total atoms: {}", solvbox.total_atoms);
     log::info!("  ✓ Test system created");
 
@@ -147,28 +149,44 @@ fn run_explicit_solvent_test() -> Result<()> {
     }
 
     // Convert topology to flat arrays for HMC
-    let bonds: Vec<(usize, usize, f32, f32)> = topology.bonds.iter()
+    let bonds: Vec<(usize, usize, f32, f32)> = topology
+        .bonds
+        .iter()
         .zip(topology.bond_params.iter())
         .map(|((i, j), p)| (*i as usize, *j as usize, p.k, p.r0))
         .collect();
 
-    let angles: Vec<(usize, usize, usize, f32, f32)> = topology.angles.iter()
+    let angles: Vec<(usize, usize, usize, f32, f32)> = topology
+        .angles
+        .iter()
         .zip(topology.angle_params.iter())
         .map(|((i, j, k), p)| (*i as usize, *j as usize, *k as usize, p.k, p.theta0))
         .collect();
 
     // Dihedrals: each dihedral can have multiple Fourier terms, we take the first
-    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology.dihedrals.iter()
+    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology
+        .dihedrals
+        .iter()
         .zip(topology.dihedral_params.iter())
         .filter_map(|((i, j, k, l), params)| {
             // Take the first term if available
             params.first().map(|p| {
-                (*i as usize, *j as usize, *k as usize, *l as usize, p.k, p.n as f32, p.phase)
+                (
+                    *i as usize,
+                    *j as usize,
+                    *k as usize,
+                    *l as usize,
+                    p.k,
+                    p.n as f32,
+                    p.phase,
+                )
             })
         })
         .collect();
 
-    let nb_params: Vec<(f32, f32, f32, f32)> = topology.lj_params.iter()
+    let nb_params: Vec<(f32, f32, f32, f32)> = topology
+        .lj_params
+        .iter()
         .zip(topology.charges.iter())
         .zip(topology.masses.iter())
         .map(|((lj, &q), &m)| {
@@ -189,7 +207,14 @@ fn run_explicit_solvent_test() -> Result<()> {
     log::info!("Step 4: Initializing GPU HMC...");
 
     let mut hmc = AmberMegaFusedHmc::new(Arc::clone(&context), topology.n_atoms)?;
-    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)?;
+    hmc.upload_topology(
+        &positions,
+        &bonds,
+        &angles,
+        &dihedrals,
+        &nb_params,
+        &exclusions,
+    )?;
 
     log::info!("  ✓ Topology uploaded to GPU");
 
@@ -232,9 +257,15 @@ fn run_explicit_solvent_test() -> Result<()> {
 
     // Check max force after minimization
     let max_force = hmc.get_max_force()?;
-    log::info!("  Max force after minimization: {:.2} kcal/(mol·Å)", max_force);
+    log::info!(
+        "  Max force after minimization: {:.2} kcal/(mol·Å)",
+        max_force
+    );
     if max_force > 50.0 {
-        log::warn!("  ⚠ Forces still high ({}). Structure may have close contacts.", max_force);
+        log::warn!(
+            "  ⚠ Forces still high ({}). Structure may have close contacts.",
+            max_force
+        );
     }
     // ========================================================================
     // STEP 6: Run MD simulation
@@ -249,13 +280,20 @@ fn run_explicit_solvent_test() -> Result<()> {
     log::info!("    - Simulation time: {} ps", N_STEPS as f32 * DT / 1000.0);
     log::info!("");
 
-    let result = hmc.run(N_STEPS, DT, TEMPERATURE, GAMMA)
+    let result = hmc
+        .run(N_STEPS, DT, TEMPERATURE, GAMMA)
         .context("HMC run failed")?;
 
     log::info!("");
     log::info!("  Results:");
-    log::info!("    - Potential Energy: {:.2} kcal/mol", result.potential_energy);
-    log::info!("    - Kinetic Energy: {:.2} kcal/mol", result.kinetic_energy);
+    log::info!(
+        "    - Potential Energy: {:.2} kcal/mol",
+        result.potential_energy
+    );
+    log::info!(
+        "    - Kinetic Energy: {:.2} kcal/mol",
+        result.kinetic_energy
+    );
     log::info!("    - Average Temperature: {:.1} K", result.avg_temperature);
 
     // ========================================================================
@@ -270,26 +308,43 @@ fn run_explicit_solvent_test() -> Result<()> {
     let temp_ratio = result.avg_temperature / TEMPERATURE as f64;
     let temp_ok = temp_ratio > 0.8 && temp_ratio < 1.2;
     if temp_ok {
-        log::info!("  ✓ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
-            result.avg_temperature, TEMPERATURE, temp_ratio);
+        log::info!(
+            "  ✓ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
+            result.avg_temperature,
+            TEMPERATURE,
+            temp_ratio
+        );
     } else {
-        log::warn!("  ✗ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
-            result.avg_temperature, TEMPERATURE, temp_ratio);
+        log::warn!(
+            "  ✗ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
+            result.avg_temperature,
+            TEMPERATURE,
+            temp_ratio
+        );
         all_passed = false;
     }
 
     // Energy check: not exploded (reasonable range for this system)
     let energy_ok = result.potential_energy.abs() < 1e6;
     if energy_ok {
-        log::info!("  ✓ Energy bounded: {:.2} kcal/mol", result.potential_energy);
+        log::info!(
+            "  ✓ Energy bounded: {:.2} kcal/mol",
+            result.potential_energy
+        );
     } else {
-        log::warn!("  ✗ Energy exploded: {:.2} kcal/mol", result.potential_energy);
+        log::warn!(
+            "  ✗ Energy exploded: {:.2} kcal/mol",
+            result.potential_energy
+        );
         all_passed = false;
     }
 
     // SETTLE constraint check
     if let Some(ref settle) = hmc.settle() {
-        log::info!("  ✓ SETTLE constraints active ({} waters)", settle.n_waters());
+        log::info!(
+            "  ✓ SETTLE constraints active ({} waters)",
+            settle.n_waters()
+        );
     }
 
     // PME check

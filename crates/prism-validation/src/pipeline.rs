@@ -9,16 +9,23 @@
 //! 4. Compare against ground truth (holo structures)
 //! 5. Generate publication-ready reports
 
-use crate::data_curation::{CurationManifest, CuratedTarget, AtomicMetadata};
-use chrono::Datelike;
-use crate::targets::{Target, TargetStructures, PocketDefinition, PocketType, DrugInfo, DrugStatus, Difficulty, ValidationType};
-use crate::benchmarks::{AtlasBenchmark, ApoHoloBenchmark, RetrospectiveBenchmark, NovelCrypticBenchmark};
-use crate::{ValidationBenchmark, ValidationConfig, BenchmarkResult, ValidationSummary, BenchmarkSummary};
+use crate::benchmarks::{
+    ApoHoloBenchmark, AtlasBenchmark, NovelCrypticBenchmark, RetrospectiveBenchmark,
+};
+use crate::data_curation::{AtomicMetadata, CuratedTarget, CurationManifest};
 use crate::reports::ValidationReport;
-use anyhow::{Result, Context};
-use std::path::{Path, PathBuf};
-use std::collections::HashMap;
+use crate::targets::{
+    Difficulty, DrugInfo, DrugStatus, PocketDefinition, PocketType, Target, TargetStructures,
+    ValidationType,
+};
+use crate::{
+    BenchmarkResult, BenchmarkSummary, ValidationBenchmark, ValidationConfig, ValidationSummary,
+};
+use anyhow::{Context, Result};
+use chrono::Datelike;
 use chrono::Utc;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// Atomic coordinates extracted from PDB for simulation
 #[derive(Debug, Clone)]
@@ -150,12 +157,16 @@ impl SimulationStructure {
         let com = self.center_of_mass();
         let n = self.all_positions.len() as f32;
 
-        let sum_sq: f32 = self.all_positions.iter().map(|pos| {
-            let dx = pos[0] - com[0];
-            let dy = pos[1] - com[1];
-            let dz = pos[2] - com[2];
-            dx * dx + dy * dy + dz * dz
-        }).sum();
+        let sum_sq: f32 = self
+            .all_positions
+            .iter()
+            .map(|pos| {
+                let dx = pos[0] - com[0];
+                let dy = pos[1] - com[1];
+                let dz = pos[2] - com[2];
+                dx * dx + dy * dy + dz * dz
+            })
+            .sum();
 
         (sum_sq / n).sqrt()
     }
@@ -180,13 +191,18 @@ impl ValidationPipeline {
     pub fn from_manifest(manifest_path: &Path, config: ValidationConfig) -> Result<Self> {
         log::info!("Loading curated manifest from {:?}", manifest_path);
 
-        let content = std::fs::read_to_string(manifest_path)
-            .context("Failed to read manifest")?;
-        let manifest: CurationManifest = serde_json::from_str(&content)
-            .context("Failed to parse manifest")?;
+        let content = std::fs::read_to_string(manifest_path).context("Failed to read manifest")?;
+        let manifest: CurationManifest =
+            serde_json::from_str(&content).context("Failed to parse manifest")?;
 
         log::info!("Loaded {} curated targets", manifest.targets.len());
-        log::info!("Manifest BLAKE3: {}", manifest.manifest_hash.as_ref().unwrap_or(&"N/A".to_string()));
+        log::info!(
+            "Manifest BLAKE3: {}",
+            manifest
+                .manifest_hash
+                .as_ref()
+                .unwrap_or(&"N/A".to_string())
+        );
 
         // Verify manifest integrity
         if manifest.stats.valid_for_blind < manifest.stats.total_targets {
@@ -250,8 +266,17 @@ impl ValidationPipeline {
                 af3_pdb: None,
             },
             pocket: Some(PocketDefinition {
-                residues: curated.pocket_residues.iter().map(|&r| r as usize).collect(),
-                core_residues: curated.pocket_residues.iter().take(6).map(|&r| r as usize).collect(),
+                residues: curated
+                    .pocket_residues
+                    .iter()
+                    .map(|&r| r as usize)
+                    .collect(),
+                core_residues: curated
+                    .pocket_residues
+                    .iter()
+                    .take(6)
+                    .map(|&r| r as usize)
+                    .collect(),
                 expected_sasa_gain: 150.0,
                 pocket_type: PocketType::Cryptic,
                 is_cryptic: true,
@@ -278,7 +303,10 @@ impl ValidationPipeline {
         let mut all_results: Vec<BenchmarkResult> = Vec::new();
         let mut benchmark_summaries: Vec<BenchmarkSummary> = Vec::new();
 
-        log::info!("Starting validation pipeline with {} targets", self.manifest.targets.len());
+        log::info!(
+            "Starting validation pipeline with {} targets",
+            self.manifest.targets.len()
+        );
 
         for benchmark in &self.benchmarks {
             log::info!("Running {} benchmark", benchmark.name());
@@ -294,13 +322,17 @@ impl ValidationPipeline {
             for curated_target in &self.manifest.targets {
                 // Skip targets not valid for blind validation
                 if !curated_target.valid_for_blind {
-                    log::warn!("Skipping {} - not valid for blind validation", curated_target.name);
+                    log::warn!(
+                        "Skipping {} - not valid for blind validation",
+                        curated_target.name
+                    );
                     continue;
                 }
 
                 let target = self.to_benchmark_target(curated_target);
 
-                log::info!("  Running on {} (APO: {}, HOLO: {})",
+                log::info!(
+                    "  Running on {} (APO: {}, HOLO: {})",
                     target.name,
                     curated_target.apo_provenance.pdb_id,
                     curated_target.holo_provenance.pdb_id
@@ -339,9 +371,8 @@ impl ValidationPipeline {
             };
 
             let std_score = if scores.len() > 1 {
-                let variance: f64 = scores.iter()
-                    .map(|s| (s - mean_score).powi(2))
-                    .sum::<f64>() / (scores.len() - 1) as f64;
+                let variance: f64 = scores.iter().map(|s| (s - mean_score).powi(2)).sum::<f64>()
+                    / (scores.len() - 1) as f64;
                 variance.sqrt()
             } else {
                 0.0
@@ -351,7 +382,11 @@ impl ValidationPipeline {
                 benchmark: benchmark.name().to_string(),
                 targets_run: results.len(),
                 targets_passed: passed,
-                pass_rate: if results.is_empty() { 0.0 } else { passed as f64 / results.len() as f64 },
+                pass_rate: if results.is_empty() {
+                    0.0
+                } else {
+                    passed as f64 / results.len() as f64
+                },
                 mean_score,
                 std_score,
                 best_target,
@@ -372,7 +407,10 @@ impl ValidationPipeline {
         let overall_score = if benchmark_summaries.is_empty() {
             0.0
         } else {
-            benchmark_summaries.iter().map(|s| s.mean_score).sum::<f64>()
+            benchmark_summaries
+                .iter()
+                .map(|s| s.mean_score)
+                .sum::<f64>()
                 / benchmark_summaries.len() as f64
         };
 
@@ -399,17 +437,26 @@ impl ValidationPipeline {
 
     /// Get all target names
     pub fn target_names(&self) -> Vec<String> {
-        self.manifest.targets.iter().map(|t| t.name.clone()).collect()
+        self.manifest
+            .targets
+            .iter()
+            .map(|t| t.name.clone())
+            .collect()
     }
 
     /// Compute RMSD between two structures (CA atoms only)
-    pub fn compute_ca_rmsd(struct1: &SimulationStructure, struct2: &SimulationStructure) -> Option<f32> {
+    pub fn compute_ca_rmsd(
+        struct1: &SimulationStructure,
+        struct2: &SimulationStructure,
+    ) -> Option<f32> {
         let n = struct1.ca_positions.len().min(struct2.ca_positions.len());
         if n == 0 {
             return None;
         }
 
-        let sum_sq: f32 = struct1.ca_positions.iter()
+        let sum_sq: f32 = struct1
+            .ca_positions
+            .iter()
             .zip(struct2.ca_positions.iter())
             .take(n)
             .map(|(p1, p2)| {
@@ -437,7 +484,8 @@ impl ValidationPipeline {
             return None;
         }
 
-        let sum_sq: f32 = apo_pocket_idx.iter()
+        let sum_sq: f32 = apo_pocket_idx
+            .iter()
             .zip(holo_pocket_idx.iter())
             .take(n)
             .map(|(&i1, &i2)| {
@@ -458,11 +506,26 @@ impl ValidationPipeline {
         println!("\n╔══════════════════════════════════════════════════════════════════╗");
         println!("║              PRISM-4D Validation Pipeline Status                 ║");
         println!("╠══════════════════════════════════════════════════════════════════╣");
-        println!("║  Curated targets: {:>3}                                           ║", self.manifest.targets.len());
-        println!("║  Valid for blind: {:>3}                                           ║", self.manifest.stats.valid_for_blind);
-        println!("║  APO structures:  {:>3}                                           ║", self.apo_structures.len());
-        println!("║  HOLO structures: {:>3}                                           ║", self.holo_structures.len());
-        println!("║  Benchmarks:      {:>3}                                           ║", self.benchmarks.len());
+        println!(
+            "║  Curated targets: {:>3}                                           ║",
+            self.manifest.targets.len()
+        );
+        println!(
+            "║  Valid for blind: {:>3}                                           ║",
+            self.manifest.stats.valid_for_blind
+        );
+        println!(
+            "║  APO structures:  {:>3}                                           ║",
+            self.apo_structures.len()
+        );
+        println!(
+            "║  HOLO structures: {:>3}                                           ║",
+            self.holo_structures.len()
+        );
+        println!(
+            "║  Benchmarks:      {:>3}                                           ║",
+            self.benchmarks.len()
+        );
         println!("╚══════════════════════════════════════════════════════════════════╝");
 
         println!("\n📊 Target Summary:");
@@ -471,15 +534,20 @@ impl ValidationPipeline {
         println!("├────────────────┼────────────────┼───────────┼───────────┼──────────┤");
 
         for target in &self.manifest.targets {
-            let apo_atoms = self.apo_structures.get(&target.name)
+            let apo_atoms = self
+                .apo_structures
+                .get(&target.name)
                 .map(|s| s.n_atoms)
                 .unwrap_or(0);
-            let holo_atoms = self.holo_structures.get(&target.name)
+            let holo_atoms = self
+                .holo_structures
+                .get(&target.name)
                 .map(|s| s.n_atoms)
                 .unwrap_or(0);
             let pocket_size = target.pocket_residues.len();
 
-            println!("│ {:<14} │ {:<14} │ {:>9} │ {:>9} │ {:>8} │",
+            println!(
+                "│ {:<14} │ {:<14} │ {:>9} │ {:>9} │ {:>8} │",
                 &target.name[..target.name.len().min(14)],
                 &target.drug_name[..target.drug_name.len().min(14)],
                 apo_atoms,

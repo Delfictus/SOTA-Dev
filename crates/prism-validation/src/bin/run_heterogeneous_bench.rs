@@ -19,8 +19,8 @@ use log::info;
 use serde::{Deserialize, Serialize};
 
 use prism_physics::{
-    DynamicsEngine, DynamicsConfig, DynamicsMode, StructureInput,
-    PocketMetricsCalculator, Layer3Result,
+    DynamicsConfig, DynamicsEngine, DynamicsMode, Layer3Result, PocketMetricsCalculator,
+    StructureInput,
 };
 
 #[derive(Parser, Debug)]
@@ -127,9 +127,7 @@ struct SotaBaselines {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -214,13 +212,21 @@ async fn main() -> Result<()> {
     info!("  ├─────────────────────┼─────────────┼─────────────┼───────────────────────┤");
 
     if let Some(ref af) = alphaflow_result {
-        info!("  │ AlphaFlow-82        │ {:>9.3}   │ {:>9.1}%  │ {:>10.1}             │",
-              af.mean_md_pearson, af.pass_rate_layer1 * 100.0, af.mean_drug_target_score);
+        info!(
+            "  │ AlphaFlow-82        │ {:>9.3}   │ {:>9.1}%  │ {:>10.1}             │",
+            af.mean_md_pearson,
+            af.pass_rate_layer1 * 100.0,
+            af.mean_drug_target_score
+        );
     }
 
     if let Some(ref cl) = classic_result {
-        info!("  │ Classic-82          │ {:>9.3}   │ {:>9.1}%  │ {:>10.1}             │",
-              cl.mean_md_pearson, cl.pass_rate_layer1 * 100.0, cl.mean_drug_target_score);
+        info!(
+            "  │ Classic-82          │ {:>9.3}   │ {:>9.1}%  │ {:>10.1}             │",
+            cl.mean_md_pearson,
+            cl.pass_rate_layer1 * 100.0,
+            cl.mean_drug_target_score
+        );
     }
 
     info!("  └─────────────────────┴─────────────┴─────────────┴───────────────────────┘");
@@ -228,9 +234,18 @@ async fn main() -> Result<()> {
 
     // SOTA comparison
     info!("  📊 SOTA Baselines (AlphaFlow paper):");
-    info!("     AlphaFlow:     ρ = {:.3}", report.sota_baselines.alphaflow_correlation);
-    info!("     Standard GNM:  ρ = {:.3}", report.sota_baselines.standard_gnm_correlation);
-    info!("     ANM:           ρ = {:.3}", report.sota_baselines.anm_correlation);
+    info!(
+        "     AlphaFlow:     ρ = {:.3}",
+        report.sota_baselines.alphaflow_correlation
+    );
+    info!(
+        "     Standard GNM:  ρ = {:.3}",
+        report.sota_baselines.standard_gnm_correlation
+    );
+    info!(
+        "     ANM:           ρ = {:.3}",
+        report.sota_baselines.anm_correlation
+    );
     info!("");
 
     // Conclusions
@@ -268,14 +283,18 @@ fn run_protein_set(
     };
 
     let n_targets = limit.unwrap_or(targets.len()).min(targets.len());
-    info!("  Found {} targets, evaluating {}", targets.len(), n_targets);
+    info!(
+        "  Found {} targets, evaluating {}",
+        targets.len(),
+        n_targets
+    );
 
     // Create engines with OPTIMIZED settings (ablation study 2026-01-09)
     // Only distance_weighting and multi_cutoff help; SS/sidechain/SASA hurt
     let config = DynamicsConfig {
         mode: dynamics_mode,
-        gnm_cutoff: cutoff.unwrap_or(9.0),  // Optimal cutoff from benchmark
-        ..Default::default()  // Uses optimized defaults (SS/sidechain/SASA disabled)
+        gnm_cutoff: cutoff.unwrap_or(9.0), // Optimal cutoff from benchmark
+        ..Default::default()               // Uses optimized defaults (SS/sidechain/SASA disabled)
     };
     let engine = DynamicsEngine::new(config)?;
     if let Some(c) = cutoff {
@@ -296,7 +315,11 @@ fn run_protein_set(
 
     for target in targets.iter().take(n_targets) {
         // Try both naming conventions: with chain suffix and without
-        let pdb_path_with_chain = pdb_dir.join(format!("{}_{}.pdb", target.pdb_id.to_lowercase(), target.chain));
+        let pdb_path_with_chain = pdb_dir.join(format!(
+            "{}_{}.pdb",
+            target.pdb_id.to_lowercase(),
+            target.chain
+        ));
         let pdb_path_no_chain = pdb_dir.join(format!("{}.pdb", target.pdb_id.to_lowercase()));
 
         let pdb_path = if pdb_path_with_chain.exists() {
@@ -313,10 +336,11 @@ fn run_protein_set(
         } else {
             None
         };
-        let (ca_positions, residue_names, kept_indices) = match parse_pdb_ca_chain_with_indices(&pdb_path, target_chain) {
-            Ok(data) => data,
-            Err(_) => continue,
-        };
+        let (ca_positions, residue_names, kept_indices) =
+            match parse_pdb_ca_chain_with_indices(&pdb_path, target_chain) {
+                Ok(data) => data,
+                Err(_) => continue,
+            };
 
         if ca_positions.len() < 10 {
             continue;
@@ -339,7 +363,8 @@ fn run_protein_set(
         // Calculate Layer 1 correlation with MD RMSF
         // Use kept_indices to extract ground truth values that correspond to our parsed residues
         // This handles alternate conformations where ground truth has values for both A and B
-        let aligned_exp_rmsf: Vec<f64> = kept_indices.iter()
+        let aligned_exp_rmsf: Vec<f64> = kept_indices
+            .iter()
             .filter_map(|&idx| target.md_rmsf.get(idx).copied())
             .collect();
 
@@ -361,13 +386,15 @@ fn run_protein_set(
         let elapsed = start.elapsed();
         total_time += elapsed;
 
-        info!("  │ {:<8} │ {:>5} │ {:>8.3} │ {:>8.1} │ {:>9} │ {:>8} │",
-              &target.pdb_id[..target.pdb_id.len().min(8)],
-              ca_positions.len(),
-              md_pearson,
-              layer3.drug_target_score,
-              layer3.cryptic_candidates.len(),
-              elapsed.as_millis());
+        info!(
+            "  │ {:<8} │ {:>5} │ {:>8.3} │ {:>8.1} │ {:>9} │ {:>8} │",
+            &target.pdb_id[..target.pdb_id.len().min(8)],
+            ca_positions.len(),
+            md_pearson,
+            layer3.drug_target_score,
+            layer3.cryptic_candidates.len(),
+            elapsed.as_millis()
+        );
 
         results.push(ProteinResult {
             pdb_id: target.pdb_id.clone(),
@@ -393,9 +420,11 @@ fn run_protein_set(
     let mean_md_pearson = pearson_values.iter().sum::<f64>() / n_proteins as f64;
 
     let std_md_pearson = {
-        let variance = pearson_values.iter()
+        let variance = pearson_values
+            .iter()
             .map(|&p| (p - mean_md_pearson).powi(2))
-            .sum::<f64>() / n_proteins as f64;
+            .sum::<f64>()
+            / n_proteins as f64;
         variance.sqrt()
     };
 
@@ -403,22 +432,44 @@ fn run_protein_set(
     sorted_pearson.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let median_md_pearson = sorted_pearson[n_proteins / 2];
 
-    let pass_rate_layer1 = results.iter().filter(|r| r.md_rmsf_pearson > 0.3).count() as f64 / n_proteins as f64;
+    let pass_rate_layer1 =
+        results.iter().filter(|r| r.md_rmsf_pearson > 0.3).count() as f64 / n_proteins as f64;
 
-    let mean_drug_target_score = results.iter().map(|r| r.drug_target_score).sum::<f64>() / n_proteins as f64;
-    let proteins_with_cryptic = results.iter().filter(|r| r.n_cryptic_candidates > 0).count();
-    let proteins_with_allosteric = results.iter().filter(|r| r.n_allosteric_candidates > 0).count();
+    let mean_drug_target_score =
+        results.iter().map(|r| r.drug_target_score).sum::<f64>() / n_proteins as f64;
+    let proteins_with_cryptic = results
+        .iter()
+        .filter(|r| r.n_cryptic_candidates > 0)
+        .count();
+    let proteins_with_allosteric = results
+        .iter()
+        .filter(|r| r.n_allosteric_candidates > 0)
+        .count();
 
     let total_time_s = total_time.as_secs_f64();
     let time_per_protein_ms = total_time.as_millis() as f64 / n_proteins as f64;
 
     info!("");
     info!("  {} Summary:", name);
-    info!("     Layer 1 (MD RMSF): ρ = {:.3} ± {:.3} (median {:.3}), pass rate {:.1}%",
-          mean_md_pearson, std_md_pearson, median_md_pearson, pass_rate_layer1 * 100.0);
-    info!("     Layer 3 (Drug):    score = {:.1}, {}/{} with cryptic, {}/{} with allosteric",
-          mean_drug_target_score, proteins_with_cryptic, n_proteins, proteins_with_allosteric, n_proteins);
-    info!("     Performance:       {:.1}s total, {:.1}ms/protein", total_time_s, time_per_protein_ms);
+    info!(
+        "     Layer 1 (MD RMSF): ρ = {:.3} ± {:.3} (median {:.3}), pass rate {:.1}%",
+        mean_md_pearson,
+        std_md_pearson,
+        median_md_pearson,
+        pass_rate_layer1 * 100.0
+    );
+    info!(
+        "     Layer 3 (Drug):    score = {:.1}, {}/{} with cryptic, {}/{} with allosteric",
+        mean_drug_target_score,
+        proteins_with_cryptic,
+        n_proteins,
+        proteins_with_allosteric,
+        n_proteins
+    );
+    info!(
+        "     Performance:       {:.1}s total, {:.1}ms/protein",
+        total_time_s, time_per_protein_ms
+    );
 
     Ok(ProteinSetSummary {
         name: name.to_string(),
@@ -455,8 +506,10 @@ fn generate_comparative_report(
             conclusions.push(format!("🏆 PRISM achieves ρ={:.3} on AlphaFlow-82, {:.0}% ABOVE AlphaFlow baseline (ρ=0.62)",
                                      af.mean_md_pearson, improvement));
         } else {
-            conclusions.push(format!("📊 PRISM achieves ρ={:.3} on AlphaFlow-82 (AlphaFlow baseline: ρ=0.62)",
-                                     af.mean_md_pearson));
+            conclusions.push(format!(
+                "📊 PRISM achieves ρ={:.3} on AlphaFlow-82 (AlphaFlow baseline: ρ=0.62)",
+                af.mean_md_pearson
+            ));
         }
     }
 
@@ -468,13 +521,22 @@ fn generate_comparative_report(
     if let (Some(ref af), Some(ref cl)) = (&alphaflow, &classic) {
         let diff = (af.mean_md_pearson - cl.mean_md_pearson).abs();
         if diff < 0.05 {
-            conclusions.push(format!("✅ Consistent performance across both sets (Δρ = {:.3})", diff));
+            conclusions.push(format!(
+                "✅ Consistent performance across both sets (Δρ = {:.3})",
+                diff
+            ));
         } else {
-            conclusions.push(format!("⚠️  Performance difference between sets (Δρ = {:.3})", diff));
+            conclusions.push(format!(
+                "⚠️  Performance difference between sets (Δρ = {:.3})",
+                diff
+            ));
         }
     }
 
-    conclusions.push("📋 Methodology: Enhanced GNM with structural weighting, no MD simulation required".to_string());
+    conclusions.push(
+        "📋 Methodology: Enhanced GNM with structural weighting, no MD simulation required"
+            .to_string(),
+    );
 
     ComparativeReport {
         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -491,13 +553,16 @@ fn parse_pdb_ca(path: &PathBuf) -> Result<(Vec<[f32; 3]>, Vec<String>)> {
 
 /// Parse PDB with chain filtering, returning CA positions, residue names, and kept line indices
 /// The line indices are relative to CA atoms in the TARGET chain only (for ground truth alignment)
-fn parse_pdb_ca_chain_with_indices(path: &PathBuf, target_chain: Option<&str>) -> Result<(Vec<[f32; 3]>, Vec<String>, Vec<usize>)> {
+fn parse_pdb_ca_chain_with_indices(
+    path: &PathBuf,
+    target_chain: Option<&str>,
+) -> Result<(Vec<[f32; 3]>, Vec<String>, Vec<usize>)> {
     let content = fs::read_to_string(path)?;
     let mut positions = Vec::new();
     let mut names = Vec::new();
     let mut kept_indices = Vec::new();
     let mut last_res_key = String::new();
-    let mut target_chain_ca_index = 0usize;  // Only count CA atoms in target chain
+    let mut target_chain_ca_index = 0usize; // Only count CA atoms in target chain
 
     for line in content.lines() {
         if !line.starts_with("ATOM") {
@@ -513,7 +578,7 @@ fn parse_pdb_ca_chain_with_indices(path: &PathBuf, target_chain: Option<&str>) -
         let chain_id = line.get(21..22).unwrap_or(" ");
         if let Some(target) = target_chain {
             if chain_id != target {
-                continue;  // Skip other chains entirely (don't count)
+                continue; // Skip other chains entirely (don't count)
             }
         }
 
@@ -523,20 +588,35 @@ fn parse_pdb_ca_chain_with_indices(path: &PathBuf, target_chain: Option<&str>) -
 
         let alt_loc = line.get(16..17).unwrap_or(" ");
         if alt_loc != " " && alt_loc != "A" {
-            continue;  // Skip B alternates but index was already incremented
+            continue; // Skip B alternates but index was already incremented
         }
 
         // Use chain + residue number as unique key to handle insertion codes
         let res_num = line.get(22..27).unwrap_or("0").trim();
         let res_key = format!("{}{}", chain_id, res_num);
         if res_key == last_res_key {
-            continue;  // Skip duplicate residue numbers
+            continue; // Skip duplicate residue numbers
         }
         last_res_key = res_key;
 
-        let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+        let x: f32 = line
+            .get(30..38)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let y: f32 = line
+            .get(38..46)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let z: f32 = line
+            .get(46..54)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
         let res_name = line.get(17..20).unwrap_or("UNK").trim().to_string();
 
         positions.push([x, y, z]);
@@ -547,7 +627,10 @@ fn parse_pdb_ca_chain_with_indices(path: &PathBuf, target_chain: Option<&str>) -
     Ok((positions, names, kept_indices))
 }
 
-fn parse_pdb_ca_chain(path: &PathBuf, target_chain: Option<&str>) -> Result<(Vec<[f32; 3]>, Vec<String>)> {
+fn parse_pdb_ca_chain(
+    path: &PathBuf,
+    target_chain: Option<&str>,
+) -> Result<(Vec<[f32; 3]>, Vec<String>)> {
     let (positions, names, _) = parse_pdb_ca_chain_with_indices(path, target_chain)?;
     Ok((positions, names))
 }

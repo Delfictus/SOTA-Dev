@@ -48,7 +48,6 @@ pub struct EnsemblePocketConfigV2 {
     pub sasa_variance_threshold: f64,
 
     // === Active Inference Parameters (v2 Enhanced) ===
-
     /// Enable Active Inference EFE scoring
     pub use_active_inference: bool,
 
@@ -63,7 +62,6 @@ pub struct EnsemblePocketConfigV2 {
     pub pragmatic_weight: f64,
 
     // === v2: Adaptive Thresholding Parameters ===
-
     /// Enable adaptive z-score thresholding (v2 feature)
     pub use_adaptive_threshold: bool,
 
@@ -74,7 +72,6 @@ pub struct EnsemblePocketConfigV2 {
     pub min_threshold_floor: f64,
 
     // === v2: Graph-Based Clustering Parameters ===
-
     /// Enable graph-based community clustering (v2 feature)
     pub use_graph_clustering: bool,
 
@@ -104,18 +101,18 @@ impl Default for EnsemblePocketConfigV2 {
 
             // Active Inference (v2 enhanced)
             use_active_inference: true,
-            base_pocket_formation_prior: 0.07,  // Will be scaled dynamically
+            base_pocket_formation_prior: 0.07, // Will be scaled dynamically
             epistemic_weight: 0.4,
             pragmatic_weight: 0.6,
 
             // v2: Adaptive thresholding (Phase 1.2)
             use_adaptive_threshold: true,
-            z_threshold: 1.5,           // Top ~7% of each structure
-            min_threshold_floor: 0.25,  // Minimum threshold to avoid noise
+            z_threshold: 1.5,          // Top ~7% of each structure
+            min_threshold_floor: 0.25, // Minimum threshold to avoid noise
 
             // v2: Graph-based clustering (Phase 2.3)
             use_graph_clustering: true,
-            graph_contact_distance: 10.0,  // Å for contact graph
+            graph_contact_distance: 10.0, // Å for contact graph
             cluster_distance: 8.0,
             min_cluster_size: 2,
             label_propagation_iterations: 10,
@@ -189,7 +186,6 @@ pub struct CrypticSiteResultV2 {
     pub mean_cryptic_score: f64,
 
     // === Active Inference Results ===
-
     /// EFE scores per residue
     pub efe_scores: HashMap<i32, f64>,
 
@@ -200,7 +196,6 @@ pub struct CrypticSiteResultV2 {
     pub pragmatic_values: HashMap<i32, f64>,
 
     // === v2: Adaptive Threshold Results ===
-
     /// The adaptive threshold computed for this structure
     pub adaptive_threshold: f64,
 
@@ -209,12 +204,10 @@ pub struct CrypticSiteResultV2 {
     pub score_std: f64,
 
     // === v2: Dynamic Prior Results ===
-
     /// The dynamic prior computed for this structure
     pub dynamic_prior: f64,
 
     // === Clustering Results ===
-
     /// Spatial clusters of cryptic predictions
     pub clusters: Vec<CrypticClusterV2>,
 
@@ -248,7 +241,7 @@ impl EnsemblePocketDetectorV2 {
         Self::new(EnsemblePocketConfigV2 {
             use_adaptive_threshold: false,
             use_graph_clustering: false,
-            base_pocket_formation_prior: 0.07,  // Fixed, not dynamic
+            base_pocket_formation_prior: 0.07, // Fixed, not dynamic
             ..Default::default()
         })
     }
@@ -278,7 +271,10 @@ impl EnsemblePocketDetectorV2 {
 
         // Detect APO pockets using stringent criteria
         let apo_pockets = self.detect_pockets_stringent(&ensemble.original_coords, residue_map)?;
-        log::info!("[v2] APO has {} pocket residues (stringent)", apo_pockets.n_pocket_residues);
+        log::info!(
+            "[v2] APO has {} pocket residues (stringent)",
+            apo_pockets.n_pocket_residues
+        );
 
         // Step 2: Compute exposure scores for each conformation
         let mut exposure_per_residue: Vec<Vec<f64>> = vec![Vec::new(); n_residues];
@@ -299,9 +295,8 @@ impl EnsemblePocketDetectorV2 {
         let max_neighbors = *apo_neighbors.iter().max().unwrap_or(&1).max(&1);
         let burial_variance = self.compute_burial_variance(&apo_neighbors, max_neighbors);
         let size_factor = (n_residues as f64 / 300.0).clamp(0.5, 1.5);
-        let dynamic_prior = self.config.base_pocket_formation_prior
-            * size_factor
-            * (1.0 + burial_variance * 0.5);
+        let dynamic_prior =
+            self.config.base_pocket_formation_prior * size_factor * (1.0 + burial_variance * 0.5);
 
         log::info!(
             "[v2] Dynamic prior: {:.4} (base={:.4}, size_factor={:.2}, burial_var={:.3})",
@@ -322,23 +317,24 @@ impl EnsemblePocketDetectorV2 {
         let rmsf: Vec<f64> = (0..n_residues)
             .map(|i| {
                 let orig = &ensemble.original_coords[i];
-                let mean_sq_disp: f64 = ensemble.conformations.iter()
+                let mean_sq_disp: f64 = ensemble
+                    .conformations
+                    .iter()
                     .map(|conf| {
                         let dx = (conf[i][0] - orig[0]) as f64;
                         let dy = (conf[i][1] - orig[1]) as f64;
                         let dz = (conf[i][2] - orig[2]) as f64;
                         dx * dx + dy * dy + dz * dz
                     })
-                    .sum::<f64>() / n_conformations as f64;
+                    .sum::<f64>()
+                    / n_conformations as f64;
                 mean_sq_disp.sqrt()
             })
             .collect();
 
         // Normalize RMSF
         let max_rmsf = rmsf.iter().cloned().fold(0.0f64, f64::max);
-        let rmsf_normalized: Vec<f64> = rmsf.iter()
-            .map(|&r| r / max_rmsf.max(0.01))
-            .collect();
+        let rmsf_normalized: Vec<f64> = rmsf.iter().map(|&r| r / max_rmsf.max(0.01)).collect();
 
         for i in 0..n_residues {
             let res_id = residue_map.get(&i).cloned().unwrap_or(i as i32);
@@ -376,7 +372,11 @@ impl EnsemblePocketDetectorV2 {
                     .map(|j| rmsf_normalized[j])
                     .sum();
                 let count = (end - start) as f64;
-                if count > 0.0 { sum / count } else { 0.0 }
+                if count > 0.0 {
+                    sum / count
+                } else {
+                    0.0
+                }
             };
 
             let spatial_neighbor_flexibility = {
@@ -384,7 +384,9 @@ impl EnsemblePocketDetectorV2 {
                 let mut sum = 0.0;
                 let mut count = 0;
                 for j in 0..n_residues {
-                    if j == i { continue; }
+                    if j == i {
+                        continue;
+                    }
                     let other_pos = ensemble.original_coords[j];
                     let dx = (other_pos[0] - orig_pos[0]) as f64;
                     let dy = (other_pos[1] - orig_pos[1]) as f64;
@@ -395,21 +397,29 @@ impl EnsemblePocketDetectorV2 {
                         count += 1;
                     }
                 }
-                if count > 0 { sum / count as f64 } else { 0.0 }
+                if count > 0 {
+                    sum / count as f64
+                } else {
+                    0.0
+                }
             };
 
-            let combined_neighbor_flex = neighbor_flexibility * 0.4 + spatial_neighbor_flexibility * 0.6;
+            let combined_neighbor_flex =
+                neighbor_flexibility * 0.4 + spatial_neighbor_flexibility * 0.6;
 
             // === v2: Active Inference EFE Scoring with DYNAMIC PRIOR ===
-            let (cryptic_score, epistemic_val, pragmatic_val) = if self.config.use_active_inference {
+            let (cryptic_score, epistemic_val, pragmatic_val) = if self.config.use_active_inference
+            {
                 // Epistemic value with dynamic prior
                 let rarity = 1.0 - (burial * 0.3 + combined_neighbor_flex * 0.7);
                 let surprise = variance_score * (1.0 + rarity);
-                let epistemic = surprise * (1.0 - dynamic_prior);  // Uses DYNAMIC prior
+                let epistemic = surprise * (1.0 - dynamic_prior); // Uses DYNAMIC prior
 
                 // Pragmatic value
-                let posterior = burial * 0.35 + combined_neighbor_flex * 0.35
-                    + burial_potential_score * 0.2 + variance_score * 0.1;
+                let posterior = burial * 0.35
+                    + combined_neighbor_flex * 0.35
+                    + burial_potential_score * 0.2
+                    + variance_score * 0.1;
 
                 // KL divergence from DYNAMIC prior
                 let kl_div = if posterior > 0.01 && dynamic_prior > 0.01 {
@@ -443,7 +453,7 @@ impl EnsemblePocketDetectorV2 {
         let (adaptive_threshold, score_mean, score_std) = if self.config.use_adaptive_threshold {
             self.compute_adaptive_threshold(&cryptic_scores)
         } else {
-            (0.3, 0.0, 0.0)  // v1 fixed threshold
+            (0.3, 0.0, 0.0) // v1 fixed threshold
         };
 
         log::info!(
@@ -465,7 +475,9 @@ impl EnsemblePocketDetectorV2 {
         cryptic_residues.sort_by(|a, b| {
             let score_a = cryptic_scores.get(a).unwrap_or(&0.0);
             let score_b = cryptic_scores.get(b).unwrap_or(&0.0);
-            score_b.partial_cmp(score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // === Phase 2.3: GRAPH-BASED CLUSTERING ===
@@ -551,11 +563,14 @@ impl EnsemblePocketDetectorV2 {
 
         log::info!(
             "[v2] Re-applying threshold after ZrO: {:.3} (mean={:.3}, std={:.3})",
-            adaptive_threshold, score_mean, score_std
+            adaptive_threshold,
+            score_mean,
+            score_std
         );
 
         // Step 2: Apply new threshold to get predictions
-        let mut cryptic_residues: Vec<i32> = result.efe_scores
+        let mut cryptic_residues: Vec<i32> = result
+            .efe_scores
             .iter()
             .filter(|(_, &score)| score >= adaptive_threshold)
             .map(|(&res_id, _)| res_id)
@@ -565,7 +580,9 @@ impl EnsemblePocketDetectorV2 {
         cryptic_residues.sort_by(|a, b| {
             let score_a = result.efe_scores.get(a).unwrap_or(&0.0);
             let score_b = result.efe_scores.get(b).unwrap_or(&0.0);
-            score_b.partial_cmp(score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Step 3: Re-cluster predictions
@@ -604,7 +621,8 @@ impl EnsemblePocketDetectorV2 {
 
         log::info!(
             "[v2] After ZrO redetection: {} cryptic residues, {} clusters",
-            result.n_cryptic, result.clusters.len()
+            result.n_cryptic,
+            result.clusters.len()
         );
     }
 
@@ -620,10 +638,8 @@ impl EnsemblePocketDetectorV2 {
             .collect();
 
         let mean = burials.iter().sum::<f64>() / burials.len() as f64;
-        let variance = burials
-            .iter()
-            .map(|&b| (b - mean).powi(2))
-            .sum::<f64>() / burials.len() as f64;
+        let variance =
+            burials.iter().map(|&b| (b - mean).powi(2)).sum::<f64>() / burials.len() as f64;
 
         variance.sqrt()
     }
@@ -642,7 +658,8 @@ impl EnsemblePocketDetectorV2 {
             let variance = score_values
                 .iter()
                 .map(|&s| (s - mean).powi(2))
-                .sum::<f64>() / (n - 1.0);
+                .sum::<f64>()
+                / (n - 1.0);
             variance.sqrt()
         } else {
             0.0
@@ -677,7 +694,8 @@ impl EnsemblePocketDetectorV2 {
 
         // Step 1: Build contact graph for cryptic residues only
         let mut adjacency: HashMap<i32, Vec<i32>> = HashMap::new();
-        let cutoff_sq = (self.config.graph_contact_distance * self.config.graph_contact_distance) as f32;
+        let cutoff_sq =
+            (self.config.graph_contact_distance * self.config.graph_contact_distance) as f32;
 
         for &r1 in residues {
             adjacency.entry(r1).or_insert_with(Vec::new);
@@ -688,7 +706,9 @@ impl EnsemblePocketDetectorV2 {
             };
 
             for &r2 in residues {
-                if r1 == r2 { continue; }
+                if r1 == r2 {
+                    continue;
+                }
 
                 let idx2 = match reverse_map.get(&r2) {
                     Some(&idx) => idx,
@@ -721,7 +741,9 @@ impl EnsemblePocketDetectorV2 {
             let representative = members
                 .iter()
                 .max_by(|&a, &b| {
-                    scores.get(a).unwrap_or(&0.0)
+                    scores
+                        .get(a)
+                        .unwrap_or(&0.0)
                         .partial_cmp(scores.get(b).unwrap_or(&0.0))
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
@@ -782,7 +804,11 @@ impl EnsemblePocketDetectorV2 {
         }
 
         // Sort by score
-        clusters.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        clusters.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let clustered_predictions: Vec<(i32, f64)> = clusters
             .iter()
@@ -968,7 +994,11 @@ impl EnsemblePocketDetectorV2 {
             });
         }
 
-        clusters.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        clusters.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let clustered_predictions: Vec<(i32, f64)> = clusters
             .iter()
@@ -1006,7 +1036,8 @@ impl EnsemblePocketDetectorV2 {
         let neighbor_counts = self.compute_neighbor_counts(ca_coords);
         let max_neighbors = *neighbor_counts.iter().max().unwrap_or(&1).max(&1);
 
-        neighbor_counts.iter()
+        neighbor_counts
+            .iter()
             .map(|&n| 1.0 - (n as f64 / max_neighbors as f64))
             .collect()
     }
@@ -1175,7 +1206,9 @@ pub fn apply_interface_boost(
             *score = (*score * boost_factor).min(1.0);
             log::trace!(
                 "[v2] Boosted residue {}: {:.4} -> {:.4}",
-                res_id, old_score, *score
+                res_id,
+                old_score,
+                *score
             );
             boosted_count += 1;
         } else {
@@ -1184,7 +1217,8 @@ pub fn apply_interface_boost(
             result.cryptic_scores.insert(*res_id, base_score.min(1.0));
             log::trace!(
                 "[v2] Added interface residue {} with score {:.4}",
-                res_id, base_score
+                res_id,
+                base_score
             );
             boosted_count += 1;
         }
@@ -1208,7 +1242,9 @@ pub fn apply_interface_boost(
     result.cryptic_residues.sort_by(|a, b| {
         let score_a = result.cryptic_scores.get(a).unwrap_or(&0.0);
         let score_b = result.cryptic_scores.get(b).unwrap_or(&0.0);
-        score_b.partial_cmp(score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     result.n_cryptic = result.cryptic_residues.len();
@@ -1260,9 +1296,7 @@ pub fn apply_proximity_boost(
     // Get coordinates of functional residues
     let functional_coords: Vec<[f32; 3]> = functional_residues
         .iter()
-        .filter_map(|&res_id| {
-            reverse_map.get(&res_id).map(|&idx| ca_coords[idx])
-        })
+        .filter_map(|&res_id| reverse_map.get(&res_id).map(|&idx| ca_coords[idx]))
         .collect();
 
     if functional_coords.is_empty() {
@@ -1316,10 +1350,7 @@ pub fn apply_proximity_boost(
         result.cryptic_scores.values().sum::<f64>() / result.cryptic_scores.len() as f64
     };
 
-    log::info!(
-        "[v2] Proximity boost applied to {} residues",
-        boosted_count
-    );
+    log::info!("[v2] Proximity boost applied to {} residues", boosted_count);
 }
 
 #[cfg(test)]
@@ -1334,26 +1365,28 @@ mod tests {
         (0..n)
             .map(|i| {
                 let angle = 2.0 * std::f32::consts::PI * i as f32 / residues_per_turn;
-                [
-                    radius * angle.cos(),
-                    radius * angle.sin(),
-                    rise * i as f32,
-                ]
+                [radius * angle.cos(), radius * angle.sin(), rise * i as f32]
             })
             .collect()
     }
 
     #[test]
     fn test_adaptive_threshold() {
-        let scores: HashMap<i32, f64> = (0..100)
-            .map(|i| (i, (i as f64) / 100.0))
-            .collect();
+        let scores: HashMap<i32, f64> = (0..100).map(|i| (i, (i as f64) / 100.0)).collect();
 
         let detector = EnsemblePocketDetectorV2::default_config();
         let (threshold, mean, std) = detector.compute_adaptive_threshold(&scores);
 
-        assert!(threshold > 0.25, "Threshold {} should be above floor", threshold);
-        assert!((mean - 0.495).abs() < 0.01, "Mean should be ~0.495, got {}", mean);
+        assert!(
+            threshold > 0.25,
+            "Threshold {} should be above floor",
+            threshold
+        );
+        assert!(
+            (mean - 0.495).abs() < 0.01,
+            "Mean should be ~0.495, got {}",
+            mean
+        );
         assert!(std > 0.0, "Std should be positive");
     }
 

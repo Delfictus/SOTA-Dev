@@ -173,9 +173,9 @@ impl DruggabilityClass {
     pub fn color(&self) -> &'static str {
         match self {
             DruggabilityClass::HighlyDruggable => "#22c55e", // Green
-            DruggabilityClass::Druggable => "#84cc16",        // Lime
-            DruggabilityClass::Challenging => "#eab308",      // Yellow
-            DruggabilityClass::Difficult => "#ef4444",        // Red
+            DruggabilityClass::Druggable => "#84cc16",       // Lime
+            DruggabilityClass::Challenging => "#eab308",     // Yellow
+            DruggabilityClass::Difficult => "#ef4444",       // Red
         }
     }
 }
@@ -272,13 +272,15 @@ impl DruggabilityScorer {
         let mut hydrophobicity_sum = 0.0;
 
         let hydrophobic_set: HashSet<&str> = ["ILE", "VAL", "LEU", "PHE", "MET", "ALA", "TRP"]
-            .iter().cloned().collect();
+            .iter()
+            .cloned()
+            .collect();
         let polar_set: HashSet<&str> = ["SER", "THR", "ASN", "GLN", "TYR", "CYS", "HIS"]
-            .iter().cloned().collect();
-        let charged_set: HashSet<&str> = ["ASP", "GLU", "LYS", "ARG"]
-            .iter().cloned().collect();
-        let aromatic_set: HashSet<&str> = ["PHE", "TYR", "TRP", "HIS"]
-            .iter().cloned().collect();
+            .iter()
+            .cloned()
+            .collect();
+        let charged_set: HashSet<&str> = ["ASP", "GLU", "LYS", "ARG"].iter().cloned().collect();
+        let aromatic_set: HashSet<&str> = ["PHE", "TYR", "TRP", "HIS"].iter().cloned().collect();
 
         for (res_name, _) in pocket_residues {
             let res_upper = res_name.to_uppercase();
@@ -308,7 +310,8 @@ impl DruggabilityScorer {
 
         // Calculate hydrophobicity score
         // Optimal is ~55% hydrophobic (based on drug binding site analysis)
-        let hydrophobicity_deviation = (hydrophobic_fraction - self.optimal_hydrophobic_fraction).abs();
+        let hydrophobicity_deviation =
+            (hydrophobic_fraction - self.optimal_hydrophobic_fraction).abs();
         let hydrophobicity_score = (1.0 - hydrophobicity_deviation * 2.0).max(0.0);
 
         // Boost for aromatic residues (good for π-stacking)
@@ -322,7 +325,8 @@ impl DruggabilityScorer {
             pocket_volume / self.optimal_volume_range.0
         } else if pocket_volume > self.optimal_volume_range.1 {
             // Too large - gradual penalty
-            let excess = (pocket_volume - self.optimal_volume_range.1) / self.optimal_volume_range.1;
+            let excess =
+                (pocket_volume - self.optimal_volume_range.1) / self.optimal_volume_range.1;
             (1.0 - excess * 0.5).max(0.3)
         } else {
             // In optimal range
@@ -373,8 +377,8 @@ impl DruggabilityScorer {
 
         // Estimate binding affinity range (empirical correlation)
         // Based on SiteMap Dscore to ΔG correlation
-        let affinity_min = -6.0 - (final_score * 4.0);  // kcal/mol
-        let affinity_max = -4.0 - (final_score * 5.0);  // kcal/mol
+        let affinity_min = -6.0 - (final_score * 4.0); // kcal/mol
+        let affinity_max = -4.0 - (final_score * 5.0); // kcal/mol
 
         // Recommend fragment size based on pocket volume
         let min_fragment = ((pocket_volume / 25.0) as usize).max(8).min(15);
@@ -498,10 +502,22 @@ mod tests {
 
     #[test]
     fn test_druggability_class() {
-        assert_eq!(DruggabilityClass::from_score(0.9), DruggabilityClass::HighlyDruggable);
-        assert_eq!(DruggabilityClass::from_score(0.7), DruggabilityClass::Druggable);
-        assert_eq!(DruggabilityClass::from_score(0.5), DruggabilityClass::Challenging);
-        assert_eq!(DruggabilityClass::from_score(0.2), DruggabilityClass::Difficult);
+        assert_eq!(
+            DruggabilityClass::from_score(0.9),
+            DruggabilityClass::HighlyDruggable
+        );
+        assert_eq!(
+            DruggabilityClass::from_score(0.7),
+            DruggabilityClass::Druggable
+        );
+        assert_eq!(
+            DruggabilityClass::from_score(0.5),
+            DruggabilityClass::Challenging
+        );
+        assert_eq!(
+            DruggabilityClass::from_score(0.2),
+            DruggabilityClass::Difficult
+        );
     }
 
     #[test]
@@ -510,14 +526,22 @@ mod tests {
 
         // Highly hydrophobic pocket (like p38 DFG-out)
         let residues = vec![
-            "LEU".to_string(), "ILE".to_string(), "VAL".to_string(),
-            "PHE".to_string(), "MET".to_string(), "ALA".to_string(),
+            "LEU".to_string(),
+            "ILE".to_string(),
+            "VAL".to_string(),
+            "PHE".to_string(),
+            "MET".to_string(),
+            "ALA".to_string(),
         ];
 
         let result = scorer.score_simple(&residues, 400.0);
 
         // Hydrophobic pockets should have decent druggability
-        assert!(result.score > 0.4, "Hydrophobic pocket score: {}", result.score);
+        assert!(
+            result.score > 0.4,
+            "Hydrophobic pocket score: {}",
+            result.score
+        );
         assert!(result.details.n_hydrophobic >= 5);
     }
 
@@ -527,8 +551,12 @@ mod tests {
 
         // Highly polar pocket (PPI-like)
         let residues = vec![
-            "ARG".to_string(), "LYS".to_string(), "GLU".to_string(),
-            "ASP".to_string(), "SER".to_string(), "THR".to_string(),
+            "ARG".to_string(),
+            "LYS".to_string(),
+            "GLU".to_string(),
+            "ASP".to_string(),
+            "SER".to_string(),
+            "THR".to_string(),
         ];
 
         let result = scorer.score_simple(&residues, 600.0);
@@ -544,18 +572,31 @@ mod tests {
 
         // Balanced pocket (optimal for drug binding)
         let residues = vec![
-            "LEU".to_string(), "ILE".to_string(), "VAL".to_string(), // Hydrophobic
-            "PHE".to_string(), "TYR".to_string(),                    // Aromatic
-            "SER".to_string(), "ASN".to_string(), "GLU".to_string(), // Polar/charged
+            "LEU".to_string(),
+            "ILE".to_string(),
+            "VAL".to_string(), // Hydrophobic
+            "PHE".to_string(),
+            "TYR".to_string(), // Aromatic
+            "SER".to_string(),
+            "ASN".to_string(),
+            "GLU".to_string(), // Polar/charged
         ];
 
         let result = scorer.score_simple(&residues, 450.0);
 
         // Balanced pockets should score well (Druggable or HighlyDruggable)
-        assert!(result.score > 0.6, "Balanced pocket score: {}", result.score);
         assert!(
-            matches!(result.classification, DruggabilityClass::Druggable | DruggabilityClass::HighlyDruggable),
-            "Expected Druggable or HighlyDruggable, got {:?}", result.classification
+            result.score > 0.6,
+            "Balanced pocket score: {}",
+            result.score
+        );
+        assert!(
+            matches!(
+                result.classification,
+                DruggabilityClass::Druggable | DruggabilityClass::HighlyDruggable
+            ),
+            "Expected Druggable or HighlyDruggable, got {:?}",
+            result.classification
         );
     }
 

@@ -6,10 +6,10 @@
 //! Usage: cargo run --release --features cuda -p prism-validation --bin ensemble_warp_benchmark
 
 use anyhow::{Context, Result};
-use std::collections::HashSet;
-use std::error::Error;
 use cudarc::driver::CudaContext;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::error::Error;
 use std::path::Path;
 use std::time::Instant;
 
@@ -79,8 +79,8 @@ struct BenchmarkOutput {
 fn load_topology(path: &Path) -> Result<PrismPrepTopology> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    let topo: PrismPrepTopology = serde_json::from_str(&content)
-        .with_context(|| "Failed to parse topology JSON")?;
+    let topo: PrismPrepTopology =
+        serde_json::from_str(&content).with_context(|| "Failed to parse topology JSON")?;
     Ok(topo)
 }
 
@@ -93,15 +93,16 @@ fn run_ensemble_warp_benchmark(
     temperature: f32,
     gamma: f32,
 ) -> Result<(f64, Vec<prism_gpu::EnsembleResult>)> {
-    use prism_gpu::{EnsembleWarpMd, EnsembleTopology};
+    use prism_gpu::{EnsembleTopology, EnsembleWarpMd};
 
     // Convert to EnsembleTopology
     let sigmas: Vec<f32> = topo.lj_params.iter().map(|p| p.sigma).collect();
     let epsilons: Vec<f32> = topo.lj_params.iter().map(|p| p.epsilon).collect();
-    let bonds: Vec<(usize, usize, f32, f32)> = topo.bonds.iter()
-        .map(|b| (b.i, b.j, b.k, b.r0))
-        .collect();
-    let angles: Vec<(usize, usize, usize, f32, f32)> = topo.angles.iter()
+    let bonds: Vec<(usize, usize, f32, f32)> =
+        topo.bonds.iter().map(|b| (b.i, b.j, b.k, b.r0)).collect();
+    let angles: Vec<(usize, usize, usize, f32, f32)> = topo
+        .angles
+        .iter()
         .map(|a| (a.i, a.j, a.k_idx, a.k, a.theta0))
         .collect();
 
@@ -120,22 +121,24 @@ fn run_ensemble_warp_benchmark(
         .context("Failed to create EnsembleWarpMd")?;
 
     // Set positions
-    engine.set_positions(&topo.positions)
+    engine
+        .set_positions(&topo.positions)
         .context("Failed to set positions")?;
 
     // Initialize velocities
-    engine.initialize_velocities(temperature)
+    engine
+        .initialize_velocities(temperature)
         .context("Failed to initialize velocities")?;
 
     // Run and time
     let start = Instant::now();
-    engine.run(n_steps, dt, temperature, gamma)
+    engine
+        .run(n_steps, dt, temperature, gamma)
         .context("Failed to run ensemble MD")?;
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     // Get results
-    let results = engine.get_results()
-        .context("Failed to get results")?;
+    let results = engine.get_results().context("Failed to get results")?;
 
     Ok((elapsed, results))
 }
@@ -149,7 +152,7 @@ fn run_sequential_baseline(
     temperature: f32,
     gamma: f32,
 ) -> Result<f64> {
-    use prism_gpu::{AmberSimdBatch, StructureTopology, OptimizationConfig};
+    use prism_gpu::{AmberSimdBatch, OptimizationConfig, StructureTopology};
 
     let sigmas: Vec<f32> = topo.lj_params.iter().map(|p| p.sigma).collect();
     let epsilons: Vec<f32> = topo.lj_params.iter().map(|p| p.epsilon).collect();
@@ -167,12 +170,11 @@ fn run_sequential_baseline(
                 use_async_pipeline: false,
                 ..Default::default()
             },
-        ).context("Failed to create AmberSimdBatch")?;
+        )
+        .context("Failed to create AmberSimdBatch")?;
 
         // Create exclusions as Vec<HashSet<usize>>
-        let exclusions: Vec<HashSet<usize>> = (0..topo.n_atoms)
-            .map(|_| HashSet::new())
-            .collect();
+        let exclusions: Vec<HashSet<usize>> = (0..topo.n_atoms).map(|_| HashSet::new()).collect();
 
         let structure = StructureTopology {
             positions: topo.positions.clone(),
@@ -180,10 +182,10 @@ fn run_sequential_baseline(
             charges: topo.charges.clone(),
             sigmas: sigmas.clone(),
             epsilons: epsilons.clone(),
-            bonds: topo.bonds.iter()
-                .map(|b| (b.i, b.j, b.k, b.r0))
-                .collect(),
-            angles: topo.angles.iter()
+            bonds: topo.bonds.iter().map(|b| (b.i, b.j, b.k, b.r0)).collect(),
+            angles: topo
+                .angles
+                .iter()
                 .map(|a| (a.i, a.j, a.k_idx, a.k, a.theta0))
                 .collect(),
             dihedrals: vec![],
@@ -200,9 +202,7 @@ fn run_sequential_baseline(
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     println!("═══════════════════════════════════════════════════════════════════");
     println!("   ENSEMBLE WARP MD BENCHMARK - Revolutionary Parallel Processing   ");
@@ -211,8 +211,8 @@ fn main() -> Result<()> {
 
     // Find a suitable topology (small enough for warp-based processing)
     let topology_paths = [
-        "results/sota_validation_fresh/2VWD_topology.json",  // Small: ~2K atoms
-        "results/sota_validation_fresh/6LU7_topology.json",  // Medium: 4.7K atoms (over limit)
+        "results/sota_validation_fresh/2VWD_topology.json", // Small: ~2K atoms
+        "results/sota_validation_fresh/6LU7_topology.json", // Medium: 4.7K atoms (over limit)
     ];
 
     let mut selected_path = None;
@@ -224,8 +224,12 @@ fn main() -> Result<()> {
                 selected_path = Some(path.to_string());
                 break;
             } else {
-                println!("✗ Skipping {} ({} atoms > {} limit)",
-                    path, topo.n_atoms, prism_gpu::MAX_ATOMS_WARP);
+                println!(
+                    "✗ Skipping {} ({} atoms > {} limit)",
+                    path,
+                    topo.n_atoms,
+                    prism_gpu::MAX_ATOMS_WARP
+                );
             }
         }
     }
@@ -254,7 +258,10 @@ fn main() -> Result<()> {
         Some(p) => p,
         None => {
             println!();
-            println!("No suitable topology found (<= {} atoms).", prism_gpu::MAX_ATOMS_WARP);
+            println!(
+                "No suitable topology found (<= {} atoms).",
+                prism_gpu::MAX_ATOMS_WARP
+            );
             println!("Creating a synthetic small structure for testing...");
 
             // Create a synthetic small protein (~100 atoms) for testing
@@ -274,20 +281,20 @@ fn run_synthetic_benchmark() -> Result<()> {
     // Create a proper linear chain with CONSISTENT geometry
     // Bond distance r0 = 1.5Å, angle theta0 = 109.5° = 1.91 rad
     let n_atoms = 100;
-    let bond_length = 1.5f32;  // Ångströms
-    let bond_angle = 109.5f32 * std::f32::consts::PI / 180.0;  // radians
+    let bond_length = 1.5f32; // Ångströms
+    let bond_angle = 109.5f32 * std::f32::consts::PI / 180.0; // radians
 
     let mut positions = Vec::with_capacity(n_atoms * 3);
     let mut masses = Vec::with_capacity(n_atoms);
     let mut charges = Vec::with_capacity(n_atoms);
-    let sigmas = vec![3.4f32; n_atoms];    // Carbon LJ sigma
+    let sigmas = vec![3.4f32; n_atoms]; // Carbon LJ sigma
     let epsilons = vec![0.086f32; n_atoms]; // Carbon LJ epsilon
 
     // Build zigzag chain: atoms alternate direction to maintain bond angle
     // Start at origin, build along X with alternating Y offsets
     let half_angle = bond_angle / 2.0;
-    let dx = bond_length * half_angle.cos();  // X step
-    let dy = bond_length * half_angle.sin();  // Y oscillation amplitude
+    let dx = bond_length * half_angle.cos(); // X step
+    let dy = bond_length * half_angle.sin(); // Y oscillation amplitude
 
     for i in 0..n_atoms {
         let x = i as f32 * dx;
@@ -297,15 +304,19 @@ fn run_synthetic_benchmark() -> Result<()> {
         positions.push(x);
         positions.push(y);
         positions.push(z);
-        masses.push(12.01);   // Carbon mass
-        charges.push(0.0);    // Neutral for simplicity
+        masses.push(12.01); // Carbon mass
+        charges.push(0.0); // Neutral for simplicity
     }
 
     // Verify first bond distance
     let d01 = ((positions[3] - positions[0]).powi(2)
-             + (positions[4] - positions[1]).powi(2)
-             + (positions[5] - positions[2]).powi(2)).sqrt();
-    println!("  Bond 0-1 distance: {:.3}Å (target: {:.3}Å)", d01, bond_length);
+        + (positions[4] - positions[1]).powi(2)
+        + (positions[5] - positions[2]).powi(2))
+    .sqrt();
+    println!(
+        "  Bond 0-1 distance: {:.3}Å (target: {:.3}Å)",
+        d01, bond_length
+    );
 
     // Create bonds between consecutive atoms (now positions match!)
     let mut bonds = Vec::new();
@@ -313,7 +324,7 @@ fn run_synthetic_benchmark() -> Result<()> {
         bonds.push(BondDef {
             i: idx,
             j: idx + 1,
-            k: 310.0,  // Typical C-C bond force constant
+            k: 310.0, // Typical C-C bond force constant
             r0: bond_length,
         });
     }
@@ -325,22 +336,32 @@ fn run_synthetic_benchmark() -> Result<()> {
             i: idx,
             j: idx + 1,
             k_idx: idx + 2,
-            k: 63.0,  // Typical C-C-C angle force constant
+            k: 63.0, // Typical C-C-C angle force constant
             theta0: bond_angle,
         });
     }
 
     // Calculate actual angle from positions to verify
     if n_atoms >= 3 {
-        let v1 = [positions[0] - positions[3], positions[1] - positions[4], positions[2] - positions[5]];
-        let v2 = [positions[6] - positions[3], positions[7] - positions[4], positions[8] - positions[5]];
-        let dot = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
-        let len1 = (v1[0]*v1[0] + v1[1]*v1[1] + v1[2]*v1[2]).sqrt();
-        let len2 = (v2[0]*v2[0] + v2[1]*v2[1] + v2[2]*v2[2]).sqrt();
+        let v1 = [
+            positions[0] - positions[3],
+            positions[1] - positions[4],
+            positions[2] - positions[5],
+        ];
+        let v2 = [
+            positions[6] - positions[3],
+            positions[7] - positions[4],
+            positions[8] - positions[5],
+        ];
+        let dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+        let len1 = (v1[0] * v1[0] + v1[1] * v1[1] + v1[2] * v1[2]).sqrt();
+        let len2 = (v2[0] * v2[0] + v2[1] * v2[1] + v2[2] * v2[2]).sqrt();
         let angle_actual = (dot / (len1 * len2)).acos();
-        println!("  Angle 0-1-2: {:.1}° (target: {:.1}°)",
-                 angle_actual * 180.0 / std::f32::consts::PI,
-                 bond_angle * 180.0 / std::f32::consts::PI);
+        println!(
+            "  Angle 0-1-2: {:.1}° (target: {:.1}°)",
+            angle_actual * 180.0 / std::f32::consts::PI,
+            bond_angle * 180.0 / std::f32::consts::PI
+        );
     }
 
     let topo = PrismPrepTopology {
@@ -348,8 +369,13 @@ fn run_synthetic_benchmark() -> Result<()> {
         positions,
         masses,
         charges,
-        lj_params: sigmas.iter().zip(epsilons.iter())
-            .map(|(&s, &e)| LjParam { sigma: s, epsilon: e })
+        lj_params: sigmas
+            .iter()
+            .zip(epsilons.iter())
+            .map(|(&s, &e)| LjParam {
+                sigma: s,
+                epsilon: e,
+            })
             .collect(),
         bonds,
         angles,
@@ -364,7 +390,7 @@ fn run_benchmark_with_topology(name: &str, topo: &PrismPrepTopology) -> Result<(
 
     // Benchmark parameters
     let n_steps = 500;
-    let dt = 0.001;  // 1 fs
+    let dt = 0.001; // 1 fs
     let temperature = 300.0;
     let gamma = 1.0;
 
@@ -398,8 +424,10 @@ fn run_benchmark_with_topology(name: &str, topo: &PrismPrepTopology) -> Result<(
         ) {
             Ok(r) => r,
             Err(e) => {
-                println!("│ {:>6} │ {:>10} │ {:>10} │ {:>7} │ {:>12} │ {:>12} │",
-                    n_clones, "FAILED", "-", "-", "-", "-");
+                println!(
+                    "│ {:>6} │ {:>10} │ {:>10} │ {:>7} │ {:>12} │ {:>12} │",
+                    n_clones, "FAILED", "-", "-", "-", "-"
+                );
                 log::error!("Warp MD failed for {} clones: {:?}", n_clones, e);
                 // Print the full error chain
                 let mut source = e.source();
@@ -424,7 +452,7 @@ fn run_benchmark_with_topology(name: &str, topo: &PrismPrepTopology) -> Result<(
             Ok(t) => t,
             Err(e) => {
                 log::error!("Sequential baseline failed: {}", e);
-                warp_ms * n_clones as f64  // Estimate
+                warp_ms * n_clones as f64 // Estimate
             }
         };
 
@@ -445,8 +473,10 @@ fn run_benchmark_with_topology(name: &str, topo: &PrismPrepTopology) -> Result<(
             best_n = n_clones;
         }
 
-        println!("│ {:>6} │ {:>8.1}ms │ {:>8.1}ms │ {:>6.2}× │ {:>10.2}ms │ {:>10.2}ms │",
-            n_clones, warp_ms, seq_ms, speedup, ms_per_struct_warp, ms_per_struct_seq);
+        println!(
+            "│ {:>6} │ {:>8.1}ms │ {:>8.1}ms │ {:>6.2}× │ {:>10.2}ms │ {:>10.2}ms │",
+            n_clones, warp_ms, seq_ms, speedup, ms_per_struct_warp, ms_per_struct_seq
+        );
 
         results.push(BenchmarkResult {
             n_clones,
@@ -467,9 +497,18 @@ fn run_benchmark_with_topology(name: &str, topo: &PrismPrepTopology) -> Result<(
     println!();
 
     if best_speedup > 1.0 {
-        println!("🚀 SUCCESS! Warp-based parallel MD achieves {:.1}× speedup!", best_speedup);
-        println!("   This is {} more efficient than the old batched approach!",
-            if best_speedup > 2.0 { "significantly" } else { "notably" });
+        println!(
+            "🚀 SUCCESS! Warp-based parallel MD achieves {:.1}× speedup!",
+            best_speedup
+        );
+        println!(
+            "   This is {} more efficient than the old batched approach!",
+            if best_speedup > 2.0 {
+                "significantly"
+            } else {
+                "notably"
+            }
+        );
     } else {
         println!("⚠️  Speedup < 1×. Further optimization needed.");
     }
@@ -489,8 +528,10 @@ fn run_benchmark_with_topology(name: &str, topo: &PrismPrepTopology) -> Result<(
     let output_dir = Path::new("results/ensemble_warp");
     std::fs::create_dir_all(output_dir)?;
 
-    let output_path = output_dir.join(format!("{}_warp_benchmark.json",
-        name.replace("/", "_").replace(" ", "_")));
+    let output_path = output_dir.join(format!(
+        "{}_warp_benchmark.json",
+        name.replace("/", "_").replace(" ", "_")
+    ));
     let json = serde_json::to_string_pretty(&output)?;
     std::fs::write(&output_path, json)?;
     println!("Results saved to: {}", output_path.display());

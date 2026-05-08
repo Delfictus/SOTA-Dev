@@ -131,7 +131,9 @@ impl PrismTopology {
         if self.positions.len() != self.n_atoms * 3 {
             anyhow::bail!(
                 "Position array length mismatch: expected {} ({}*3), got {}",
-                self.n_atoms * 3, self.n_atoms, self.positions.len()
+                self.n_atoms * 3,
+                self.n_atoms,
+                self.positions.len()
             );
         }
 
@@ -146,7 +148,8 @@ impl PrismTopology {
         if self.ca_indices.len() != self.n_residues {
             anyhow::bail!(
                 "CA indices count mismatch: {} CA atoms but {} residues",
-                self.ca_indices.len(), self.n_residues
+                self.ca_indices.len(),
+                self.n_residues
             );
         }
 
@@ -155,49 +158,65 @@ impl PrismTopology {
 
     /// Extract Cα coordinates as [n_residues][3] array
     pub fn get_ca_coordinates(&self) -> Vec<[f32; 3]> {
-        self.ca_indices.iter().map(|&idx| {
-            let base = idx * 3;
-            [
-                self.positions[base] as f32,
-                self.positions[base + 1] as f32,
-                self.positions[base + 2] as f32,
-            ]
-        }).collect()
+        self.ca_indices
+            .iter()
+            .map(|&idx| {
+                let base = idx * 3;
+                [
+                    self.positions[base] as f32,
+                    self.positions[base + 1] as f32,
+                    self.positions[base + 2] as f32,
+                ]
+            })
+            .collect()
     }
 
     /// Extract all atom coordinates as [n_atoms][3] array
     pub fn get_all_coordinates(&self) -> Vec<[f64; 3]> {
-        (0..self.n_atoms).map(|i| {
-            let base = i * 3;
-            [
-                self.positions[base],
-                self.positions[base + 1],
-                self.positions[base + 2],
-            ]
-        }).collect()
+        (0..self.n_atoms)
+            .map(|i| {
+                let base = i * 3;
+                [
+                    self.positions[base],
+                    self.positions[base + 1],
+                    self.positions[base + 2],
+                ]
+            })
+            .collect()
     }
 
     /// Get residue name for each CA (i.e., per-residue)
     pub fn get_ca_residue_names(&self) -> Vec<String> {
-        self.ca_indices.iter().map(|&idx| {
-            self.residue_names.get(idx).cloned().unwrap_or_else(|| "UNK".to_string())
-        }).collect()
+        self.ca_indices
+            .iter()
+            .map(|&idx| {
+                self.residue_names
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_else(|| "UNK".to_string())
+            })
+            .collect()
     }
 
     /// Get residue IDs for each CA
     pub fn get_ca_residue_ids(&self) -> Vec<i32> {
-        self.ca_indices.iter().map(|&idx| {
-            self.residue_ids.get(idx).copied().unwrap_or(0)
-        }).collect()
+        self.ca_indices
+            .iter()
+            .map(|&idx| self.residue_ids.get(idx).copied().unwrap_or(0))
+            .collect()
     }
 
     /// Get chain IDs for each CA
     pub fn get_ca_chain_ids(&self) -> Vec<char> {
-        self.ca_indices.iter().map(|&idx| {
-            self.chain_ids.get(idx)
-                .and_then(|s| s.chars().next())
-                .unwrap_or('A')
-        }).collect()
+        self.ca_indices
+            .iter()
+            .map(|&idx| {
+                self.chain_ids
+                    .get(idx)
+                    .and_then(|s| s.chars().next())
+                    .unwrap_or('A')
+            })
+            .collect()
     }
 
     /// Get PDB ID from source filename
@@ -228,8 +247,9 @@ impl PrismTopology {
     /// - 6: Hydrogen
     /// - 7: Other
     pub fn get_sasa_atom_types(&self) -> Vec<i32> {
-        self.elements.iter().map(|e| {
-            match e.trim().to_uppercase().as_str() {
+        self.elements
+            .iter()
+            .map(|e| match e.trim().to_uppercase().as_str() {
                 "C" => 0,
                 "N" => 2,
                 "O" => 3,
@@ -237,16 +257,17 @@ impl PrismTopology {
                 "P" => 5,
                 "H" => 6,
                 _ => 7,
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Get VDW radii for GPU SASA calculation
     ///
     /// Returns per-atom VDW radii in Angstroms, derived from element symbols.
     pub fn get_vdw_radii(&self) -> Vec<f32> {
-        self.elements.iter().map(|e| {
-            match e.trim().to_uppercase().as_str() {
+        self.elements
+            .iter()
+            .map(|e| match e.trim().to_uppercase().as_str() {
                 "C" => 1.70,
                 "N" => 1.55,
                 "O" => 1.52,
@@ -254,8 +275,8 @@ impl PrismTopology {
                 "P" => 1.80,
                 "H" => 1.20,
                 _ => 1.70,
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Build a mapping from atom index to residue index
@@ -272,14 +293,21 @@ impl PrismTopology {
             ids
         };
 
-        self.residue_ids.iter().map(|&res_id| {
-            unique_res_ids.iter().position(|&id| id == res_id).unwrap_or(0) as i32
-        }).collect()
+        self.residue_ids
+            .iter()
+            .map(|&res_id| {
+                unique_res_ids
+                    .iter()
+                    .position(|&id| id == res_id)
+                    .unwrap_or(0) as i32
+            })
+            .collect()
     }
 
     /// Check if an atom is a hydrogen
     pub fn is_hydrogen(&self, atom_idx: usize) -> bool {
-        self.elements.get(atom_idx)
+        self.elements
+            .get(atom_idx)
             .map(|e| e.trim().to_uppercase() == "H")
             .unwrap_or(false)
     }

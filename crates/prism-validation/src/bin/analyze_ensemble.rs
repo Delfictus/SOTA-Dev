@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 // Import our native Kabsch alignment module
 use prism_validation::kabsch_alignment::{
-    align_and_compute_displacement, compute_rmsf, compute_rmsd,
+    align_and_compute_displacement, compute_rmsd, compute_rmsf,
 };
 
 #[derive(Parser, Debug)]
@@ -150,13 +150,13 @@ fn parse_ensemble_pdb(content: &str) -> Result<(Vec<Vec<[f32; 3]>>, Vec<PdbAtom>
             if first_frame {
                 let atom_name = line.get(12..16).unwrap_or("    ").trim().to_string();
                 let residue_name = line.get(17..20).unwrap_or("UNK").trim().to_string();
-                let chain_id = line.get(21..22).unwrap_or("A").chars().next().unwrap_or('A');
-                let residue_id: i32 = line
-                    .get(22..26)
-                    .unwrap_or("0")
-                    .trim()
-                    .parse()
-                    .unwrap_or(0);
+                let chain_id = line
+                    .get(21..22)
+                    .unwrap_or("A")
+                    .chars()
+                    .next()
+                    .unwrap_or('A');
+                let residue_id: i32 = line.get(22..26).unwrap_or("0").trim().parse().unwrap_or(0);
 
                 atom_info.push(PdbAtom {
                     name: atom_name,
@@ -225,8 +225,8 @@ fn main() -> Result<()> {
         println!("\n📂 Loading ensemble: {:?}", args.ensemble);
     }
 
-    let content = std::fs::read_to_string(&args.ensemble)
-        .context("Failed to read ensemble PDB file")?;
+    let content =
+        std::fs::read_to_string(&args.ensemble).context("Failed to read ensemble PDB file")?;
 
     let (frames, atom_info) = parse_ensemble_pdb(&content)?;
 
@@ -319,7 +319,10 @@ fn main() -> Result<()> {
     // Compute statistics
     let (mean_rmsd, std_rmsd) = mean_std(&frame_rmsds);
     let min_rmsd = frame_rmsds.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_rmsd = frame_rmsds.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let max_rmsd = frame_rmsds
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let (mean_rmsf, std_rmsf) = mean_std(&atom_rmsf);
     let high_flex_count = atom_rmsf.iter().filter(|&&r| r > 1.0).count();
@@ -384,16 +387,34 @@ fn main() -> Result<()> {
         println!("\n╔══════════════════════════════════════════════════════════════╗");
         println!("║                    Analysis Results                          ║");
         println!("╠══════════════════════════════════════════════════════════════╣");
-        println!("║  Frames analyzed:    {:>6}                                  ║", n_frames);
-        println!("║  Atoms per frame:    {:>6}                                  ║", n_analysis_atoms);
+        println!(
+            "║  Frames analyzed:    {:>6}                                  ║",
+            n_frames
+        );
+        println!(
+            "║  Atoms per frame:    {:>6}                                  ║",
+            n_analysis_atoms
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
         println!("║  RMSD Statistics (Å):                                        ║");
-        println!("║    Mean ± Std:       {:>6.3} ± {:<6.3}                       ║", mean_rmsd, std_rmsd);
-        println!("║    Min / Max:        {:>6.3} / {:<6.3}                       ║", min_rmsd, max_rmsd);
+        println!(
+            "║    Mean ± Std:       {:>6.3} ± {:<6.3}                       ║",
+            mean_rmsd, std_rmsd
+        );
+        println!(
+            "║    Min / Max:        {:>6.3} / {:<6.3}                       ║",
+            min_rmsd, max_rmsd
+        );
         println!("╠══════════════════════════════════════════════════════════════╣");
         println!("║  RMSF Statistics (Å):                                        ║");
-        println!("║    Mean ± Std:       {:>6.3} ± {:<6.3}                       ║", mean_rmsf, std_rmsf);
-        println!("║    High-flex atoms:  {:>6} (RMSF > 1.0 Å)                   ║", high_flex_count);
+        println!(
+            "║    Mean ± Std:       {:>6.3} ± {:<6.3}                       ║",
+            mean_rmsf, std_rmsf
+        );
+        println!(
+            "║    High-flex atoms:  {:>6} (RMSF > 1.0 Å)                   ║",
+            high_flex_count
+        );
         println!("╚══════════════════════════════════════════════════════════════╝");
     }
 
@@ -402,12 +423,10 @@ fn main() -> Result<()> {
         println!("\n💾 Writing results to {:?}", args.output);
     }
 
-    let output_file = File::create(&args.output)
-        .context("Failed to create output file")?;
+    let output_file = File::create(&args.output).context("Failed to create output file")?;
     let mut writer = BufWriter::new(output_file);
 
-    serde_json::to_writer_pretty(&mut writer, &results)
-        .context("Failed to write JSON")?;
+    serde_json::to_writer_pretty(&mut writer, &results).context("Failed to write JSON")?;
     writer.flush()?;
 
     if !args.quiet {

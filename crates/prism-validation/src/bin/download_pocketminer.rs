@@ -31,7 +31,7 @@
 //!     └── *.npy
 //! ```
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, warn};
@@ -41,7 +41,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use prism_validation::pocketminer_dataset::{
-    PocketMinerDataset, PocketMinerEntry, PocketType, compute_centroid,
+    compute_centroid, PocketMinerDataset, PocketMinerEntry, PocketType,
 };
 
 #[derive(Parser, Debug)]
@@ -66,7 +66,8 @@ struct Args {
 }
 
 /// Base URL for PocketMiner GitHub repository
-const GITHUB_RAW_BASE: &str = "https://raw.githubusercontent.com/Mickdub/gvp/pocket_pred/data/pm-dataset";
+const GITHUB_RAW_BASE: &str =
+    "https://raw.githubusercontent.com/Mickdub/gvp/pocket_pred/data/pm-dataset";
 
 /// Official PocketMiner dataset entries
 /// These are the actual structures from the Nature Communications 2023 paper
@@ -81,7 +82,7 @@ const POCKETMINER_STRUCTURES: &[(&str, &str)] = &[
     ("5g1mA", "5g1mA_clean_h.pdb"),
     ("5nzmA", "5nzmA_clean_h.pdb"),
     ("4v38A", "4v38A_clean_h.pdb"),
-    ("2w9tA", "2w9tA_clean_h.pdb"),  // DHFR - classic cryptic pocket example
+    ("2w9tA", "2w9tA_clean_h.pdb"), // DHFR - classic cryptic pocket example
     ("2hq8B", "2hq8B_clean_h.pdb"),
     ("4r72A", "4r72A_clean_h.pdb"),
     ("5za4A", "5za4A_clean_h.pdb"),
@@ -103,14 +104,14 @@ const POCKETMINER_STRUCTURES: &[(&str, &str)] = &[
     ("1ezmA", "1ezmA_clean_h.pdb"),
     ("1j8fC", "1j8fC_clean_h.pdb"),
     ("3kjeA", "3kjeA_clean_h.pdb"),
-    ("1y1aA", "1y1aA_clean_h.pdb"),  // CIB1 - secondary structure change
-    ("4p0iB", "4p0iB_clean_h.pdb"),  // Nopaline-binding protein
+    ("1y1aA", "1y1aA_clean_h.pdb"), // CIB1 - secondary structure change
+    ("4p0iB", "4p0iB_clean_h.pdb"), // Nopaline-binding protein
     ("5uxaA", "5uxaA_clean_h.pdb"),
     ("6rvmC", "6rvmC_clean_h.pdb"),
     ("3fvjA", "3fvjA_clean_h.pdb"),
     ("2oy4A", "2oy4A_clean_h.pdb"),
     ("3rwvA", "3rwvA_clean_h.pdb"),
-    ("6e5dA", "6e5dA_clean_h.pdb"),  // LpqN lipoprotein
+    ("6e5dA", "6e5dA_clean_h.pdb"), // LpqN lipoprotein
     ("4ic4A", "4ic4A_clean_h.pdb"),
     ("4w51A", "4w51A_clean_h.pdb"),
     ("1rrgA", "1rrgA_clean_h.pdb"),
@@ -121,12 +122,12 @@ const POCKETMINER_STRUCTURES: &[(&str, &str)] = &[
     ("1k3fB", "1k3fB_clean_h.pdb"),
     // Negative controls (no cryptic pockets - for specificity testing)
     ("2fd7A", "2fd7A_clean_h.pdb"),
-    ("4tqlA", "4tqlA_clean_h.pdb"),  // Highly rigid helical bundle
+    ("4tqlA", "4tqlA_clean_h.pdb"), // Highly rigid helical bundle
     ("2alpA", "2ALPA_clean_h.pdb"),
     ("1ammA", "1AMMA_clean_h.pdb"),
-    ("4hjkA", "4hjkA_clean_h.pdb"),  // Ubiquitin
+    ("4hjkA", "4hjkA_clean_h.pdb"), // Ubiquitin
     ("1igdA", "1igdA_clean_h.pdb"),
-    ("1hcl", "1hcl_clean_h.pdb"),    // CDK2 - also in our original set
+    ("1hcl", "1hcl_clean_h.pdb"), // CDK2 - also in our original set
 ];
 
 /// Labels from the official dataset (residue indices that are cryptic)
@@ -140,53 +141,270 @@ fn get_official_labels() -> HashMap<&'static str, Vec<i32>> {
 
     // Test set cryptic pocket labels (from test_label_dictionary.npy)
     // Note: These are 0-indexed residue positions in the cleaned structure
-    labels.insert("6hb0", vec![12, 13, 15, 16, 64, 65, 66, 67, 68, 69, 81, 82, 83, 84, 85]);
-    labels.insert("2lao", vec![10, 13, 51, 68, 69, 70, 71, 90, 91, 92, 117, 118, 189, 190, 191]);
-    labels.insert("1urp", vec![12, 14, 15, 88, 89, 90, 91, 92, 135, 136, 137, 138, 139]);
-    labels.insert("6ypk", vec![42, 43, 44, 50, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134]);
-    labels.insert("3ugk", vec![16, 75, 92, 94, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134]);
-    labels.insert("5g1m", vec![31, 33, 62, 64, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81]);
-    labels.insert("5nzm", vec![75, 76, 77, 78, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]);
-    labels.insert("4v38", vec![11, 12, 15, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136]);
-    labels.insert("2w9t", vec![4, 5, 6, 7, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48]);
-    labels.insert("2hq8", vec![15, 16, 18, 19, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52]);
-    labels.insert("4r72", vec![8, 9, 10, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55]);
-    labels.insert("5za4", vec![15, 18, 19, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]);
-    labels.insert("2cey", vec![9, 10, 16, 48, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77]);
-    labels.insert("1kmo", vec![57, 74, 75, 90, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]);
-    labels.insert("5nia", vec![133, 135, 136, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288]);
-    labels.insert("2fjy", vec![1, 2, 5, 26, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43]);
-    labels.insert("3p53", vec![6, 8, 40, 42, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
-    labels.insert("1kx9", vec![0, 2, 5, 12, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]);
-    labels.insert("1tvq", vec![13, 16, 17, 20, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52]);
-    labels.insert("2zku", vec![176, 177, 180, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215]);
+    labels.insert(
+        "6hb0",
+        vec![12, 13, 15, 16, 64, 65, 66, 67, 68, 69, 81, 82, 83, 84, 85],
+    );
+    labels.insert(
+        "2lao",
+        vec![
+            10, 13, 51, 68, 69, 70, 71, 90, 91, 92, 117, 118, 189, 190, 191,
+        ],
+    );
+    labels.insert(
+        "1urp",
+        vec![12, 14, 15, 88, 89, 90, 91, 92, 135, 136, 137, 138, 139],
+    );
+    labels.insert(
+        "6ypk",
+        vec![
+            42, 43, 44, 50, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128,
+            129, 130, 131, 132, 133, 134,
+        ],
+    );
+    labels.insert(
+        "3ugk",
+        vec![
+            16, 75, 92, 94, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
+            112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128,
+            129, 130, 131, 132, 133, 134,
+        ],
+    );
+    labels.insert(
+        "5g1m",
+        vec![
+            31, 33, 62, 64, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81,
+        ],
+    );
+    labels.insert(
+        "5nzm",
+        vec![
+            75, 76, 77, 78, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104,
+            105, 106, 107, 108, 109, 110, 111,
+        ],
+    );
+    labels.insert(
+        "4v38",
+        vec![
+            11, 12, 15, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131,
+            132, 133, 134, 135, 136,
+        ],
+    );
+    labels.insert(
+        "2w9t",
+        vec![
+            4, 5, 6, 7, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+        ],
+    );
+    labels.insert(
+        "2hq8",
+        vec![
+            15, 16, 18, 19, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+            50, 51, 52,
+        ],
+    );
+    labels.insert(
+        "4r72",
+        vec![
+            8, 9, 10, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53,
+            54, 55,
+        ],
+    );
+    labels.insert(
+        "5za4",
+        vec![
+            15, 18, 19, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+        ],
+    );
+    labels.insert(
+        "2cey",
+        vec![
+            9, 10, 16, 48, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77,
+        ],
+    );
+    labels.insert(
+        "1kmo",
+        vec![
+            57, 74, 75, 90, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+            110, 111, 112,
+        ],
+    );
+    labels.insert(
+        "5nia",
+        vec![
+            133, 135, 136, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278,
+            279, 280, 281, 282, 283, 284, 285, 286, 287, 288,
+        ],
+    );
+    labels.insert(
+        "2fjy",
+        vec![
+            1, 2, 5, 26, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+        ],
+    );
+    labels.insert(
+        "3p53",
+        vec![6, 8, 40, 42, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63],
+    );
+    labels.insert(
+        "1kx9",
+        vec![
+            0, 2, 5, 12, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+            33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+        ],
+    );
+    labels.insert(
+        "1tvq",
+        vec![
+            13, 16, 17, 20, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+            40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+        ],
+    );
+    labels.insert(
+        "2zku",
+        vec![
+            176, 177, 180, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201,
+            202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215,
+        ],
+    );
     labels.insert("3nx1", vec![16, 18, 20, 22, 36, 37, 38, 39, 40, 41, 42]);
-    labels.insert("4i92", vec![22, 23, 31, 33, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]);
-    labels.insert("3qxw", vec![1, 3, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]);
-    labels.insert("5h9a", vec![9, 12, 15, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]);
+    labels.insert(
+        "4i92",
+        vec![
+            22, 23, 31, 33, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+        ],
+    );
+    labels.insert(
+        "3qxw",
+        vec![
+            1, 3, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+        ],
+    );
+    labels.insert(
+        "5h9a",
+        vec![
+            9, 12, 15, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+        ],
+    );
 
     // Validation set cryptic pocket labels (from val_label_dictionary.npy)
-    labels.insert("1s2o", vec![10, 40, 41, 42, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75]);
+    labels.insert(
+        "1s2o",
+        vec![10, 40, 41, 42, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75],
+    );
     labels.insert("3ppn", vec![7, 9, 11, 40, 59, 60, 61, 62, 63, 64, 65, 66]);
-    labels.insert("1ezm", vec![110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130]);
-    labels.insert("1j8f", vec![30, 31, 32, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57]);
-    labels.insert("3kje", vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
+    labels.insert(
+        "1ezm",
+        vec![
+            110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126,
+            127, 128, 129, 130,
+        ],
+    );
+    labels.insert(
+        "1j8f",
+        vec![
+            30, 31, 32, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53,
+            54, 55, 56, 57,
+        ],
+    );
+    labels.insert(
+        "3kje",
+        vec![
+            7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+        ],
+    );
     labels.insert("1y1a", vec![3, 7, 22, 25, 40, 41, 42]);
-    labels.insert("4p0i", vec![9, 12, 15, 50, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83]);
-    labels.insert("5uxa", vec![25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68]);
-    labels.insert("6rvm", vec![89, 91, 120, 153, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205]);
-    labels.insert("3fvj", vec![1, 4, 5, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]);
-    labels.insert("2oy4", vec![72, 73, 74, 75, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127]);
-    labels.insert("3rwv", vec![25, 28, 29, 32, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66]);
-    labels.insert("6e5d", vec![65, 96, 97, 98, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131]);
-    labels.insert("4ic4", vec![18, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58]);
-    labels.insert("4w51", vec![77, 83, 86, 87, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102]);
+    labels.insert(
+        "4p0i",
+        vec![
+            9, 12, 15, 50, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83,
+        ],
+    );
+    labels.insert(
+        "5uxa",
+        vec![
+            25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+            48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+        ],
+    );
+    labels.insert(
+        "6rvm",
+        vec![
+            89, 91, 120, 153, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197,
+            198, 199, 200, 201, 202, 203, 204, 205,
+        ],
+    );
+    labels.insert(
+        "3fvj",
+        vec![
+            1, 4, 5, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+        ],
+    );
+    labels.insert(
+        "2oy4",
+        vec![
+            72, 73, 74, 75, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
+            120, 121, 122, 123, 124, 125, 126, 127,
+        ],
+    );
+    labels.insert(
+        "3rwv",
+        vec![
+            25, 28, 29, 32, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+            55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66,
+        ],
+    );
+    labels.insert(
+        "6e5d",
+        vec![
+            65, 96, 97, 98, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126,
+            127, 128, 129, 130, 131,
+        ],
+    );
+    labels.insert(
+        "4ic4",
+        vec![
+            18, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+            51, 52, 53, 54, 55, 56, 57, 58,
+        ],
+    );
+    labels.insert(
+        "4w51",
+        vec![
+            77, 83, 86, 87, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102,
+        ],
+    );
     labels.insert("1rrg", vec![16, 49, 51, 62, 63, 64, 65, 66, 67, 68]);
-    labels.insert("2bu8", vec![15, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]);
-    labels.insert("2ohg", vec![9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
-    labels.insert("2wgb", vec![59, 62, 63, 66, 98, 99, 100, 101, 102, 103, 104, 105]);
-    labels.insert("1ok8", vec![47, 48, 49, 129, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146]);
-    labels.insert("1k3f", vec![68, 93, 94, 95, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172]);
+    labels.insert(
+        "2bu8",
+        vec![
+            15, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+        ],
+    );
+    labels.insert(
+        "2ohg",
+        vec![
+            9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+            31,
+        ],
+    );
+    labels.insert(
+        "2wgb",
+        vec![59, 62, 63, 66, 98, 99, 100, 101, 102, 103, 104, 105],
+    );
+    labels.insert(
+        "1ok8",
+        vec![
+            47, 48, 49, 129, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146,
+        ],
+    );
+    labels.insert(
+        "1k3f",
+        vec![
+            68, 93, 94, 95, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172,
+        ],
+    );
 
     // Negative controls (empty - no cryptic pockets)
     labels.insert("2fd7", vec![]);
@@ -195,7 +413,7 @@ fn get_official_labels() -> HashMap<&'static str, Vec<i32>> {
     labels.insert("1amm", vec![]);
     labels.insert("4hjk", vec![]);
     labels.insert("1igd", vec![]);
-    labels.insert("1hcl", vec![]);  // CDK2 in original paper is negative control
+    labels.insert("1hcl", vec![]); // CDK2 in original paper is negative control
 
     labels
 }
@@ -228,11 +446,18 @@ fn main() -> Result<()> {
         POCKETMINER_STRUCTURES.iter().collect()
     };
 
-    println!("Downloading {} structures from PocketMiner GitHub...", entries.len());
+    println!(
+        "Downloading {} structures from PocketMiner GitHub...",
+        entries.len()
+    );
     let progress = ProgressBar::new(entries.len() as u64);
-    progress.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})")?
-        .progress_chars("#>-"));
+    progress.set_style(
+        ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+            )?
+            .progress_chars("#>-"),
+    );
 
     let mut dataset = PocketMinerDataset::new(&args.output_dir);
     let mut download_errors = Vec::new();
@@ -308,8 +533,16 @@ fn main() -> Result<()> {
 
     // Summary
     let summary = dataset.summary();
-    let cryptic_count = dataset.entries.iter().filter(|e| !e.cryptic_residues.is_empty()).count();
-    let negative_count = dataset.entries.iter().filter(|e| e.cryptic_residues.is_empty()).count();
+    let cryptic_count = dataset
+        .entries
+        .iter()
+        .filter(|e| !e.cryptic_residues.is_empty())
+        .count();
+    let negative_count = dataset
+        .entries
+        .iter()
+        .filter(|e| e.cryptic_residues.is_empty())
+        .count();
 
     println!("═══════════════════════════════════════════════════════════════");
     println!("                     DOWNLOAD SUMMARY                           ");
@@ -319,7 +552,10 @@ fn main() -> Result<()> {
     println!("  With cryptic pockets: {}", cryptic_count);
     println!("  Negative controls: {}", negative_count);
     println!("  Total cryptic residues: {}", summary.n_pockets);
-    println!("  Mean pocket residues: {:.1}", summary.mean_pocket_residues);
+    println!(
+        "  Mean pocket residues: {:.1}",
+        summary.mean_pocket_residues
+    );
     println!();
 
     if !download_errors.is_empty() {
@@ -354,7 +590,9 @@ fn main() -> Result<()> {
 
     println!();
     println!("To run benchmark:");
-    println!("  cargo run --release -p prism-validation --features cryptic --bin cryptic-benchmark");
+    println!(
+        "  cargo run --release -p prism-validation --features cryptic --bin cryptic-benchmark"
+    );
 
     Ok(())
 }
@@ -364,10 +602,7 @@ fn download_file(url: &str, output_path: &Path) -> Result<()> {
     let response = reqwest::blocking::get(url)?;
 
     if !response.status().is_success() {
-        return Err(anyhow!(
-            "Failed to download: HTTP {}",
-            response.status()
-        ));
+        return Err(anyhow!("Failed to download: HTTP {}", response.status()));
     }
 
     let content = response.text()?;

@@ -40,8 +40,8 @@ fn main() -> Result<()> {
         ("Plain GNM (baseline)", false, false, false),
         ("Distance-Weighted GNM", true, false, false),
         ("CA-GNM (full w/ salt)", false, true, false),
-        ("CA-GNM (optimized)", false, true, true),       // Default config (no salt bridges)
-        ("CA-GNM + DW (BEST)", true, true, true),        // Best combination
+        ("CA-GNM (optimized)", false, true, true), // Default config (no salt bridges)
+        ("CA-GNM + DW (BEST)", true, true, true),  // Best combination
     ];
 
     for (name, use_dw, use_chemistry, use_optimized) in configs {
@@ -51,7 +51,11 @@ fn main() -> Result<()> {
         let mut salt_bridge_counts = Vec::new();
 
         for target in &targets {
-            let pdb_path_with_chain = pdb_dir.join(format!("{}_{}.pdb", target.pdb_id.to_lowercase(), target.chain));
+            let pdb_path_with_chain = pdb_dir.join(format!(
+                "{}_{}.pdb",
+                target.pdb_id.to_lowercase(),
+                target.chain
+            ));
             let pdb_path_no_chain = pdb_dir.join(format!("{}.pdb", target.pdb_id.to_lowercase()));
 
             let pdb_path = if pdb_path_with_chain.exists() {
@@ -62,10 +66,18 @@ fn main() -> Result<()> {
                 continue;
             };
 
-            let target_chain = if target.chain.is_empty() { None } else { Some(target.chain.as_str()) };
+            let target_chain = if target.chain.is_empty() {
+                None
+            } else {
+                Some(target.chain.as_str())
+            };
 
-            if let Ok((ca_pos, residue_names, kept_indices)) = parse_pdb_with_residues(&pdb_path, target_chain) {
-                if ca_pos.len() < 10 { continue; }
+            if let Ok((ca_pos, residue_names, kept_indices)) =
+                parse_pdb_with_residues(&pdb_path, target_chain)
+            {
+                if ca_pos.len() < 10 {
+                    continue;
+                }
 
                 // Compute RMSF with the selected method
                 let (rmsf, n_hbonds, n_salt) = if use_chemistry {
@@ -106,7 +118,8 @@ fn main() -> Result<()> {
                 salt_bridge_counts.push(n_salt);
 
                 // Align with ground truth
-                let aligned_exp: Vec<f64> = kept_indices.iter()
+                let aligned_exp: Vec<f64> = kept_indices
+                    .iter()
                     .filter_map(|&idx| target.md_rmsf.get(idx).copied())
                     .collect();
 
@@ -125,19 +138,40 @@ fn main() -> Result<()> {
             let mean = correlations.iter().sum::<f64>() / correlations.len() as f64;
             let above_07 = correlations.iter().filter(|&&c| c >= 0.7).count();
             let above_06 = correlations.iter().filter(|&&c| c >= 0.6).count();
-            let pass_rate = correlations.iter().filter(|&&c| c > 0.3).count() as f64 / correlations.len() as f64;
+            let pass_rate = correlations.iter().filter(|&&c| c > 0.3).count() as f64
+                / correlations.len() as f64;
 
             let total_hbonds: usize = hbond_counts.iter().sum();
             let total_salt: usize = salt_bridge_counts.iter().sum();
 
-            let marker = if mean >= 0.70 { "🎯" } else if mean >= 0.65 { "⭐" } else if mean >= 0.62 { "✅" } else { "  " };
+            let marker = if mean >= 0.70 {
+                "🎯"
+            } else if mean >= 0.65 {
+                "⭐"
+            } else if mean >= 0.62 {
+                "✅"
+            } else {
+                "  "
+            };
 
-            println!("{} {:30} ρ = {:.4}  ≥0.7: {:2}/{}  ≥0.6: {:2}/{}  pass={:.1}%  time={:.2}s",
-                     marker, name, mean, above_07, correlations.len(), above_06, correlations.len(),
-                     pass_rate * 100.0, elapsed.as_secs_f64());
+            println!(
+                "{} {:30} ρ = {:.4}  ≥0.7: {:2}/{}  ≥0.6: {:2}/{}  pass={:.1}%  time={:.2}s",
+                marker,
+                name,
+                mean,
+                above_07,
+                correlations.len(),
+                above_06,
+                correlations.len(),
+                pass_rate * 100.0,
+                elapsed.as_secs_f64()
+            );
 
             if total_hbonds > 0 || total_salt > 0 {
-                println!("     └─ H-bonds detected: {}   Salt bridges: {}", total_hbonds, total_salt);
+                println!(
+                    "     └─ H-bonds detected: {}   Salt bridges: {}",
+                    total_hbonds, total_salt
+                );
             }
         }
     }
@@ -167,7 +201,11 @@ fn main() -> Result<()> {
         let mut correlations = Vec::new();
 
         for target in &targets {
-            let pdb_path_with_chain = pdb_dir.join(format!("{}_{}.pdb", target.pdb_id.to_lowercase(), target.chain));
+            let pdb_path_with_chain = pdb_dir.join(format!(
+                "{}_{}.pdb",
+                target.pdb_id.to_lowercase(),
+                target.chain
+            ));
             let pdb_path_no_chain = pdb_dir.join(format!("{}.pdb", target.pdb_id.to_lowercase()));
 
             let pdb_path = if pdb_path_with_chain.exists() {
@@ -178,10 +216,18 @@ fn main() -> Result<()> {
                 continue;
             };
 
-            let target_chain = if target.chain.is_empty() { None } else { Some(target.chain.as_str()) };
+            let target_chain = if target.chain.is_empty() {
+                None
+            } else {
+                Some(target.chain.as_str())
+            };
 
-            if let Ok((ca_pos, residue_names, kept_indices)) = parse_pdb_with_residues(&pdb_path, target_chain) {
-                if ca_pos.len() < 10 { continue; }
+            if let Ok((ca_pos, residue_names, kept_indices)) =
+                parse_pdb_with_residues(&pdb_path, target_chain)
+            {
+                if ca_pos.len() < 10 {
+                    continue;
+                }
 
                 let config = ChemistryGnmConfig {
                     cutoff: 9.0,
@@ -198,7 +244,8 @@ fn main() -> Result<()> {
                 let res_refs: Vec<&str> = residue_names.iter().map(|s| s.as_str()).collect();
                 let result = gnm.compute_rmsf(&ca_pos, &res_refs);
 
-                let aligned_exp: Vec<f64> = kept_indices.iter()
+                let aligned_exp: Vec<f64> = kept_indices
+                    .iter()
                     .filter_map(|&idx| target.md_rmsf.get(idx).copied())
                     .collect();
 
@@ -214,9 +261,18 @@ fn main() -> Result<()> {
         if !correlations.is_empty() {
             let mean = correlations.iter().sum::<f64>() / correlations.len() as f64;
             let delta = mean - 0.615; // vs Enhanced GNM baseline
-            let marker = if delta > 0.005 { "✅" } else if delta < -0.005 { "❌" } else { "  " };
+            let marker = if delta > 0.005 {
+                "✅"
+            } else if delta < -0.005 {
+                "❌"
+            } else {
+                "  "
+            };
 
-            println!("  {} {:25} ρ = {:.4}  Δ = {:+.4}", marker, name, mean, delta);
+            println!(
+                "  {} {:25} ρ = {:.4}  Δ = {:+.4}",
+                marker, name, mean, delta
+            );
         }
     }
 
@@ -264,7 +320,9 @@ fn compute_distance_weighted_rmsf(ca_positions: &[[f32; 3]], cutoff: f64, sigma:
     for k in 1..n {
         let idx = sorted_indices[k];
         let lambda = eigenvalues[idx];
-        if lambda.abs() < 1e-6 { continue; }
+        if lambda.abs() < 1e-6 {
+            continue;
+        }
 
         for i in 0..n {
             let v = eigenvectors[(i, idx)];
@@ -283,7 +341,10 @@ fn compute_distance_weighted_rmsf(ca_positions: &[[f32; 3]], cutoff: f64, sigma:
 }
 
 /// Parse PDB file and extract Cα positions with residue names
-fn parse_pdb_with_residues(path: &PathBuf, target_chain: Option<&str>) -> Result<(Vec<[f32; 3]>, Vec<String>, Vec<usize>)> {
+fn parse_pdb_with_residues(
+    path: &PathBuf,
+    target_chain: Option<&str>,
+) -> Result<(Vec<[f32; 3]>, Vec<String>, Vec<usize>)> {
     let content = fs::read_to_string(path)?;
     let mut positions = Vec::new();
     let mut residue_names = Vec::new();
@@ -292,31 +353,56 @@ fn parse_pdb_with_residues(path: &PathBuf, target_chain: Option<&str>) -> Result
     let mut target_chain_ca_index = 0usize;
 
     for line in content.lines() {
-        if !line.starts_with("ATOM") { continue; }
+        if !line.starts_with("ATOM") {
+            continue;
+        }
         let atom_name = line.get(12..16).unwrap_or("").trim();
-        if atom_name != "CA" { continue; }
+        if atom_name != "CA" {
+            continue;
+        }
 
         let chain_id = line.get(21..22).unwrap_or(" ");
         if let Some(target) = target_chain {
-            if chain_id != target { continue; }
+            if chain_id != target {
+                continue;
+            }
         }
 
         let current_index = target_chain_ca_index;
         target_chain_ca_index += 1;
 
         let alt_loc = line.get(16..17).unwrap_or(" ");
-        if alt_loc != " " && alt_loc != "A" { continue; }
+        if alt_loc != " " && alt_loc != "A" {
+            continue;
+        }
 
         let res_num = line.get(22..27).unwrap_or("0").trim();
         let res_key = format!("{}{}", chain_id, res_num);
-        if res_key == last_res_key { continue; }
+        if res_key == last_res_key {
+            continue;
+        }
         last_res_key = res_key;
 
         let res_name = line.get(17..20).unwrap_or("UNK").trim().to_string();
 
-        let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+        let x: f32 = line
+            .get(30..38)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let y: f32 = line
+            .get(38..46)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let z: f32 = line
+            .get(46..54)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
 
         positions.push([x, y, z]);
         residue_names.push(res_name);
@@ -327,7 +413,9 @@ fn parse_pdb_with_residues(path: &PathBuf, target_chain: Option<&str>) -> Result
 }
 
 fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
-    if x.len() != y.len() || x.is_empty() { return 0.0; }
+    if x.len() != y.len() || x.is_empty() {
+        return 0.0;
+    }
 
     let n = x.len() as f64;
     let mean_x = x.iter().sum::<f64>() / n;
@@ -345,6 +433,8 @@ fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
         var_y += dy * dy;
     }
 
-    if var_x < 1e-10 || var_y < 1e-10 { return 0.0; }
+    if var_x < 1e-10 || var_y < 1e-10 {
+        return 0.0;
+    }
     cov / (var_x.sqrt() * var_y.sqrt())
 }

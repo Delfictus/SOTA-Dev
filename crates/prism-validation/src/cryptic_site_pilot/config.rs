@@ -145,7 +145,7 @@ impl CrypticPilotConfig {
         Self {
             n_frames: 1000,
             steps_per_frame: 200,
-            grid_spacing: 0.5,        // Finer grid
+            grid_spacing: 0.5, // Finer grid
             n_representative_structures: 20,
             ..Default::default()
         }
@@ -168,8 +168,10 @@ impl CrypticPilotConfig {
         if self.min_open_frequency >= self.max_open_frequency {
             return Err("min_open_frequency must be less than max_open_frequency".into());
         }
-        if self.druggability_hydrophobic_weight + self.druggability_enclosure_weight
-            + self.druggability_hbond_weight > 1.01
+        if self.druggability_hydrophobic_weight
+            + self.druggability_enclosure_weight
+            + self.druggability_hbond_weight
+            > 1.01
         {
             return Err("druggability weights should sum to approximately 1.0".into());
         }

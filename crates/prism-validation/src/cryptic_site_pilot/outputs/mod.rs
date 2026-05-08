@@ -6,10 +6,10 @@
 //! - CSV data files
 //! - Contact residue lists
 
-pub mod pdb_writer;
-pub mod html_report;
 pub mod csv_outputs;
+pub mod html_report;
+pub mod pdb_writer;
 
-pub use pdb_writer::MultiModelPdbWriter;
+pub use csv_outputs::{write_contacts_csv, write_rmsf_csv};
 pub use html_report::ReportGenerator;
-pub use csv_outputs::{write_rmsf_csv, write_contacts_csv};
+pub use pdb_writer::MultiModelPdbWriter;

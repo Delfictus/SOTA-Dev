@@ -69,8 +69,7 @@ fn main() -> Result<()> {
         targets.truncate(args.max_proteins);
     }
 
-    println!("{}",
-             "=".repeat(80));
+    println!("{}", "=".repeat(80));
     println!("     AMBER ff14SB ALL-ATOM DYNAMICS BENCHMARK");
     println!("{}", "=".repeat(80));
     println!();
@@ -79,13 +78,20 @@ fn main() -> Result<()> {
     println!("    Save every:    {} steps", args.save_every);
     println!("    Temperature:   {} K", args.temperature);
     println!("    Timestep:      {} fs", args.timestep);
-    println!("    Integrator:    {}", if args.use_langevin { "Langevin (BAOAB)" } else { "HMC" });
+    println!(
+        "    Integrator:    {}",
+        if args.use_langevin {
+            "Langevin (BAOAB)"
+        } else {
+            "HMC"
+        }
+    );
     println!("    Proteins:      {}", targets.len());
     println!();
 
     // Import the AMBER dynamics module
+    use prism_physics::amber_dynamics::{AmberSimConfig, AmberSimulator};
     use prism_physics::amber_ff14sb::PdbAtom;
-    use prism_physics::amber_dynamics::{AmberSimulator, AmberSimConfig};
 
     let config = AmberSimConfig {
         temperature: args.temperature,
@@ -105,7 +111,11 @@ fn main() -> Result<()> {
     let overall_start = Instant::now();
 
     for (idx, target) in targets.iter().enumerate() {
-        let pdb_path_with_chain = pdb_dir.join(format!("{}_{}.pdb", target.pdb_id.to_lowercase(), target.chain));
+        let pdb_path_with_chain = pdb_dir.join(format!(
+            "{}_{}.pdb",
+            target.pdb_id.to_lowercase(),
+            target.chain
+        ));
         let pdb_path_no_chain = pdb_dir.join(format!("{}.pdb", target.pdb_id.to_lowercase()));
 
         let pdb_path = if pdb_path_with_chain.exists() {
@@ -113,19 +123,33 @@ fn main() -> Result<()> {
         } else if pdb_path_no_chain.exists() {
             pdb_path_no_chain
         } else {
-            eprintln!("  [{}/{}] {} - PDB not found, skipping", idx + 1, targets.len(), target.pdb_id);
+            eprintln!(
+                "  [{}/{}] {} - PDB not found, skipping",
+                idx + 1,
+                targets.len(),
+                target.pdb_id
+            );
             failed += 1;
             continue;
         };
 
-        let target_chain = if target.chain.is_empty() { None } else { Some(target.chain.as_str()) };
+        let target_chain = if target.chain.is_empty() {
+            None
+        } else {
+            Some(target.chain.as_str())
+        };
 
         // Parse PDB to get atoms
         match parse_pdb_atoms(&pdb_path, target_chain) {
             Ok(atoms) => {
                 if atoms.len() < 50 {
-                    eprintln!("  [{}/{}] {} - Too few atoms ({}), skipping",
-                              idx + 1, targets.len(), target.pdb_id, atoms.len());
+                    eprintln!(
+                        "  [{}/{}] {} - Too few atoms ({}), skipping",
+                        idx + 1,
+                        targets.len(),
+                        target.pdb_id,
+                        atoms.len()
+                    );
                     failed += 1;
                     continue;
                 }
@@ -141,14 +165,16 @@ fn main() -> Result<()> {
                                 total_time += elapsed;
 
                                 // Get CA indices for comparison with experimental RMSF
-                                let ca_indices: Vec<usize> = atoms.iter()
+                                let ca_indices: Vec<usize> = atoms
+                                    .iter()
                                     .enumerate()
                                     .filter(|(_, a)| a.name.trim() == "CA")
                                     .map(|(i, _)| i)
                                     .collect();
 
                                 // Extract RMSF for CA atoms only
-                                let ca_rmsf: Vec<f64> = ca_indices.iter()
+                                let ca_rmsf: Vec<f64> = ca_indices
+                                    .iter()
                                     .filter_map(|&i| result.rmsf.get(i).copied())
                                     .collect();
 
@@ -159,35 +185,70 @@ fn main() -> Result<()> {
                                         correlations.push(corr);
                                         successful += 1;
 
-                                        let marker = if corr >= 0.5 { "+" } else if corr >= 0.3 { "~" } else { "-" };
+                                        let marker = if corr >= 0.5 {
+                                            "+"
+                                        } else if corr >= 0.3 {
+                                            "~"
+                                        } else {
+                                            "-"
+                                        };
                                         println!("  [{}/{}] {} {} {:>5} atoms, {:>4} CA  rho={:.3}  PE={:.1} kcal/mol  T={:.1}K  time={:.2}s",
                                                  idx + 1, targets.len(), marker, target.pdb_id,
                                                  atoms.len(), ca_rmsf.len(),
                                                  corr, result.avg_potential_energy, result.avg_temperature, elapsed);
                                     } else {
-                                        eprintln!("  [{}/{}] {} - Invalid correlation, skipping", idx + 1, targets.len(), target.pdb_id);
+                                        eprintln!(
+                                            "  [{}/{}] {} - Invalid correlation, skipping",
+                                            idx + 1,
+                                            targets.len(),
+                                            target.pdb_id
+                                        );
                                         failed += 1;
                                     }
                                 } else {
-                                    eprintln!("  [{}/{}] {} - Length mismatch (CA={}, exp={}), skipping",
-                                              idx + 1, targets.len(), target.pdb_id, ca_rmsf.len(), target.md_rmsf.len());
+                                    eprintln!(
+                                        "  [{}/{}] {} - Length mismatch (CA={}, exp={}), skipping",
+                                        idx + 1,
+                                        targets.len(),
+                                        target.pdb_id,
+                                        ca_rmsf.len(),
+                                        target.md_rmsf.len()
+                                    );
                                     failed += 1;
                                 }
                             }
                             Err(e) => {
-                                eprintln!("  [{}/{}] {} - Simulation failed: {}", idx + 1, targets.len(), target.pdb_id, e);
+                                eprintln!(
+                                    "  [{}/{}] {} - Simulation failed: {}",
+                                    idx + 1,
+                                    targets.len(),
+                                    target.pdb_id,
+                                    e
+                                );
                                 failed += 1;
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("  [{}/{}] {} - Initialization failed: {}", idx + 1, targets.len(), target.pdb_id, e);
+                        eprintln!(
+                            "  [{}/{}] {} - Initialization failed: {}",
+                            idx + 1,
+                            targets.len(),
+                            target.pdb_id,
+                            e
+                        );
                         failed += 1;
                     }
                 }
             }
             Err(e) => {
-                eprintln!("  [{}/{}] {} - Parse failed: {}", idx + 1, targets.len(), target.pdb_id, e);
+                eprintln!(
+                    "  [{}/{}] {} - Parse failed: {}",
+                    idx + 1,
+                    targets.len(),
+                    target.pdb_id,
+                    e
+                );
                 failed += 1;
             }
         }
@@ -207,15 +268,26 @@ fn main() -> Result<()> {
 
         println!();
         println!("  Mean Pearson rho:  {:.4}", mean_rho);
-        println!("  >= 0.5:            {}/{} ({:.1}%)", above_05, correlations.len(),
-                 100.0 * above_05 as f64 / correlations.len() as f64);
-        println!("  >= 0.3:            {}/{} ({:.1}%)", above_03, correlations.len(),
-                 100.0 * above_03 as f64 / correlations.len() as f64);
+        println!(
+            "  >= 0.5:            {}/{} ({:.1}%)",
+            above_05,
+            correlations.len(),
+            100.0 * above_05 as f64 / correlations.len() as f64
+        );
+        println!(
+            "  >= 0.3:            {}/{} ({:.1}%)",
+            above_03,
+            correlations.len(),
+            100.0 * above_03 as f64 / correlations.len() as f64
+        );
         println!();
         println!("  Successful:        {}", successful);
         println!("  Failed:            {}", failed);
         println!("  Total time:        {:.2}s", overall_elapsed);
-        println!("  Avg time/protein:  {:.2}s", total_time / successful as f64);
+        println!(
+            "  Avg time/protein:  {:.2}s",
+            total_time / successful as f64
+        );
     } else {
         println!();
         println!("  No successful simulations!");
@@ -228,7 +300,10 @@ fn main() -> Result<()> {
 }
 
 /// Parse PDB file and extract all atoms
-fn parse_pdb_atoms(path: &PathBuf, target_chain: Option<&str>) -> Result<Vec<prism_physics::amber_ff14sb::PdbAtom>> {
+fn parse_pdb_atoms(
+    path: &PathBuf,
+    target_chain: Option<&str>,
+) -> Result<Vec<prism_physics::amber_ff14sb::PdbAtom>> {
     use prism_physics::amber_ff14sb::PdbAtom;
 
     let content = fs::read_to_string(path)?;
@@ -236,23 +311,49 @@ fn parse_pdb_atoms(path: &PathBuf, target_chain: Option<&str>) -> Result<Vec<pri
     let mut atom_index = 0usize;
 
     for line in content.lines() {
-        if !line.starts_with("ATOM") { continue; }
+        if !line.starts_with("ATOM") {
+            continue;
+        }
 
-        let chain_id = line.get(21..22).unwrap_or(" ").chars().next().unwrap_or(' ');
+        let chain_id = line
+            .get(21..22)
+            .unwrap_or(" ")
+            .chars()
+            .next()
+            .unwrap_or(' ');
         if let Some(target) = target_chain {
-            if chain_id.to_string() != target { continue; }
+            if chain_id.to_string() != target {
+                continue;
+            }
         }
 
         // Skip alternate conformations except A
         let alt_loc = line.get(16..17).unwrap_or(" ");
-        if alt_loc != " " && alt_loc != "A" { continue; }
+        if alt_loc != " " && alt_loc != "A" {
+            continue;
+        }
 
         let name = line.get(12..16).unwrap_or("    ").to_string();
         let residue_name = line.get(17..20).unwrap_or("UNK").trim().to_string();
         let residue_id: i32 = line.get(22..26).unwrap_or("0").trim().parse().unwrap_or(0);
-        let x: f32 = line.get(30..38).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let y: f32 = line.get(38..46).unwrap_or("0").trim().parse().unwrap_or(0.0);
-        let z: f32 = line.get(46..54).unwrap_or("0").trim().parse().unwrap_or(0.0);
+        let x: f32 = line
+            .get(30..38)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let y: f32 = line
+            .get(38..46)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
+        let z: f32 = line
+            .get(46..54)
+            .unwrap_or("0")
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
 
         atoms.push(PdbAtom {
             index: atom_index,
@@ -260,7 +361,9 @@ fn parse_pdb_atoms(path: &PathBuf, target_chain: Option<&str>) -> Result<Vec<pri
             residue_name,
             residue_id,
             chain_id,
-            x, y, z,
+            x,
+            y,
+            z,
         });
         atom_index += 1;
     }
@@ -270,7 +373,9 @@ fn parse_pdb_atoms(path: &PathBuf, target_chain: Option<&str>) -> Result<Vec<pri
 
 /// Pearson correlation coefficient
 fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
-    if x.len() != y.len() || x.is_empty() { return 0.0; }
+    if x.len() != y.len() || x.is_empty() {
+        return 0.0;
+    }
 
     let n = x.len() as f64;
     let mean_x = x.iter().sum::<f64>() / n;
@@ -288,6 +393,8 @@ fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
         var_y += dy * dy;
     }
 
-    if var_x < 1e-10 || var_y < 1e-10 { return 0.0; }
+    if var_x < 1e-10 || var_y < 1e-10 {
+        return 0.0;
+    }
     cov / (var_x.sqrt() * var_y.sqrt())
 }

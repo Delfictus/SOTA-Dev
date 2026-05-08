@@ -61,7 +61,10 @@ fn main() -> Result<()> {
     println!("\n╔══════════════════════════════════════════════════════════════════╗");
     println!("║                    VALIDATION COMPLETE                           ║");
     println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║  Overall pass rate: {:.1}%", summary.overall_pass_rate * 100.0);
+    println!(
+        "║  Overall pass rate: {:.1}%",
+        summary.overall_pass_rate * 100.0
+    );
     println!("║  Overall score:     {:.1}/100", summary.overall_score);
     println!("║  Results saved to:  {:?}", results_path);
     println!("╚══════════════════════════════════════════════════════════════════╝");
@@ -69,7 +72,10 @@ fn main() -> Result<()> {
     for bench_summary in &summary.benchmark_summaries {
         println!("\n  {} Benchmark:", bench_summary.benchmark);
         println!("    Pass rate: {:.1}%", bench_summary.pass_rate * 100.0);
-        println!("    Mean score: {:.1} ± {:.1}", bench_summary.mean_score, bench_summary.std_score);
+        println!(
+            "    Mean score: {:.1} ± {:.1}",
+            bench_summary.mean_score, bench_summary.std_score
+        );
         println!("    Best: {}", bench_summary.best_target);
         println!("    Worst: {}", bench_summary.worst_target);
     }

@@ -19,9 +19,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     log::info!("==============================================");
     log::info!("  PROTEIN EXPLICIT SOLVENT TEST (1ABA)");
@@ -60,10 +58,13 @@ fn run_protein_solvent_test() -> Result<()> {
 
     // Simple PDB parser
     fn parse_pdb(content: &str) -> Vec<PdbAtom> {
-        content.lines()
+        content
+            .lines()
             .filter(|line| line.starts_with("ATOM"))
             .filter_map(|line| {
-                if line.len() < 54 { return None; }
+                if line.len() < 54 {
+                    return None;
+                }
                 let name = line[12..16].trim().to_string();
                 let x: f32 = line[30..38].trim().parse().ok()?;
                 let y: f32 = line[38..46].trim().parse().ok()?;
@@ -85,10 +86,10 @@ fn run_protein_solvent_test() -> Result<()> {
     // - γ = 0.3 fs⁻¹: T = 1.64× target (too hot)
     // - γ = 0.5 fs⁻¹: Testing...
     //
-    const DT: f32 = 0.25;          // fs - smaller timestep for stability
-    const GAMMA: f32 = 0.5;        // fs⁻¹ = 500 ps⁻¹ - very strong damping for protein
+    const DT: f32 = 0.25; // fs - smaller timestep for stability
+    const GAMMA: f32 = 0.5; // fs⁻¹ = 500 ps⁻¹ - very strong damping for protein
     const TEMPERATURE: f32 = 310.0; // K - physiological
-    const N_STEPS: usize = 1000;   // 0.25 ps - quick test
+    const N_STEPS: usize = 1000; // 0.25 ps - quick test
 
     // ========================================================================
     // STEP 1: Load protein from PDB
@@ -96,8 +97,7 @@ fn run_protein_solvent_test() -> Result<()> {
     log::info!("Step 1: Loading protein structure...");
 
     let pdb_path = "/home/diddy/Desktop/PRISM4D-bio/data/atlas/pdb/1aba.pdb";
-    let pdb_content = fs::read_to_string(pdb_path)
-        .context("Failed to read PDB file")?;
+    let pdb_content = fs::read_to_string(pdb_path).context("Failed to read PDB file")?;
     let pdb_atoms = parse_pdb(&pdb_content);
     let n_protein_atoms = pdb_atoms.len();
 
@@ -109,8 +109,8 @@ fn run_protein_solvent_test() -> Result<()> {
     // STEP 2: Initialize GPU
     // ========================================================================
     log::info!("Step 2: Initializing GPU...");
-    let context = CudaContext::new(0)
-        .context("Failed to create CUDA context - is a GPU available?")?;
+    let context =
+        CudaContext::new(0).context("Failed to create CUDA context - is a GPU available?")?;
     let context = Arc::new(context);
     log::info!("  ✓ GPU initialized");
 
@@ -158,8 +158,8 @@ fn run_protein_solvent_test() -> Result<()> {
         let charge = match atom.name.as_str() {
             "N" => -0.4,
             "O" => -0.5,
-            "NZ" => 1.0,  // Lysine amine
-            "OD1" | "OD2" | "OE1" | "OE2" => -0.8,  // Carboxylates
+            "NZ" => 1.0,                           // Lysine amine
+            "OD1" | "OD2" | "OE1" | "OE2" => -0.8, // Carboxylates
             name if name.starts_with("H") => 0.2,
             _ => 0.0,
         };
@@ -168,12 +168,12 @@ fn run_protein_solvent_test() -> Result<()> {
 
     // Create solvation box with reasonable padding
     let config = SolvationConfig {
-        padding: 10.0,              // 10 Å padding around protein
-        min_protein_distance: 2.8,  // Min distance from protein to water O
-        min_water_distance: 2.8,    // Min distance between water O atoms
-        target_density: 0.997,      // g/cm³
-        max_box_dimension: 60.0,    // Max box size (protein is ~30Å)
-        salt_concentration: 0.0,    // No ions for simplicity
+        padding: 10.0,             // 10 Å padding around protein
+        min_protein_distance: 2.8, // Min distance from protein to water O
+        min_water_distance: 2.8,   // Min distance between water O atoms
+        target_density: 0.997,     // g/cm³
+        max_box_dimension: 60.0,   // Max box size (protein is ~30Å)
+        salt_concentration: 0.0,   // No ions for simplicity
     };
 
     let mut solvbox = SolvationBox::from_protein(
@@ -189,8 +189,12 @@ fn run_protein_solvent_test() -> Result<()> {
     log::info!("  - Protein atoms: {}", n_protein_atoms);
     log::info!("  - Waters added: {} ({} atoms)", n_waters, n_waters * 3);
     log::info!("  - Ions: {} Na+, {} Cl-", n_na, n_cl);
-    log::info!("  - Box: {:.1} × {:.1} × {:.1} Å",
-        solvbox.box_dimensions[0], solvbox.box_dimensions[1], solvbox.box_dimensions[2]);
+    log::info!(
+        "  - Box: {:.1} × {:.1} × {:.1} Å",
+        solvbox.box_dimensions[0],
+        solvbox.box_dimensions[1],
+        solvbox.box_dimensions[2]
+    );
     log::info!("  - Total atoms: {}", solvbox.total_atoms);
     log::info!("  ✓ System solvated");
 
@@ -211,26 +215,42 @@ fn run_protein_solvent_test() -> Result<()> {
     }
 
     // Convert topology to flat arrays
-    let bonds: Vec<(usize, usize, f32, f32)> = topology.bonds.iter()
+    let bonds: Vec<(usize, usize, f32, f32)> = topology
+        .bonds
+        .iter()
         .zip(topology.bond_params.iter())
         .map(|((i, j), p)| (*i as usize, *j as usize, p.k, p.r0))
         .collect();
 
-    let angles: Vec<(usize, usize, usize, f32, f32)> = topology.angles.iter()
+    let angles: Vec<(usize, usize, usize, f32, f32)> = topology
+        .angles
+        .iter()
         .zip(topology.angle_params.iter())
         .map(|((i, j, k), p)| (*i as usize, *j as usize, *k as usize, p.k, p.theta0))
         .collect();
 
-    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology.dihedrals.iter()
+    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = topology
+        .dihedrals
+        .iter()
         .zip(topology.dihedral_params.iter())
         .filter_map(|((i, j, k, l), params)| {
             params.first().map(|p| {
-                (*i as usize, *j as usize, *k as usize, *l as usize, p.k, p.n as f32, p.phase)
+                (
+                    *i as usize,
+                    *j as usize,
+                    *k as usize,
+                    *l as usize,
+                    p.k,
+                    p.n as f32,
+                    p.phase,
+                )
             })
         })
         .collect();
 
-    let nb_params: Vec<(f32, f32, f32, f32)> = topology.lj_params.iter()
+    let nb_params: Vec<(f32, f32, f32, f32)> = topology
+        .lj_params
+        .iter()
         .zip(topology.charges.iter())
         .zip(topology.masses.iter())
         .map(|((lj, &q), &m)| {
@@ -250,7 +270,14 @@ fn run_protein_solvent_test() -> Result<()> {
     log::info!("Step 5: Initializing GPU HMC...");
 
     let mut hmc = AmberMegaFusedHmc::new(Arc::clone(&context), topology.n_atoms)?;
-    hmc.upload_topology(&positions, &bonds, &angles, &dihedrals, &nb_params, &exclusions)?;
+    hmc.upload_topology(
+        &positions,
+        &bonds,
+        &angles,
+        &dihedrals,
+        &nb_params,
+        &exclusions,
+    )?;
 
     log::info!("  ✓ Topology uploaded to GPU");
 
@@ -297,16 +324,26 @@ fn run_protein_solvent_test() -> Result<()> {
     log::info!("    - Timestep: {} fs", DT);
     log::info!("    - Friction: {} fs⁻¹ ({} ps⁻¹)", GAMMA, GAMMA * 1000.0);
     log::info!("    - Temperature: {} K", TEMPERATURE);
-    log::info!("    - Simulation time: {:.2} ps", N_STEPS as f32 * DT / 1000.0);
+    log::info!(
+        "    - Simulation time: {:.2} ps",
+        N_STEPS as f32 * DT / 1000.0
+    );
     log::info!("");
 
-    let result = hmc.run(N_STEPS, DT, TEMPERATURE, GAMMA)
+    let result = hmc
+        .run(N_STEPS, DT, TEMPERATURE, GAMMA)
         .context("HMC run failed")?;
 
     log::info!("");
     log::info!("  Results:");
-    log::info!("    - Potential Energy: {:.2} kcal/mol", result.potential_energy);
-    log::info!("    - Kinetic Energy: {:.2} kcal/mol", result.kinetic_energy);
+    log::info!(
+        "    - Potential Energy: {:.2} kcal/mol",
+        result.potential_energy
+    );
+    log::info!(
+        "    - Kinetic Energy: {:.2} kcal/mol",
+        result.kinetic_energy
+    );
     log::info!("    - Average Temperature: {:.1} K", result.avg_temperature);
 
     // ========================================================================
@@ -321,26 +358,43 @@ fn run_protein_solvent_test() -> Result<()> {
     let temp_ratio = result.avg_temperature / TEMPERATURE as f64;
     let temp_ok = temp_ratio > 0.8 && temp_ratio < 1.2;
     if temp_ok {
-        log::info!("  ✓ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
-            result.avg_temperature, TEMPERATURE, temp_ratio);
+        log::info!(
+            "  ✓ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
+            result.avg_temperature,
+            TEMPERATURE,
+            temp_ratio
+        );
     } else {
-        log::warn!("  ✗ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
-            result.avg_temperature, TEMPERATURE, temp_ratio);
+        log::warn!(
+            "  ✗ Temperature: {:.1} K (target: {} K, ratio: {:.2})",
+            result.avg_temperature,
+            TEMPERATURE,
+            temp_ratio
+        );
         all_passed = false;
     }
 
     // Energy check: not exploded
     let energy_ok = result.potential_energy.abs() < 1e7;
     if energy_ok {
-        log::info!("  ✓ Energy bounded: {:.2} kcal/mol", result.potential_energy);
+        log::info!(
+            "  ✓ Energy bounded: {:.2} kcal/mol",
+            result.potential_energy
+        );
     } else {
-        log::warn!("  ✗ Energy exploded: {:.2} kcal/mol", result.potential_energy);
+        log::warn!(
+            "  ✗ Energy exploded: {:.2} kcal/mol",
+            result.potential_energy
+        );
         all_passed = false;
     }
 
     // Check constraints
     if let Some(ref settle) = hmc.settle() {
-        log::info!("  ✓ SETTLE constraints active ({} waters)", settle.n_waters());
+        log::info!(
+            "  ✓ SETTLE constraints active ({} waters)",
+            settle.n_waters()
+        );
     }
 
     if hmc.is_explicit_solvent() {

@@ -35,9 +35,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
 
-    use prism_validation::cryptic_production::{
-        ProductionCrypticDetector, parse_pdb_simple,
-    };
+    use prism_validation::cryptic_production::{parse_pdb_simple, ProductionCrypticDetector};
 
     println!("{}", "=".repeat(80));
     println!("  PRODUCTION-QUALITY CRYPTIC SITE DETECTION");
@@ -47,7 +45,8 @@ fn main() -> Result<()> {
 
     // Read PDB
     let content = fs::read_to_string(&args.pdb)?;
-    let pdb_name = args.pdb
+    let pdb_name = args
+        .pdb
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
@@ -80,25 +79,32 @@ fn main() -> Result<()> {
     println!();
     println!("  Residues:         {}", result.n_residues);
     println!("  Candidates:       {}", result.n_candidates);
-    println!("  Time:             {:.2} ms", elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  Time:             {:.2} ms",
+        elapsed.as_secs_f64() * 1000.0
+    );
     println!();
 
     if result.candidates.is_empty() {
         println!("  No cryptic sites detected.");
     } else {
         println!("  CRYPTIC SITE CANDIDATES:");
-        println!("  {:<5} {:<10} {:<8} {:<8} {:<8} {:<10}",
-                 "Rank", "Score", "GNM", "Packing", "Hydro", "SASA");
+        println!(
+            "  {:<5} {:<10} {:<8} {:<8} {:<8} {:<10}",
+            "Rank", "Score", "GNM", "Packing", "Hydro", "SASA"
+        );
         println!("  {}", "-".repeat(55));
 
         for c in &result.candidates {
-            println!("  {:<5} {:<10.3} {:<8.3} {:<8.3} {:<8.3} {:<10.1}",
-                     c.rank,
-                     c.cryptic_score,
-                     c.gnm_flexibility,
-                     c.packing_deficit,
-                     c.hydrophobicity,
-                     c.sasa);
+            println!(
+                "  {:<5} {:<10.3} {:<8.3} {:<8.3} {:<8.3} {:<10.1}",
+                c.rank,
+                c.cryptic_score,
+                c.gnm_flexibility,
+                c.packing_deficit,
+                c.hydrophobicity,
+                c.sasa
+            );
 
             if args.verbose {
                 println!("        Residues: {:?}", c.residues);

@@ -67,11 +67,11 @@ impl Default for AnmEnsembleConfig {
         Self {
             cutoff: 15.0,
             gamma: 1.0,
-            temperature: 310.0,  // Body temperature
+            temperature: 310.0, // Body temperature
             n_conformations: 50,
             n_modes: 15,
             amplitude_scale: 1.0,
-            max_displacement: 5.0,  // 5Å max displacement
+            max_displacement: 5.0, // 5Å max displacement
             seed: None,
         }
     }
@@ -181,14 +181,17 @@ impl AnmEnsembleGenerator {
         let kt = kb * self.config.temperature;
 
         for conf_idx in 0..self.config.n_conformations {
-            let (new_coords, amplitudes) =
-                self.sample_conformation(ca_positions, &decomp, kt)?;
+            let (new_coords, amplitudes) = self.sample_conformation(ca_positions, &decomp, kt)?;
 
             conformations.push(new_coords);
             mode_amplitudes.push(amplitudes);
 
             if (conf_idx + 1) % 10 == 0 {
-                log::debug!("Generated conformation {}/{}", conf_idx + 1, self.config.n_conformations);
+                log::debug!(
+                    "Generated conformation {}/{}",
+                    conf_idx + 1,
+                    self.config.n_conformations
+                );
             }
         }
 
@@ -311,7 +314,8 @@ impl AnmEnsembleGenerator {
             .enumerate()
             .map(|(i, &v)| (i, v))
             .collect();
-        indexed_eigenvalues.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        indexed_eigenvalues
+            .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Skip first 6 modes (rigid-body: 3 translations + 3 rotations)
         // Only keep modes with positive eigenvalues
@@ -357,7 +361,8 @@ impl AnmEnsembleGenerator {
             let sigma = (kt / lambda).sqrt() * self.config.amplitude_scale;
 
             // Sample from Gaussian
-            let normal = Normal::new(0.0, sigma).map_err(|e| anyhow!("Invalid normal dist: {}", e))?;
+            let normal =
+                Normal::new(0.0, sigma).map_err(|e| anyhow!("Invalid normal dist: {}", e))?;
             let amplitude: f64 = self.rng.sample(normal);
             amplitudes.push(amplitude);
 
@@ -392,7 +397,10 @@ impl AnmEnsembleGenerator {
         }
 
         if any_clamped {
-            log::trace!("Clamped some displacements to max {:.1}Å", self.config.max_displacement);
+            log::trace!(
+                "Clamped some displacements to max {:.1}Å",
+                self.config.max_displacement
+            );
         }
 
         Ok((new_coords, amplitudes))
@@ -542,11 +550,7 @@ mod tests {
         (0..n)
             .map(|i| {
                 let angle = 2.0 * std::f32::consts::PI * i as f32 / residues_per_turn;
-                [
-                    radius * angle.cos(),
-                    radius * angle.sin(),
-                    rise * i as f32,
-                ]
+                [radius * angle.cos(), radius * angle.sin(), rise * i as f32]
             })
             .collect()
     }

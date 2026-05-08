@@ -77,12 +77,12 @@ impl Default for AnmEnsembleConfigV2 {
         Self {
             cutoff: 15.0,
             gamma: 1.0,
-            temperature: 310.0,  // Body temperature
+            temperature: 310.0, // Body temperature
             // v2 ENHANCED DEFAULTS:
-            n_conformations: 100,    // v1: 50 → v2: 100
-            n_modes: 30,             // v1: 15 → v2: 30
-            amplitude_scale: 5.0,    // v1: 1.0 → v2: 5.0
-            max_displacement: 8.0,   // v1: 5.0 → v2: 8.0
+            n_conformations: 100,  // v1: 50 → v2: 100
+            n_modes: 30,           // v1: 15 → v2: 30
+            amplitude_scale: 5.0,  // v1: 1.0 → v2: 5.0
+            max_displacement: 8.0, // v1: 5.0 → v2: 8.0
             seed: None,
         }
     }
@@ -209,14 +209,17 @@ impl AnmEnsembleGeneratorV2 {
         let kt = kb * self.config.temperature;
 
         for conf_idx in 0..self.config.n_conformations {
-            let (new_coords, amplitudes) =
-                self.sample_conformation(ca_positions, &decomp, kt)?;
+            let (new_coords, amplitudes) = self.sample_conformation(ca_positions, &decomp, kt)?;
 
             conformations.push(new_coords);
             mode_amplitudes.push(amplitudes);
 
             if (conf_idx + 1) % 20 == 0 {
-                log::debug!("[ANM v2] Generated conformation {}/{}", conf_idx + 1, self.config.n_conformations);
+                log::debug!(
+                    "[ANM v2] Generated conformation {}/{}",
+                    conf_idx + 1,
+                    self.config.n_conformations
+                );
             }
         }
 
@@ -344,7 +347,8 @@ impl AnmEnsembleGeneratorV2 {
             .enumerate()
             .map(|(i, &v)| (i, v))
             .collect();
-        indexed_eigenvalues.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        indexed_eigenvalues
+            .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Skip first 6 modes (rigid-body: 3 translations + 3 rotations)
         // Only keep modes with positive eigenvalues
@@ -390,7 +394,8 @@ impl AnmEnsembleGeneratorV2 {
             let sigma = (kt / lambda).sqrt() * self.config.amplitude_scale;
 
             // Sample from Gaussian
-            let normal = Normal::new(0.0, sigma).map_err(|e| anyhow!("Invalid normal dist: {}", e))?;
+            let normal =
+                Normal::new(0.0, sigma).map_err(|e| anyhow!("Invalid normal dist: {}", e))?;
             let amplitude: f64 = self.rng.sample(normal);
             amplitudes.push(amplitude);
 
@@ -425,7 +430,10 @@ impl AnmEnsembleGeneratorV2 {
         }
 
         if any_clamped {
-            log::trace!("[ANM v2] Clamped some displacements to max {:.1}Å", self.config.max_displacement);
+            log::trace!(
+                "[ANM v2] Clamped some displacements to max {:.1}Å",
+                self.config.max_displacement
+            );
         }
 
         Ok((new_coords, amplitudes))
@@ -608,7 +616,8 @@ impl AnmEnsembleV2 {
 
     /// v2: Get residue indices with high variance (potential cryptic sites)
     pub fn get_high_variance_residues(&self, percentile: f64) -> Vec<usize> {
-        let mut sorted_variance: Vec<(usize, f64)> = self.per_residue_variance
+        let mut sorted_variance: Vec<(usize, f64)> = self
+            .per_residue_variance
             .iter()
             .enumerate()
             .map(|(i, &v)| (i, v))
@@ -636,11 +645,7 @@ mod tests {
         (0..n)
             .map(|i| {
                 let angle = 2.0 * std::f32::consts::PI * i as f32 / residues_per_turn;
-                [
-                    radius * angle.cos(),
-                    radius * angle.sin(),
-                    rise * i as f32,
-                ]
+                [radius * angle.cos(), radius * angle.sin(), rise * i as f32]
             })
             .collect()
     }
@@ -668,8 +673,8 @@ mod tests {
         let config = AnmEnsembleConfigV2 {
             n_conformations: 10,
             n_modes: 5,
-            amplitude_scale: 5.0,  // v2 default
-            seed: Some(42), // Reproducible
+            amplitude_scale: 5.0, // v2 default
+            seed: Some(42),       // Reproducible
             ..Default::default()
         };
 
@@ -680,7 +685,11 @@ mod tests {
         assert_eq!(ensemble.conformations.len(), 10);
         assert!(ensemble.mean_rmsd > 0.0);
         // v2 should have larger RMSD than v1
-        assert!(ensemble.mean_rmsd > 1.0, "v2 mean RMSD should be > 1.0Å, got {:.2}Å", ensemble.mean_rmsd);
+        assert!(
+            ensemble.mean_rmsd > 1.0,
+            "v2 mean RMSD should be > 1.0Å, got {:.2}Å",
+            ensemble.mean_rmsd
+        );
     }
 
     #[test]

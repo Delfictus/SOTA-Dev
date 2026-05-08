@@ -20,16 +20,16 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::utils::{parse_pdb_simple, SimpleAtom, ShrakeRupleySASA};
-use crate::kabsch_alignment::{align_ensemble, compute_rmsf};
 use super::config::CrypticPilotConfig;
 use super::druggability::{DruggabilityScore, DruggabilityScorer};
-use super::volume_tracker::{VolumeFrame, VolumeTimeSeries, VolumeTracker};
+use super::outputs::csv_outputs::{
+    extract_contacts, write_contacts_csv, write_rmsf_csv, ContactResidue,
+};
 use super::outputs::html_report::{CrypticSiteReport, ReportGenerator, SimulationMetadata};
 use super::outputs::pdb_writer::MultiModelPdbWriter;
-use super::outputs::csv_outputs::{
-    write_rmsf_csv, write_contacts_csv, extract_contacts, ContactResidue
-};
+use super::utils::{parse_pdb_simple, ShrakeRupleySASA, SimpleAtom};
+use super::volume_tracker::{VolumeFrame, VolumeTimeSeries, VolumeTracker};
+use crate::kabsch_alignment::{align_ensemble, compute_rmsf};
 
 // GPU SASA support (conditional compilation)
 #[cfg(feature = "cryptic-gpu")]
@@ -121,10 +121,7 @@ impl CrypticPilotResult {
         // 6. Write HTML report
         self.write_html_report(output_dir, prefix)?;
 
-        log::info!(
-            "[PILOT] Wrote all outputs to {:?}",
-            output_dir
-        );
+        log::info!("[PILOT] Wrote all outputs to {:?}", output_dir);
 
         Ok(())
     }
@@ -134,24 +131,46 @@ impl CrypticPilotResult {
         let mut file = std::fs::File::create(&path)?;
 
         let mut writer = MultiModelPdbWriter::new(&format!("{} PRISM-4D Trajectory", prefix));
-        writer.set_ca_metadata(self.residue_names.clone(), self.chain_ids.first().copied().unwrap_or('A'));
+        writer.set_ca_metadata(
+            self.residue_names.clone(),
+            self.chain_ids.first().copied().unwrap_or('A'),
+        );
         writer.rmsf_as_bfactor = true;
 
         writer.write(&self.conformations, &mut file, Some(&self.rmsf))?;
 
-        log::info!("[PILOT] Wrote trajectory: {:?} ({} frames)", path, self.n_frames);
+        log::info!(
+            "[PILOT] Wrote trajectory: {:?} ({} frames)",
+            path,
+            self.n_frames
+        );
         Ok(())
     }
 
     fn write_site_pdbs(&self, output_dir: &Path, prefix: &str) -> Result<()> {
         for site in &self.cryptic_sites {
-            let path = output_dir.join(format!("{}_{}_open.pdb", prefix, site.site_id.replace(" ", "_")));
+            let path = output_dir.join(format!(
+                "{}_{}_open.pdb",
+                prefix,
+                site.site_id.replace(" ", "_")
+            ));
             let mut file = std::fs::File::create(&path)?;
 
-            let mut writer = MultiModelPdbWriter::new(&format!("{} {} Open Conformations", prefix, site.site_id));
-            writer.set_ca_metadata(self.residue_names.clone(), self.chain_ids.first().copied().unwrap_or('A'));
+            let mut writer = MultiModelPdbWriter::new(&format!(
+                "{} {} Open Conformations",
+                prefix, site.site_id
+            ));
+            writer.set_ca_metadata(
+                self.residue_names.clone(),
+                self.chain_ids.first().copied().unwrap_or('A'),
+            );
 
-            writer.write_selected(&self.conformations, &site.top_open_frames, &mut file, Some(&self.rmsf))?;
+            writer.write_selected(
+                &self.conformations,
+                &site.top_open_frames,
+                &mut file,
+                Some(&self.rmsf),
+            )?;
 
             log::info!("[PILOT] Wrote site PDB: {:?}", path);
         }
@@ -208,7 +227,11 @@ impl CrypticPilotResult {
 
     fn write_contacts_csv(&self, output_dir: &Path, prefix: &str) -> Result<()> {
         for site in &self.cryptic_sites {
-            let path = output_dir.join(format!("{}_{}_contacts.csv", prefix, site.site_id.replace(" ", "_")));
+            let path = output_dir.join(format!(
+                "{}_{}_contacts.csv",
+                prefix,
+                site.site_id.replace(" ", "_")
+            ));
             let mut file = std::fs::File::create(&path)?;
 
             write_contacts_csv(&mut file, &site.site_id, &site.contacts)?;
@@ -222,7 +245,8 @@ impl CrypticPilotResult {
         let path = output_dir.join(format!("{}_report.html", prefix));
         let mut file = std::fs::File::create(&path)?;
 
-        let generator = ReportGenerator::new(&format!("PRISM-4D Cryptic Site Analysis: {}", prefix));
+        let generator =
+            ReportGenerator::new(&format!("PRISM-4D Cryptic Site Analysis: {}", prefix));
 
         let metadata = SimulationMetadata {
             pdb_id: self.pdb_id.clone(),
@@ -235,8 +259,10 @@ impl CrypticPilotResult {
             rmsd_std: self.rmsd_std,
         };
 
-        let site_reports: Vec<CrypticSiteReport> = self.cryptic_sites.iter().map(|site| {
-            CrypticSiteReport {
+        let site_reports: Vec<CrypticSiteReport> = self
+            .cryptic_sites
+            .iter()
+            .map(|site| CrypticSiteReport {
                 site_id: site.site_id.clone(),
                 rank: site.rank,
                 residues: site.residues.clone(),
@@ -244,8 +270,8 @@ impl CrypticPilotResult {
                 volume_stats: site.volume_series.stats.clone(),
                 druggability: site.druggability.clone(),
                 representative_frame: site.representative_frame,
-            }
-        }).collect();
+            })
+            .collect();
 
         generator.generate(&mut file, &metadata, &site_reports)?;
 
@@ -280,18 +306,19 @@ impl CrypticPilotPipeline {
         let gpu_sasa = {
             // CudaContext::new() returns Arc<CudaContext>
             match cudarc::driver::CudaContext::new(0) {
-                Ok(context) => {
-                    match LcpoSasaGpu::new(context) {
-                        Ok(sasa) => {
-                            log::info!("[PILOT] GPU LCPO SASA calculator initialized");
-                            Some(sasa)
-                        }
-                        Err(e) => {
-                            log::warn!("[PILOT] Failed to init GPU SASA, falling back to CPU: {}", e);
-                            None
-                        }
+                Ok(context) => match LcpoSasaGpu::new(context) {
+                    Ok(sasa) => {
+                        log::info!("[PILOT] GPU LCPO SASA calculator initialized");
+                        Some(sasa)
                     }
-                }
+                    Err(e) => {
+                        log::warn!(
+                            "[PILOT] Failed to init GPU SASA, falling back to CPU: {}",
+                            e
+                        );
+                        None
+                    }
+                },
                 Err(e) => {
                     log::warn!("[PILOT] No CUDA device available, using CPU SASA: {}", e);
                     None
@@ -321,14 +348,18 @@ impl CrypticPilotPipeline {
 
         let start_time = std::time::Instant::now();
 
-        log::info!("[PILOT] Starting cryptic site analysis from topology: {}", topology_path);
+        log::info!(
+            "[PILOT] Starting cryptic site analysis from topology: {}",
+            topology_path
+        );
 
         // 1. Load prism-prep topology
         let topology = PrismTopology::load(Path::new(topology_path))
             .with_context(|| format!("Failed to load topology: {}", topology_path))?;
 
         let pdb_id = topology.get_pdb_id();
-        let input_hash = blake3::hash(std::fs::read(topology_path)?.as_slice()).to_hex()[..16].to_string();
+        let input_hash =
+            blake3::hash(std::fs::read(topology_path)?.as_slice()).to_hex()[..16].to_string();
 
         // Extract Cα data from topology
         let reference_coords = topology.get_ca_coordinates();
@@ -341,8 +372,12 @@ impl CrypticPilotPipeline {
             anyhow::bail!("Too few residues in topology: {}", n_residues);
         }
 
-        log::info!("[PILOT] Loaded {} residues ({} atoms) from sanitized topology: {}",
-            n_residues, topology.n_atoms, pdb_id);
+        log::info!(
+            "[PILOT] Loaded {} residues ({} atoms) from sanitized topology: {}",
+            n_residues,
+            topology.n_atoms,
+            pdb_id
+        );
 
         // Continue with common analysis pipeline, passing topology for GPU SASA
         self.run_analysis_pipeline_with_topology(
@@ -387,7 +422,8 @@ impl CrypticPilotPipeline {
         let input_hash = blake3::hash(pdb_content.as_bytes()).to_hex()[..16].to_string();
 
         // Extract Cα atoms
-        let ca_atoms: Vec<&SimpleAtom> = atoms.iter()
+        let ca_atoms: Vec<&SimpleAtom> = atoms
+            .iter()
             .filter(|a| a.name == "CA" && !a.is_hetatm)
             .collect();
 
@@ -402,7 +438,8 @@ impl CrypticPilotPipeline {
         let residue_names: Vec<String> = ca_atoms.iter().map(|a| a.residue_name.clone()).collect();
         let residue_ids: Vec<i32> = ca_atoms.iter().map(|a| a.residue_seq).collect();
         let chain_ids: Vec<char> = ca_atoms.iter().map(|a| a.chain_id).collect();
-        let reference_coords: Vec<[f32; 3]> = ca_atoms.iter()
+        let reference_coords: Vec<[f32; 3]> = ca_atoms
+            .iter()
             .map(|a| [a.coord[0] as f32, a.coord[1] as f32, a.coord[2] as f32])
             .collect();
 
@@ -443,9 +480,10 @@ impl CrypticPilotPipeline {
         let rmsf = compute_rmsf(&displacements);
 
         // Compute RMSD statistics
-        let rmsds: Vec<f64> = aligned_ensemble.iter().map(|conf| {
-            crate::kabsch_alignment::compute_rmsd(&reference_coords, conf)
-        }).collect();
+        let rmsds: Vec<f64> = aligned_ensemble
+            .iter()
+            .map(|conf| crate::kabsch_alignment::compute_rmsd(&reference_coords, conf))
+            .collect();
 
         let mean_rmsd = rmsds.iter().sum::<f64>() / rmsds.len() as f64;
         let rmsd_variance = rmsds.iter().map(|r| (r - mean_rmsd).powi(2)).sum::<f64>()
@@ -478,9 +516,12 @@ impl CrypticPilotPipeline {
                         ids.dedup();
                         ids
                     };
-                    residues.iter()
+                    residues
+                        .iter()
                         .filter_map(|&res_id| {
-                            unique_res_ids.iter().position(|&id| id == res_id)
+                            unique_res_ids
+                                .iter()
+                                .position(|&id| id == res_id)
                                 .and_then(|idx| res_sasa.get(idx))
                         })
                         .sum::<f64>()
@@ -508,65 +549,86 @@ impl CrypticPilotPipeline {
 
         // 5. Classify cryptic sites
         let cryptic_pockets = volume_tracker.get_cryptic_pockets();
-        let all_pockets: Vec<VolumeTimeSeries> = volume_tracker.get_all_pockets()
+        let all_pockets: Vec<VolumeTimeSeries> = volume_tracker
+            .get_all_pockets()
             .into_iter()
             .cloned()
             .collect();
 
-        log::info!("[PILOT] Found {} cryptic sites out of {} total pockets",
-            cryptic_pockets.len(), all_pockets.len());
+        log::info!(
+            "[PILOT] Found {} cryptic sites out of {} total pockets",
+            cryptic_pockets.len(),
+            all_pockets.len()
+        );
 
         // 6. Build cryptic site data
-        let mut cryptic_sites: Vec<CrypticSiteData> = cryptic_pockets.iter().enumerate().map(|(rank, pocket)| {
-            let rep_frame = pocket.stats.max_volume_frame;
-            let top_frames: Vec<usize> = pocket.get_top_open_frames(self.config.n_representative_structures)
-                .iter()
-                .map(|f| f.frame)
-                .collect();
+        let mut cryptic_sites: Vec<CrypticSiteData> = cryptic_pockets
+            .iter()
+            .enumerate()
+            .map(|(rank, pocket)| {
+                let rep_frame = pocket.stats.max_volume_frame;
+                let top_frames: Vec<usize> = pocket
+                    .get_top_open_frames(self.config.n_representative_structures)
+                    .iter()
+                    .map(|f| f.frame)
+                    .collect();
 
-            let centroid = self.compute_centroid(&aligned_ensemble[rep_frame], &pocket.defining_residues, &residue_ids);
+                let centroid = self.compute_centroid(
+                    &aligned_ensemble[rep_frame],
+                    &pocket.defining_residues,
+                    &residue_ids,
+                );
 
-            let pocket_residue_names: Vec<String> = pocket.defining_residues.iter()
-                .filter_map(|&res_id| {
-                    residue_ids.iter().position(|&r| r == res_id)
-                        .and_then(|idx| residue_names.get(idx).cloned())
-                })
-                .collect();
+                let pocket_residue_names: Vec<String> = pocket
+                    .defining_residues
+                    .iter()
+                    .filter_map(|&res_id| {
+                        residue_ids
+                            .iter()
+                            .position(|&r| r == res_id)
+                            .and_then(|idx| residue_names.get(idx).cloned())
+                    })
+                    .collect();
 
-            let druggability = self.druggability_scorer.score_simple(
-                &pocket_residue_names,
-                pocket.stats.mean_volume,
-            );
+                let druggability = self
+                    .druggability_scorer
+                    .score_simple(&pocket_residue_names, pocket.stats.mean_volume);
 
-            let coords_f64: Vec<[f64; 3]> = aligned_ensemble[rep_frame].iter()
-                .map(|c| [c[0] as f64, c[1] as f64, c[2] as f64])
-                .collect();
+                let coords_f64: Vec<[f64; 3]> = aligned_ensemble[rep_frame]
+                    .iter()
+                    .map(|c| [c[0] as f64, c[1] as f64, c[2] as f64])
+                    .collect();
 
-            let contacts = extract_contacts(
-                centroid,
-                &coords_f64,
-                &residue_ids,
-                &residue_names,
-                &chain_ids,
-                12.0,
-            );
+                let contacts = extract_contacts(
+                    centroid,
+                    &coords_f64,
+                    &residue_ids,
+                    &residue_names,
+                    &chain_ids,
+                    12.0,
+                );
 
-            CrypticSiteData {
-                site_id: format!("Site {}", rank + 1),
-                rank: rank + 1,
-                residues: pocket.defining_residues.clone(),
-                centroid,
-                volume_series: (*pocket).clone(),
-                druggability,
-                contacts,
-                representative_frame: rep_frame,
-                top_open_frames: top_frames,
-            }
-        }).collect();
+                CrypticSiteData {
+                    site_id: format!("Site {}", rank + 1),
+                    rank: rank + 1,
+                    residues: pocket.defining_residues.clone(),
+                    centroid,
+                    volume_series: (*pocket).clone(),
+                    druggability,
+                    contacts,
+                    representative_frame: rep_frame,
+                    top_open_frames: top_frames,
+                }
+            })
+            .collect();
 
         // Sort by druggability score
-        cryptic_sites.sort_by(|a, b| b.druggability.score.partial_cmp(&a.druggability.score)
-            .unwrap_or(std::cmp::Ordering::Equal));
+        cryptic_sites.sort_by(|a, b| {
+            b.druggability
+                .score
+                .partial_cmp(&a.druggability.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for (i, site) in cryptic_sites.iter_mut().enumerate() {
             site.rank = i + 1;
@@ -623,7 +685,11 @@ impl CrypticPilotPipeline {
         match gpu_sasa.compute(&positions, &atom_types, Some(&radii)) {
             Ok(result) => {
                 // Aggregate to per-residue
-                match gpu_sasa.aggregate_to_residues(&result.per_atom, &residue_map, topology.n_residues) {
+                match gpu_sasa.aggregate_to_residues(
+                    &result.per_atom,
+                    &residue_map,
+                    topology.n_residues,
+                ) {
                     Ok(residue_sasa) => {
                         log::info!("[PILOT] GPU SASA: total={:.1} Å², per-residue computed for {} residues",
                             result.total, residue_sasa.len());
@@ -666,9 +732,10 @@ impl CrypticPilotPipeline {
         let rmsf = compute_rmsf(&displacements);
 
         // Compute RMSD statistics
-        let rmsds: Vec<f64> = aligned_ensemble.iter().map(|conf| {
-            crate::kabsch_alignment::compute_rmsd(&reference_coords, conf)
-        }).collect();
+        let rmsds: Vec<f64> = aligned_ensemble
+            .iter()
+            .map(|conf| crate::kabsch_alignment::compute_rmsd(&reference_coords, conf))
+            .collect();
 
         let mean_rmsd = rmsds.iter().sum::<f64>() / rmsds.len() as f64;
         let rmsd_variance = rmsds.iter().map(|r| (r - mean_rmsd).powi(2)).sum::<f64>()
@@ -713,69 +780,90 @@ impl CrypticPilotPipeline {
 
         // 5. Classify cryptic sites
         let cryptic_pockets = volume_tracker.get_cryptic_pockets();
-        let all_pockets: Vec<VolumeTimeSeries> = volume_tracker.get_all_pockets()
+        let all_pockets: Vec<VolumeTimeSeries> = volume_tracker
+            .get_all_pockets()
             .into_iter()
             .cloned()
             .collect();
 
-        log::info!("[PILOT] Found {} cryptic sites out of {} total pockets",
-            cryptic_pockets.len(), all_pockets.len());
+        log::info!(
+            "[PILOT] Found {} cryptic sites out of {} total pockets",
+            cryptic_pockets.len(),
+            all_pockets.len()
+        );
 
         // 6. Build cryptic site data
-        let mut cryptic_sites: Vec<CrypticSiteData> = cryptic_pockets.iter().enumerate().map(|(rank, pocket)| {
-            // Get representative frame
-            let rep_frame = pocket.stats.max_volume_frame;
-            let top_frames: Vec<usize> = pocket.get_top_open_frames(self.config.n_representative_structures)
-                .iter()
-                .map(|f| f.frame)
-                .collect();
+        let mut cryptic_sites: Vec<CrypticSiteData> = cryptic_pockets
+            .iter()
+            .enumerate()
+            .map(|(rank, pocket)| {
+                // Get representative frame
+                let rep_frame = pocket.stats.max_volume_frame;
+                let top_frames: Vec<usize> = pocket
+                    .get_top_open_frames(self.config.n_representative_structures)
+                    .iter()
+                    .map(|f| f.frame)
+                    .collect();
 
-            // Compute centroid from defining residues
-            let centroid = self.compute_centroid(&aligned_ensemble[rep_frame], &pocket.defining_residues, &residue_ids);
+                // Compute centroid from defining residues
+                let centroid = self.compute_centroid(
+                    &aligned_ensemble[rep_frame],
+                    &pocket.defining_residues,
+                    &residue_ids,
+                );
 
-            // Get residue names for druggability
-            let pocket_residue_names: Vec<String> = pocket.defining_residues.iter()
-                .filter_map(|&res_id| {
-                    residue_ids.iter().position(|&r| r == res_id)
-                        .and_then(|idx| residue_names.get(idx).cloned())
-                })
-                .collect();
+                // Get residue names for druggability
+                let pocket_residue_names: Vec<String> = pocket
+                    .defining_residues
+                    .iter()
+                    .filter_map(|&res_id| {
+                        residue_ids
+                            .iter()
+                            .position(|&r| r == res_id)
+                            .and_then(|idx| residue_names.get(idx).cloned())
+                    })
+                    .collect();
 
-            let druggability = self.druggability_scorer.score_simple(
-                &pocket_residue_names,
-                pocket.stats.mean_volume,
-            );
+                let druggability = self
+                    .druggability_scorer
+                    .score_simple(&pocket_residue_names, pocket.stats.mean_volume);
 
-            // Extract contacts
-            let coords_f64: Vec<[f64; 3]> = aligned_ensemble[rep_frame].iter()
-                .map(|c| [c[0] as f64, c[1] as f64, c[2] as f64])
-                .collect();
+                // Extract contacts
+                let coords_f64: Vec<[f64; 3]> = aligned_ensemble[rep_frame]
+                    .iter()
+                    .map(|c| [c[0] as f64, c[1] as f64, c[2] as f64])
+                    .collect();
 
-            let contacts = extract_contacts(
-                centroid,
-                &coords_f64,
-                &residue_ids,
-                &residue_names,
-                &chain_ids,
-                12.0, // contact cutoff
-            );
+                let contacts = extract_contacts(
+                    centroid,
+                    &coords_f64,
+                    &residue_ids,
+                    &residue_names,
+                    &chain_ids,
+                    12.0, // contact cutoff
+                );
 
-            CrypticSiteData {
-                site_id: format!("Site {}", rank + 1),
-                rank: rank + 1,
-                residues: pocket.defining_residues.clone(),
-                centroid,
-                volume_series: (*pocket).clone(),
-                druggability,
-                contacts,
-                representative_frame: rep_frame,
-                top_open_frames: top_frames,
-            }
-        }).collect();
+                CrypticSiteData {
+                    site_id: format!("Site {}", rank + 1),
+                    rank: rank + 1,
+                    residues: pocket.defining_residues.clone(),
+                    centroid,
+                    volume_series: (*pocket).clone(),
+                    druggability,
+                    contacts,
+                    representative_frame: rep_frame,
+                    top_open_frames: top_frames,
+                }
+            })
+            .collect();
 
         // Sort by druggability score
-        cryptic_sites.sort_by(|a, b| b.druggability.score.partial_cmp(&a.druggability.score)
-            .unwrap_or(std::cmp::Ordering::Equal));
+        cryptic_sites.sort_by(|a, b| {
+            b.druggability
+                .score
+                .partial_cmp(&a.druggability.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Re-rank
         for (i, site) in cryptic_sites.iter_mut().enumerate() {
@@ -822,13 +910,17 @@ impl CrypticPilotPipeline {
     /// In production, this would use the SamplingBackend (NOVA/AMBER).
     /// For now, uses ANM for rapid prototyping.
     fn generate_ensemble(&self, reference: &[[f32; 3]]) -> Result<Vec<Vec<[f32; 3]>>> {
-        use crate::anm_ensemble_v2::{AnmEnsembleGeneratorV2, AnmEnsembleConfigV2};
+        use crate::anm_ensemble_v2::{AnmEnsembleConfigV2, AnmEnsembleGeneratorV2};
 
         let n_modes = 20.min(reference.len() - 1);
         let temperature = self.config.temperature_k;
 
-        log::info!("[PILOT] Generating ensemble: {} frames, {} modes, T={:.1}K",
-            self.config.n_frames, n_modes, temperature);
+        log::info!(
+            "[PILOT] Generating ensemble: {} frames, {} modes, T={:.1}K",
+            self.config.n_frames,
+            n_modes,
+            temperature
+        );
 
         let config = AnmEnsembleConfigV2 {
             n_conformations: self.config.n_frames,
@@ -839,7 +931,8 @@ impl CrypticPilotPipeline {
         };
 
         let mut generator = AnmEnsembleGeneratorV2::new(config);
-        let ensemble = generator.generate_ensemble(reference)
+        let ensemble = generator
+            .generate_ensemble(reference)
             .context("Failed to generate ANM ensemble")?;
 
         Ok(ensemble.conformations)
@@ -867,7 +960,9 @@ impl CrypticPilotPipeline {
             // Find neighbors
             let mut neighbors: Vec<usize> = Vec::new();
             for j in 0..n {
-                if i == j { continue; }
+                if i == j {
+                    continue;
+                }
                 let dx = coords[j][0] - center[0];
                 let dy = coords[j][1] - center[1];
                 let dz = coords[j][2] - center[2];
@@ -882,16 +977,14 @@ impl CrypticPilotPipeline {
                 let mut pocket_residues: Vec<i32> = vec![i as i32 + 1];
                 pocket_residues.extend(neighbors.iter().take(10).map(|&j| j as i32 + 1));
 
-                let centroid = [
-                    center[0] as f64,
-                    center[1] as f64,
-                    center[2] as f64,
-                ];
+                let centroid = [center[0] as f64, center[1] as f64, center[2] as f64];
 
                 // Estimate volume from neighbor count
                 let volume = (neighbors.len() as f64) * 25.0; // ~25 Å³ per contact
 
-                if volume >= self.config.min_pocket_volume && volume <= self.config.max_pocket_volume {
+                if volume >= self.config.min_pocket_volume
+                    && volume <= self.config.max_pocket_volume
+                {
                     pockets.push((centroid, volume, pocket_residues));
                 }
             }
@@ -916,17 +1009,23 @@ impl CrypticPilotPipeline {
         let mut used = vec![false; pockets.len()];
 
         for i in 0..pockets.len() {
-            if used[i] { continue; }
+            if used[i] {
+                continue;
+            }
 
             let mut current = pockets[i].clone();
             used[i] = true;
 
             // Find and merge overlapping pockets
             for j in (i + 1)..pockets.len() {
-                if used[j] { continue; }
+                if used[j] {
+                    continue;
+                }
 
                 // Check overlap
-                let overlap: usize = current.2.iter()
+                let overlap: usize = current
+                    .2
+                    .iter()
                     .filter(|r| pockets[j].2.contains(r))
                     .count();
 
@@ -963,7 +1062,8 @@ impl CrypticPilotPipeline {
 
     /// Compute SASA for pocket residues
     fn compute_pocket_sasa(&self, atoms: &[SimpleAtom], pocket_residues: &[i32]) -> f64 {
-        let pocket_atoms: Vec<SimpleAtom> = atoms.iter()
+        let pocket_atoms: Vec<SimpleAtom> = atoms
+            .iter()
             .filter(|a| pocket_residues.contains(&a.residue_seq) && !a.is_hetatm)
             .cloned()
             .collect();
@@ -1006,7 +1106,11 @@ impl CrypticPilotPipeline {
         }
 
         if count > 0 {
-            [sum[0] / count as f64, sum[1] / count as f64, sum[2] / count as f64]
+            [
+                sum[0] / count as f64,
+                sum[1] / count as f64,
+                sum[2] / count as f64,
+            ]
         } else {
             [0.0, 0.0, 0.0]
         }

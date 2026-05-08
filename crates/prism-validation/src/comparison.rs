@@ -3,7 +3,7 @@
 //! Functions for comparing PRISM-NOVA results against AlphaFold3
 //! predictions to demonstrate clear differentiation.
 
-use crate::{BenchmarkMetrics, Af3Comparison, ComparisonItem};
+use crate::{Af3Comparison, BenchmarkMetrics, ComparisonItem};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -37,11 +37,14 @@ impl Af3Prediction {
         let mut metrics = BenchmarkMetrics::default();
 
         // AF3 confidence as proxy for quality
-        metrics.custom.insert("model_confidence".to_string(), self.model_confidence as f64);
+        metrics
+            .custom
+            .insert("model_confidence".to_string(), self.model_confidence as f64);
 
         // Mean pLDDT
         if !self.plddt.is_empty() {
-            let mean_plddt: f64 = self.plddt.iter().map(|&x| x as f64).sum::<f64>() / self.plddt.len() as f64;
+            let mean_plddt: f64 =
+                self.plddt.iter().map(|&x| x as f64).sum::<f64>() / self.plddt.len() as f64;
             metrics.custom.insert("mean_plddt".to_string(), mean_plddt);
         }
 
@@ -95,8 +98,14 @@ impl ComparisonSummary {
     pub fn from_comparisons(comparisons: &[Af3Comparison]) -> Self {
         let n_targets = comparisons.len();
 
-        let prism_wins = comparisons.iter().filter(|c| c.winner == "PRISM-NOVA").count();
-        let af3_wins = comparisons.iter().filter(|c| c.winner == "AlphaFold3").count();
+        let prism_wins = comparisons
+            .iter()
+            .filter(|c| c.winner == "PRISM-NOVA")
+            .count();
+        let af3_wins = comparisons
+            .iter()
+            .filter(|c| c.winner == "AlphaFold3")
+            .count();
         let ties = n_targets - prism_wins - af3_wins;
 
         let prism_win_rate = if n_targets > 0 {
@@ -213,7 +222,9 @@ impl ComparisonSummary {
         }
 
         if total > 0 && static_wins as f64 / total as f64 > 0.5 {
-            strengths.push("Static structure prediction (when no conformational change needed)".to_string());
+            strengths.push(
+                "Static structure prediction (when no conformational change needed)".to_string(),
+            );
         }
 
         // Add known AF3 strengths
@@ -298,22 +309,20 @@ mod tests {
 
     #[test]
     fn test_comparison_summary() {
-        let comparisons = vec![
-            Af3Comparison {
-                target: "Target1".to_string(),
-                prism_metrics: BenchmarkMetrics::default(),
-                af3_metrics: None,
-                comparison: vec![ComparisonItem {
-                    metric: "RMSF Correlation".to_string(),
-                    prism_value: 0.8,
-                    af3_value: Some(0.2),
-                    winner: "PRISM-NOVA".to_string(),
-                    significance: "Critical".to_string(),
-                }],
+        let comparisons = vec![Af3Comparison {
+            target: "Target1".to_string(),
+            prism_metrics: BenchmarkMetrics::default(),
+            af3_metrics: None,
+            comparison: vec![ComparisonItem {
+                metric: "RMSF Correlation".to_string(),
+                prism_value: 0.8,
+                af3_value: Some(0.2),
                 winner: "PRISM-NOVA".to_string(),
-                advantage: "Dynamics".to_string(),
-            },
-        ];
+                significance: "Critical".to_string(),
+            }],
+            winner: "PRISM-NOVA".to_string(),
+            advantage: "Dynamics".to_string(),
+        }];
 
         let summary = ComparisonSummary::from_comparisons(&comparisons);
         assert_eq!(summary.prism_wins, 1);

@@ -34,10 +34,7 @@ use std::time::Instant;
 use anyhow::Result;
 use clap::Parser;
 
-use prism_validation::cryptic_site_pilot::{
-    CrypticPilotConfig,
-    CrypticPilotPipeline,
-};
+use prism_validation::cryptic_site_pilot::{CrypticPilotConfig, CrypticPilotPipeline};
 
 #[derive(Parser, Debug)]
 #[command(name = "cryptic-pilot")]
@@ -150,8 +147,14 @@ fn main() -> Result<()> {
     println!("  Output:       {}", args.output_dir.display());
     println!("  Frames:       {}", config.n_frames);
     println!("  Temperature:  {:.1} K", config.temperature_k);
-    println!("  CV Threshold: {:.0}%", config.cryptic_volume_cv_threshold * 100.0);
-    println!("  Volume:       {:.0} - {:.0} Å³", config.min_pocket_volume, config.max_pocket_volume);
+    println!(
+        "  CV Threshold: {:.0}%",
+        config.cryptic_volume_cv_threshold * 100.0
+    );
+    println!(
+        "  Volume:       {:.0} - {:.0} Å³",
+        config.min_pocket_volume, config.max_pocket_volume
+    );
     println!();
 
     // Create output directory
@@ -196,30 +199,43 @@ fn main() -> Result<()> {
     } else {
         println!("  DETECTED CRYPTIC SITES:");
         println!();
-        println!("  {:<6} {:<12} {:<10} {:<10} {:<10} {:<12}",
-                 "Rank", "Site ID", "Volume", "Open %", "Drug Score", "Class");
+        println!(
+            "  {:<6} {:<12} {:<10} {:<10} {:<10} {:<12}",
+            "Rank", "Site ID", "Volume", "Open %", "Drug Score", "Class"
+        );
         println!("  {}", "-".repeat(66));
 
         for site in &result.cryptic_sites {
-            println!("  {:<6} {:<12} {:<10.0} {:<10.0} {:<10.2} {:<12}",
-                     site.rank,
-                     site.site_id,
-                     site.volume_series.stats.mean_volume,
-                     site.volume_series.stats.open_frequency * 100.0,
-                     site.druggability.score,
-                     site.druggability.classification.name());
+            println!(
+                "  {:<6} {:<12} {:<10.0} {:<10.0} {:<10.2} {:<12}",
+                site.rank,
+                site.site_id,
+                site.volume_series.stats.mean_volume,
+                site.volume_series.stats.open_frequency * 100.0,
+                site.druggability.score,
+                site.druggability.classification.name()
+            );
 
             if args.verbose {
                 println!("         Residues:  {} residues", site.residues.len());
-                println!("         Centroid:  ({:.1}, {:.1}, {:.1}) Å",
-                         site.centroid[0], site.centroid[1], site.centroid[2]);
-                println!("         Breathing: {:.0} Å³ amplitude",
-                         site.volume_series.stats.breathing_amplitude);
-                println!("         Contacts:  {} residues for docking", site.contacts.len());
+                println!(
+                    "         Centroid:  ({:.1}, {:.1}, {:.1}) Å",
+                    site.centroid[0], site.centroid[1], site.centroid[2]
+                );
+                println!(
+                    "         Breathing: {:.0} Å³ amplitude",
+                    site.volume_series.stats.breathing_amplitude
+                );
+                println!(
+                    "         Contacts:  {} residues for docking",
+                    site.contacts.len()
+                );
                 println!("         Rep Frame: {}", site.representative_frame);
-                println!("         Affinity:  {:.1} - {:.1} kcal/mol (estimated)",
-                         site.druggability.estimated_affinity_range.0,
-                         site.druggability.estimated_affinity_range.1);
+                println!(
+                    "         Affinity:  {:.1} - {:.1} kcal/mol (estimated)",
+                    site.druggability.estimated_affinity_range.0,
+                    site.druggability.estimated_affinity_range.1
+                );
                 println!();
             }
         }
@@ -244,7 +260,11 @@ fn main() -> Result<()> {
             let path = entry.path();
             if let Ok(metadata) = entry.metadata() {
                 let size_kb = metadata.len() as f64 / 1024.0;
-                println!("    - {} ({:.1} KB)", path.file_name().unwrap().to_string_lossy(), size_kb);
+                println!(
+                    "    - {} ({:.1} KB)",
+                    path.file_name().unwrap().to_string_lossy(),
+                    size_kb
+                );
             }
         }
     }
@@ -255,22 +275,30 @@ fn main() -> Result<()> {
     println!("{}", "=".repeat(80));
     println!();
     println!("  Summary:");
-    println!("  - {} cryptic binding sites detected", result.cryptic_sites.len());
+    println!(
+        "  - {} cryptic binding sites detected",
+        result.cryptic_sites.len()
+    );
     if !result.cryptic_sites.is_empty() {
         let top_druggable = &result.cryptic_sites[0];
-        println!("  - Top druggable site: {} (score={:.2}, {})",
-                 top_druggable.site_id,
-                 top_druggable.druggability.score,
-                 top_druggable.druggability.classification.name());
+        println!(
+            "  - Top druggable site: {} (score={:.2}, {})",
+            top_druggable.site_id,
+            top_druggable.druggability.score,
+            top_druggable.druggability.classification.name()
+        );
     }
     println!("  - Results in: {}", args.output_dir.display());
     println!();
 
     // Validation hint for known targets
     let pdb_id_upper = result.pdb_id.to_uppercase();
-    if pdb_id_upper.contains("1BTL") || pdb_id_upper.contains("1A9U") ||
-       pdb_id_upper.contains("1M47") || pdb_id_upper.contains("1MAZ") ||
-       pdb_id_upper.contains("1H1W") {
+    if pdb_id_upper.contains("1BTL")
+        || pdb_id_upper.contains("1A9U")
+        || pdb_id_upper.contains("1M47")
+        || pdb_id_upper.contains("1MAZ")
+        || pdb_id_upper.contains("1H1W")
+    {
         println!("  ★ VALIDATION TARGET DETECTED");
         println!("    This is one of the 5 known cryptic site validation targets.");
         println!("    Please verify the detected sites match published locations.");

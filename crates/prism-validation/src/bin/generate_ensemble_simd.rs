@@ -32,7 +32,7 @@
 //! Plus batch summary:
 //! - `batch_summary.json`: Throughput statistics and per-structure metrics
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -207,8 +207,7 @@ fn main() -> Result<()> {
         bail!("No topology files provided");
     }
 
-    std::fs::create_dir_all(&args.output_dir)
-        .context("Failed to create output directory")?;
+    std::fs::create_dir_all(&args.output_dir).context("Failed to create output directory")?;
 
     if !args.quiet {
         println!("\n📊 SIMD Batch Configuration:");
@@ -219,12 +218,21 @@ fn main() -> Result<()> {
         println!("   Temperature: {} K", args.temperature);
         println!("   Timestep: {} fs", args.dt);
         if args.staged_eq {
-            println!("   Equilibration: {} steps (STAGED with temperature ramping)", args.equilibration);
+            println!(
+                "   Equilibration: {} steps (STAGED with temperature ramping)",
+                args.equilibration
+            );
         } else {
-            println!("   Equilibration: {} steps @ γ={} fs⁻¹", args.equilibration, args.eq_gamma);
+            println!(
+                "   Equilibration: {} steps @ γ={} fs⁻¹",
+                args.equilibration, args.eq_gamma
+            );
         }
         if args.restraint_k > 0.0 {
-            println!("   Position restraints: k={} kcal/(mol·Å²)", args.restraint_k);
+            println!(
+                "   Position restraints: k={} kcal/(mol·Å²)",
+                args.restraint_k
+            );
         } else {
             println!("   Position restraints: DISABLED");
         }
@@ -320,12 +328,36 @@ fn main() -> Result<()> {
                     charges: topo.charges.clone(),
                     sigmas: topo.lj_params.iter().map(|p| p.sigma).collect(),
                     epsilons: topo.lj_params.iter().map(|p| p.epsilon).collect(),
-                    bonds: topo.bonds.iter().map(|b| (b.i, b.j, b.force_k, b.r0)).collect(),
-                    angles: topo.angles.iter().map(|a| (a.i, a.j, a.k_idx, a.force_k, a.theta0)).collect(),
-                    dihedrals: topo.dihedrals.iter().map(|d| {
-                        (d.i, d.j, d.k_idx, d.l, d.force_k, d.periodicity as f32, d.phase)
-                    }).collect(),
-                    exclusions: topo.exclusions.iter().map(|e| e.iter().copied().collect()).collect(),
+                    bonds: topo
+                        .bonds
+                        .iter()
+                        .map(|b| (b.i, b.j, b.force_k, b.r0))
+                        .collect(),
+                    angles: topo
+                        .angles
+                        .iter()
+                        .map(|a| (a.i, a.j, a.k_idx, a.force_k, a.theta0))
+                        .collect(),
+                    dihedrals: topo
+                        .dihedrals
+                        .iter()
+                        .map(|d| {
+                            (
+                                d.i,
+                                d.j,
+                                d.k_idx,
+                                d.l,
+                                d.force_k,
+                                d.periodicity as f32,
+                                d.phase,
+                            )
+                        })
+                        .collect(),
+                    exclusions: topo
+                        .exclusions
+                        .iter()
+                        .map(|e| e.iter().copied().collect())
+                        .collect(),
                 };
 
                 batch.add_structure(&structure_topo)?;
@@ -353,7 +385,10 @@ fn main() -> Result<()> {
                 }
                 let final_pe = batch.minimize(args.minimize)?;
                 if !args.quiet {
-                    println!("   Minimization complete: avg PE = {:.2e} kcal/mol", final_pe);
+                    println!(
+                        "   Minimization complete: avg PE = {:.2e} kcal/mol",
+                        final_pe
+                    );
                 }
             }
 
@@ -375,7 +410,10 @@ fn main() -> Result<()> {
             // Equilibration with strong thermostat
             if args.equilibration > 0 {
                 if !args.quiet {
-                    println!("   Equilibrating {} steps (strong thermostat)...", args.equilibration);
+                    println!(
+                        "   Equilibrating {} steps (strong thermostat)...",
+                        args.equilibration
+                    );
                 }
                 let eq_steps = args.equilibration as usize;
                 if args.staged_eq {
@@ -383,14 +421,24 @@ fn main() -> Result<()> {
                     batch.equilibrate_staged(eq_steps, args.dt, args.temperature)?;
                 } else {
                     // Standard equilibration with custom friction
-                    batch.equilibrate_with_gamma(eq_steps, args.dt, args.temperature, args.eq_gamma)?;
+                    batch.equilibrate_with_gamma(
+                        eq_steps,
+                        args.dt,
+                        args.temperature,
+                        args.eq_gamma,
+                    )?;
                 }
             }
 
             // Save initial frame
             let initial_results = batch.get_all_results()?;
             for (i, result) in initial_results.iter().enumerate() {
-                write_pdb_model(&mut output_files[i], &batch_atom_infos[i], &result.positions, model_numbers[i])?;
+                write_pdb_model(
+                    &mut output_files[i],
+                    &batch_atom_infos[i],
+                    &result.positions,
+                    model_numbers[i],
+                )?;
                 model_numbers[i] += 1;
             }
 
@@ -399,17 +447,30 @@ fn main() -> Result<()> {
             let n_intervals = (production_steps / args.save_interval) as usize;
 
             if !args.quiet {
-                println!("   Production: {} steps, {} snapshots", production_steps, n_intervals);
+                println!(
+                    "   Production: {} steps, {} snapshots",
+                    production_steps, n_intervals
+                );
             }
 
             for interval in 0..n_intervals {
                 // Run interval
-                batch.run(args.save_interval as usize, args.dt, args.temperature, args.gamma)?;
+                batch.run(
+                    args.save_interval as usize,
+                    args.dt,
+                    args.temperature,
+                    args.gamma,
+                )?;
 
                 // Save snapshots
                 let results = batch.get_all_results()?;
                 for (i, result) in results.iter().enumerate() {
-                    write_pdb_model(&mut output_files[i], &batch_atom_infos[i], &result.positions, model_numbers[i])?;
+                    write_pdb_model(
+                        &mut output_files[i],
+                        &batch_atom_infos[i],
+                        &result.positions,
+                        model_numbers[i],
+                    )?;
                     model_numbers[i] += 1;
                 }
 
@@ -436,8 +497,10 @@ fn main() -> Result<()> {
                 });
 
                 if !args.quiet {
-                    println!("   ✓ {}: {} snapshots, T={:.1} K",
-                             batch_names[i], n_snaps, final_results[i].temperature);
+                    println!(
+                        "   ✓ {}: {} snapshots, T={:.1} K",
+                        batch_names[i], n_snaps, final_results[i].temperature
+                    );
                 }
             }
         }
@@ -468,8 +531,14 @@ fn main() -> Result<()> {
         println!("   Total atoms: {}", total_atoms);
         println!("   Total snapshots: {}", total_snapshots);
         println!("   Elapsed time: {:.2}s", elapsed);
-        println!("   Throughput: {:.2} structures/min", summary.throughput_structures_per_min);
-        println!("   Throughput: {:.2e} atom·steps/sec", summary.throughput_atoms_per_sec);
+        println!(
+            "   Throughput: {:.2} structures/min",
+            summary.throughput_structures_per_min
+        );
+        println!(
+            "   Throughput: {:.2e} atom·steps/sec",
+            summary.throughput_atoms_per_sec
+        );
         println!("\n📁 Output: {:?}", args.output_dir);
     }
 
@@ -521,42 +590,45 @@ fn generate_atom_info_from_masses(masses: &[f32]) -> Vec<AtomInfo> {
     let mut residue_id = 1;
     let mut atoms_in_residue = 0;
 
-    masses.iter().map(|&mass| {
-        let (element, name_prefix) = if mass < 1.5 {
-            ("H", "H")
-        } else if mass < 13.0 {
-            ("C", "C")
-        } else if mass < 15.0 {
-            ("N", "N")
-        } else if mass < 17.0 {
-            ("O", "O")
-        } else if mass < 33.0 {
-            ("S", "S")
-        } else {
-            ("X", "X")
-        };
+    masses
+        .iter()
+        .map(|&mass| {
+            let (element, name_prefix) = if mass < 1.5 {
+                ("H", "H")
+            } else if mass < 13.0 {
+                ("C", "C")
+            } else if mass < 15.0 {
+                ("N", "N")
+            } else if mass < 17.0 {
+                ("O", "O")
+            } else if mass < 33.0 {
+                ("S", "S")
+            } else {
+                ("X", "X")
+            };
 
-        *atom_count.entry(element).or_insert(0) += 1;
-        let count = atom_count[element];
+            *atom_count.entry(element).or_insert(0) += 1;
+            let count = atom_count[element];
 
-        let name = if count < 100 {
-            format!("{}{}", name_prefix, count)
-        } else {
-            format!("{}{}", name_prefix, count % 100)
-        };
+            let name = if count < 100 {
+                format!("{}{}", name_prefix, count)
+            } else {
+                format!("{}{}", name_prefix, count % 100)
+            };
 
-        atoms_in_residue += 1;
-        if atoms_in_residue > 20 && element != "H" {
-            residue_id += 1;
-            atoms_in_residue = 1;
-        }
+            atoms_in_residue += 1;
+            if atoms_in_residue > 20 && element != "H" {
+                residue_id += 1;
+                atoms_in_residue = 1;
+            }
 
-        AtomInfo {
-            name,
-            element: element.to_string(),
-            residue_name: "UNK".to_string(),
-            residue_id,
-            chain: "A".to_string(),
-        }
-    }).collect()
+            AtomInfo {
+                name,
+                element: element.to_string(),
+                residue_name: "UNK".to_string(),
+                residue_id,
+                chain: "A".to_string(),
+            }
+        })
+        .collect()
 }

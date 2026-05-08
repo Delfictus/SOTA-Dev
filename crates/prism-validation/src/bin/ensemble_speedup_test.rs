@@ -12,7 +12,7 @@
 //!     --steps 2000
 //! ```
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -141,7 +141,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "cuda")]
     {
         use cudarc::driver::CudaContext;
-        use prism_gpu::{AmberSimdBatch, StructureTopology, OptimizationConfig};
+        use prism_gpu::{AmberSimdBatch, OptimizationConfig, StructureTopology};
 
         // Initialize CUDA
         println!("\n🚀 Initializing CUDA...");
@@ -157,15 +157,23 @@ fn main() -> Result<()> {
         let structure_topo = convert_prism_prep_to_structure_topology(&prism_topo);
         let n_atoms = prism_topo.n_atoms;
 
-        println!("   ✓ {} atoms, {} bonds, {} angles, {} dihedrals",
-                 n_atoms, prism_topo.bonds.len(),
-                 prism_topo.angles.len(), prism_topo.dihedrals.len());
+        println!(
+            "   ✓ {} atoms, {} bonds, {} angles, {} dihedrals",
+            n_atoms,
+            prism_topo.bonds.len(),
+            prism_topo.angles.len(),
+            prism_topo.dihedrals.len()
+        );
 
         let mut results: Vec<SpeedupResult> = Vec::new();
 
         for &n_clones in &args.clones {
             println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            println!("  Testing {} clones ({} total atoms)", n_clones, n_atoms * n_clones);
+            println!(
+                "  Testing {} clones ({} total atoms)",
+                n_clones,
+                n_atoms * n_clones
+            );
             println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
             // Sequential baseline - run each clone one at a time
@@ -187,8 +195,11 @@ fn main() -> Result<()> {
             }
 
             let sequential_ms = seq_start.elapsed().as_secs_f64() * 1000.0;
-            println!("      Sequential: {:.1}ms ({:.1}ms per structure)",
-                     sequential_ms, sequential_ms / n_clones as f64);
+            println!(
+                "      Sequential: {:.1}ms ({:.1}ms per structure)",
+                sequential_ms,
+                sequential_ms / n_clones as f64
+            );
 
             // Batched parallel - all clones in single kernel
             println!("\n   🚀 Batched parallel (all {} at once)...", n_clones);
@@ -215,8 +226,10 @@ fn main() -> Result<()> {
             let effective_per_struct = batched_ms / n_clones as f64;
             let throughput = n_clones as f64 / (batched_ms / 1000.0);
 
-            println!("      Batched: {:.1}ms ({:.1}ms effective per structure)",
-                     batched_ms, effective_per_struct);
+            println!(
+                "      Batched: {:.1}ms ({:.1}ms effective per structure)",
+                batched_ms, effective_per_struct
+            );
             println!("      ✨ SPEEDUP: {:.2}×", speedup);
             println!("      Throughput: {:.1} structures/sec", throughput);
 
@@ -231,7 +244,8 @@ fn main() -> Result<()> {
         }
 
         // Find best speedup
-        let (best_speedup, best_n_clones) = results.iter()
+        let (best_speedup, best_n_clones) = results
+            .iter()
             .map(|r| (r.speedup, r.n_clones))
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
             .unwrap_or((0.0, 0));
@@ -244,18 +258,27 @@ fn main() -> Result<()> {
         println!("╠══════════════════════════════════════════════════════════════╣");
 
         for r in &results {
-            println!("║   {:>5} │ {:>9.1}ms │ {:>8.1}ms │ {:>6.2}× │ {:>6.1} structs/s ║",
-                     r.n_clones, r.sequential_ms, r.batched_ms,
-                     r.speedup, r.throughput_structures_per_sec);
+            println!(
+                "║   {:>5} │ {:>9.1}ms │ {:>8.1}ms │ {:>6.2}× │ {:>6.1} structs/s ║",
+                r.n_clones,
+                r.sequential_ms,
+                r.batched_ms,
+                r.speedup,
+                r.throughput_structures_per_sec
+            );
         }
 
         println!("╠══════════════════════════════════════════════════════════════╣");
-        println!("║   BEST: {:.2}× speedup with {} clones                       ║",
-                 best_speedup, best_n_clones);
+        println!(
+            "║   BEST: {:.2}× speedup with {} clones                       ║",
+            best_speedup, best_n_clones
+        );
         println!("╚══════════════════════════════════════════════════════════════╝");
 
         // Save report
-        let structure_name = args.topology.file_stem()
+        let structure_name = args
+            .topology
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
 
@@ -294,19 +317,37 @@ fn convert_prism_prep_to_structure_topology(
     let sigmas: Vec<f32> = prism_topo.lj_params.iter().map(|p| p.sigma).collect();
     let epsilons: Vec<f32> = prism_topo.lj_params.iter().map(|p| p.epsilon).collect();
 
-    let bonds: Vec<(usize, usize, f32, f32)> = prism_topo.bonds.iter()
+    let bonds: Vec<(usize, usize, f32, f32)> = prism_topo
+        .bonds
+        .iter()
         .map(|b| (b.i, b.j, b.k, b.r0))
         .collect();
 
-    let angles: Vec<(usize, usize, usize, f32, f32)> = prism_topo.angles.iter()
+    let angles: Vec<(usize, usize, usize, f32, f32)> = prism_topo
+        .angles
+        .iter()
         .map(|a| (a.i, a.j, a.k_idx, a.force_k, a.theta0))
         .collect();
 
-    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = prism_topo.dihedrals.iter()
-        .map(|d| (d.i, d.j, d.k_idx, d.l, d.force_k, d.periodicity as f32, d.phase))
+    let dihedrals: Vec<(usize, usize, usize, usize, f32, f32, f32)> = prism_topo
+        .dihedrals
+        .iter()
+        .map(|d| {
+            (
+                d.i,
+                d.j,
+                d.k_idx,
+                d.l,
+                d.force_k,
+                d.periodicity as f32,
+                d.phase,
+            )
+        })
         .collect();
 
-    let exclusions: Vec<HashSet<usize>> = prism_topo.exclusions.iter()
+    let exclusions: Vec<HashSet<usize>> = prism_topo
+        .exclusions
+        .iter()
         .map(|e| e.iter().cloned().collect())
         .collect();
 

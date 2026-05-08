@@ -11,8 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 
 use prism_validation::cryptic_sites::{
-    CrypticSiteConfig, CrypticSiteDetector, CrypticConfidence,
-    CrypticSiteResult, parse_pdb_simple,
+    parse_pdb_simple, CrypticConfidence, CrypticSiteConfig, CrypticSiteDetector, CrypticSiteResult,
 };
 
 #[derive(Parser, Debug)]
@@ -87,8 +86,10 @@ fn main() -> Result<()> {
     let mut proteins_with_sites = 0;
 
     println!("{}", "-".repeat(80));
-    println!("  {:<20} {:>8} {:>10} {:>10} {:>10} {:>10}",
-             "Protein", "Residues", "Candidates", "High", "Medium", "Time(ms)");
+    println!(
+        "  {:<20} {:>8} {:>10} {:>10} {:>10} {:>10}",
+        "Protein", "Residues", "Candidates", "High", "Medium", "Time(ms)"
+    );
     println!("{}", "-".repeat(80));
 
     for pdb_path in &pdb_files {
@@ -107,10 +108,14 @@ fn main() -> Result<()> {
         let result = detector.detect(&pdb_name, &atoms);
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
-        let high = result.candidates.iter()
+        let high = result
+            .candidates
+            .iter()
             .filter(|c| c.confidence == CrypticConfidence::High)
             .count();
-        let medium = result.candidates.iter()
+        let medium = result
+            .candidates
+            .iter()
             .filter(|c| c.confidence == CrypticConfidence::Medium)
             .count();
 
@@ -122,15 +127,23 @@ fn main() -> Result<()> {
         high_conf_candidates += high;
         medium_conf_candidates += medium;
 
-        let marker = if high > 0 { "★" } else if medium > 0 { "●" } else { " " };
+        let marker = if high > 0 {
+            "★"
+        } else if medium > 0 {
+            "●"
+        } else {
+            " "
+        };
 
-        println!("  {:<20} {:>8} {:>10} {:>10} {:>10} {:>10.1}",
-                 format!("{} {}", marker, pdb_name),
-                 result.n_residues,
-                 result.n_candidates,
-                 high,
-                 medium,
-                 elapsed_ms);
+        println!(
+            "  {:<20} {:>8} {:>10} {:>10} {:>10} {:>10.1}",
+            format!("{} {}", marker, pdb_name),
+            result.n_residues,
+            result.n_candidates,
+            high,
+            medium,
+            elapsed_ms
+        );
 
         results.push(result);
     }
@@ -143,27 +156,49 @@ fn main() -> Result<()> {
     println!("{}", "=".repeat(80));
     println!();
     println!("  Total proteins:        {}", pdb_files.len());
-    println!("  With cryptic sites:    {} ({:.1}%)",
-             proteins_with_sites,
-             100.0 * proteins_with_sites as f64 / pdb_files.len() as f64);
+    println!(
+        "  With cryptic sites:    {} ({:.1}%)",
+        proteins_with_sites,
+        100.0 * proteins_with_sites as f64 / pdb_files.len() as f64
+    );
     println!();
     println!("  Total candidates:      {}", total_candidates);
-    println!("    HIGH confidence:     {} ({:.1}%)",
-             high_conf_candidates,
-             if total_candidates > 0 { 100.0 * high_conf_candidates as f64 / total_candidates as f64 } else { 0.0 });
-    println!("    MEDIUM confidence:   {} ({:.1}%)",
-             medium_conf_candidates,
-             if total_candidates > 0 { 100.0 * medium_conf_candidates as f64 / total_candidates as f64 } else { 0.0 });
+    println!(
+        "    HIGH confidence:     {} ({:.1}%)",
+        high_conf_candidates,
+        if total_candidates > 0 {
+            100.0 * high_conf_candidates as f64 / total_candidates as f64
+        } else {
+            0.0
+        }
+    );
+    println!(
+        "    MEDIUM confidence:   {} ({:.1}%)",
+        medium_conf_candidates,
+        if total_candidates > 0 {
+            100.0 * medium_conf_candidates as f64 / total_candidates as f64
+        } else {
+            0.0
+        }
+    );
     println!();
-    println!("  Avg candidates/protein: {:.2}",
-             total_candidates as f64 / pdb_files.len() as f64);
-    println!("  Total time:             {:.2}s", overall_elapsed.as_secs_f64());
-    println!("  Avg time/protein:       {:.1}ms",
-             overall_elapsed.as_secs_f64() * 1000.0 / pdb_files.len() as f64);
+    println!(
+        "  Avg candidates/protein: {:.2}",
+        total_candidates as f64 / pdb_files.len() as f64
+    );
+    println!(
+        "  Total time:             {:.2}s",
+        overall_elapsed.as_secs_f64()
+    );
+    println!(
+        "  Avg time/protein:       {:.1}ms",
+        overall_elapsed.as_secs_f64() * 1000.0 / pdb_files.len() as f64
+    );
     println!();
 
     // Compute score distribution
-    let all_scores: Vec<f64> = results.iter()
+    let all_scores: Vec<f64> = results
+        .iter()
         .flat_map(|r| r.candidates.iter().map(|c| c.score))
         .collect();
 
@@ -193,9 +228,9 @@ fn main() -> Result<()> {
 
     // Save results if output specified
     if let Some(output_path) = args.output {
-        let json = serde_json::to_string_pretty(&results.iter()
-            .map(|r| &r.candidates)
-            .collect::<Vec<_>>())?;
+        let json = serde_json::to_string_pretty(
+            &results.iter().map(|r| &r.candidates).collect::<Vec<_>>(),
+        )?;
         fs::write(&output_path, json)?;
         println!("Results saved to: {}", output_path.display());
     }

@@ -147,8 +147,8 @@ fn main() -> Result<()> {
 
     // Load topology
     println!("\n📂 Loading topology: {:?}", args.topology);
-    let topology_json = std::fs::read_to_string(&args.topology)
-        .context("Failed to read topology file")?;
+    let topology_json =
+        std::fs::read_to_string(&args.topology).context("Failed to read topology file")?;
     let topology: TopologyJson =
         serde_json::from_str(&topology_json).context("Failed to parse topology JSON")?;
 
@@ -164,14 +164,36 @@ fn main() -> Result<()> {
     println!("   H-bond clusters: {}", n_h_clusters);
 
     // Count H-cluster types
-    let n_single = topology.h_clusters.iter().filter(|c| c.cluster_type == 1).count();
-    let n_ch2 = topology.h_clusters.iter().filter(|c| c.cluster_type == 2).count();
-    let n_ch3 = topology.h_clusters.iter().filter(|c| c.cluster_type == 3).count();
-    let n_nh2 = topology.h_clusters.iter().filter(|c| c.cluster_type == 4).count();
-    let n_nh3 = topology.h_clusters.iter().filter(|c| c.cluster_type == 5).count();
+    let n_single = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 1)
+        .count();
+    let n_ch2 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 2)
+        .count();
+    let n_ch3 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 3)
+        .count();
+    let n_nh2 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 4)
+        .count();
+    let n_nh3 = topology
+        .h_clusters
+        .iter()
+        .filter(|c| c.cluster_type == 5)
+        .count();
     if n_h_clusters > 0 {
-        println!("   H-cluster breakdown: {} single, {} CH2, {} CH3, {} NH2, {} NH3",
-                 n_single, n_ch2, n_ch3, n_nh2, n_nh3);
+        println!(
+            "   H-cluster breakdown: {} single, {} CH2, {} CH3, {} NH2, {} NH3",
+            n_single, n_ch2, n_ch3, n_nh2, n_nh3
+        );
     }
 
     // Generate atom info for PDB output
@@ -184,8 +206,11 @@ fn main() -> Result<()> {
     };
 
     if atom_info.len() != n_atoms {
-        println!("   Warning: atom info count ({}) differs from topology ({})",
-                 atom_info.len(), n_atoms);
+        println!(
+            "   Warning: atom info count ({}) differs from topology ({})",
+            atom_info.len(),
+            n_atoms
+        );
     }
 
     // Calculate simulation parameters
@@ -201,13 +226,22 @@ fn main() -> Result<()> {
     println!("   Timestep: {} fs", args.dt);
     println!("   Temperature: {} K", args.temperature);
     println!("   Friction (γ): {} fs⁻¹", args.gamma);
-    println!("   Equilibration: {} steps ({:.3} ps)",
-             args.equilibration, args.equilibration as f64 * args.dt as f64 / 1000.0);
+    println!(
+        "   Equilibration: {} steps ({:.3} ps)",
+        args.equilibration,
+        args.equilibration as f64 * args.dt as f64 / 1000.0
+    );
     println!("   Production: {} steps", production_steps);
-    println!("   Save interval: {} steps ({:.2} ps)", args.save_interval, snapshot_interval_ps);
+    println!(
+        "   Save interval: {} steps ({:.2} ps)",
+        args.save_interval, snapshot_interval_ps
+    );
     println!("   Expected snapshots: {}", n_snapshots);
     if args.restraint_k > 0.0 {
-        println!("   Position restraints: k={} kcal/(mol·Å²)", args.restraint_k);
+        println!(
+            "   Position restraints: k={} kcal/(mol·Å²)",
+            args.restraint_k
+        );
     }
 
     // Initialize CUDA and run simulation
@@ -221,8 +255,8 @@ fn main() -> Result<()> {
         let context = CudaContext::new(0).context("Failed to create CUDA context")?;
 
         // Create MD engine
-        let mut hmc = AmberMegaFusedHmc::new(context, n_atoms)
-            .context("Failed to create MD engine")?;
+        let mut hmc =
+            AmberMegaFusedHmc::new(context, n_atoms).context("Failed to create MD engine")?;
 
         // Convert topology data
         let bonds: Vec<(usize, usize, f32, f32)> = topology
@@ -256,7 +290,12 @@ fn main() -> Result<()> {
         let nb_params: Vec<(f32, f32, f32, f32)> = (0..n_atoms)
             .map(|i| {
                 let lj = &topology.lj_params[i];
-                (lj.sigma, lj.epsilon, topology.charges[i], topology.masses[i])
+                (
+                    lj.sigma,
+                    lj.epsilon,
+                    topology.charges[i],
+                    topology.masses[i],
+                )
             })
             .collect();
 
@@ -280,7 +319,10 @@ fn main() -> Result<()> {
         // Enable PBC if box vectors provided
         if let Some(ref box_vecs) = topology.box_vectors {
             if box_vecs.len() >= 3 {
-                println!("   Box: {:.2} x {:.2} x {:.2} Å", box_vecs[0], box_vecs[1], box_vecs[2]);
+                println!(
+                    "   Box: {:.2} x {:.2} x {:.2} Å",
+                    box_vecs[0], box_vecs[1], box_vecs[2]
+                );
                 hmc.set_pbc_box([box_vecs[0], box_vecs[1], box_vecs[2]])?;
             }
         }
@@ -320,11 +362,13 @@ fn main() -> Result<()> {
 
         // Enable position restraints if requested
         if args.restraint_k > 0.0 {
-            let heavy_atoms: Vec<usize> = (0..n_atoms)
-                .filter(|&i| topology.masses[i] > 2.0)
-                .collect();
+            let heavy_atoms: Vec<usize> =
+                (0..n_atoms).filter(|&i| topology.masses[i] > 2.0).collect();
             hmc.set_position_restraints(&heavy_atoms, args.restraint_k)?;
-            println!("   ✓ Position restraints on {} heavy atoms", heavy_atoms.len());
+            println!(
+                "   ✓ Position restraints on {} heavy atoms",
+                heavy_atoms.len()
+            );
         }
 
         // Energy minimization
@@ -339,9 +383,11 @@ fn main() -> Result<()> {
 
         // Equilibration
         if args.equilibration > 0 {
-            println!("\n🔥 Equilibration ({} steps, {:.2} ps)...",
-                     args.equilibration,
-                     args.equilibration as f64 * args.dt as f64 / 1000.0);
+            println!(
+                "\n🔥 Equilibration ({} steps, {:.2} ps)...",
+                args.equilibration,
+                args.equilibration as f64 * args.dt as f64 / 1000.0
+            );
 
             let eq_result = hmc.run_verlet(
                 args.equilibration as usize,
@@ -349,22 +395,25 @@ fn main() -> Result<()> {
                 args.temperature,
                 args.gamma,
             )?;
-            println!("   Final T: {:.1} K, PE: {:.1} kcal/mol",
-                     eq_result.avg_temperature, eq_result.potential_energy);
+            println!(
+                "   Final T: {:.1} K, PE: {:.1} kcal/mol",
+                eq_result.avg_temperature, eq_result.potential_energy
+            );
         }
 
         // Create output file
         if let Some(parent) = args.output.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut output = BufWriter::new(
-            File::create(&args.output).context("Failed to create output file")?,
-        );
+        let mut output =
+            BufWriter::new(File::create(&args.output).context("Failed to create output file")?);
 
         // Production run with snapshot saving
-        println!("\n🏃 Production run ({} steps, {:.3} ns)...",
-                 production_steps,
-                 production_steps as f64 * args.dt as f64 / 1_000_000.0);
+        println!(
+            "\n🏃 Production run ({} steps, {:.3} ns)...",
+            production_steps,
+            production_steps as f64 * args.dt as f64 / 1_000_000.0
+        );
 
         let mut model_number = 1u32;
         let mut steps_run = 0u64;
@@ -378,12 +427,7 @@ fn main() -> Result<()> {
         while steps_run < production_steps {
             // Run for save_interval steps
             let steps_this_round = args.save_interval.min(production_steps - steps_run) as usize;
-            let result = hmc.run_verlet(
-                steps_this_round,
-                args.dt,
-                args.temperature,
-                args.gamma,
-            )?;
+            let result = hmc.run_verlet(steps_this_round, args.dt, args.temperature, args.gamma)?;
             steps_run += steps_this_round as u64;
 
             // Save snapshot
@@ -394,8 +438,8 @@ fn main() -> Result<()> {
             // Progress update every 10%
             let progress = ((steps_run * 100) / production_steps) as u32;
             if progress >= last_progress + 10 {
-                let current_time_ns = (args.equilibration + steps_run) as f64
-                    * args.dt as f64 / 1_000_000.0;
+                let current_time_ns =
+                    (args.equilibration + steps_run) as f64 * args.dt as f64 / 1_000_000.0;
                 println!(
                     "   {:>3}% ({:.3} ns, {} snapshots, T={:.0}K, PE={:.0})",
                     progress,
@@ -409,8 +453,10 @@ fn main() -> Result<()> {
 
             // Early termination check
             if result.avg_temperature > 5000.0 {
-                println!("   ⚠️  Temperature exploded ({:.0} K), stopping early",
-                         result.avg_temperature);
+                println!(
+                    "   ⚠️  Temperature exploded ({:.0} K), stopping early",
+                    result.avg_temperature
+                );
                 break;
             }
         }
@@ -487,54 +533,57 @@ fn generate_atom_info_from_masses(masses: &[f32]) -> Vec<AtomInfo> {
     let mut residue_id = 1;
     let mut atoms_in_residue = 0;
 
-    masses.iter().enumerate().map(|(i, &mass)| {
-        // Determine element from mass
-        let (element, name_prefix) = if mass < 1.5 {
-            ("H", "H")
-        } else if mass < 13.0 {
-            ("C", "C")
-        } else if mass < 15.0 {
-            ("N", "N")
-        } else if mass < 17.0 {
-            ("O", "O")
-        } else if mass < 33.0 {
-            ("S", "S")
-        } else {
-            ("X", "X")
-        };
+    masses
+        .iter()
+        .enumerate()
+        .map(|(i, &mass)| {
+            // Determine element from mass
+            let (element, name_prefix) = if mass < 1.5 {
+                ("H", "H")
+            } else if mass < 13.0 {
+                ("C", "C")
+            } else if mass < 15.0 {
+                ("N", "N")
+            } else if mass < 17.0 {
+                ("O", "O")
+            } else if mass < 33.0 {
+                ("S", "S")
+            } else {
+                ("X", "X")
+            };
 
-        // Count this element type
-        *atom_count.entry(element).or_insert(0) += 1;
-        let count = atom_count[element];
+            // Count this element type
+            *atom_count.entry(element).or_insert(0) += 1;
+            let count = atom_count[element];
 
-        // Create atom name (max 4 chars)
-        let name = if count < 100 {
-            format!("{}{}", name_prefix, count)
-        } else {
-            format!("{}{}", name_prefix, count % 100)
-        };
+            // Create atom name (max 4 chars)
+            let name = if count < 100 {
+                format!("{}{}", name_prefix, count)
+            } else {
+                format!("{}{}", name_prefix, count % 100)
+            };
 
-        // Simple residue tracking (~20 atoms per residue for proteins)
-        atoms_in_residue += 1;
-        if atoms_in_residue > 20 && element != "H" {
-            residue_id += 1;
-            atoms_in_residue = 1;
-        }
+            // Simple residue tracking (~20 atoms per residue for proteins)
+            atoms_in_residue += 1;
+            if atoms_in_residue > 20 && element != "H" {
+                residue_id += 1;
+                atoms_in_residue = 1;
+            }
 
-        AtomInfo {
-            name,
-            element: element.to_string(),
-            residue_name: "UNK".to_string(),
-            residue_id,
-            chain: "A".to_string(),
-        }
-    }).collect()
+            AtomInfo {
+                name,
+                element: element.to_string(),
+                residue_name: "UNK".to_string(),
+                residue_id,
+                chain: "A".to_string(),
+            }
+        })
+        .collect()
 }
 
 /// Load atom info from original PDB file
 fn load_atom_info_from_pdb(path: &PathBuf) -> Result<Vec<AtomInfo>> {
-    let content = std::fs::read_to_string(path)
-        .context("Failed to read PDB file")?;
+    let content = std::fs::read_to_string(path).context("Failed to read PDB file")?;
 
     let mut atoms = Vec::new();
 
@@ -544,15 +593,8 @@ fn load_atom_info_from_pdb(path: &PathBuf) -> Result<Vec<AtomInfo>> {
             let name = line.get(12..16).unwrap_or("    ").trim().to_string();
             let residue_name = line.get(17..20).unwrap_or("UNK").trim().to_string();
             let chain = line.get(21..22).unwrap_or("A").to_string();
-            let residue_id: i32 = line.get(22..26)
-                .unwrap_or("1")
-                .trim()
-                .parse()
-                .unwrap_or(1);
-            let element = line.get(76..78)
-                .unwrap_or(&name[0..1])
-                .trim()
-                .to_string();
+            let residue_id: i32 = line.get(22..26).unwrap_or("1").trim().parse().unwrap_or(1);
+            let element = line.get(76..78).unwrap_or(&name[0..1]).trim().to_string();
 
             atoms.push(AtomInfo {
                 name,

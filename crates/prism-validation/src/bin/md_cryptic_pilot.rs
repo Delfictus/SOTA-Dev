@@ -24,9 +24,7 @@ use anyhow::Result;
 use clap::Parser;
 
 #[cfg(feature = "cryptic-gpu")]
-use prism_validation::cryptic_site_pilot::{
-    MdCrypticConfig, MdCrypticPipeline,
-};
+use prism_validation::cryptic_site_pilot::{MdCrypticConfig, MdCrypticPipeline};
 
 #[derive(Parser, Debug)]
 #[command(name = "md-cryptic-pilot")]
@@ -72,9 +70,7 @@ struct Args {
 
 #[cfg(feature = "cryptic-gpu")]
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
 
@@ -124,10 +120,19 @@ fn main() -> Result<()> {
     println!("  Replicas:     {}", config.n_replicas);
     println!();
     println!("  CLASSIFICATION THRESHOLDS (Literature-Derived, Pre-Set):");
-    println!("  - CV threshold:       {:.2} (CryptoSite, PocketMiner)", config.cv_threshold);
-    println!("  - Open frequency:     {:.0}% - {:.0}%",
-        config.min_open_frequency * 100.0, config.max_open_frequency * 100.0);
-    println!("  - Jaccard threshold:  {:.0}%", config.jaccard_threshold * 100.0);
+    println!(
+        "  - CV threshold:       {:.2} (CryptoSite, PocketMiner)",
+        config.cv_threshold
+    );
+    println!(
+        "  - Open frequency:     {:.0}% - {:.0}%",
+        config.min_open_frequency * 100.0,
+        config.max_open_frequency * 100.0
+    );
+    println!(
+        "  - Jaccard threshold:  {:.0}%",
+        config.jaccard_threshold * 100.0
+    );
     println!("  - Min volume:         {:.0} Å³", config.min_pocket_volume);
     println!();
     println!("  ⚠️  DO NOT adjust thresholds post-hoc to match expected results.");
@@ -162,17 +167,28 @@ fn main() -> Result<()> {
     println!("{}", "-".repeat(80));
     println!();
     println!("  PDB ID:           {}", result.pdb_id);
-    println!("  Simulation Time:  {:.1} ns", result.total_time_ps / 1000.0);
+    println!(
+        "  Simulation Time:  {:.1} ns",
+        result.total_time_ps / 1000.0
+    );
     println!("  Frames Analyzed:  {}", result.n_frames);
     println!("  Wall Time:        {:.1} s", elapsed.as_secs_f64());
     println!();
     println!("  POCKET STATISTICS:");
     println!("  - Total pockets tracked:  {}", result.all_pockets.len());
-    println!("  - CV range:               {:.3} - {:.3}",
-        result.diagnostics.cv_min, result.diagnostics.cv_max);
-    println!("  - CV mean:                {:.3}", result.diagnostics.cv_mean);
-    println!("  - Freq range:             {:.1}% - {:.1}%",
-        result.diagnostics.freq_min * 100.0, result.diagnostics.freq_max * 100.0);
+    println!(
+        "  - CV range:               {:.3} - {:.3}",
+        result.diagnostics.cv_min, result.diagnostics.cv_max
+    );
+    println!(
+        "  - CV mean:                {:.3}",
+        result.diagnostics.cv_mean
+    );
+    println!(
+        "  - Freq range:             {:.1}% - {:.1}%",
+        result.diagnostics.freq_min * 100.0,
+        result.diagnostics.freq_max * 100.0
+    );
     println!();
     println!("  CRYPTIC SITES DETECTED:   {}", result.cryptic_sites.len());
     println!();
@@ -181,8 +197,10 @@ fn main() -> Result<()> {
         println!("  ⚠️  No cryptic sites detected.");
         println!();
         println!("  DIAGNOSTIC NOTES:");
-        println!("  - Max CV observed: {:.3} (threshold: {:.3})",
-            result.diagnostics.cv_max, config.cv_threshold);
+        println!(
+            "  - Max CV observed: {:.3} (threshold: {:.3})",
+            result.diagnostics.cv_max, config.cv_threshold
+        );
 
         if result.diagnostics.cv_max > 0.0 && result.diagnostics.cv_max < config.cv_threshold {
             println!("  - Pockets show variance but below threshold.");
@@ -196,24 +214,34 @@ fn main() -> Result<()> {
         println!("  DO NOT adjust cv_threshold to make this pass.");
         println!("  Report actual values and investigate physics.");
     } else {
-        println!("  {:<6} {:<12} {:<10} {:<10} {:<10} {:<12}",
-            "Rank", "Site ID", "CV", "Open %", "Volume", "Residues");
+        println!(
+            "  {:<6} {:<12} {:<10} {:<10} {:<10} {:<12}",
+            "Rank", "Site ID", "CV", "Open %", "Volume", "Residues"
+        );
         println!("  {}", "-".repeat(66));
 
         for site in &result.cryptic_sites {
-            println!("  {:<6} {:<12} {:<10.3} {:<10.1} {:<10.0} {:<12}",
+            println!(
+                "  {:<6} {:<12} {:<10.3} {:<10.1} {:<10.0} {:<12}",
                 site.rank,
                 site.site_id,
                 site.cv_volume,
                 site.open_frequency * 100.0,
                 site.mean_volume,
-                site.residues.len());
+                site.residues.len()
+            );
 
             if args.verbose {
-                println!("         Residues: {:?}", &site.residues[..site.residues.len().min(10)]);
+                println!(
+                    "         Residues: {:?}",
+                    &site.residues[..site.residues.len().min(10)]
+                );
                 if let Some(ref drug) = site.druggability {
-                    println!("         Druggability: {:.2} ({})",
-                        drug.score, drug.classification.name());
+                    println!(
+                        "         Druggability: {:.2} ({})",
+                        drug.score,
+                        drug.classification.name()
+                    );
                 }
                 println!();
             }
@@ -221,15 +249,21 @@ fn main() -> Result<()> {
     }
 
     // Write results to JSON
-    let json_path = args.output_dir.join(format!("{}_md_cryptic_result.json", result.pdb_id));
+    let json_path = args
+        .output_dir
+        .join(format!("{}_md_cryptic_result.json", result.pdb_id));
     let json_content = serde_json::to_string_pretty(&result)?;
     std::fs::write(&json_path, json_content)?;
     println!();
     println!("  Results written to: {}", json_path.display());
 
     // Write summary CSV
-    let csv_path = args.output_dir.join(format!("{}_md_cryptic_summary.csv", result.pdb_id));
-    let mut csv_content = String::from("pocket_id,cv_volume,cv_sasa,open_frequency,mean_volume,mean_sasa,n_residues,is_cryptic\n");
+    let csv_path = args
+        .output_dir
+        .join(format!("{}_md_cryptic_summary.csv", result.pdb_id));
+    let mut csv_content = String::from(
+        "pocket_id,cv_volume,cv_sasa,open_frequency,mean_volume,mean_sasa,n_residues,is_cryptic\n",
+    );
     for pocket in &result.all_pockets {
         let is_cryptic = pocket.cv > config.cv_threshold
             && pocket.open_frequency >= config.min_open_frequency
@@ -268,12 +302,16 @@ fn main() -> Result<()> {
             // Check if any detected site contains omega loop residues
             let omega_residues: Vec<i32> = (214..=220).chain(244..=250).collect();
             for site in &result.cryptic_sites {
-                let overlap: usize = site.residues.iter()
+                let overlap: usize = site
+                    .residues
+                    .iter()
                     .filter(|r| omega_residues.contains(r))
                     .count();
                 if overlap >= 3 {
-                    println!("    RESULT: DETECTED (Site {} contains {} Ω-loop residues)",
-                        site.site_id, overlap);
+                    println!(
+                        "    RESULT: DETECTED (Site {} contains {} Ω-loop residues)",
+                        site.site_id, overlap
+                    );
                 }
             }
         }
