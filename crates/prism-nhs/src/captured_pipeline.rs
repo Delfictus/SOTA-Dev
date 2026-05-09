@@ -6071,6 +6071,7 @@ mod tests {
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
             firehose_enable: 0,
+            body_unroll: 1,
             d_kcc_lead: 0,
             d_forces_anchor: 0,
             d_masses: 0,
@@ -6225,6 +6226,7 @@ mod tests {
             d_kcc_lead: 0,
             ghost_tile_max_records: 0,
             firehose_enable: 0,
+            body_unroll: 1,
         };
 
         let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
@@ -6321,6 +6323,7 @@ mod tests {
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
             firehose_enable: 0,
+            body_unroll: 1,
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
@@ -6425,6 +6428,7 @@ mod tests {
             ghost_tile_ring_dev: 0,
             ghost_tile_max_records: 0,
             firehose_enable: 0,
+            body_unroll: 1,
         };
 
         // Closure that captures the conditional-node handle written
