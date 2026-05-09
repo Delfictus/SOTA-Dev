@@ -733,6 +733,33 @@ struct Args {
     #[arg(long, default_value = "500")]
     ghost_phase_lattice_step_bucket_size: u64,
 
+    /// **OPERATOR MANDATE 2026-05-08 §3.II+III+IV — Captured-graph body unroll.**
+    ///
+    /// How many times the per-step body region (Path C fork → SO(3) →
+    /// Adjudicator → Dynamic-T7 → Ghost emission → ASC → G26 gearbox →
+    /// energy monitor → ZSTR stage/fence → cross-stream JOIN) is replicated
+    /// INSIDE the cuStreamBeginCapture / cuStreamEndCapture window.
+    /// A single `cuGraphLaunch` then advances physics by N logical steps
+    /// instead of 1.
+    ///
+    /// Default 1 = legacy bit-identical behavior (1 launch = 1 step). The
+    /// host chunk loop divides chunk_size by this factor and launches the
+    /// graph that many times per chunk. Setting body_unroll = chunk_size
+    /// achieves the directive's "1 launch = 1 chunk" target.
+    ///
+    /// **Topology caveat at body_unroll > 1**: the per-step body contains
+    /// graph constructs (G26 conditional bridge node, ZSTR pos_stage /
+    /// fence-signal node snapshots, fork-join cuEvents) where post-capture
+    /// wiring currently retains only the LAST iteration's snapshot. ZSTR
+    /// slot rolling and §1 device-clock stamping ARE replicated per
+    /// iteration via §3.I + §1 in-graph kernels, so per-iteration
+    /// telemetry is correct. G26 gear flips apply once at end-of-chunk
+    /// rather than per-step. Operator-driven probe value: start small
+    /// (e.g. 8) and scale up after validating the lattice + ZSTR + Ghost
+    /// emission still produce the expected components.
+    #[arg(long, default_value = "1")]
+    captured_graph_body_unroll: u32,
+
     /// Enable ALL four stages of the hierarchical elimination cascade.
     /// Progressively filters detected sites through multi-channel convergence,
     /// temporal persistence, persistent homology, and Boltzmann gap gates.
@@ -7507,13 +7534,12 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     // restore the legacy adj-gated path.
                                                     firehose_enable: if args.ghost_diagnostic_firehose { 1 } else { 0 },
                                                     // OPERATOR MANDATE 2026-05-08 §3.II+III —
-                                                    // captured-graph body unroll factor. Default 1
-                                                    // preserves bit-identical legacy behavior; raise
-                                                    // it (e.g. via a future --captured-graph-body-unroll
-                                                    // CLI flag) once the per-iteration vectorization of
-                                                    // g26_bridge_node / zstr_*_node / fork-join events
-                                                    // lands in captured_pipeline.rs::build.
-                                                    body_unroll: 1,
+                                                    // captured-graph body unroll factor. Pulled from
+                                                    // --captured-graph-body-unroll. Default 1 preserves
+                                                    // bit-identical legacy behavior; per-iteration
+                                                    // vectorisation lands incrementally on this branch
+                                                    // (currently scalar-snapshot last-iteration-wins).
+                                                    body_unroll: args.captured_graph_body_unroll.max(1),
                                                     // Wave 1 / Q2 — F2-pool d_kcc_lead[n_clusters]
                                                     // not yet plumbed through the engine; kernel
                                                     // emits 0xFFFFFFFFu sentinels until host argmax
@@ -8688,21 +8714,46 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     if let Some(ref mono) = v2_monolithic {
                                         let s = engine.cuda_stream();
                                         let s_raw = s.cu_stream() as *mut std::ffi::c_void;
-                                        // Path Z: per-launch slot rolling via constant memory.
-                                        // Update d_zstr_active_slot on the same stream BEFORE
-                                        // each cuGraphLaunch — kernels read the new slot at
-                                        // execution time.  No-op when ZSTR is disabled (the
-                                        // monolithic graph simply doesn't include ZSTR nodes,
-                                        // and the symbol write is a stream no-op of 4 bytes).
-                                        for step_in_chunk in 0..this_chunk {
-                                            let frame_idx = (steps_run + step_in_chunk) as u64;
-                                            let slot = (frame_idx
-                                                % prism_nhs::zstr::ZstrRing::N_SLOTS as u64) as u32;
-                                            let _rc = unsafe {
-                                                prism_nhs::zstr::ffi::prism_zstr_set_active_slot(
-                                                    slot, s_raw,
-                                                )
-                                            };
+                                        // OPERATOR MANDATE 2026-05-08 §3.IV — DECAPITATE the
+                                        // 500× host loop. The captured graph's body has been
+                                        // unrolled body_unroll times (§3.II+III), so each launch
+                                        // advances physics by `body_unroll` logical steps rather
+                                        // than 1. The host now launches ceil(this_chunk /
+                                        // body_unroll) times per chunk. With body_unroll =
+                                        // chunk_size, the host launches EXACTLY ONCE per chunk
+                                        // — the directive's target architecture.
+                                        //
+                                        // §3.I device-side ZSTR slot rolling is wired into the
+                                        // captured graph body, so the host no longer calls
+                                        // prism_zstr_set_active_slot per step. The seed-time
+                                        // pre-launch slot (set before the first launch) is
+                                        // still useful for debug runs that haven't yet enabled
+                                        // body_unroll > 1; the in-graph kernel overrides it on
+                                        // every replay, so the seed is no-op in production.
+                                        let body_unroll = args
+                                            .captured_graph_body_unroll
+                                            .max(1)
+                                            as usize;
+                                        // Number of launches needed to advance `this_chunk`
+                                        // logical steps when each launch covers body_unroll
+                                        // steps. Ceil division so we never short-launch.
+                                        let n_launches = (this_chunk as usize + body_unroll - 1)
+                                            / body_unroll;
+                                        // SEED slot once before the first launch on this
+                                        // chunk so the very first replay's ZSTR kernels see a
+                                        // valid slot before the in-graph slot-update fires.
+                                        // After that first replay, the device-side kernel rolls
+                                        // the slot on every iteration of the unrolled body.
+                                        let seed_frame_idx = steps_run as u64;
+                                        let seed_slot = (seed_frame_idx
+                                            % prism_nhs::zstr::ZstrRing::N_SLOTS as u64)
+                                            as u32;
+                                        let _rc_seed = unsafe {
+                                            prism_nhs::zstr::ffi::prism_zstr_set_active_slot(
+                                                seed_slot, s_raw,
+                                            )
+                                        };
+                                        for _launch_idx in 0..n_launches {
                                             mono.launch_on_stream(s.cu_stream())
                                                 .map_err(|e| anyhow::anyhow!(
                                                     "Monolithic launch: {:?}", e))?;

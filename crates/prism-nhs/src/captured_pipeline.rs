@@ -3813,6 +3813,75 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
+        // ════════════════════════════════════════════════════════════════
+        // OPERATOR MANDATE 2026-05-08 §3.III — MONOLITHIC BODY UNROLL
+        // ════════════════════════════════════════════════════════════════
+        //
+        // Wrap the per-step body region (Path C fork → SO(3) →
+        // Adjudicator → Dynamic-T7 → Ghost emission → ASC → G26 gearbox →
+        // energy monitor → ZSTR stage/fence → cross-stream JOIN) in a
+        // Rust for-loop that records the body N times into the same
+        // in-progress CUgraph.
+        //
+        // Per-iteration nodes captured by `cuStreamBeginCapture` are
+        // distinct graph identities (CUDA driver allocates a new node
+        // per launch). Cross-stream events (fork_event,
+        // perturbed_join_event, md_to_telemetry_event, telemetry_to_md_event)
+        // are reused across iterations: each cuEventRecord captures a
+        // new "record" node into the graph and the corresponding
+        // cuStreamWaitEvent on the next iteration consumes it.
+        //
+        // SCALAR-SNAPSHOT CAVEAT (documented in PipelineConfig.body_unroll
+        // rustdoc):
+        //   * `zstr_pos_stage_node`, `zstr_fence_node`, `g26_bridge_node`
+        //     are mutable Rust scalars rebound on each iteration. After
+        //     the loop, they hold the LAST iteration's snapshot. The
+        //     post-capture wiring (G26 SWITCH @4737, ZSTR Reaper handle
+        //     update) consumes that last snapshot; first N-1 iterations'
+        //     bridge / stage / fence nodes execute normally inside the
+        //     graph (they don't need post-capture re-binding because §3.I
+        //     wires the device-side slot updater into the graph itself).
+        //
+        // SLOT ROLLING (§3.I integration):
+        //   * Each iteration's §1 increment kernel + §3.I slot-update
+        //     kernel fire BEFORE the iteration's ZSTR pos_stage / fence
+        //     kernels read d_zstr_active_slot. The captured DAG enforces
+        //     this order via stream-recording.
+        //
+        // DEFAULT body_unroll = 1: loop runs once, behavior bit-identical
+        // to the pre-§3 single-step capture.
+        let body_unroll = cfg.body_unroll.max(1);
+        if body_unroll != 1 {
+            log::info!(
+                "[§3.III BODY-UNROLL] capturing per-step body {} times \
+                 (host loop will launch chunk_size / {} times per chunk)",
+                body_unroll, body_unroll
+            );
+        }
+
+        // ─── HOISTED scalars used by post-capture wiring ────────────────
+        // These were originally declared inside the per-step body. The §3
+        // unroll moved the body inside a for-loop; the post-capture wiring
+        // (G26 SWITCH wire @4834+, ZSTR Reaper handle update @4983+) lives
+        // OUTSIDE the loop and reads these snapshots to bind graph nodes
+        // after cuStreamEndCapture. Per the body_unroll caveat: when
+        // body_unroll > 1 these scalars retain the LAST iteration's
+        // snapshot; first N-1 iterations' nodes execute correctly inside
+        // the captured graph but their POST-capture handle-update wiring
+        // is not vectorised (next surgical pass).
+        let mut adj_node_set_hoisted: Vec<CUgraphNode> = Vec::new();
+        let g26_switch_owned_by_parent: bool = cfg.g26_parent_cond_handle != 0;
+        let mut g26_cond_handle_hoisted: u64 = cfg.g26_parent_cond_handle;
+        let mut g26_bridge_node_hoisted: CUgraphNode = ptr::null_mut();
+        let mut zstr_pos_stage_node_hoisted: CUgraphNode = ptr::null_mut();
+        let mut zstr_fence_node_hoisted:     CUgraphNode = ptr::null_mut();
+        let mut zstr_src_vram_hoisted:       u64         = 0;
+        let mut zstr_n_atoms_hoisted:        u32         = 0;
+
+        for unroll_iter in 0..body_unroll {
+            let _ = unroll_iter; // referenced via comments; kept for future
+                                 // per-iteration vectorisation (Vec snapshots).
+
         // 6.a.1 — FORK: record fork_event on md_stream; perturbed stream
         // waits.  Both branches now have a well-defined start barrier
         // captured into the graph.
@@ -4189,6 +4258,12 @@ impl CapturedAdjudicationPipeline {
         // §2.3 mandate ("explicit cuGraphAddDependencies edge from
         // Node C to Node D"). At this point in the capture sequence
         // the dependency frontier is exactly {adjudicator_node}.
+        // §3.III-hoist: per-iteration Vec; at end of iteration we mirror
+        // (clone) to the outer hoisted Vec so post-capture wiring sees
+        // the LAST iteration's adjudicator node set. With body_unroll > 1
+        // earlier iterations' adj nodes execute correctly inside the
+        // graph; only the last iteration's set is used for post-capture
+        // wiring (e.g., V2 hook at ~4972).
         let mut adj_node_set: Vec<CUgraphNode> = Vec::new();
         unsafe {
             let mut cap_status: CUstreamCaptureStatus =
@@ -4285,8 +4360,15 @@ impl CapturedAdjudicationPipeline {
         // handle here.  The child still captures the predicate bridge
         // kernel, but the SWITCH node is installed on the parent graph
         // after the child is spliced.
-        let g26_switch_owned_by_parent = cfg.g26_parent_cond_handle != 0;
-        let mut g26_cond_handle: u64 = cfg.g26_parent_cond_handle;
+        // §3.III-hoist: rebind to outer-scope hoisted scalars.
+        // g26_switch_owned_by_parent is loop-invariant (depends on cfg),
+        // so we just shadow it locally with the same value each iteration.
+        // g26_cond_handle is the SAME value across iterations (each
+        // iteration's bridge kernel writes to the SAME conditional handle),
+        // but we mirror writes to the outer scope so post-capture wiring
+        // sees the resolved handle value.
+        let _g26_switch_owned_by_parent_inner: bool = g26_switch_owned_by_parent;
+        let mut g26_cond_handle: u64 = g26_cond_handle_hoisted;
         if g26_switch_owned_by_parent {
             log::info!(
                 "[TIER8-G26] using parent-owned conditional handle {:#x}; \
@@ -4471,6 +4553,9 @@ impl CapturedAdjudicationPipeline {
         }
 
         // Step 5: snapshot bridge node handle (frontier == [bridge]).
+        // §3.III-hoist: write through to the outer scope so post-capture
+        // G26 SWITCH wiring (line ~4834) sees the latest bridge node.
+        // body_unroll > 1 ⇒ this scalar holds the LAST iteration's bridge.
         let mut g26_bridge_node: CUgraphNode = ptr::null_mut();
         unsafe {
             let mut s   = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
@@ -4486,6 +4571,8 @@ impl CapturedAdjudicationPipeline {
                 g26_bridge_node = *dp;
             }
         }
+        g26_bridge_node_hoisted = g26_bridge_node;
+        g26_cond_handle_hoisted = g26_cond_handle;
 
         // ── 6.c-Pz2 Path Z.2 Dual-Manifold Pointer Roll — REMOVED in M1.2.20.C-B.
         //
@@ -4547,6 +4634,9 @@ impl CapturedAdjudicationPipeline {
         // frontier — under MODE_GLOBAL the frontier is exactly the node just
         // recorded — to obtain the graph node handles needed by G24's
         // cuGraphExecKernelNodeSetParams slot-roller.
+        // §3.III-hoist: per-iteration locals; we mirror to the outer
+        // hoisted scalars at the end of the ZSTR block below so
+        // post-capture wiring (line ~4983 / 4997) sees the latest.
         let mut zstr_pos_stage_node: CUgraphNode = ptr::null_mut();
         let mut zstr_fence_node:     CUgraphNode = ptr::null_mut();
         let mut zstr_src_vram:       u64         = 0;
@@ -4695,7 +4785,16 @@ impl CapturedAdjudicationPipeline {
                 zstr_pos_stage_node, zstr_fence_node,
                 zstr.n_atoms, zstr.d_positions as u64,
             );
+            // §3.III-hoist: mirror this iteration's snapshots to the outer
+            // hoisted scalars so post-capture wiring sees them.
+            zstr_pos_stage_node_hoisted = zstr_pos_stage_node;
+            zstr_fence_node_hoisted     = zstr_fence_node;
+            zstr_src_vram_hoisted       = zstr_src_vram;
+            zstr_n_atoms_hoisted        = zstr_n_atoms;
         }
+        // §3.III-hoist: mirror adj_node_set to outer scope (Vec move via
+        // clone — the Vec is small, ~handful of nodes per iteration).
+        adj_node_set_hoisted = adj_node_set.clone();
 
         // ── 6.c-end Cross-stream JOIN: telemetry → MD ─────────────────
         // After the DMA retires on the telemetry stream, fire the join
@@ -4714,6 +4813,7 @@ impl CapturedAdjudicationPipeline {
                 return Err(BuildError::Cuda { stage: "cuStreamWaitEvent (md JOIN)", rc: rc as i32 });
             }
         }
+        } // ── end §3.III BODY-UNROLL for-loop ─────────────────────────
 
         // ── 6.d Node C' (Trampoline) — DEFERRED to V2.
         // The trampoline takes the conditional handle as an argument
@@ -4781,6 +4881,11 @@ impl CapturedAdjudicationPipeline {
         // fallback needed.
         let mut g26_cond_node: CUgraphNode = ptr::null_mut();
         let mut g26_body_subgraphs: [CUgraph; 4] = [ptr::null_mut(); 4];
+        // §3.III-hoist: read hoisted snapshot (last iteration of the body
+        // unroll). At body_unroll = 1 this is bit-identical to the
+        // pre-§3 behavior.
+        let g26_bridge_node = g26_bridge_node_hoisted;
+        let g26_cond_handle = g26_cond_handle_hoisted;
         if g26_switch_owned_by_parent {
             if g26_bridge_node.is_null() {
                 log::warn!(
@@ -4868,7 +4973,7 @@ impl CapturedAdjudicationPipeline {
         // V2 callers inject the F1 SWITCH conditional node here via
         // Claude-2's `prism_wire_f1_switch_ffi` C-ABI bypass. Abort
         // cleanly on failure so the raw CUgraph isn't leaked.
-        if let Err(rc) = hook(cu_graph, &adj_node_set, adj_dev) {
+        if let Err(rc) = hook(cu_graph, &adj_node_set_hoisted, adj_dev) {
             unsafe { let _ = result::graph::destroy(cu_graph); }
             // Stream-ordered free of pool allocations so the pool
             // drop on `pool` in the early-return doesn't see live
@@ -4930,6 +5035,11 @@ impl CapturedAdjudicationPipeline {
         // We call it here (post-instantiate) to avoid extra ordering
         // constraints.  On failure (ZSTR disabled or node null) the
         // func fields stay null — `launch_with_zstr_slot` no-ops.
+        // §3.III-hoist: read hoisted snapshots (last iteration of body).
+        let zstr_pos_stage_node = zstr_pos_stage_node_hoisted;
+        let zstr_fence_node     = zstr_fence_node_hoisted;
+        let zstr_src_vram       = zstr_src_vram_hoisted;
+        let zstr_n_atoms        = zstr_n_atoms_hoisted;
         let zstr_pos_stage_func: CUfunction = if !zstr_pos_stage_node.is_null() {
             let mut p: CUDA_KERNEL_NODE_PARAMS = unsafe { std::mem::zeroed() };
             let rc = unsafe { cuGraphKernelNodeGetParams_v2(zstr_pos_stage_node, &mut p) };
