@@ -71,10 +71,12 @@ use crate::vram_pool::VramPool;
 
 fn tier8_diag_driver_error_text(rc: CUresult) -> (String, String) {
     let err = DriverError(rc);
-    let name = err.error_name()
+    let name = err
+        .error_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("cuGetErrorName failed: {:?}", e));
-    let text = err.error_string()
+    let text = err
+        .error_string()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|e| format!("cuGetErrorString failed: {:?}", e));
     (name, text)
@@ -86,8 +88,14 @@ fn tier8_diag_runtime_error_text(rc: i32) -> (&'static str, &'static str) {
         1 => ("cudaErrorInvalidValue", "invalid argument"),
         2 => ("cudaErrorMemoryAllocation", "out of memory"),
         4 => ("cudaErrorLaunchFailure", "unspecified launch failure"),
-        35 => ("cudaErrorInsufficientDriver", "CUDA driver version is insufficient for CUDA runtime version"),
-        46 => ("cudaErrorDevicesUnavailable", "all CUDA-capable devices are busy or unavailable"),
+        35 => (
+            "cudaErrorInsufficientDriver",
+            "CUDA driver version is insufficient for CUDA runtime version",
+        ),
+        46 => (
+            "cudaErrorDevicesUnavailable",
+            "all CUDA-capable devices are busy or unavailable",
+        ),
         98 => ("cudaErrorInvalidDeviceFunction", "invalid device function"),
         700 => ("cudaErrorIllegalAddress", "illegal memory access"),
         701 => ("cudaErrorLaunchOutOfResources", "launch out of resources"),
@@ -95,7 +103,10 @@ fn tier8_diag_runtime_error_text(rc: i32) -> (&'static str, &'static str) {
         710 => ("cudaErrorAssert", "device-side assert triggered"),
         719 => ("cudaErrorLaunchFailure", "unspecified launch failure"),
         801 => ("cudaErrorNotSupported", "operation not supported"),
-        _ => ("cudaErrorUnmapped", "runtime error code not mapped in diagnostic shim"),
+        _ => (
+            "cudaErrorUnmapped",
+            "runtime error code not mapped in diagnostic shim",
+        ),
     }
 }
 
@@ -229,7 +240,10 @@ where
     let (after_name, after_text) = if query_after {
         tier8_diag_driver_error_text(get_after_rc)
     } else {
-        ("SKIPPED_ACTIVE_CAPTURE".to_string(), "not queried after successful begin_capture".to_string())
+        (
+            "SKIPPED_ACTIVE_CAPTURE".to_string(),
+            "not queried after successful begin_capture".to_string(),
+        )
     };
     let (set_name, set_text) = tier8_diag_driver_error_text(set_current_rc);
 
@@ -326,8 +340,14 @@ fn tier8_diag_post_gasp_sync_gate(
             "[TIER8-DIAG post-gasp-sync] call=ctx.check_err result=DRAINED \
              stream_id={} protocol_group={} rc={} cuda_name={} cuda_string={:?} \
              md_raw=0x{:x} expected_ctx={:p} thread_id={}",
-            stream_label, protocol_group, first.0 as i32, name, text,
-            md_raw, expected_ctx, thread_id
+            stream_label,
+            protocol_group,
+            first.0 as i32,
+            name,
+            text,
+            md_raw,
+            expected_ctx,
+            thread_id
         );
         if let Err(second) = ctx.check_err() {
             let (n2, t2) = tier8_diag_driver_error_text(second.0);
@@ -335,8 +355,14 @@ fn tier8_diag_post_gasp_sync_gate(
                 "[TIER8-DIAG post-gasp-sync] call=ctx.check_err(second) result=FAIL \
                  stream_id={} protocol_group={} rc={} cuda_name={} cuda_string={:?} \
                  md_raw=0x{:x} expected_ctx={:p} thread_id={}",
-                stream_label, protocol_group, second.0 as i32, n2, t2,
-                md_raw, expected_ctx, thread_id
+                stream_label,
+                protocol_group,
+                second.0 as i32,
+                n2,
+                t2,
+                md_raw,
+                expected_ctx,
+                thread_id
             );
             return Err(BuildError::Tier8Context {
                 stage: "TIER8-DIAG post-gasp-sync ctx.check_err",
@@ -357,8 +383,15 @@ fn tier8_diag_post_gasp_sync_gate(
             "[TIER8-DIAG post-gasp-sync] call=cuCtxGetCurrent(before) result=FAIL \
              stream_id={} protocol_group={} rc={} cuda_name={} cuda_string={:?} \
              md_raw=0x{:x} expected_ctx={:p} thread_id={} drained_once={}",
-            stream_label, protocol_group, rc_before as i32, name, text,
-            md_raw, expected_ctx, thread_id, drained_once
+            stream_label,
+            protocol_group,
+            rc_before as i32,
+            name,
+            text,
+            md_raw,
+            expected_ctx,
+            thread_id,
+            drained_once
         );
         return Err(BuildError::Tier8Context {
             stage: "TIER8-DIAG post-gasp-sync cuCtxGetCurrent(before)",
@@ -380,8 +413,15 @@ fn tier8_diag_post_gasp_sync_gate(
                 "[TIER8-DIAG post-gasp-sync] call=cuCtxSetCurrent result=FAIL \
                  stream_id={} protocol_group={} rc={} cuda_name={} cuda_string={:?} \
                  md_raw=0x{:x} expected_ctx={:p} before_ctx={:p} thread_id={}",
-                stream_label, protocol_group, rc_set as i32, name, text,
-                md_raw, expected_ctx, before_ctx, thread_id
+                stream_label,
+                protocol_group,
+                rc_set as i32,
+                name,
+                text,
+                md_raw,
+                expected_ctx,
+                before_ctx,
+                thread_id
             );
             return Err(BuildError::Tier8Context {
                 stage: "TIER8-DIAG post-gasp-sync cuCtxSetCurrent",
@@ -399,14 +439,28 @@ fn tier8_diag_post_gasp_sync_gate(
     let after_ok = matches!(rc_after, CUresult::CUDA_SUCCESS);
     if !after_ok || after_ctx != expected_ctx {
         let (name, text) = tier8_diag_driver_error_text(rc_after);
-        let reason = if after_ok { "context_mismatch" } else { "rc_fail" };
+        let reason = if after_ok {
+            "context_mismatch"
+        } else {
+            "rc_fail"
+        };
         log::error!(
             "[TIER8-DIAG post-gasp-sync] call=cuCtxGetCurrent(after) result=FAIL \
              stream_id={} protocol_group={} reason={} rc={} cuda_name={} \
              cuda_string={:?} md_raw=0x{:x} expected_ctx={:p} before_ctx={:p} \
              after_ctx={:p} did_set_current={} thread_id={}",
-            stream_label, protocol_group, reason, rc_after as i32, name, text,
-            md_raw, expected_ctx, before_ctx, after_ctx, did_set, thread_id
+            stream_label,
+            protocol_group,
+            reason,
+            rc_after as i32,
+            name,
+            text,
+            md_raw,
+            expected_ctx,
+            before_ctx,
+            after_ctx,
+            did_set,
+            thread_id
         );
         return Err(BuildError::Tier8Context {
             stage: if after_ok {
@@ -430,9 +484,18 @@ fn tier8_diag_post_gasp_sync_gate(
              stream_id={} protocol_group={} rc={} cuda_name={} cuda_string={:?} \
              md_raw=0x{:x} expected_ctx={:p} before_ctx={:p} after_ctx={:p} \
              did_set_current={} drained_once={} thread_id={}",
-            stream_label, protocol_group, rc_sync as i32, name, text,
-            md_raw, expected_ctx, before_ctx, after_ctx, did_set,
-            drained_once, thread_id
+            stream_label,
+            protocol_group,
+            rc_sync as i32,
+            name,
+            text,
+            md_raw,
+            expected_ctx,
+            before_ctx,
+            after_ctx,
+            did_set,
+            drained_once,
+            thread_id
         );
         return Err(BuildError::Tier8Context {
             stage: "TIER8-DIAG post-gasp-sync cuStreamSynchronize",
@@ -447,8 +510,15 @@ fn tier8_diag_post_gasp_sync_gate(
         "[TIER8-DIAG post-gasp-sync] call=raw_sync_gate result=OK stream_id={} \
          protocol_group={} md_raw=0x{:x} expected_ctx={:p} before_ctx={:p} \
          after_ctx={:p} did_set_current={} drained_once={} thread_id={}",
-        stream_label, protocol_group, md_raw, expected_ctx, before_ctx,
-        after_ctx, did_set, drained_once, thread_id
+        stream_label,
+        protocol_group,
+        md_raw,
+        expected_ctx,
+        before_ctx,
+        after_ctx,
+        did_set,
+        drained_once,
+        thread_id
     );
     Ok(())
 }
@@ -475,8 +545,7 @@ fn diag_capture_invalidation_after(
     diagnostic_stream_id: Option<u32>,
     protocol_group: &'static str,
 ) -> Result<(), BuildError> {
-    let mut status: CUstreamCaptureStatus =
-        CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+    let mut status: CUstreamCaptureStatus = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
     let mut id: cuuint64_t = 0;
     let mut graph: CUgraph = ptr::null_mut();
     let mut deps: *const CUgraphNode = ptr::null();
@@ -543,11 +612,7 @@ struct CaptureGuard {
 }
 
 impl CaptureGuard {
-    fn new(
-        stream: CUstream,
-        stream_id: Option<u32>,
-        protocol_group: &'static str,
-    ) -> Self {
+    fn new(stream: CUstream, stream_id: Option<u32>, protocol_group: &'static str) -> Self {
         Self {
             stream,
             stream_id,
@@ -653,46 +718,46 @@ impl Drop for CaptureGuard {
 // Linked from libzstr_kernels.a (build.rs compile_to_static_archive).
 extern "C" {
     fn zstr_launch_pos_stage(
-        base_pinned:        *mut c_void,
-        inter_slot_stride:  u32,
+        base_pinned: *mut c_void,
+        inter_slot_stride: u32,
         pos_offset_in_slot: u32,
-        src_vram:           *const c_void,
-        n_atoms:            u32,
-        stream:             *mut c_void,
+        src_vram: *const c_void,
+        n_atoms: u32,
+        stream: *mut c_void,
     ) -> i32;
 
     fn zstr_launch_fence_signal(
-        base_fence:        *mut c_void,
+        base_fence: *mut c_void,
         inter_slot_stride: u32,
-        stream:            *mut c_void,
+        stream: *mut c_void,
     ) -> i32;
 
     // ── T11 — Action-Recovery force exfiltration ──
     fn zstr_launch_force_stage(
-        base_pinned:                *mut c_void,
-        inter_slot_stride:          u32,
-        force_offset_in_slot:       u32,
-        force_norm_offset_in_slot:  u32,
-        src_d_forces:               *const c_void,
-        n_atoms:                    u32,
-        stream:                     *mut c_void,
+        base_pinned: *mut c_void,
+        inter_slot_stride: u32,
+        force_offset_in_slot: u32,
+        force_norm_offset_in_slot: u32,
+        src_d_forces: *const c_void,
+        n_atoms: u32,
+        stream: *mut c_void,
     ) -> i32;
 
     fn zstr_launch_force_norm_sqrt(
-        base_pinned:                *mut c_void,
-        inter_slot_stride:          u32,
-        force_norm_offset_in_slot:  u32,
-        stream:                     *mut c_void,
+        base_pinned: *mut c_void,
+        inter_slot_stride: u32,
+        force_norm_offset_in_slot: u32,
+        stream: *mut c_void,
     ) -> i32;
 
     // ── M1.2.18.5 — Hamiltonian audit field stage ──
     fn zstr_launch_stage_audit(
-        base_pinned:                          *mut c_void,
-        inter_slot_stride:                    u32,
-        external_work_offset_in_slot:         u32,
-        potential_energy_offset_in_slot:      u32,
-        adj:                                  *const c_void,
-        stream:                               *mut c_void,
+        base_pinned: *mut c_void,
+        inter_slot_stride: u32,
+        external_work_offset_in_slot: u32,
+        potential_energy_offset_in_slot: u32,
+        adj: *const c_void,
+        stream: *mut c_void,
     ) -> i32;
 }
 
@@ -708,11 +773,11 @@ extern "C" {
 // no host bridges per launch.
 extern "C" {
     fn prism_dynamic_t7_launch(
-        adj:       *const c_void,
-        acc_dev:   *mut c_void,
-        idx_dev:   *mut c_void,
+        adj: *const c_void,
+        acc_dev: *mut c_void,
+        idx_dev: *mut c_void,
         stats_dev: *mut c_void,
-        stream:    *mut c_void,
+        stream: *mut c_void,
     ) -> i32;
 }
 
@@ -721,15 +786,15 @@ extern "C" {
 // ============================================================================
 extern "C" {
     fn prism_ghost_pipe_stage_launch(
-        ring_base_dev:   u64,
-        tiles:           *const c_void,
-        adj:             *const c_void,
-        d_kcc_lead:      *const c_void,   // Wave 1 / Q2 — F2-pool [n_clusters] u32, nullable
-        frame_idx:       u64,
-        n_clusters:      u32,
-        max_records:     u32,
-        stream:          *mut c_void,
-        firehose_enable: u32,             // 0 = adj-gated; nonzero = always emit per cluster per replay
+        ring_base_dev: u64,
+        tiles: *const c_void,
+        adj: *const c_void,
+        d_kcc_lead: *const c_void, // Wave 1 / Q2 — F2-pool [n_clusters] u32, nullable
+        frame_idx: u64,
+        n_clusters: u32,
+        max_records: u32,
+        stream: *mut c_void,
+        firehose_enable: u32, // 0 = adj-gated; nonzero = always emit per cluster per replay
     ) -> i32;
 
     /// Wave 1 / Q1 — populate __constant__ d_cluster_to_repr_residue[64].
@@ -737,8 +802,8 @@ extern "C" {
     /// Pillar 1 clustering identifies the per-cluster centroid residue.
     fn prism_ghost_set_cluster_repr_residue(
         repr_residues_host: *const u32,
-        n:                  u32,
-        stream:             *mut c_void,
+        n: u32,
+        stream: *mut c_void,
     ) -> i32;
 
     /// **M1.2.23 §4 + §5** — Transparent MAR v2 emission launcher.
@@ -757,31 +822,31 @@ extern "C" {
     /// V2-live telemetry smoke step's responsibility.
     #[allow(dead_code)]
     fn prism_ghost_pipe_stage_launch_v2(
-        ring_base_dev:            u64,
-        tiles:                    *const c_void,
-        adj:                      *const c_void,
-        d_kcc_lead:               *const c_void,
-        frame_idx:                u64,
-        n_clusters:               u32,
-        max_records:              u32,
-        stream:                   *mut c_void,
-        firehose_enable:          u32,
+        ring_base_dev: u64,
+        tiles: *const c_void,
+        adj: *const c_void,
+        d_kcc_lead: *const c_void,
+        frame_idx: u64,
+        n_clusters: u32,
+        max_records: u32,
+        stream: *mut c_void,
+        firehose_enable: u32,
         observation_threshold_kl: f32,
-        discovery_threshold_kl:   f32,
-        gear_id:                  u32,
-        dt_fs:                    f32,
-        step_idx:                 u64,
+        discovery_threshold_kl: f32,
+        gear_id: u32,
+        dt_fs: f32,
+        step_idx: u64,
         // OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper. u64
         // device pointer to a single uint64_t. 0 ⇒ legacy host-baked
         // behavior (the FFI step_idx arg is used). Non-zero ⇒ kernel
         // dereferences the counter and that becomes the authoritative
         // step_idx written into every record.
-        d_step_counter:           u64,
+        d_step_counter: u64,
         // OPERATOR MANDATE 2026-05-08 §2 — device-side firehose prune.
         // kl_divergence magnitude threshold; records below this are
         // silently dropped before the ring atomicAdd when firehose is on.
         // 0.0 disables (legacy unconditional firehose).
-        prune_kl_threshold:       f32,
+        prune_kl_threshold: f32,
     ) -> i32;
 
     /// OPERATOR MANDATE 2026-05-08 §1 — device-side timekeeper increment
@@ -791,9 +856,9 @@ extern "C" {
     /// clock without host intervention.
     #[allow(dead_code)]
     pub fn prism_increment_time_launch(
-        d_step_counter: *mut c_void,  // u64 device pointer
-        increment:      u32,
-        stream:         *mut c_void,
+        d_step_counter: *mut c_void, // u64 device pointer
+        increment: u32,
+        stream: *mut c_void,
     ) -> i32;
 }
 
@@ -806,17 +871,17 @@ extern "C" {
 // prune mask the Adjudicator reads via `force_prune_mask` in its FFI struct.
 extern "C" {
     fn prism_sisr_init_dyad(
-        R_row_major: *const f32,  // 9 floats, row-major
-        t:           *const f32,  // 3 floats
-        stream:      *mut c_void,
+        R_row_major: *const f32, // 9 floats, row-major
+        t: *const f32,           // 3 floats
+        stream: *mut c_void,
     ) -> i32;
 
     fn prism_sisr_launch(
-        tiles:                *const c_void,  // *const ContactShellTile
-        n_clusters_dev:       *const c_void,  // *const u32 (RECT-3.4.1 device veto)
-        out_force_prune_mask: *mut c_void,    // *mut u64 (8 B device buffer)
+        tiles: *const c_void,              // *const ContactShellTile
+        n_clusters_dev: *const c_void,     // *const u32 (RECT-3.4.1 device veto)
+        out_force_prune_mask: *mut c_void, // *mut u64 (8 B device buffer)
         epsilon_sym_angstrom: f32,
-        stream:               *mut c_void,
+        stream: *mut c_void,
     ) -> i32;
 }
 
@@ -861,68 +926,63 @@ extern "C" {
 //     kinetic-energy continuity).
 extern "C" {
     fn prism_wire_g26_gearbox_ffi(
-        graph:                CUgraph,
-        predicate_node:       CUgraphNode,
-        predicate_dev_ptr:    *const u32,
+        graph: CUgraph,
+        predicate_node: CUgraphNode,
+        predicate_dev_ptr: *const u32,
         out_conditional_node: *mut CUgraphNode,
-        out_body_subgraphs:   *mut CUgraph,  // [4]
+        out_body_subgraphs: *mut CUgraph, // [4]
     ) -> i32;
 
     // B.3.2-FULL — capture-time handle creation.
     fn prism_gearbox_create_handle_ffi(
-        graph:         CUgraph,
+        graph: CUgraph,
         default_value: u32,
-        out_handle:    *mut u64,
+        out_handle: *mut u64,
     ) -> i32;
 
     // B.3.2-FULL — post-capture SWITCH wire with pre-existing handle.
     fn prism_gearbox_wire_with_handle_ffi(
-        graph:                CUgraph,
-        predicate_node:       CUgraphNode,
-        handle_v:             u64,
+        graph: CUgraph,
+        predicate_node: CUgraphNode,
+        handle_v: u64,
         out_conditional_node: *mut CUgraphNode,
-        out_body_subgraphs:   *mut CUgraph,  // [4]
+        out_body_subgraphs: *mut CUgraph, // [4]
     ) -> i32;
 
     // B.3.2-FULL — populate the 4 phGraph_out body sub-graphs.
     fn prism_gearbox_populate_switch_bodies_ffi(
-        body_subgraphs: *mut CUgraph,                   // [4]
-        adj:            *const InterferometricAdjudicatorFfi,
-        d_velocities:   *mut f32,
-        n_floats:       u32,
-        cruise:         *const c_void,                  // ChronometricStateTensor
+        body_subgraphs: *mut CUgraph, // [4]
+        adj: *const InterferometricAdjudicatorFfi,
+        d_velocities: *mut f32,
+        n_floats: u32,
+        cruise: *const c_void, // ChronometricStateTensor
         d_current_temp: *const f32,
-        d_dt:           *const f32,
-        target_temp_K:  f32,
-        tau_ps:         f32,
+        d_dt: *const f32,
+        target_temp_K: f32,
+        tau_ps: f32,
     ) -> i32;
 
     // F1-PARENT-SWITCH-001 — parent-owned F1 SWITCH (size=3) FFI family.
     // Mirrors the G26 trio above. R3 landed the C++ side at commit
     // 9fa4d356; these are the Rust externs.
-    fn prism_f1_create_handle_ffi(
-        graph:         CUgraph,
-        default_value: u32,
-        out_handle:    *mut u64,
-    ) -> i32;
+    fn prism_f1_create_handle_ffi(graph: CUgraph, default_value: u32, out_handle: *mut u64) -> i32;
 
     fn prism_f1_wire_with_handle_ffi(
-        graph:                CUgraph,
-        predicate_node:       CUgraphNode,
-        handle_v:             u64,
+        graph: CUgraph,
+        predicate_node: CUgraphNode,
+        handle_v: u64,
         out_conditional_node: *mut CUgraphNode,
-        out_body_subgraphs:   *mut CUgraph,             // [3]
+        out_body_subgraphs: *mut CUgraph, // [3]
     ) -> i32;
 
-    fn prism_f1_populate_switch_bodies_ffi(
-        body_subgraphs: *mut CUgraph,                   // [3]
+    fn prism_f1_populate_switch_bodies_ffi(body_subgraphs: *mut CUgraph, // [3]
     ) -> i32;
 
     fn prism_f1_launch_predicate_bridge(
         d_adjudication_code: *const u32,
-        handle_v:            u64,
-        mask:                u32,
-        stream:              *mut c_void,
+        handle_v: u64,
+        mask: u32,
+        stream: *mut c_void,
     ) -> i32;
 
     // CHUNK13_DIAG — TRACED variants of the F1 + G26 predicate-bridge
@@ -933,27 +993,24 @@ extern "C" {
     // this crate at the bottom of this extern block).
     fn prism_f1_launch_predicate_bridge_traced(
         d_adjudication_code: *const u32,
-        handle_v:            u64,
-        mask:                u32,
-        stream:              *mut c_void,
-        branch_trace_dev:    u64,
+        handle_v: u64,
+        mask: u32,
+        stream: *mut c_void,
+        branch_trace_dev: u64,
     ) -> i32;
 
     // M1.2.17 — Hamiltonian Auditor.
-    fn prism_energy_monitor_temp_storage_bytes(
-        n:              u32,
-        out_temp_bytes: *mut usize,
-    ) -> i32;
+    fn prism_energy_monitor_temp_storage_bytes(n: u32, out_temp_bytes: *mut usize) -> i32;
 
     fn prism_energy_monitor_launch_reduce(
-        d_pe_components:    *const f64,
-        n:                  u32,
-        d_temp_storage:     *mut c_void,
+        d_pe_components: *const f64,
+        n: u32,
+        d_temp_storage: *mut c_void,
         temp_storage_bytes: usize,
-        d_pe_scalar:        *mut f64,
-        d_energy_window:    *mut c_void,    // EnergyWindow
-        d_adj_pe_target:    *mut f64,
-        stream:             *mut c_void,
+        d_pe_scalar: *mut f64,
+        d_energy_window: *mut c_void, // EnergyWindow
+        d_adj_pe_target: *mut f64,
+        stream: *mut c_void,
     ) -> i32;
 }
 
@@ -1140,11 +1197,7 @@ impl Default for SisrConfig {
     /// (x,y,z) → (-x,-y,z).  ε_sym = 1.5 Å (Amendment 3.4).
     fn default() -> Self {
         Self {
-            dyad_R_row_major: [
-                -1.0, 0.0, 0.0,
-                 0.0,-1.0, 0.0,
-                 0.0, 0.0, 1.0,
-            ],
+            dyad_R_row_major: [-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0],
             dyad_t: [0.0, 0.0, 0.0],
             epsilon_sym_angstrom: 1.5,
         }
@@ -1425,7 +1478,7 @@ pub struct CapturedAdjudicationPipeline {
     telemetry_to_md_event: CUevent,
 
     // F2-pool allocations — pre-capture, virtual-pointer-stable.
-    tiles_dev: usize,         // *mut ContactShellTile (current/perturbed)
+    tiles_dev: usize, // *mut ContactShellTile (current/perturbed)
     /// Path Z.2 dual-manifold baseline buffer. Holds previous frame's SO(3)
     /// projection. Adjudicator's relaxed_manifold_ptr targets this; an
     /// in-graph cuMemcpyDtoDAsync node refreshes it from `tiles_dev` after
@@ -1439,29 +1492,29 @@ pub struct CapturedAdjudicationPipeline {
     /// adjudicator's KL evaluations compare against the frozen reference
     /// instead of the per-replay-recomputed `tiles_baseline_dev`. Sized
     /// identically to `tiles_baseline_dev` (n_clusters × ContactShellTile).
-    pub p_frozen_dev: usize,  // *mut ContactShellTile (T29 frozen reference)
+    pub p_frozen_dev: usize, // *mut ContactShellTile (T29 frozen reference)
     /// Cached `tiles_bytes` so the host's `freeze_baseline()` knows the
     /// memcpy size without recomputing from n_clusters.
     pub tiles_bytes: u64,
-    adj_dev: usize,           // *mut InterferometricAdjudicatorFfi
-    burst_marker_dev: usize,  // *mut u32 (4 B)
+    adj_dev: usize,          // *mut InterferometricAdjudicatorFfi
+    burst_marker_dev: usize, // *mut u32 (4 B)
     /// G28 SISR per-cluster prune-bit u64. Zero when SISR disabled.
     /// Aliased into `adj->force_prune_mask` pre-capture so the Adjudicator
     /// step kernel reads the bits the SISR kernel wrote earlier in the same
     /// captured graph epoch.  Freed on Drop.
-    sisr_mask_dev: usize,     // *mut u64 (8 B), or 0 when SISR disabled
+    sisr_mask_dev: usize, // *mut u64 (8 B), or 0 when SISR disabled
     /// RECT-3.4.1 device-resident cluster count. Read by the SISR kernel
     /// to decide whether to early-exit (n_clusters < 2 ⇒ skip prune logic).
     /// Initialised to `cfg.n_clusters` pre-capture; future per-frame updates
     /// land here when the SpikeToCluster4D transform writes dynamic counts.
-    sisr_count_dev: usize,    // *mut u32 (4 B), or 0 when SISR disabled
+    sisr_count_dev: usize, // *mut u32 (4 B), or 0 when SISR disabled
     /// Wave 3 / Path B Dynamic T7 calibration buffers (always allocated).
     /// `dynt7_acc_dev`:   F2-pool f32[500]  — Δ_AB samples (saturating)
     /// `dynt7_idx_dev`:   F2-pool u32      — atomic write counter
     /// `dynt7_stats_dev`: F2-pool f32[2]   — [mean, stddev] outputs
     /// All freed on Drop.
-    dynt7_acc_dev:   usize,
-    dynt7_idx_dev:   usize,
+    dynt7_acc_dev: usize,
+    dynt7_idx_dev: usize,
     dynt7_stats_dev: usize,
 
     /// Wave B.1 — G26 ChronometricStateTensor (16 bytes, 16-aligned).
@@ -1492,10 +1545,10 @@ pub struct CapturedAdjudicationPipeline {
     /// `energy_pe_scalar_dev`:    f64 reduce result (8 B).
     /// `energy_window_dev`:       EnergyWindow scratch (16 B).
     /// All zero when n_atoms_for_pe == 0 (energy monitor disabled).
-    energy_temp_storage_dev:   usize,
+    energy_temp_storage_dev: usize,
     energy_temp_storage_bytes: u64,
-    energy_pe_scalar_dev:      usize,
-    energy_window_dev:         usize,
+    energy_pe_scalar_dev: usize,
+    energy_window_dev: usize,
 
     // CLA-2 pinned host ring.
     ring: PinnedTelemetryRing<ContactShellTile>,
@@ -1503,18 +1556,18 @@ pub struct CapturedAdjudicationPipeline {
     // Graph artifacts.
     cu_graph: CUgraph,
     cu_graph_exec: CUgraphExec,
-    cond_handle: u64,         // CUgraphConditionalHandle
+    cond_handle: u64, // CUgraphConditionalHandle
     body_subgraph: CUgraph,
 
     // G24 ZSTR slot-roller — node handles from the captured graph and the
     // fixed kernel params read back via cuGraphKernelNodeGetParams.
     // All null/zero when PipelineConfig::zstr was None at build time.
     zstr_pos_stage_node: CUgraphNode,
-    zstr_fence_node:     CUgraphNode,
-    zstr_pos_stage_func: CUfunction,  // stable across all launches
-    zstr_fence_func:     CUfunction,
-    zstr_src_vram:       u64,  // d_positions CUdeviceptr — fixed for run lifetime
-    zstr_n_atoms:        u32,
+    zstr_fence_node: CUgraphNode,
+    zstr_pos_stage_func: CUfunction, // stable across all launches
+    zstr_fence_func: CUfunction,
+    zstr_src_vram: u64, // d_positions CUdeviceptr — fixed for run lifetime
+    zstr_n_atoms: u32,
 
     // Audit metadata (Claude-3 G18/G19/G20 attestation).
     n_clusters: u32,
@@ -1643,8 +1696,7 @@ impl CapturedAdjudicationPipeline {
         }
 
         // ── 1. F2 pool ────────────────────────────────────────────────
-        let pool = VramPool::new(ctx.cu_device() as i32)
-            .map_err(BuildError::PoolCreate)?;
+        let pool = VramPool::new(ctx.cu_device() as i32).map_err(BuildError::PoolCreate)?;
         let md_raw = md_stream.cu_stream() as usize;
 
         // ── 2. Non-blocking telemetry stream + cross-stream events ──
@@ -1652,23 +1704,25 @@ impl CapturedAdjudicationPipeline {
         // Node C, before DMA), one for the JOIN back from telemetry
         // to MD before cuStreamEndCapture (without it the driver
         // returns CUDA_ERROR_STREAM_CAPTURE_UNJOINED).
-        let telemetry_stream = create_non_blocking_telemetry_stream()
-            .map_err(BuildError::TelemetryStream)?;
+        let telemetry_stream =
+            create_non_blocking_telemetry_stream().map_err(BuildError::TelemetryStream)?;
         let mut md_to_telemetry_event: CUevent = ptr::null_mut();
         let mut telemetry_to_md_event: CUevent = ptr::null_mut();
         for (event, label) in [
-            (&mut md_to_telemetry_event,    "md_to_telemetry"),
-            (&mut telemetry_to_md_event,    "telemetry_to_md"),
+            (&mut md_to_telemetry_event, "md_to_telemetry"),
+            (&mut telemetry_to_md_event, "telemetry_to_md"),
         ] {
             let rc = unsafe {
-                cuEventCreate(event as *mut _,
-                              CUevent_flags::CU_EVENT_DISABLE_TIMING as u32)
+                cuEventCreate(
+                    event as *mut _,
+                    CUevent_flags::CU_EVENT_DISABLE_TIMING as u32,
+                )
             };
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 return Err(BuildError::Cuda {
                     stage: match label {
                         "md_to_telemetry" => "cuEventCreate (md_to_telemetry)",
-                        _                 => "cuEventCreate (telemetry_to_md)",
+                        _ => "cuEventCreate (telemetry_to_md)",
                     },
                     rc: rc as i32,
                 });
@@ -1683,17 +1737,19 @@ impl CapturedAdjudicationPipeline {
         // so the streams + events themselves are not captured into the
         // graph; cuEventRecord/cuStreamWaitEvent calls inside the
         // capture window create the actual graph dependency edges.
-        let stream_perturbed = create_non_blocking_telemetry_stream()
-            .map_err(BuildError::TelemetryStream)?;
-        let mut fork_event:           CUevent = ptr::null_mut();
+        let stream_perturbed =
+            create_non_blocking_telemetry_stream().map_err(BuildError::TelemetryStream)?;
+        let mut fork_event: CUevent = ptr::null_mut();
         let mut perturbed_join_event: CUevent = ptr::null_mut();
         for (event, label) in [
-            (&mut fork_event,           "fork_event (Path C)"),
+            (&mut fork_event, "fork_event (Path C)"),
             (&mut perturbed_join_event, "perturbed_join_event (Path C)"),
         ] {
             let rc = unsafe {
-                cuEventCreate(event as *mut _,
-                              CUevent_flags::CU_EVENT_DISABLE_TIMING as u32)
+                cuEventCreate(
+                    event as *mut _,
+                    CUevent_flags::CU_EVENT_DISABLE_TIMING as u32,
+                )
             };
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 return Err(BuildError::Cuda {
@@ -1709,33 +1765,58 @@ impl CapturedAdjudicationPipeline {
         log::info!(
             "[M1.2.20.C-B] Path C streams+events created: \
              stream_perturbed={:p}, fork_event={:p}, perturbed_join_event={:p}",
-            stream_perturbed, fork_event, perturbed_join_event
+            stream_perturbed,
+            fork_event,
+            perturbed_join_event
         );
 
         // ── 3. F2 allocations ─────────────────────────────────────────
         let tiles_bytes = SiteManifestFfi::alloc_bytes(cfg.n_clusters);
-        let tiles_dev = pool.alloc_async(tiles_bytes, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "tiles", reason: s })?;
-        let adj_dev = pool.alloc_async(
-            std::mem::size_of::<InterferometricAdjudicatorFfi>() as u64,
-            md_raw,
-        ).map_err(|s| BuildError::PoolAlloc { what: "adjudicator", reason: s })?;
-        let burst_marker_dev = pool.alloc_async(4, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "burst_marker", reason: s })?;
+        let tiles_dev =
+            pool.alloc_async(tiles_bytes, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "tiles",
+                    reason: s,
+                })?;
+        let adj_dev = pool
+            .alloc_async(
+                std::mem::size_of::<InterferometricAdjudicatorFfi>() as u64,
+                md_raw,
+            )
+            .map_err(|s| BuildError::PoolAlloc {
+                what: "adjudicator",
+                reason: s,
+            })?;
+        let burst_marker_dev = pool
+            .alloc_async(4, md_raw)
+            .map_err(|s| BuildError::PoolAlloc {
+                what: "burst_marker",
+                reason: s,
+            })?;
         // G28 SISR prune-mask buffer (u64) — only when SISR is enabled.
         // Pointer-stable for the pipeline lifetime; zeroed by SISR kernel
         // at the start of each captured-graph launch.
         let sisr_mask_dev: usize = if cfg.sisr.is_some() {
             pool.alloc_async(8, md_raw)
-                .map_err(|s| BuildError::PoolAlloc { what: "sisr_mask", reason: s })?
-        } else { 0 };
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "sisr_mask",
+                    reason: s,
+                })?
+        } else {
+            0
+        };
         // RECT-3.4.1 device-resident cluster count buffer (u32). Initialised
         // to cfg.n_clusters via cuMemcpyHtoD below; the SISR kernel reads
         // this value at execution time to decide early-exit (< 2 ⇒ skip).
         let sisr_count_dev: usize = if cfg.sisr.is_some() {
             pool.alloc_async(4, md_raw)
-                .map_err(|s| BuildError::PoolAlloc { what: "sisr_count", reason: s })?
-        } else { 0 };
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "sisr_count",
+                    reason: s,
+                })?
+        } else {
+            0
+        };
         // Path Z.2 — Dual-Manifold Temporal Buffer (Amendment 3.4.5):
         // SECOND ContactShellTile array, same bytes as `tiles_dev`. Holds the
         // PREVIOUS frame's SO(3) projection — serves as the "relaxed" baseline
@@ -1744,15 +1825,22 @@ impl CapturedAdjudicationPipeline {
         // cuMemcpyDtoDAsync node copies tiles_dev → tiles_baseline_dev so the
         // next frame's relaxed-vs-perturbed comparison has a real temporal
         // delta. Zero-CPU: the memcpy node lives inside the captured graph.
-        let tiles_baseline_dev = pool.alloc_async(tiles_bytes, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "tiles_baseline", reason: s })?;
+        let tiles_baseline_dev =
+            pool.alloc_async(tiles_bytes, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "tiles_baseline",
+                    reason: s,
+                })?;
         // Zero-init the baseline so the FIRST adjudication has well-defined
         // relaxed = 0, perturbed = SO(3)(frame 0). First-frame Δ_AB will be
         // large; subsequent frames compute true temporal differential.
         unsafe {
             let rc = cuMemsetD8_v2(tiles_baseline_dev as CUdeviceptr, 0, tiles_bytes as usize);
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "memset tiles_baseline", rc: rc as i32 });
+                return Err(BuildError::Cuda {
+                    stage: "memset tiles_baseline",
+                    rc: rc as i32,
+                });
             }
         }
 
@@ -1766,12 +1854,19 @@ impl CapturedAdjudicationPipeline {
         // frozen reference instead of the per-replay-recomputed baseline.
         // Pre-snapshot: zero-initialized so any premature read produces
         // a degenerate (but well-defined) Δ_AB that the SFA can reject.
-        let p_frozen_dev = pool.alloc_async(tiles_bytes, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "p_frozen", reason: s })?;
+        let p_frozen_dev =
+            pool.alloc_async(tiles_bytes, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "p_frozen",
+                    reason: s,
+                })?;
         unsafe {
             let rc = cuMemsetD8_v2(p_frozen_dev as CUdeviceptr, 0, tiles_bytes as usize);
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "memset p_frozen", rc: rc as i32 });
+                return Err(BuildError::Cuda {
+                    stage: "memset p_frozen",
+                    rc: rc as i32,
+                });
             }
         }
 
@@ -1785,19 +1880,35 @@ impl CapturedAdjudicationPipeline {
         // sum_kl + sum_sq_kl + count + applied accumulator.  idx and
         // stats slots are kept for ABI compatibility but unused
         // post-T19; the launcher ignores them.
-        const DYNT7_ACC_BYTES:   u64 = 32;   // CalibrationStateF64 (24 used + 8 pad)
-        const DYNT7_IDX_BYTES:   u64 = 4;    // unused post-T19
-        const DYNT7_STATS_BYTES: u64 = 2 * 4;// unused post-T19
-        let dynt7_acc_dev = pool.alloc_async(DYNT7_ACC_BYTES, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "dynt7_acc", reason: s })?;
-        let dynt7_idx_dev = pool.alloc_async(DYNT7_IDX_BYTES, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "dynt7_idx", reason: s })?;
-        let dynt7_stats_dev = pool.alloc_async(DYNT7_STATS_BYTES, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "dynt7_stats", reason: s })?;
+        const DYNT7_ACC_BYTES: u64 = 32; // CalibrationStateF64 (24 used + 8 pad)
+        const DYNT7_IDX_BYTES: u64 = 4; // unused post-T19
+        const DYNT7_STATS_BYTES: u64 = 2 * 4; // unused post-T19
+        let dynt7_acc_dev =
+            pool.alloc_async(DYNT7_ACC_BYTES, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "dynt7_acc",
+                    reason: s,
+                })?;
+        let dynt7_idx_dev =
+            pool.alloc_async(DYNT7_IDX_BYTES, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "dynt7_idx",
+                    reason: s,
+                })?;
+        let dynt7_stats_dev =
+            pool.alloc_async(DYNT7_STATS_BYTES, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "dynt7_stats",
+                    reason: s,
+                })?;
         unsafe {
-            let _ = cuMemsetD8_v2(dynt7_acc_dev   as CUdeviceptr, 0, DYNT7_ACC_BYTES   as usize);
-            let _ = cuMemsetD8_v2(dynt7_idx_dev   as CUdeviceptr, 0, DYNT7_IDX_BYTES   as usize);
-            let _ = cuMemsetD8_v2(dynt7_stats_dev as CUdeviceptr, 0, DYNT7_STATS_BYTES as usize);
+            let _ = cuMemsetD8_v2(dynt7_acc_dev as CUdeviceptr, 0, DYNT7_ACC_BYTES as usize);
+            let _ = cuMemsetD8_v2(dynt7_idx_dev as CUdeviceptr, 0, DYNT7_IDX_BYTES as usize);
+            let _ = cuMemsetD8_v2(
+                dynt7_stats_dev as CUdeviceptr,
+                0,
+                DYNT7_STATS_BYTES as usize,
+            );
         }
 
         // ── M1.2.20.C-B — Path C scratchpads ─────────────────────────
@@ -1811,30 +1922,60 @@ impl CapturedAdjudicationPipeline {
         //   PTX Momentum Guard.  Zero'd at head-of-loop on md_stream
         //   so each chunk starts with a clean Σ m·Δr accumulator.
         const RICH_SPIKE_BYTES: u64 = 64;
-        let spikes_perturbed_bytes: u64 =
-            (cfg.n_spikes.max(1) as u64) * RICH_SPIKE_BYTES;
-        let d_spikes_perturbed = pool.alloc_async(spikes_perturbed_bytes, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "d_spikes_perturbed", reason: s })?;
-        const COM_SHIFT_BYTES: u64 = 12;  // 3 × f32 — Σ m·Δr accumulator
-        const TOTAL_MASS_BYTES: u64 = 4;  // 1 × f32 — Σ m accumulator (Path Ω Option A)
+        let spikes_perturbed_bytes: u64 = (cfg.n_spikes.max(1) as u64) * RICH_SPIKE_BYTES;
+        let d_spikes_perturbed = pool
+            .alloc_async(spikes_perturbed_bytes, md_raw)
+            .map_err(|s| BuildError::PoolAlloc {
+                what: "d_spikes_perturbed",
+                reason: s,
+            })?;
+        const COM_SHIFT_BYTES: u64 = 12; // 3 × f32 — Σ m·Δr accumulator
+        const TOTAL_MASS_BYTES: u64 = 4; // 1 × f32 — Σ m accumulator (Path Ω Option A)
         const COM_CORRECTION_BYTES: u64 = 12; // 3 × f32 — correction vector (Path Ω Option A)
-        let d_com_shift_dev = pool.alloc_async(COM_SHIFT_BYTES, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "d_com_shift", reason: s })?;
-        let d_total_mass_dev = pool.alloc_async(TOTAL_MASS_BYTES, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "d_total_mass", reason: s })?;
-        let d_com_correction_dev = pool.alloc_async(COM_CORRECTION_BYTES, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "d_com_correction", reason: s })?;
+        let d_com_shift_dev =
+            pool.alloc_async(COM_SHIFT_BYTES, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "d_com_shift",
+                    reason: s,
+                })?;
+        let d_total_mass_dev =
+            pool.alloc_async(TOTAL_MASS_BYTES, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "d_total_mass",
+                    reason: s,
+                })?;
+        let d_com_correction_dev = pool
+            .alloc_async(COM_CORRECTION_BYTES, md_raw)
+            .map_err(|s| BuildError::PoolAlloc {
+                what: "d_com_correction",
+                reason: s,
+            })?;
         unsafe {
-            let _ = cuMemsetD8_v2(d_spikes_perturbed   as CUdeviceptr, 0, spikes_perturbed_bytes  as usize);
-            let _ = cuMemsetD8_v2(d_com_shift_dev      as CUdeviceptr, 0, COM_SHIFT_BYTES         as usize);
-            let _ = cuMemsetD8_v2(d_total_mass_dev     as CUdeviceptr, 0, TOTAL_MASS_BYTES        as usize);
-            let _ = cuMemsetD8_v2(d_com_correction_dev as CUdeviceptr, 0, COM_CORRECTION_BYTES    as usize);
+            let _ = cuMemsetD8_v2(
+                d_spikes_perturbed as CUdeviceptr,
+                0,
+                spikes_perturbed_bytes as usize,
+            );
+            let _ = cuMemsetD8_v2(d_com_shift_dev as CUdeviceptr, 0, COM_SHIFT_BYTES as usize);
+            let _ = cuMemsetD8_v2(
+                d_total_mass_dev as CUdeviceptr,
+                0,
+                TOTAL_MASS_BYTES as usize,
+            );
+            let _ = cuMemsetD8_v2(
+                d_com_correction_dev as CUdeviceptr,
+                0,
+                COM_CORRECTION_BYTES as usize,
+            );
         }
         log::info!(
             "[Path Ω Option A] allocated d_spikes_perturbed={} B, \
              d_com_shift={} B, d_total_mass={} B, d_com_correction={} B \
              (canonical interferometric formulation: COM-locked perturbed manifold)",
-            spikes_perturbed_bytes, COM_SHIFT_BYTES, TOTAL_MASS_BYTES, COM_CORRECTION_BYTES
+            spikes_perturbed_bytes,
+            COM_SHIFT_BYTES,
+            TOTAL_MASS_BYTES,
+            COM_CORRECTION_BYTES
         );
 
         // ── Wave B.1 — G26 ChronometricStateTensor (16 bytes) ─────────
@@ -1845,8 +1986,12 @@ impl CapturedAdjudicationPipeline {
         // wire this address into the SWITCH body sub-graphs.
         // M1.2.17: cruise grew 16 → 32 bytes for v_prev (f64) + pad.
         const CRUISE_STATE_BYTES: u64 = 32;
-        let cruise_state_dev = pool.alloc_async(CRUISE_STATE_BYTES, md_raw)
-            .map_err(|s| BuildError::PoolAlloc { what: "cruise_state", reason: s })?;
+        let cruise_state_dev =
+            pool.alloc_async(CRUISE_STATE_BYTES, md_raw)
+                .map_err(|s| BuildError::PoolAlloc {
+                    what: "cruise_state",
+                    reason: s,
+                })?;
         unsafe {
             // Default: counter=0, last_burst_frame=0, current_gear=1,
             // previous_gear=1, v_prev=0.0 (sentinel for "first frame;
@@ -1878,8 +2023,8 @@ impl CapturedAdjudicationPipeline {
         // All zero-initialised so the first launch sees a clean baseline.
         // Sized to PipelineConfig::n_atoms_for_pe; if 0 the node skips.
         let mut energy_temp_storage_dev: usize = 0;
-        let mut energy_pe_scalar_dev:    usize = 0;
-        let mut energy_window_dev:       usize = 0;
+        let mut energy_pe_scalar_dev: usize = 0;
+        let mut energy_window_dev: usize = 0;
         let mut energy_temp_storage_bytes: u64 = 0;
         if cfg.n_atoms_for_pe > 0 {
             let diag_protocol_group = if cfg.g26_parent_cond_handle != 0 {
@@ -1893,8 +2038,7 @@ impl CapturedAdjudicationPipeline {
                 .unwrap_or_else(|| "unavailable".to_string());
             let diag_thread_id = format!("{:?}", std::thread::current().id());
             let (ctx_before, ctx_before_rc) = tier8_diag_current_context();
-            let (ctx_before_name, ctx_before_text) =
-                tier8_diag_driver_error_text(ctx_before_rc);
+            let (ctx_before_name, ctx_before_text) = tier8_diag_driver_error_text(ctx_before_rc);
             tier8_diag_verbose!(
                 "[TIER8-DIAG energy-pre-sync] stream_id={} \
                  protocol_group={} md_raw=0x{:x} perturbed_stream={:p} \
@@ -2102,8 +2246,7 @@ impl CapturedAdjudicationPipeline {
             let expected_ctx = ctx.cu_ctx() as CUcontext;
             let mut before_ctx: CUcontext = ptr::null_mut();
             let rc_get_before = unsafe { cuCtxGetCurrent(&mut before_ctx as *mut _) };
-            let (get_before_name, get_before_text) =
-                tier8_diag_driver_error_text(rc_get_before);
+            let (get_before_name, get_before_text) = tier8_diag_driver_error_text(rc_get_before);
             if !matches!(rc_get_before, CUresult::CUDA_SUCCESS) {
                 log::error!(
                     "[TIER8-DIAG energy-pre-sync] call=cuCtxGetCurrent(before) \
@@ -2175,8 +2318,7 @@ impl CapturedAdjudicationPipeline {
 
             let mut after_ctx: CUcontext = ptr::null_mut();
             let rc_get_after = unsafe { cuCtxGetCurrent(&mut after_ctx as *mut _) };
-            let (get_after_name, get_after_text) =
-                tier8_diag_driver_error_text(rc_get_after);
+            let (get_after_name, get_after_text) = tier8_diag_driver_error_text(rc_get_after);
             if !matches!(rc_get_after, CUresult::CUDA_SUCCESS) {
                 log::error!(
                     "[TIER8-DIAG energy-pre-sync] call=cuCtxGetCurrent(after) \
@@ -2351,7 +2493,8 @@ impl CapturedAdjudicationPipeline {
             log::info!(
                 "[M1.2.17] energy monitor allocated: temp_storage={} B \
                  pe_scalar=8 B window=16 B; n_atoms={}",
-                temp_bytes, cfg.n_atoms_for_pe
+                temp_bytes,
+                cfg.n_atoms_for_pe
             );
         }
 
@@ -2433,9 +2576,7 @@ impl CapturedAdjudicationPipeline {
 
         let gearbox_expected_ctx = ctx.cu_ctx() as CUcontext;
         let mut gearbox_before_ctx: CUcontext = ptr::null_mut();
-        let gearbox_get_before_rc = unsafe {
-            cuCtxGetCurrent(&mut gearbox_before_ctx as *mut _)
-        };
+        let gearbox_get_before_rc = unsafe { cuCtxGetCurrent(&mut gearbox_before_ctx as *mut _) };
         let (gearbox_get_before_name, gearbox_get_before_text) =
             tier8_diag_driver_error_text(gearbox_get_before_rc);
         if !matches!(gearbox_get_before_rc, CUresult::CUDA_SUCCESS) {
@@ -2506,9 +2647,7 @@ impl CapturedAdjudicationPipeline {
         }
 
         let mut gearbox_after_ctx: CUcontext = ptr::null_mut();
-        let gearbox_get_after_rc = unsafe {
-            cuCtxGetCurrent(&mut gearbox_after_ctx as *mut _)
-        };
+        let gearbox_get_after_rc = unsafe { cuCtxGetCurrent(&mut gearbox_after_ctx as *mut _) };
         let (gearbox_get_after_name, gearbox_get_after_text) =
             tier8_diag_driver_error_text(gearbox_get_after_rc);
         if !matches!(gearbox_get_after_rc, CUresult::CUDA_SUCCESS) {
@@ -2678,8 +2817,7 @@ impl CapturedAdjudicationPipeline {
 
         // ── 4. Pinned host ring (CLA-2) ──────────────────────────────
         let ring: PinnedTelemetryRing<ContactShellTile> =
-            PinnedTelemetryRing::new(cfg.n_clusters as usize)
-                .map_err(BuildError::PinnedRing)?;
+            PinnedTelemetryRing::new(cfg.n_clusters as usize).map_err(BuildError::PinnedRing)?;
 
         // ── 5. Pre-capture: zero adjudicator + tile arrays ───────────
         // The Adjudicator's `prism_interferometric_adjudicator_create`
@@ -2692,11 +2830,17 @@ impl CapturedAdjudicationPipeline {
                 std::mem::size_of::<InterferometricAdjudicatorFfi>(),
             );
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "memset adj", rc: rc as i32 });
+                return Err(BuildError::Cuda {
+                    stage: "memset adj",
+                    rc: rc as i32,
+                });
             }
             let rc = cuMemsetD8_v2(burst_marker_dev as CUdeviceptr, 0, 4);
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "memset burst_marker", rc: rc as i32 });
+                return Err(BuildError::Cuda {
+                    stage: "memset burst_marker",
+                    rc: rc as i32,
+                });
             }
         }
 
@@ -2708,8 +2852,10 @@ impl CapturedAdjudicationPipeline {
             vram_high_water_mark: tiles_bytes,
             adjudication_trigger_ptr: ptr::null_mut(),
         };
-        debug_assert!(manifest.tile_alignment_ok(),
-            "F2 pool returned non-128-aligned tiles_dev_ptr");
+        debug_assert!(
+            manifest.tile_alignment_ok(),
+            "F2 pool returned non-128-aligned tiles_dev_ptr"
+        );
 
         // Path Z.2 — Dual-Manifold pointer wiring (Amendment 3.4.5):
         //   adj->relaxed_manifold_ptr   → tiles_baseline_dev  (frame N-1)
@@ -2719,10 +2865,10 @@ impl CapturedAdjudicationPipeline {
         // in-graph DtoDAsync memcpy node copies tiles_dev → tiles_baseline_dev
         // making the current frame's output the next frame's baseline.
         unsafe {
-            let relaxed_ptr_field   = (adj_dev + 56) as CUdeviceptr;
+            let relaxed_ptr_field = (adj_dev + 56) as CUdeviceptr;
             let perturbed_ptr_field = (adj_dev + 64) as CUdeviceptr;
             let baseline_value: u64 = tiles_baseline_dev as u64;
-            let current_value:  u64 = manifest.tiles_dev_ptr as u64;
+            let current_value: u64 = manifest.tiles_dev_ptr as u64;
             let rc1 = cuMemcpyHtoD_v2(
                 relaxed_ptr_field,
                 &baseline_value as *const _ as *const c_void,
@@ -2733,10 +2879,15 @@ impl CapturedAdjudicationPipeline {
                 &current_value as *const _ as *const c_void,
                 8,
             );
-            for (rc, stage) in [(rc1, "seed relaxed_ptr=baseline"),
-                                (rc2, "seed perturbed_ptr=current")] {
+            for (rc, stage) in [
+                (rc1, "seed relaxed_ptr=baseline"),
+                (rc2, "seed perturbed_ptr=current"),
+            ] {
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                    return Err(BuildError::Cuda { stage, rc: rc as i32 });
+                    return Err(BuildError::Cuda {
+                        stage,
+                        rc: rc as i32,
+                    });
                 }
             }
         }
@@ -2755,7 +2906,10 @@ impl CapturedAdjudicationPipeline {
                 )
             };
             if rc != 0 {
-                return Err(BuildError::Cuda { stage: "prism_sisr_init_dyad", rc });
+                return Err(BuildError::Cuda {
+                    stage: "prism_sisr_init_dyad",
+                    rc,
+                });
             }
             // Wire adj->force_prune_mask = sisr_mask_dev. Offset 104 per
             // the C-side static_assert.
@@ -2780,11 +2934,7 @@ impl CapturedAdjudicationPipeline {
             unsafe {
                 let count_addr = sisr_count_dev as CUdeviceptr;
                 let count_value: u32 = cfg.n_clusters;
-                let rc = cuMemcpyHtoD_v2(
-                    count_addr,
-                    &count_value as *const _ as *const c_void,
-                    4,
-                );
+                let rc = cuMemcpyHtoD_v2(count_addr, &count_value as *const _ as *const c_void, 4);
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
                     return Err(BuildError::Cuda {
                         stage: "init sisr_count_dev",
@@ -2806,11 +2956,7 @@ impl CapturedAdjudicationPipeline {
             unsafe {
                 let field_addr = (adj_dev + 120) as CUdeviceptr;
                 let value: u64 = cfg.d_dt as u64;
-                let rc = cuMemcpyHtoD_v2(
-                    field_addr,
-                    &value as *const _ as *const c_void,
-                    8,
-                );
+                let rc = cuMemcpyHtoD_v2(field_addr, &value as *const _ as *const c_void, 8);
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
                     return Err(BuildError::Cuda {
                         stage: "wire adj->d_dt (M1.2.17 offset 120)",
@@ -2818,9 +2964,7 @@ impl CapturedAdjudicationPipeline {
                     });
                 }
             }
-            let ddt_diag_stream_id = cfg
-                .diagnostic_stream_id
-                .unwrap_or(u32::MAX);
+            let ddt_diag_stream_id = cfg.diagnostic_stream_id.unwrap_or(u32::MAX);
             let ddt_diag_protocol_group = if cfg.g26_parent_cond_handle != 0 {
                 "parent_owned_g26_child"
             } else {
@@ -2829,9 +2973,7 @@ impl CapturedAdjudicationPipeline {
             let ddt_diag_thread_id = format!("{:?}", std::thread::current().id());
             let ddt_expected_ctx = ctx.cu_ctx() as CUcontext;
             let mut ddt_before_ctx: CUcontext = ptr::null_mut();
-            let ddt_get_before_rc = unsafe {
-                cuCtxGetCurrent(&mut ddt_before_ctx as *mut _)
-            };
+            let ddt_get_before_rc = unsafe { cuCtxGetCurrent(&mut ddt_before_ctx as *mut _) };
             let (ddt_get_before_name, ddt_get_before_text) =
                 tier8_diag_driver_error_text(ddt_get_before_rc);
             if !matches!(ddt_get_before_rc, CUresult::CUDA_SUCCESS) {
@@ -2898,9 +3040,7 @@ impl CapturedAdjudicationPipeline {
             }
 
             let mut ddt_after_ctx: CUcontext = ptr::null_mut();
-            let ddt_get_after_rc = unsafe {
-                cuCtxGetCurrent(&mut ddt_after_ctx as *mut _)
-            };
+            let ddt_get_after_rc = unsafe { cuCtxGetCurrent(&mut ddt_after_ctx as *mut _) };
             let (ddt_get_after_name, ddt_get_after_text) =
                 tier8_diag_driver_error_text(ddt_get_after_rc);
             if !matches!(ddt_get_after_rc, CUresult::CUDA_SUCCESS) {
@@ -2935,8 +3075,7 @@ impl CapturedAdjudicationPipeline {
                 });
             }
 
-            let (ddt_set_name, ddt_set_text) =
-                tier8_diag_driver_error_text(ddt_set_current_rc);
+            let (ddt_set_name, ddt_set_text) = tier8_diag_driver_error_text(ddt_set_current_rc);
             if ddt_after_ctx != ddt_expected_ctx {
                 log::error!(
                     "[TIER8-DIAG d-dt-wire-sync] call=raw_context_guard \
@@ -3056,7 +3195,8 @@ impl CapturedAdjudicationPipeline {
             log::info!(
                 "[M1.2.17] wired adj->d_dt={:p} at offset 120; \
                  cfg.d_velocities={:p} (struct slot removed; populator threads it)",
-                cfg.d_dt as *const f32, cfg.d_velocities as *const f32
+                cfg.d_dt as *const f32,
+                cfg.d_velocities as *const f32
             );
         }
 
@@ -3090,9 +3230,7 @@ impl CapturedAdjudicationPipeline {
         let ext_diag_thread_id = format!("{:?}", std::thread::current().id());
         let ext_expected_ctx = ctx.cu_ctx() as CUcontext;
         let mut ext_before_ctx: CUcontext = ptr::null_mut();
-        let ext_get_before_rc = unsafe {
-            cuCtxGetCurrent(&mut ext_before_ctx as *mut _)
-        };
+        let ext_get_before_rc = unsafe { cuCtxGetCurrent(&mut ext_before_ctx as *mut _) };
         let (ext_get_before_name, ext_get_before_text) =
             tier8_diag_driver_error_text(ext_get_before_rc);
         tier8_diag_verbose!(
@@ -3101,7 +3239,11 @@ impl CapturedAdjudicationPipeline {
              cuda_name={} cuda_string={:?} md_raw=0x{:x} expected_ctx={:p} \
              before_ctx={:p} adj_dev=0x{:x} field_offset=128 field_addr=0x{:x} \
              d_external_work={:p} is_null={} parent_cond_handle=0x{:x} thread_id={}",
-            if matches!(ext_get_before_rc, CUresult::CUDA_SUCCESS) { "OK" } else { "FAIL" },
+            if matches!(ext_get_before_rc, CUresult::CUDA_SUCCESS) {
+                "OK"
+            } else {
+                "FAIL"
+            },
             ext_diag_stream_label,
             ext_diag_protocol_group,
             ext_diag_phase,
@@ -3134,7 +3276,11 @@ impl CapturedAdjudicationPipeline {
              expected_ctx={:p} before_ctx={:p} adj_dev=0x{:x} \
              field_offset=128 field_addr=0x{:x} d_external_work={:p} \
              parent_cond_handle=0x{:x} thread_id={}",
-            if cfg.d_external_work.is_null() { "FAIL" } else { "OK" },
+            if cfg.d_external_work.is_null() {
+                "FAIL"
+            } else {
+                "OK"
+            },
             ext_diag_stream_label,
             ext_diag_protocol_group,
             ext_diag_phase,
@@ -3177,11 +3323,7 @@ impl CapturedAdjudicationPipeline {
                 cfg.g26_parent_cond_handle,
                 ext_diag_thread_id
             );
-            let rc = cuMemcpyHtoD_v2(
-                field_addr,
-                &value as *const _ as *const c_void,
-                8,
-            );
+            let rc = cuMemcpyHtoD_v2(field_addr, &value as *const _ as *const c_void, 8);
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 let (name, text) = tier8_diag_driver_error_text(rc);
                 log::error!(
@@ -3233,9 +3375,8 @@ impl CapturedAdjudicationPipeline {
             );
         }
         let mut ext_after_memcpy_ctx: CUcontext = ptr::null_mut();
-        let ext_get_after_memcpy_rc = unsafe {
-            cuCtxGetCurrent(&mut ext_after_memcpy_ctx as *mut _)
-        };
+        let ext_get_after_memcpy_rc =
+            unsafe { cuCtxGetCurrent(&mut ext_after_memcpy_ctx as *mut _) };
         let (ext_get_after_memcpy_name, ext_get_after_memcpy_text) =
             tier8_diag_driver_error_text(ext_get_after_memcpy_rc);
         tier8_diag_verbose!(
@@ -3244,7 +3385,11 @@ impl CapturedAdjudicationPipeline {
              cuda_name={} cuda_string={:?} md_raw=0x{:x} expected_ctx={:p} \
              before_ctx={:p} after_memcpy_ctx={:p} d_external_work={:p} \
              parent_cond_handle=0x{:x} thread_id={}",
-            if matches!(ext_get_after_memcpy_rc, CUresult::CUDA_SUCCESS) { "OK" } else { "FAIL" },
+            if matches!(ext_get_after_memcpy_rc, CUresult::CUDA_SUCCESS) {
+                "OK"
+            } else {
+                "FAIL"
+            },
             ext_diag_stream_label,
             ext_diag_protocol_group,
             ext_diag_phase,
@@ -3336,9 +3481,7 @@ impl CapturedAdjudicationPipeline {
             ext_diag_thread_id
         );
         let mut ext_after_sync_ctx: CUcontext = ptr::null_mut();
-        let ext_get_after_sync_rc = unsafe {
-            cuCtxGetCurrent(&mut ext_after_sync_ctx as *mut _)
-        };
+        let ext_get_after_sync_rc = unsafe { cuCtxGetCurrent(&mut ext_after_sync_ctx as *mut _) };
         let (ext_get_after_sync_name, ext_get_after_sync_text) =
             tier8_diag_driver_error_text(ext_get_after_sync_rc);
         tier8_diag_verbose!(
@@ -3347,7 +3490,11 @@ impl CapturedAdjudicationPipeline {
              cuda_name={} cuda_string={:?} md_raw=0x{:x} expected_ctx={:p} \
              before_ctx={:p} after_memcpy_ctx={:p} after_sync_ctx={:p} \
              d_external_work={:p} parent_cond_handle=0x{:x} thread_id={}",
-            if matches!(ext_get_after_sync_rc, CUresult::CUDA_SUCCESS) { "OK" } else { "FAIL" },
+            if matches!(ext_get_after_sync_rc, CUresult::CUDA_SUCCESS) {
+                "OK"
+            } else {
+                "FAIL"
+            },
             ext_diag_stream_label,
             ext_diag_protocol_group,
             ext_diag_phase,
@@ -3398,7 +3545,7 @@ impl CapturedAdjudicationPipeline {
             .unwrap_or_else(|| "unavailable".to_string());
         unsafe {
             let eta_addr = (adj_dev + 136) as CUdeviceptr;
-            let eta_value: f32 = 1.0_f32;  // Ruling 2 — η_base locked.
+            let eta_value: f32 = 1.0_f32; // Ruling 2 — η_base locked.
             let rc_eta = cuMemcpyHtoDAsync_v2(
                 eta_addr,
                 &eta_value as *const _ as *const c_void,
@@ -3411,7 +3558,11 @@ impl CapturedAdjudicationPipeline {
                  field=gasp_gain_eta result={} stream_id={} protocol_group={} \
                  dst=0x{:x} offset=136 bytes=4 rc={} cuda_name={} \
                  cuda_string={:?} md_raw=0x{:x} value={} parent_cond_handle=0x{:x}",
-                if matches!(rc_eta, CUresult::CUDA_SUCCESS) { "OK" } else { "FAIL" },
+                if matches!(rc_eta, CUresult::CUDA_SUCCESS) {
+                    "OK"
+                } else {
+                    "FAIL"
+                },
                 gap_stream_label,
                 gap_diag_protocol_group,
                 eta_addr,
@@ -3457,7 +3608,11 @@ impl CapturedAdjudicationPipeline {
                  field=force_burst_step result={} stream_id={} protocol_group={} \
                  dst=0x{:x} offset=140 bytes=4 rc={} cuda_name={} \
                  cuda_string={:?} md_raw=0x{:x} value={} parent_cond_handle=0x{:x}",
-                if matches!(rc_burst, CUresult::CUDA_SUCCESS) { "OK" } else { "FAIL" },
+                if matches!(rc_burst, CUresult::CUDA_SUCCESS) {
+                    "OK"
+                } else {
+                    "FAIL"
+                },
                 gap_stream_label,
                 gap_diag_protocol_group,
                 burst_addr,
@@ -3505,7 +3660,11 @@ impl CapturedAdjudicationPipeline {
                 "[M1.2.20.C-A] wired adj->gasp_gain_eta=1.0 at offset 136, \
                  adj->force_burst_step={} at offset 140 ({})",
                 burst_value,
-                if burst_value == u32::MAX { "DISABLED" } else { "10× burst armed" }
+                if burst_value == u32::MAX {
+                    "DISABLED"
+                } else {
+                    "10× burst armed"
+                }
             );
         }
         // TIER 8.β post_gasp_sync — replaced wrapper-based gate with a
@@ -3550,7 +3709,10 @@ impl CapturedAdjudicationPipeline {
                 )
             };
             if rc != 0 {
-                return Err(BuildError::Cuda { stage: "apply_t7_kl_calibration", rc });
+                return Err(BuildError::Cuda {
+                    stage: "apply_t7_kl_calibration",
+                    rc,
+                });
             }
         }
         // Amendment 3.4.6 — Substrate-Aware Noise-Floor Override.
@@ -3559,7 +3721,7 @@ impl CapturedAdjudicationPipeline {
         // all 6 SH bands).  Skipping this leaves the 4LPK threshold
         // (μ+3σ ≈ 1.249) which is calibrated to KRAS, not 7C8R.
         if let Some((mu, sigma)) = cfg.noise_floor_override {
-            let mu_arr    = [mu; 6];
+            let mu_arr = [mu; 6];
             let sigma_arr = [sigma; 6];
             let rc = unsafe {
                 crate::interferometric_adjudicator::set_noise_floor_constants(
@@ -3577,7 +3739,9 @@ impl CapturedAdjudicationPipeline {
             }
             log::info!(
                 "[T7-OVERRIDE] noise_floor_mu={} noise_floor_sigma={} → threshold={}",
-                mu, sigma, mu + 3.0 * sigma
+                mu,
+                sigma,
+                mu + 3.0 * sigma
             );
         }
         tier8_diag_named_driver_gate(
@@ -3639,8 +3803,12 @@ impl CapturedAdjudicationPipeline {
             let _ = pool.free_async(p_frozen_dev, md_raw);
             let _ = pool.free_async(adj_dev, md_raw);
             let _ = pool.free_async(burst_marker_dev, md_raw);
-            if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
-            if sisr_count_dev != 0 { let _ = pool.free_async(sisr_count_dev, md_raw); }
+            if sisr_mask_dev != 0 {
+                let _ = pool.free_async(sisr_mask_dev, md_raw);
+            }
+            if sisr_count_dev != 0 {
+                let _ = pool.free_async(sisr_count_dev, md_raw);
+            }
             let _ = pool.free_async(dynt7_acc_dev, md_raw);
             let _ = pool.free_async(dynt7_idx_dev, md_raw);
             let _ = pool.free_async(dynt7_stats_dev, md_raw);
@@ -3675,10 +3843,16 @@ impl CapturedAdjudicationPipeline {
                 &mut n_deps as *mut _,
             );
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "cuStreamGetCaptureInfo_v2 (initial)", rc: rc as i32 });
+                return Err(BuildError::Cuda {
+                    stage: "cuStreamGetCaptureInfo_v2 (initial)",
+                    rc: rc as i32,
+                });
             }
         }
-        if !matches!(capture_status, CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_ACTIVE) {
+        if !matches!(
+            capture_status,
+            CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_ACTIVE
+        ) {
             return Err(BuildError::CaptureNotActive);
         }
 
@@ -3762,12 +3936,7 @@ impl CapturedAdjudicationPipeline {
         // run on a clean slate.  Path Ω Option A added total_mass and
         // com_correction zeroes alongside com_shift.
         unsafe {
-            let rc = cuMemsetD8Async(
-                d_com_shift_dev as CUdeviceptr,
-                0,
-                12,
-                md_stream.cu_stream(),
-            );
+            let rc = cuMemsetD8Async(d_com_shift_dev as CUdeviceptr, 0, 12, md_stream.cu_stream());
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 return Err(BuildError::Cuda {
                     stage: "M1.2.20.C-B head-of-loop cuMemsetD8Async (com_shift)",
@@ -3775,12 +3944,7 @@ impl CapturedAdjudicationPipeline {
                 });
             }
             // Path Ω Option A — d_total_mass [4 B] + d_com_correction [12 B]
-            let rc = cuMemsetD8Async(
-                d_total_mass_dev as CUdeviceptr,
-                0,
-                4,
-                md_stream.cu_stream(),
-            );
+            let rc = cuMemsetD8Async(d_total_mass_dev as CUdeviceptr, 0, 4, md_stream.cu_stream());
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 return Err(BuildError::Cuda {
                     stage: "Path Ω Option A head-of-loop cuMemsetD8Async (total_mass)",
@@ -3799,12 +3963,7 @@ impl CapturedAdjudicationPipeline {
                     rc: rc as i32,
                 });
             }
-            let rc = cuMemsetD8Async(
-                (adj_dev + 144) as CUdeviceptr,
-                0,
-                4,
-                md_stream.cu_stream(),
-            );
+            let rc = cuMemsetD8Async((adj_dev + 144) as CUdeviceptr, 0, 4, md_stream.cu_stream());
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 return Err(BuildError::Cuda {
                     stage: "M1.2.20.C-B head-of-loop cuMemsetD8Async (momentum_violation_flag)",
@@ -3855,7 +4014,8 @@ impl CapturedAdjudicationPipeline {
             log::info!(
                 "[§3.III BODY-UNROLL] capturing per-step body {} times \
                  (host loop will launch chunk_size / {} times per chunk)",
-                body_unroll, body_unroll
+                body_unroll,
+                body_unroll
             );
         }
 
@@ -3874,796 +4034,721 @@ impl CapturedAdjudicationPipeline {
         let mut g26_cond_handle_hoisted: u64 = cfg.g26_parent_cond_handle;
         let mut g26_bridge_node_hoisted: CUgraphNode = ptr::null_mut();
         let mut zstr_pos_stage_node_hoisted: CUgraphNode = ptr::null_mut();
-        let mut zstr_fence_node_hoisted:     CUgraphNode = ptr::null_mut();
-        let mut zstr_src_vram_hoisted:       u64         = 0;
-        let mut zstr_n_atoms_hoisted:        u32         = 0;
+        let mut zstr_fence_node_hoisted: CUgraphNode = ptr::null_mut();
+        let mut zstr_src_vram_hoisted: u64 = 0;
+        let mut zstr_n_atoms_hoisted: u32 = 0;
 
         for unroll_iter in 0..body_unroll {
             let _ = unroll_iter; // referenced via comments; kept for future
                                  // per-iteration vectorisation (Vec snapshots).
 
-        // 6.a.1 — FORK: record fork_event on md_stream; perturbed stream
-        // waits.  Both branches now have a well-defined start barrier
-        // captured into the graph.
-        unsafe {
-            let rc = cuEventRecord(fork_event, md_stream.cu_stream());
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda {
-                    stage: "Path C cuEventRecord(fork_event, md_stream)",
-                    rc: rc as i32,
-                });
-            }
-            let rc = cuStreamWaitEvent(stream_perturbed, fork_event, 0);
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda {
-                    stage: "Path C cuStreamWaitEvent(stream_perturbed)",
-                    rc: rc as i32,
-                });
-            }
-        }
-
-        // 6.a.2 — RELAXED branch on md_stream: SO(3)(d_spikes_raw) →
-        // tiles_baseline_dev (the RELAXED manifold buffer; was
-        // time-lagged frame N-1 pre-Path-C, now is the SO(3) of raw
-        // spikes at frame N).  The DtoDAsync time-lag copy that used
-        // to populate tiles_baseline_dev is REMOVED below — the
-        // relaxed manifold is now computed every replay rather than
-        // copied from a prior frame.
-        let rc = unsafe {
-            crate::so3_project::ffi::prism_so3_project_run(
-                cfg.d_spikes,
-                cfg.d_cluster_offsets,
-                cfg.n_clusters,
-                cfg.d_k_lm,
-                tiles_baseline_dev as *mut ContactShellTile,
-                cfg.initial_frame_id,
-                md_stream.cu_stream() as *mut c_void,
-            )
-        };
-        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
-            return Err(BuildError::Cuda { stage: "Path C Node B (SO(3) RELAXED)", rc });
-        }
-
-        // 6.a.3 — PERTURBED branch on stream_perturbed: gasp kernel
-        // computes Δr per spike from the per-atom force gradient,
-        // writes pos_perturbed = pos_raw + Δr to d_spikes_perturbed,
-        // and atomicAdds m·Δr into d_com_shift_dev plus m into
-        // d_total_mass_dev (Path Ω Option A).  Both accumulators feed
-        // the post-pass momentum-guard kernel which computes the COM
-        // correction vector.
-        let rc = unsafe {
-            crate::so3_project::ffi::prism_apply_gradient_gasp_launch(
-                cfg.d_spikes,
-                d_spikes_perturbed as *mut crate::rich_spike::RichSpike,
-                cfg.d_forces_anchor as *const f32,
-                cfg.d_masses        as *const f32,
-                adj_dev as *const c_void,
-                d_com_shift_dev as *mut c_void,
-                d_total_mass_dev as *mut c_void,    // Path Ω Option A
-                cfg.initial_frame_id,
-                cfg.n_spikes,
-                cfg.n_atoms_for_pe,
-                stream_perturbed as *mut c_void,
-            )
-        };
-        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
-            return Err(BuildError::Cuda { stage: "Path C gasp kernel", rc });
-        }
-
-        // 6.a.4 — Path Ω Option A — Momentum-Guard post-pass kernel:
-        // reads (Σ m·Δr) and (Σ m), writes correction = (Σ m·Δr) / (Σ m)
-        // to d_com_correction_dev, and sets momentum_violation_flag = 1
-        // ONLY if the correction magnitude itself exceeds 1.0 Å (the
-        // gasp produced unphysical kicks).  Pre-Option-A this kernel
-        // checked the RAW |Σ m·Δr| > 1e-4 Å which fired every chunk
-        // because that's a √n random-walk that can't be bounded that
-        // tightly — the canonical fix is to subtract the global drift
-        // and let the SO(3) KL see only the structural divergence.
-        let rc = unsafe {
-            crate::so3_project::ffi::prism_momentum_guard_check_launch(
-                d_com_shift_dev      as *const c_void,
-                d_total_mass_dev     as *const c_void,
-                d_com_correction_dev as *mut c_void,
-                adj_dev as *mut c_void,
-                stream_perturbed as *mut c_void,
-            )
-        };
-        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
-            return Err(BuildError::Cuda { stage: "Path C Momentum Guard check", rc });
-        }
-
-        // 6.a.5 — Path Ω Option A — Apply the COM correction in-place
-        // to d_spikes_perturbed: each spike's (x, y, z) -= correction.
-        // Result: Σ m·(pos_perturbed - pos_relaxed) = 0 by construction;
-        // the SO(3)-PERTURBED projection now operates on a manifold
-        // that's COM-locked to the relaxed manifold, so the downstream
-        // 4-plane KL adjudication captures relative structural
-        // divergence instead of being dominated by global rigid drift.
-        let rc = unsafe {
-            crate::so3_project::ffi::prism_apply_com_correction_launch(
-                d_spikes_perturbed   as *mut c_void,
-                d_com_correction_dev as *const c_void,
-                cfg.n_spikes,
-                stream_perturbed as *mut c_void,
-            )
-        };
-        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
-            return Err(BuildError::Cuda { stage: "Path C COM correction apply", rc });
-        }
-
-        // 6.a.6 — PERTURBED branch SO(3) on the COM-corrected kicked
-        // spikes → manifest.tiles_dev_ptr (the PERTURBED manifold buffer).
-        let rc = unsafe {
-            crate::so3_project::ffi::prism_so3_project_run(
-                d_spikes_perturbed as *const crate::rich_spike::RichSpike,
-                cfg.d_cluster_offsets,
-                cfg.n_clusters,
-                cfg.d_k_lm,
-                manifest.tiles_dev_ptr,
-                cfg.initial_frame_id,
-                stream_perturbed as *mut c_void,
-            )
-        };
-        if rc != crate::so3_project::ffi::CUDA_SUCCESS {
-            return Err(BuildError::Cuda { stage: "Path C Node B (SO(3) PERTURBED)", rc });
-        }
-
-        // 6.a.6 — JOIN: stream_perturbed records perturbed_join_event;
-        // md_stream waits before launching the Adjudicator.
-        unsafe {
-            let rc = cuEventRecord(perturbed_join_event, stream_perturbed);
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda {
-                    stage: "Path C cuEventRecord(perturbed_join_event)",
-                    rc: rc as i32,
-                });
-            }
-            let rc = cuStreamWaitEvent(md_stream.cu_stream(), perturbed_join_event, 0);
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda {
-                    stage: "Path C cuStreamWaitEvent(md_stream rejoin)",
-                    rc: rc as i32,
-                });
-            }
-        }
-
-        // ── 6.b-G28 SISR symmetry consensus ──────────────────────────
-        // Path C update: SISR reads the RELAXED manifold (tiles_baseline_dev)
-        // not the perturbed one — bilateral symmetry must be verified
-        // on the unperturbed protein, not the post-gasp state.
-        // Captured on md_stream after the SO(3) RELAXED retire (sequential
-        // dependency on md_stream is implicit).
-        if let Some(ref sisr) = cfg.sisr {
-            let rc = unsafe {
-                prism_sisr_launch(
-                    tiles_baseline_dev as *const c_void,
-                    sisr_count_dev as *const c_void,
-                    sisr_mask_dev as *mut c_void,
-                    sisr.epsilon_sym_angstrom,
-                    md_stream.cu_stream() as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda { stage: "G28 SISR launch", rc });
-            }
-        }
-
-        // ── 6.b Node C: Adjudicator step (T13 SIMT 4-plane KL) ─────────
-        // <<<1, 64>>>: each thread processes one cluster.  cfg.n_clusters
-        // is the capture-time constant fed in; threads with id >=
-        // n_clusters early-skip in the kernel.
-        let rc = unsafe {
-            crate::interferometric_adjudicator::ffi::prism_interferometric_adjudicator_step(
-                adj_dev as *mut InterferometricAdjudicatorFfi,
-                cfg.n_clusters,
-                md_stream.cu_stream() as *mut c_void,
-            )
-        };
-        if rc != 0 {
-            return Err(BuildError::Cuda { stage: "Node C (Adjudicator)", rc });
-        }
-        // STREAM5_SFA_DIAG — probe capture state immediately after Node C.
-        diag_capture_invalidation_after(
-            &md_stream,
-            "Node C (Adjudicator)",
-            cfg.diagnostic_stream_id,
-            "parent_owned_g26_child",
-        )?;
-
-        // ── 6.b-T7 Wave 3 / Path B: dynamic noise-floor calibration ────
-        // Three captured kernels (capture → reduce → apply) run AFTER the
-        // Adjudicator step on md_stream.  The Adjudicator's __threadfence()
-        // before its global_adjudication_summary write + the captured-graph
-        // dependency edge guarantee current_divergence is L2-visible here.
-        // After PRISM_DYNT7_N_MIN samples (=100), the apply kernel writes
-        // substrate-derived μ + σ into adj->noise_floor_mu[0] and σ[0],
-        // adapting the threshold for subsequent launches.  Pure GPU-native;
-        // no host involvement per chunk.
-        let rc = unsafe {
-            prism_dynamic_t7_launch(
-                adj_dev as *const c_void,
-                dynt7_acc_dev as *mut c_void,
-                dynt7_idx_dev as *mut c_void,
-                dynt7_stats_dev as *mut c_void,
-                md_stream.cu_stream() as *mut c_void,
-            )
-        };
-        if rc != 0 {
-            return Err(BuildError::Cuda { stage: "Wave 3 dynamic T7", rc });
-        }
-
-        // ── 6.b-AMS Channel-B: GhostTileFrame ring push (M1.2.19.B) ─────
-        // Operator Amendment 3.13 §2.1: every replay where
-        // `adj.adjudication_code >= 1` pushes a self-describing
-        // [GhostTileFrame (128 B) + ContactShellTile (1280 B)] = 1408 B
-        // record to the pinned-host, device-mapped ring.  Captured AFTER
-        // the Adjudicator step (so the SWITCH code is final + the per-
-        // frame Δ_AB / power_spectrum reads are stable) and BEFORE ASC
-        // (so the captured frame reflects the unsteered manifold —
-        // legitimate "raw" interferometer input for offline Φ_sym /
-        // Lag-Persistence integration).
-        //
-        // `frame_idx` is the immutable capture-time `initial_frame_id`;
-        // host code re-records the graph if frame ordering needs to
-        // change (consistent with ZSTR's pos-stage frame-id contract).
-        // The on-disk record's frame_idx is therefore monotonic across
-        // chunk replays via the GPU-side u32 counter offset 0.
-        if cfg.ghost_tile_ring_dev != 0 && cfg.ghost_tile_max_records > 0 {
-            // Wave 1 / Q2 — `d_kcc_lead` is the F2-pool [n_clusters] u32
-            // buffer holding the per-cluster causal-lead residue id.
-            // When `cfg.d_kcc_lead == 0` the kernel emits 0xFFFFFFFFu
-            // sentinels until the host populator fires (typical
-            // bootstrap during the very first chunk).
-            let kcc_lead_ptr = if cfg.d_kcc_lead != 0 {
-                cfg.d_kcc_lead as *const c_void
-            } else {
-                std::ptr::null()
-            };
-            // M1.2.23 §4 + §5 — Transparent MAR v2 launcher selection.
-            // When PipelineConfig.mar_v2 is Some, route through the v2
-            // launcher so emitted records carry schema_version=2 +
-            // observation_pass / discovery_pass / gear_id / dt_fs / step_idx
-            // structured payload. Otherwise the v1 launcher path is
-            // preserved bit-identically.
-            //
-            // Hard invariant (per directive §4): the v2 emission gate widens
-            // telemetry to include observation_pass, but the F1/G26 SWITCH
-            // path in the adjudicator is NOT changed. Discovery semantics
-            // for SWITCH selection remain whatever the adjudicator's own
-            // threshold computes.
-            let rc = if let Some(ref mar) = cfg.mar_v2 {
-                let obs_thr = mar.observation_threshold_kl();
-                let disc_thr = mar.discovery_threshold_kl();
-                log::info!(
-                    "[M1.2.23 v2] ghost launcher: schema_version=2 \
-                     obs_thr={:.6} disc_thr={:.6} gear_id={} dt_fs={:.3} \
-                     d_step_counter=0x{:x} prune_kl={:.4}",
-                    obs_thr, disc_thr, mar.gear_id, mar.dt_fs,
-                    mar.d_step_counter, mar.prune_kl_threshold
-                );
-                // OPERATOR MANDATE 2026-05-08 §1 — inject the device
-                // timekeeper increment kernel into the captured graph
-                // body BEFORE the ghost launcher fires. The kernel is
-                // a single-thread atomicAdd; recorded once, replayed on
-                // every captured-graph launch. Each replay advances
-                // *d_step_counter by 1, and the ghost launcher below
-                // dereferences it to stamp the authoritative step_idx
-                // into the emitted v2 record. No-op when
-                // d_step_counter == 0 (legacy host-baked behavior).
-                if mar.d_step_counter != 0 {
-                    let rc_clk = unsafe {
-                        prism_increment_time_launch(
-                            mar.d_step_counter as *mut c_void,
-                            1u32, // increment per logical step
-                            md_stream.cu_stream() as *mut c_void,
-                        )
-                    };
-                    if rc_clk != 0 {
-                        return Err(BuildError::Cuda {
-                            stage: "OPERATOR-2026-05-08 §1 prism_increment_time_launch",
-                            rc: rc_clk,
-                        });
-                    }
-                    // OPERATOR MANDATE 2026-05-08 §3.I — wire the device-side
-                    // ZSTR slot updater into the captured graph body. Reads
-                    // the freshly-incremented *d_step_counter, computes
-                    // (step % N_SLOTS), and writes to the writable
-                    // d_zstr_active_slot __device__ symbol. The downstream
-                    // ZSTR pos_stage / fence_signal kernels read that symbol
-                    // at execution time, so the slot rolls forward without
-                    // host cudaMemcpyToSymbolAsync per step. This is the
-                    // foundation for the §3.IV host-loop eradication: when
-                    // the host launches the captured graph once per chunk
-                    // (rather than once per step) the slot still rolls
-                    // correctly because each replay (or each unrolled
-                    // iteration inside a single replay) re-runs both the
-                    // increment and slot-update kernels.
-                    let rc_slot = unsafe {
-                        crate::zstr::ffi::prism_zstr_device_slot_update_launch(
-                            mar.d_step_counter as *const c_void,
-                            crate::zstr::ZstrRing::N_SLOTS as u32,
-                            md_stream.cu_stream() as *mut c_void,
-                        )
-                    };
-                    if rc_slot != 0 {
-                        return Err(BuildError::Cuda {
-                            stage: "OPERATOR-2026-05-08 §3.I prism_zstr_device_slot_update_launch",
-                            rc: rc_slot,
-                        });
-                    }
-                }
-                unsafe {
-                    prism_ghost_pipe_stage_launch_v2(
-                        cfg.ghost_tile_ring_dev,
-                        manifest.tiles_dev_ptr as *const c_void,
-                        adj_dev as *const c_void,
-                        kcc_lead_ptr,
-                        cfg.initial_frame_id as u64,
-                        cfg.n_clusters,
-                        cfg.ghost_tile_max_records,
-                        md_stream.cu_stream() as *mut c_void,
-                        cfg.firehose_enable,
-                        obs_thr,
-                        disc_thr,
-                        mar.gear_id,
-                        mar.dt_fs,
-                        cfg.initial_frame_id as u64, // legacy fallback when d_step_counter==0
-                        mar.d_step_counter,          // §1 device clock — authoritative when non-zero
-                        mar.prune_kl_threshold,      // §2 device-side firehose prune (default 0.01)
-                    )
-                }
-            } else {
-                unsafe {
-                    prism_ghost_pipe_stage_launch(
-                        cfg.ghost_tile_ring_dev,
-                        manifest.tiles_dev_ptr as *const c_void,
-                        adj_dev as *const c_void,
-                        kcc_lead_ptr,
-                        cfg.initial_frame_id as u64,
-                        cfg.n_clusters,
-                        cfg.ghost_tile_max_records,
-                        md_stream.cu_stream() as *mut c_void,
-                        cfg.firehose_enable,
-                    )
-                }
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda {
-                    stage: if cfg.mar_v2.is_some() {
-                        "M1.2.19.B prism_ghost_pipe_stage_launch_v2"
-                    } else {
-                        "M1.2.19.B prism_ghost_pipe_stage_launch"
-                    },
-                    rc,
-                });
-            }
-            // STREAM5_SFA_DIAG — probe capture state after ghost pipe stage.
-            diag_capture_invalidation_after(
-                &md_stream,
-                if cfg.mar_v2.is_some() {
-                    "M1.2.19.B prism_ghost_pipe_stage_launch_v2"
-                } else {
-                    "M1.2.19.B prism_ghost_pipe_stage_launch"
-                },
-                cfg.diagnostic_stream_id,
-                "parent_owned_g26_child",
-            )?;
-        }
-
-        // ── 6.b' V2 IGNITION prep: snapshot the Adjudicator's captured
-        // node handle BEFORE any cross-stream events confuse the
-        // dependency frontier. The V2 hook (Claude-2's
-        // `prism_wire_f1_switch_ffi`) consumes this handle as the
-        // explicit dependency for the conditional node — operator's
-        // §2.3 mandate ("explicit cuGraphAddDependencies edge from
-        // Node C to Node D"). At this point in the capture sequence
-        // the dependency frontier is exactly {adjudicator_node}.
-        // §3.III-hoist: per-iteration Vec; at end of iteration we mirror
-        // (clone) to the outer hoisted Vec so post-capture wiring sees
-        // the LAST iteration's adjudicator node set. With body_unroll > 1
-        // earlier iterations' adj nodes execute correctly inside the
-        // graph; only the last iteration's set is used for post-capture
-        // wiring (e.g., V2 hook at ~4972).
-        let mut adj_node_set: Vec<CUgraphNode> = Vec::new();
-        unsafe {
-            let mut cap_status: CUstreamCaptureStatus =
-                CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
-            let mut cap_id: cuuint64_t = 0;
-            let mut graph_now: CUgraph = ptr::null_mut();
-            let mut deps_ptr: *const CUgraphNode = ptr::null();
-            let mut n_deps: usize = 0;
-            let rc = cuStreamGetCaptureInfo_v2(
-                md_stream.cu_stream(),
-                &mut cap_status as *mut _,
-                &mut cap_id as *mut _,
-                &mut graph_now as *mut _,
-                &mut deps_ptr as *mut _,
-                &mut n_deps as *mut _,
-            );
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda {
-                    stage: "cuStreamGetCaptureInfo_v2 (post-Adjudicator snapshot)",
-                    rc: rc as i32,
-                });
-            }
-            if n_deps > 0 {
-                adj_node_set = std::slice::from_raw_parts(deps_ptr, n_deps).to_vec();
-            }
-        }
-
-        // ── 6.c' Node D: ASC Force Injection ──────────────────────────
-        // Captured on md_stream immediately after Node C (adjudicator).
-        // At graph replay the kernel reads adj->adjudication_code from
-        // device: if Prune (0) it returns in the first warp, zero cost.
-        // If Construct (1) it injects F = α · Δ_AB · (x_i − X_c) into
-        // d_forces via atomicAdd — NVE-safe at α ≤ 0.01 (< 10% bound).
-        // Omitted when cfg.asc is None (test builds, legacy path).
-        if let Some(ref asc) = cfg.asc {
-            // M1.2.18-P3.2 — pass d_pe_components so the ASC kernel
-            // can fold V_ASC into V_t.  Cast f64 const → f64 mut for
-            // the atomicAdd target.  Null-passthrough preserves legacy
-            // test fixtures that don't wire PE.
-            let rc = unsafe {
-                crate::interferometric_adjudicator::ffi::prism_asc_apply(
-                    adj_dev as *const InterferometricAdjudicatorFfi,
-                    asc.d_forces,
-                    asc.d_atom_positions,
-                    asc.d_atom_in_cluster,
-                    asc.n_atoms,
-                    asc.steering_gain_alpha,
-                    md_stream.cu_stream() as *mut c_void,
-                    cfg.d_pe_components as *mut f64,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda { stage: "Node D (ASC force inject)", rc });
-            }
-            // STREAM5_SFA_DIAG — probe capture state after Node D.
-            diag_capture_invalidation_after(
-                &md_stream,
-                "Node D (ASC force inject)",
-                cfg.diagnostic_stream_id,
-                "parent_owned_g26_child",
-            )?;
-        }
-
-        // ── 6.c'' B.3.2-FULL — G26 Chronometric Gearbox ────────────────────
-        //
-        // Capture-time:
-        //   1. cuStreamGetCaptureInfo to fetch the in-progress graph handle.
-        //   2. prism_gearbox_create_handle_ffi creates a conditional handle
-        //      bound to the in-progress graph; bridge kernel will reference
-        //      it as a kernel-node arg.
-        //   3. Launch SFA kernel — reads adj->adjudication_code, mutates
-        //      cruise.{counter, current_gear, previous_gear, last_burst_frame}.
-        //      Decoupled from dt-write (the SWITCH body's apply_fixed_dt
-        //      kernel owns that side-effect).
-        //   4. Launch predicate-bridge kernel — reads adj->gear_override
-        //      (offset 100, B.3.2) and cruise->current_gear, calls
-        //      cudaGraphSetConditional(handle, final_gear).
-        //   5. Snapshot the bridge node handle for the post-capture
-        //      SWITCH wiring.
-        //
-        // Post-capture (after end_capture):
-        //   6. prism_gearbox_wire_with_handle_ffi — adds the SWITCH
-        //      conditional node downstream of bridge_node, using the
-        //      handle from step 2.
-        //   7. prism_gearbox_populate_switch_bodies_ffi — populates the
-        //      4 phGraph_out body sub-graphs:
-        //        Body 0 (Burst, 0.5fs):  rescale → Berendsen → apply_dt(0)
-        //        Body 1 (Cruise, 2.0fs): rescale → apply_dt(1)
-        //        Body 2 (Sprint, 4.0fs): rescale → apply_dt(2)
-        //        Body 3 (Abort):         trap (asm volatile("trap;"))
-
-        // Step 1 + 2: create or import the G26 conditional handle.
-        // TIER 8 Option β: monolithic fusion passes a parent-owned
-        // handle here.  The child still captures the predicate bridge
-        // kernel, but the SWITCH node is installed on the parent graph
-        // after the child is spliced.
-        // §3.III-hoist: rebind to outer-scope hoisted scalars.
-        // g26_switch_owned_by_parent is loop-invariant (depends on cfg),
-        // so we just shadow it locally with the same value each iteration.
-        // g26_cond_handle is the SAME value across iterations (each
-        // iteration's bridge kernel writes to the SAME conditional handle),
-        // but we mirror writes to the outer scope so post-capture wiring
-        // sees the resolved handle value.
-        let _g26_switch_owned_by_parent_inner: bool = g26_switch_owned_by_parent;
-        let mut g26_cond_handle: u64 = g26_cond_handle_hoisted;
-        if g26_switch_owned_by_parent {
-            log::info!(
-                "[TIER8-G26] using parent-owned conditional handle {:#x}; \
-                 child template will remain SWITCH-free",
-                g26_cond_handle
-            );
-        } else {
-            let mut g26_in_progress_graph: CUgraph = ptr::null_mut();
+            // 6.a.1 — FORK: record fork_event on md_stream; perturbed stream
+            // waits.  Both branches now have a well-defined start barrier
+            // captured into the graph.
             unsafe {
-                let mut s   = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
-                let mut id: cuuint64_t = 0;
-                let mut dp: *const CUgraphNode = ptr::null();
-                let mut nd: usize = 0;
-                let rc = cuStreamGetCaptureInfo_v2(
-                    md_stream.cu_stream(),
-                    &mut s as *mut _,
-                    &mut id as *mut _,
-                    &mut g26_in_progress_graph as *mut _,
-                    &mut dp as *mut _,
-                    &mut nd as *mut _,
-                );
+                let rc = cuEventRecord(fork_event, md_stream.cu_stream());
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
                     return Err(BuildError::Cuda {
-                        stage: "B.3.2 cuStreamGetCaptureInfo (pre-gearbox)",
+                        stage: "Path C cuEventRecord(fork_event, md_stream)",
+                        rc: rc as i32,
+                    });
+                }
+                let rc = cuStreamWaitEvent(stream_perturbed, fork_event, 0);
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "Path C cuStreamWaitEvent(stream_perturbed)",
                         rc: rc as i32,
                     });
                 }
             }
+
+            // 6.a.2 — RELAXED branch on md_stream: SO(3)(d_spikes_raw) →
+            // tiles_baseline_dev (the RELAXED manifold buffer; was
+            // time-lagged frame N-1 pre-Path-C, now is the SO(3) of raw
+            // spikes at frame N).  The DtoDAsync time-lag copy that used
+            // to populate tiles_baseline_dev is REMOVED below — the
+            // relaxed manifold is now computed every replay rather than
+            // copied from a prior frame.
             let rc = unsafe {
-                prism_gearbox_create_handle_ffi(
-                    g26_in_progress_graph,
-                    /*default_value=*/ 1u32,    // safe default = Gear 1 (2.0fs)
-                    &mut g26_cond_handle as *mut u64,
+                crate::so3_project::ffi::prism_so3_project_run(
+                    cfg.d_spikes,
+                    cfg.d_cluster_offsets,
+                    cfg.n_clusters,
+                    cfg.d_k_lm,
+                    tiles_baseline_dev as *mut ContactShellTile,
+                    cfg.initial_frame_id,
+                    md_stream.cu_stream() as *mut c_void,
                 )
             };
-            if rc != 0 {
+            if rc != crate::so3_project::ffi::CUDA_SUCCESS {
                 return Err(BuildError::Cuda {
-                    stage: "B.3.2 prism_gearbox_create_handle_ffi",
+                    stage: "Path C Node B (SO(3) RELAXED)",
                     rc,
                 });
             }
-        }
 
-        // ── M1.2.17 — Hamiltonian Auditor (energy monitor reduce) ──
-        // Captured BEFORE the SFA kernel so adj.d_potential_energy
-        // (offset 112) holds V_t when the SFA reads it for the
-        // stability-fuse drift check.  Skipped when the host hasn't
-        // wired d_pe_components / n_atoms_for_pe — the SFA stays in
-        // first-frame mode (no drift trip).  Captured-graph dependency:
-        //   ASC → energy_monitor_reduce → energy_window_update → SFA → ...
-        //
-        // The reduce + window-update pair adds 2 captured nodes.
-        if !cfg.d_pe_components.is_null() && cfg.n_atoms_for_pe > 0 {
-            // The CUB DeviceReduce::Sum is captured as a series of
-            // internal nodes; we don't snapshot individual handles.
-            // The window-update kernel writes adj.d_potential_energy
-            // (offset 112) directly.
-            let adj_pe_target = (adj_dev + 112) as *mut f64;
+            // 6.a.3 — PERTURBED branch on stream_perturbed: gasp kernel
+            // computes Δr per spike from the per-atom force gradient,
+            // writes pos_perturbed = pos_raw + Δr to d_spikes_perturbed,
+            // and atomicAdds m·Δr into d_com_shift_dev plus m into
+            // d_total_mass_dev (Path Ω Option A).  Both accumulators feed
+            // the post-pass momentum-guard kernel which computes the COM
+            // correction vector.
             let rc = unsafe {
-                prism_energy_monitor_launch_reduce(
-                    cfg.d_pe_components,
+                crate::so3_project::ffi::prism_apply_gradient_gasp_launch(
+                    cfg.d_spikes,
+                    d_spikes_perturbed as *mut crate::rich_spike::RichSpike,
+                    cfg.d_forces_anchor as *const f32,
+                    cfg.d_masses as *const f32,
+                    adj_dev as *const c_void,
+                    d_com_shift_dev as *mut c_void,
+                    d_total_mass_dev as *mut c_void, // Path Ω Option A
+                    cfg.initial_frame_id,
+                    cfg.n_spikes,
                     cfg.n_atoms_for_pe,
-                    energy_temp_storage_dev as *mut c_void,
-                    energy_temp_storage_bytes as usize,
-                    energy_pe_scalar_dev as *mut f64,
-                    energy_window_dev as *mut c_void,
-                    adj_pe_target,
+                    stream_perturbed as *mut c_void,
+                )
+            };
+            if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+                return Err(BuildError::Cuda {
+                    stage: "Path C gasp kernel",
+                    rc,
+                });
+            }
+
+            // 6.a.4 — Path Ω Option A — Momentum-Guard post-pass kernel:
+            // reads (Σ m·Δr) and (Σ m), writes correction = (Σ m·Δr) / (Σ m)
+            // to d_com_correction_dev, and sets momentum_violation_flag = 1
+            // ONLY if the correction magnitude itself exceeds 1.0 Å (the
+            // gasp produced unphysical kicks).  Pre-Option-A this kernel
+            // checked the RAW |Σ m·Δr| > 1e-4 Å which fired every chunk
+            // because that's a √n random-walk that can't be bounded that
+            // tightly — the canonical fix is to subtract the global drift
+            // and let the SO(3) KL see only the structural divergence.
+            let rc = unsafe {
+                crate::so3_project::ffi::prism_momentum_guard_check_launch(
+                    d_com_shift_dev as *const c_void,
+                    d_total_mass_dev as *const c_void,
+                    d_com_correction_dev as *mut c_void,
+                    adj_dev as *mut c_void,
+                    stream_perturbed as *mut c_void,
+                )
+            };
+            if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+                return Err(BuildError::Cuda {
+                    stage: "Path C Momentum Guard check",
+                    rc,
+                });
+            }
+
+            // 6.a.5 — Path Ω Option A — Apply the COM correction in-place
+            // to d_spikes_perturbed: each spike's (x, y, z) -= correction.
+            // Result: Σ m·(pos_perturbed - pos_relaxed) = 0 by construction;
+            // the SO(3)-PERTURBED projection now operates on a manifold
+            // that's COM-locked to the relaxed manifold, so the downstream
+            // 4-plane KL adjudication captures relative structural
+            // divergence instead of being dominated by global rigid drift.
+            let rc = unsafe {
+                crate::so3_project::ffi::prism_apply_com_correction_launch(
+                    d_spikes_perturbed as *mut c_void,
+                    d_com_correction_dev as *const c_void,
+                    cfg.n_spikes,
+                    stream_perturbed as *mut c_void,
+                )
+            };
+            if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+                return Err(BuildError::Cuda {
+                    stage: "Path C COM correction apply",
+                    rc,
+                });
+            }
+
+            // 6.a.6 — PERTURBED branch SO(3) on the COM-corrected kicked
+            // spikes → manifest.tiles_dev_ptr (the PERTURBED manifold buffer).
+            let rc = unsafe {
+                crate::so3_project::ffi::prism_so3_project_run(
+                    d_spikes_perturbed as *const crate::rich_spike::RichSpike,
+                    cfg.d_cluster_offsets,
+                    cfg.n_clusters,
+                    cfg.d_k_lm,
+                    manifest.tiles_dev_ptr,
+                    cfg.initial_frame_id,
+                    stream_perturbed as *mut c_void,
+                )
+            };
+            if rc != crate::so3_project::ffi::CUDA_SUCCESS {
+                return Err(BuildError::Cuda {
+                    stage: "Path C Node B (SO(3) PERTURBED)",
+                    rc,
+                });
+            }
+
+            // 6.a.6 — JOIN: stream_perturbed records perturbed_join_event;
+            // md_stream waits before launching the Adjudicator.
+            unsafe {
+                let rc = cuEventRecord(perturbed_join_event, stream_perturbed);
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "Path C cuEventRecord(perturbed_join_event)",
+                        rc: rc as i32,
+                    });
+                }
+                let rc = cuStreamWaitEvent(md_stream.cu_stream(), perturbed_join_event, 0);
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "Path C cuStreamWaitEvent(md_stream rejoin)",
+                        rc: rc as i32,
+                    });
+                }
+            }
+
+            // ── 6.b-G28 SISR symmetry consensus ──────────────────────────
+            // Path C update: SISR reads the RELAXED manifold (tiles_baseline_dev)
+            // not the perturbed one — bilateral symmetry must be verified
+            // on the unperturbed protein, not the post-gasp state.
+            // Captured on md_stream after the SO(3) RELAXED retire (sequential
+            // dependency on md_stream is implicit).
+            if let Some(ref sisr) = cfg.sisr {
+                let rc = unsafe {
+                    prism_sisr_launch(
+                        tiles_baseline_dev as *const c_void,
+                        sisr_count_dev as *const c_void,
+                        sisr_mask_dev as *mut c_void,
+                        sisr.epsilon_sym_angstrom,
+                        md_stream.cu_stream() as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "G28 SISR launch",
+                        rc,
+                    });
+                }
+            }
+
+            // ── 6.b Node C: Adjudicator step (T13 SIMT 4-plane KL) ─────────
+            // <<<1, 64>>>: each thread processes one cluster.  cfg.n_clusters
+            // is the capture-time constant fed in; threads with id >=
+            // n_clusters early-skip in the kernel.
+            let rc = unsafe {
+                crate::interferometric_adjudicator::ffi::prism_interferometric_adjudicator_step(
+                    adj_dev as *mut InterferometricAdjudicatorFfi,
+                    cfg.n_clusters,
                     md_stream.cu_stream() as *mut c_void,
                 )
             };
             if rc != 0 {
                 return Err(BuildError::Cuda {
-                    stage: "M1.2.17 prism_energy_monitor_launch_reduce",
+                    stage: "Node C (Adjudicator)",
                     rc,
                 });
             }
-            // STREAM5_SFA_DIAG — probe capture state after M1.2.17 energy reduce.
+            // STREAM5_SFA_DIAG — probe capture state immediately after Node C.
             diag_capture_invalidation_after(
                 &md_stream,
-                "M1.2.17 prism_energy_monitor_launch_reduce",
+                "Node C (Adjudicator)",
                 cfg.diagnostic_stream_id,
                 "parent_owned_g26_child",
             )?;
-        }
 
-        // Step 3: SFA kernel.
-        let rc = unsafe {
-            crate::gearbox::ffi::prism_gearbox_launch_sfa(
-                adj_dev as *const InterferometricAdjudicatorFfi,
-                cruise_state_dev as *mut crate::gearbox::ChronometricStateTensor,
-                cfg.initial_frame_id,
-                md_stream.cu_stream() as *mut c_void,
-            )
-        };
-        if rc != 0 {
-            return Err(BuildError::Cuda {
-                stage: "B.3.2 SFA kernel",
-                rc,
-            });
-        }
-
-        // Step 4: predicate bridge kernel — sets conditional for SWITCH.
-        // CHUNK13_DIAG — when cfg.branch_trace_dev is non-zero, route
-        // through the TRACED variant so the bridge kernel writes the
-        // last predicate value, branch counts, and invocation count
-        // into the pinned-mapped trace block. Zero overhead when
-        // cfg.branch_trace_dev == 0 (kernel becomes the legacy bridge).
-        let rc = if cfg.branch_trace_dev != 0 {
-            unsafe {
-                crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge_traced(
-                    g26_cond_handle,
-                    adj_dev as *const InterferometricAdjudicatorFfi,
-                    cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
+            // ── 6.b-T7 Wave 3 / Path B: dynamic noise-floor calibration ────
+            // Three captured kernels (capture → reduce → apply) run AFTER the
+            // Adjudicator step on md_stream.  The Adjudicator's __threadfence()
+            // before its global_adjudication_summary write + the captured-graph
+            // dependency edge guarantee current_divergence is L2-visible here.
+            // After PRISM_DYNT7_N_MIN samples (=100), the apply kernel writes
+            // substrate-derived μ + σ into adj->noise_floor_mu[0] and σ[0],
+            // adapting the threshold for subsequent launches.  Pure GPU-native;
+            // no host involvement per chunk.
+            let rc = unsafe {
+                prism_dynamic_t7_launch(
+                    adj_dev as *const c_void,
+                    dynt7_acc_dev as *mut c_void,
+                    dynt7_idx_dev as *mut c_void,
+                    dynt7_stats_dev as *mut c_void,
                     md_stream.cu_stream() as *mut c_void,
-                    cfg.branch_trace_dev,
-                )
-            }
-        } else {
-            unsafe {
-                crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge(
-                    g26_cond_handle,
-                    adj_dev as *const InterferometricAdjudicatorFfi,
-                    cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
-                    md_stream.cu_stream() as *mut c_void,
-                )
-            }
-        };
-        if rc != 0 {
-            return Err(BuildError::Cuda {
-                stage: "B.3.2 predicate bridge kernel",
-                rc,
-            });
-        }
-
-        // F1-PARENT-SWITCH-001 — F1 predicate-bridge kernel launched
-        // alongside G26's. Reads `adj->adjudication_code & 0x3` and
-        // writes the result into the parent-owned F1 conditional handle.
-        // Mirrors the G26 launch shape (single-thread kernel-node into
-        // the captured graph). Only fires when a parent-owned F1 handle
-        // was supplied via `cfg.f1_parent_cond_handle`; otherwise F1 is
-        // disabled at the CUDA-graph layer and the launch is skipped so
-        // the captured child template stays splice-legal.
-        if cfg.f1_parent_cond_handle != 0 {
-            let adj_code_devptr = unsafe {
-                crate::interferometric_adjudicator::ffi::prism_get_adjudication_code_devptr(
-                    adj_dev as *const InterferometricAdjudicatorFfi,
                 )
             };
-            if adj_code_devptr.is_null() {
+            if rc != 0 {
                 return Err(BuildError::Cuda {
-                    stage: "F1-PARENT-SWITCH adjudication_code devptr null",
-                    rc: -1,
+                    stage: "Wave 3 dynamic T7",
+                    rc,
                 });
             }
-            // CHUNK13_DIAG — same TRACED-variant routing as G26 above.
+
+            // ── 6.b-AMS Channel-B: GhostTileFrame ring push (M1.2.19.B) ─────
+            // Operator Amendment 3.13 §2.1: every replay where
+            // `adj.adjudication_code >= 1` pushes a self-describing
+            // [GhostTileFrame (128 B) + ContactShellTile (1280 B)] = 1408 B
+            // record to the pinned-host, device-mapped ring.  Captured AFTER
+            // the Adjudicator step (so the SWITCH code is final + the per-
+            // frame Δ_AB / power_spectrum reads are stable) and BEFORE ASC
+            // (so the captured frame reflects the unsteered manifold —
+            // legitimate "raw" interferometer input for offline Φ_sym /
+            // Lag-Persistence integration).
+            //
+            // `frame_idx` is the immutable capture-time `initial_frame_id`;
+            // host code re-records the graph if frame ordering needs to
+            // change (consistent with ZSTR's pos-stage frame-id contract).
+            // The on-disk record's frame_idx is therefore monotonic across
+            // chunk replays via the GPU-side u32 counter offset 0.
+            if cfg.ghost_tile_ring_dev != 0 && cfg.ghost_tile_max_records > 0 {
+                // Wave 1 / Q2 — `d_kcc_lead` is the F2-pool [n_clusters] u32
+                // buffer holding the per-cluster causal-lead residue id.
+                // When `cfg.d_kcc_lead == 0` the kernel emits 0xFFFFFFFFu
+                // sentinels until the host populator fires (typical
+                // bootstrap during the very first chunk).
+                let kcc_lead_ptr = if cfg.d_kcc_lead != 0 {
+                    cfg.d_kcc_lead as *const c_void
+                } else {
+                    std::ptr::null()
+                };
+                // M1.2.23 §4 + §5 — Transparent MAR v2 launcher selection.
+                // When PipelineConfig.mar_v2 is Some, route through the v2
+                // launcher so emitted records carry schema_version=2 +
+                // observation_pass / discovery_pass / gear_id / dt_fs / step_idx
+                // structured payload. Otherwise the v1 launcher path is
+                // preserved bit-identically.
+                //
+                // Hard invariant (per directive §4): the v2 emission gate widens
+                // telemetry to include observation_pass, but the F1/G26 SWITCH
+                // path in the adjudicator is NOT changed. Discovery semantics
+                // for SWITCH selection remain whatever the adjudicator's own
+                // threshold computes.
+                let rc = if let Some(ref mar) = cfg.mar_v2 {
+                    let obs_thr = mar.observation_threshold_kl();
+                    let disc_thr = mar.discovery_threshold_kl();
+                    log::info!(
+                        "[M1.2.23 v2] ghost launcher: schema_version=2 \
+                     obs_thr={:.6} disc_thr={:.6} gear_id={} dt_fs={:.3} \
+                     d_step_counter=0x{:x} prune_kl={:.4}",
+                        obs_thr,
+                        disc_thr,
+                        mar.gear_id,
+                        mar.dt_fs,
+                        mar.d_step_counter,
+                        mar.prune_kl_threshold
+                    );
+                    // OPERATOR MANDATE 2026-05-08 §1 — inject the device
+                    // timekeeper increment kernel into the captured graph
+                    // body BEFORE the ghost launcher fires. The kernel is
+                    // a single-thread atomicAdd; recorded once, replayed on
+                    // every captured-graph launch. Each replay advances
+                    // *d_step_counter by 1, and the ghost launcher below
+                    // dereferences it to stamp the authoritative step_idx
+                    // into the emitted v2 record. No-op when
+                    // d_step_counter == 0 (legacy host-baked behavior).
+                    if mar.d_step_counter != 0 {
+                        let rc_clk = unsafe {
+                            prism_increment_time_launch(
+                                mar.d_step_counter as *mut c_void,
+                                1u32, // increment per logical step
+                                md_stream.cu_stream() as *mut c_void,
+                            )
+                        };
+                        if rc_clk != 0 {
+                            return Err(BuildError::Cuda {
+                                stage: "OPERATOR-2026-05-08 §1 prism_increment_time_launch",
+                                rc: rc_clk,
+                            });
+                        }
+                        // OPERATOR MANDATE 2026-05-08 §3.I — wire the device-side
+                        // ZSTR slot updater into the captured graph body. Reads
+                        // the freshly-incremented *d_step_counter, computes
+                        // (step % N_SLOTS), and writes to the writable
+                        // d_zstr_active_slot __device__ symbol. The downstream
+                        // ZSTR pos_stage / fence_signal kernels read that symbol
+                        // at execution time, so the slot rolls forward without
+                        // host cudaMemcpyToSymbolAsync per step. This is the
+                        // foundation for the §3.IV host-loop eradication: when
+                        // the host launches the captured graph once per chunk
+                        // (rather than once per step) the slot still rolls
+                        // correctly because each replay (or each unrolled
+                        // iteration inside a single replay) re-runs both the
+                        // increment and slot-update kernels.
+                        let rc_slot = unsafe {
+                            crate::zstr::ffi::prism_zstr_device_slot_update_launch(
+                                mar.d_step_counter as *const c_void,
+                                crate::zstr::ZstrRing::N_SLOTS as u32,
+                                md_stream.cu_stream() as *mut c_void,
+                            )
+                        };
+                        if rc_slot != 0 {
+                            return Err(BuildError::Cuda {
+                                stage:
+                                    "OPERATOR-2026-05-08 §3.I prism_zstr_device_slot_update_launch",
+                                rc: rc_slot,
+                            });
+                        }
+                    }
+                    unsafe {
+                        prism_ghost_pipe_stage_launch_v2(
+                            cfg.ghost_tile_ring_dev,
+                            manifest.tiles_dev_ptr as *const c_void,
+                            adj_dev as *const c_void,
+                            kcc_lead_ptr,
+                            cfg.initial_frame_id as u64,
+                            cfg.n_clusters,
+                            cfg.ghost_tile_max_records,
+                            md_stream.cu_stream() as *mut c_void,
+                            cfg.firehose_enable,
+                            obs_thr,
+                            disc_thr,
+                            mar.gear_id,
+                            mar.dt_fs,
+                            cfg.initial_frame_id as u64, // legacy fallback when d_step_counter==0
+                            mar.d_step_counter, // §1 device clock — authoritative when non-zero
+                            mar.prune_kl_threshold, // §2 device-side firehose prune (default 0.01)
+                        )
+                    }
+                } else {
+                    unsafe {
+                        prism_ghost_pipe_stage_launch(
+                            cfg.ghost_tile_ring_dev,
+                            manifest.tiles_dev_ptr as *const c_void,
+                            adj_dev as *const c_void,
+                            kcc_lead_ptr,
+                            cfg.initial_frame_id as u64,
+                            cfg.n_clusters,
+                            cfg.ghost_tile_max_records,
+                            md_stream.cu_stream() as *mut c_void,
+                            cfg.firehose_enable,
+                        )
+                    }
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: if cfg.mar_v2.is_some() {
+                            "M1.2.19.B prism_ghost_pipe_stage_launch_v2"
+                        } else {
+                            "M1.2.19.B prism_ghost_pipe_stage_launch"
+                        },
+                        rc,
+                    });
+                }
+                // STREAM5_SFA_DIAG — probe capture state after ghost pipe stage.
+                diag_capture_invalidation_after(
+                    &md_stream,
+                    if cfg.mar_v2.is_some() {
+                        "M1.2.19.B prism_ghost_pipe_stage_launch_v2"
+                    } else {
+                        "M1.2.19.B prism_ghost_pipe_stage_launch"
+                    },
+                    cfg.diagnostic_stream_id,
+                    "parent_owned_g26_child",
+                )?;
+            }
+
+            // ── 6.b' V2 IGNITION prep: snapshot the Adjudicator's captured
+            // node handle BEFORE any cross-stream events confuse the
+            // dependency frontier. The V2 hook (Claude-2's
+            // `prism_wire_f1_switch_ffi`) consumes this handle as the
+            // explicit dependency for the conditional node — operator's
+            // §2.3 mandate ("explicit cuGraphAddDependencies edge from
+            // Node C to Node D"). At this point in the capture sequence
+            // the dependency frontier is exactly {adjudicator_node}.
+            // §3.III-hoist: per-iteration Vec; at end of iteration we mirror
+            // (clone) to the outer hoisted Vec so post-capture wiring sees
+            // the LAST iteration's adjudicator node set. With body_unroll > 1
+            // earlier iterations' adj nodes execute correctly inside the
+            // graph; only the last iteration's set is used for post-capture
+            // wiring (e.g., V2 hook at ~4972).
+            let mut adj_node_set: Vec<CUgraphNode> = Vec::new();
+            unsafe {
+                let mut cap_status: CUstreamCaptureStatus =
+                    CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+                let mut cap_id: cuuint64_t = 0;
+                let mut graph_now: CUgraph = ptr::null_mut();
+                let mut deps_ptr: *const CUgraphNode = ptr::null();
+                let mut n_deps: usize = 0;
+                let rc = cuStreamGetCaptureInfo_v2(
+                    md_stream.cu_stream(),
+                    &mut cap_status as *mut _,
+                    &mut cap_id as *mut _,
+                    &mut graph_now as *mut _,
+                    &mut deps_ptr as *mut _,
+                    &mut n_deps as *mut _,
+                );
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "cuStreamGetCaptureInfo_v2 (post-Adjudicator snapshot)",
+                        rc: rc as i32,
+                    });
+                }
+                if n_deps > 0 {
+                    adj_node_set = std::slice::from_raw_parts(deps_ptr, n_deps).to_vec();
+                }
+            }
+
+            // ── 6.c' Node D: ASC Force Injection ──────────────────────────
+            // Captured on md_stream immediately after Node C (adjudicator).
+            // At graph replay the kernel reads adj->adjudication_code from
+            // device: if Prune (0) it returns in the first warp, zero cost.
+            // If Construct (1) it injects F = α · Δ_AB · (x_i − X_c) into
+            // d_forces via atomicAdd — NVE-safe at α ≤ 0.01 (< 10% bound).
+            // Omitted when cfg.asc is None (test builds, legacy path).
+            if let Some(ref asc) = cfg.asc {
+                // M1.2.18-P3.2 — pass d_pe_components so the ASC kernel
+                // can fold V_ASC into V_t.  Cast f64 const → f64 mut for
+                // the atomicAdd target.  Null-passthrough preserves legacy
+                // test fixtures that don't wire PE.
+                let rc = unsafe {
+                    crate::interferometric_adjudicator::ffi::prism_asc_apply(
+                        adj_dev as *const InterferometricAdjudicatorFfi,
+                        asc.d_forces,
+                        asc.d_atom_positions,
+                        asc.d_atom_in_cluster,
+                        asc.n_atoms,
+                        asc.steering_gain_alpha,
+                        md_stream.cu_stream() as *mut c_void,
+                        cfg.d_pe_components as *mut f64,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "Node D (ASC force inject)",
+                        rc,
+                    });
+                }
+                // STREAM5_SFA_DIAG — probe capture state after Node D.
+                diag_capture_invalidation_after(
+                    &md_stream,
+                    "Node D (ASC force inject)",
+                    cfg.diagnostic_stream_id,
+                    "parent_owned_g26_child",
+                )?;
+            }
+
+            // ── 6.c'' B.3.2-FULL — G26 Chronometric Gearbox ────────────────────
+            //
+            // Capture-time:
+            //   1. cuStreamGetCaptureInfo to fetch the in-progress graph handle.
+            //   2. prism_gearbox_create_handle_ffi creates a conditional handle
+            //      bound to the in-progress graph; bridge kernel will reference
+            //      it as a kernel-node arg.
+            //   3. Launch SFA kernel — reads adj->adjudication_code, mutates
+            //      cruise.{counter, current_gear, previous_gear, last_burst_frame}.
+            //      Decoupled from dt-write (the SWITCH body's apply_fixed_dt
+            //      kernel owns that side-effect).
+            //   4. Launch predicate-bridge kernel — reads adj->gear_override
+            //      (offset 100, B.3.2) and cruise->current_gear, calls
+            //      cudaGraphSetConditional(handle, final_gear).
+            //   5. Snapshot the bridge node handle for the post-capture
+            //      SWITCH wiring.
+            //
+            // Post-capture (after end_capture):
+            //   6. prism_gearbox_wire_with_handle_ffi — adds the SWITCH
+            //      conditional node downstream of bridge_node, using the
+            //      handle from step 2.
+            //   7. prism_gearbox_populate_switch_bodies_ffi — populates the
+            //      4 phGraph_out body sub-graphs:
+            //        Body 0 (Burst, 0.5fs):  rescale → Berendsen → apply_dt(0)
+            //        Body 1 (Cruise, 2.0fs): rescale → apply_dt(1)
+            //        Body 2 (Sprint, 4.0fs): rescale → apply_dt(2)
+            //        Body 3 (Abort):         trap (asm volatile("trap;"))
+
+            // Step 1 + 2: create or import the G26 conditional handle.
+            // TIER 8 Option β: monolithic fusion passes a parent-owned
+            // handle here.  The child still captures the predicate bridge
+            // kernel, but the SWITCH node is installed on the parent graph
+            // after the child is spliced.
+            // §3.III-hoist: rebind to outer-scope hoisted scalars.
+            // g26_switch_owned_by_parent is loop-invariant (depends on cfg),
+            // so we just shadow it locally with the same value each iteration.
+            // g26_cond_handle is the SAME value across iterations (each
+            // iteration's bridge kernel writes to the SAME conditional handle),
+            // but we mirror writes to the outer scope so post-capture wiring
+            // sees the resolved handle value.
+            let _g26_switch_owned_by_parent_inner: bool = g26_switch_owned_by_parent;
+            let mut g26_cond_handle: u64 = g26_cond_handle_hoisted;
+            if g26_switch_owned_by_parent {
+                log::info!(
+                    "[TIER8-G26] using parent-owned conditional handle {:#x}; \
+                 child template will remain SWITCH-free",
+                    g26_cond_handle
+                );
+            } else {
+                let mut g26_in_progress_graph: CUgraph = ptr::null_mut();
+                unsafe {
+                    let mut s = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+                    let mut id: cuuint64_t = 0;
+                    let mut dp: *const CUgraphNode = ptr::null();
+                    let mut nd: usize = 0;
+                    let rc = cuStreamGetCaptureInfo_v2(
+                        md_stream.cu_stream(),
+                        &mut s as *mut _,
+                        &mut id as *mut _,
+                        &mut g26_in_progress_graph as *mut _,
+                        &mut dp as *mut _,
+                        &mut nd as *mut _,
+                    );
+                    if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                        return Err(BuildError::Cuda {
+                            stage: "B.3.2 cuStreamGetCaptureInfo (pre-gearbox)",
+                            rc: rc as i32,
+                        });
+                    }
+                }
+                let rc = unsafe {
+                    prism_gearbox_create_handle_ffi(
+                        g26_in_progress_graph,
+                        /*default_value=*/ 1u32, // safe default = Gear 1 (2.0fs)
+                        &mut g26_cond_handle as *mut u64,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "B.3.2 prism_gearbox_create_handle_ffi",
+                        rc,
+                    });
+                }
+            }
+
+            // ── M1.2.17 — Hamiltonian Auditor (energy monitor reduce) ──
+            // Captured BEFORE the SFA kernel so adj.d_potential_energy
+            // (offset 112) holds V_t when the SFA reads it for the
+            // stability-fuse drift check.  Skipped when the host hasn't
+            // wired d_pe_components / n_atoms_for_pe — the SFA stays in
+            // first-frame mode (no drift trip).  Captured-graph dependency:
+            //   ASC → energy_monitor_reduce → energy_window_update → SFA → ...
+            //
+            // The reduce + window-update pair adds 2 captured nodes.
+            if !cfg.d_pe_components.is_null() && cfg.n_atoms_for_pe > 0 {
+                // The CUB DeviceReduce::Sum is captured as a series of
+                // internal nodes; we don't snapshot individual handles.
+                // The window-update kernel writes adj.d_potential_energy
+                // (offset 112) directly.
+                let adj_pe_target = (adj_dev + 112) as *mut f64;
+                let rc = unsafe {
+                    prism_energy_monitor_launch_reduce(
+                        cfg.d_pe_components,
+                        cfg.n_atoms_for_pe,
+                        energy_temp_storage_dev as *mut c_void,
+                        energy_temp_storage_bytes as usize,
+                        energy_pe_scalar_dev as *mut f64,
+                        energy_window_dev as *mut c_void,
+                        adj_pe_target,
+                        md_stream.cu_stream() as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "M1.2.17 prism_energy_monitor_launch_reduce",
+                        rc,
+                    });
+                }
+                // STREAM5_SFA_DIAG — probe capture state after M1.2.17 energy reduce.
+                diag_capture_invalidation_after(
+                    &md_stream,
+                    "M1.2.17 prism_energy_monitor_launch_reduce",
+                    cfg.diagnostic_stream_id,
+                    "parent_owned_g26_child",
+                )?;
+            }
+
+            // Step 3: SFA kernel.
+            let rc = unsafe {
+                crate::gearbox::ffi::prism_gearbox_launch_sfa(
+                    adj_dev as *const InterferometricAdjudicatorFfi,
+                    cruise_state_dev as *mut crate::gearbox::ChronometricStateTensor,
+                    cfg.initial_frame_id,
+                    md_stream.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(BuildError::Cuda {
+                    stage: "B.3.2 SFA kernel",
+                    rc,
+                });
+            }
+
+            // Step 4: predicate bridge kernel — sets conditional for SWITCH.
+            // CHUNK13_DIAG — when cfg.branch_trace_dev is non-zero, route
+            // through the TRACED variant so the bridge kernel writes the
+            // last predicate value, branch counts, and invocation count
+            // into the pinned-mapped trace block. Zero overhead when
+            // cfg.branch_trace_dev == 0 (kernel becomes the legacy bridge).
             let rc = if cfg.branch_trace_dev != 0 {
                 unsafe {
-                    prism_f1_launch_predicate_bridge_traced(
-                        adj_code_devptr,
-                        cfg.f1_parent_cond_handle,
-                        /*mask=*/ 0x3u32,
+                    crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge_traced(
+                        g26_cond_handle,
+                        adj_dev as *const InterferometricAdjudicatorFfi,
+                        cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
                         md_stream.cu_stream() as *mut c_void,
                         cfg.branch_trace_dev,
                     )
                 }
             } else {
                 unsafe {
-                    prism_f1_launch_predicate_bridge(
-                        adj_code_devptr,
-                        cfg.f1_parent_cond_handle,
-                        /*mask=*/ 0x3u32,
+                    crate::gearbox::ffi::prism_gearbox_launch_predicate_bridge(
+                        g26_cond_handle,
+                        adj_dev as *const InterferometricAdjudicatorFfi,
+                        cruise_state_dev as *const crate::gearbox::ChronometricStateTensor,
                         md_stream.cu_stream() as *mut c_void,
                     )
                 }
             };
             if rc != 0 {
                 return Err(BuildError::Cuda {
-                    stage: "F1-PARENT-SWITCH predicate bridge kernel",
+                    stage: "B.3.2 predicate bridge kernel",
                     rc,
                 });
             }
-        }
 
-        // Step 5: snapshot bridge node handle (frontier == [bridge]).
-        // §3.III-hoist: write through to the outer scope so post-capture
-        // G26 SWITCH wiring (line ~4834) sees the latest bridge node.
-        // body_unroll > 1 ⇒ this scalar holds the LAST iteration's bridge.
-        let mut g26_bridge_node: CUgraphNode = ptr::null_mut();
-        unsafe {
-            let mut s   = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
-            let mut id: cuuint64_t = 0;
-            let mut g: CUgraph = ptr::null_mut();
-            let mut dp: *const CUgraphNode = ptr::null();
-            let mut nd: usize = 0;
-            let rc = cuStreamGetCaptureInfo_v2(
-                md_stream.cu_stream(),
-                &mut s, &mut id, &mut g, &mut dp, &mut nd,
-            );
-            if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
-                g26_bridge_node = *dp;
+            // F1-PARENT-SWITCH-001 — F1 predicate-bridge kernel launched
+            // alongside G26's. Reads `adj->adjudication_code & 0x3` and
+            // writes the result into the parent-owned F1 conditional handle.
+            // Mirrors the G26 launch shape (single-thread kernel-node into
+            // the captured graph). Only fires when a parent-owned F1 handle
+            // was supplied via `cfg.f1_parent_cond_handle`; otherwise F1 is
+            // disabled at the CUDA-graph layer and the launch is skipped so
+            // the captured child template stays splice-legal.
+            if cfg.f1_parent_cond_handle != 0 {
+                let adj_code_devptr = unsafe {
+                    crate::interferometric_adjudicator::ffi::prism_get_adjudication_code_devptr(
+                        adj_dev as *const InterferometricAdjudicatorFfi,
+                    )
+                };
+                if adj_code_devptr.is_null() {
+                    return Err(BuildError::Cuda {
+                        stage: "F1-PARENT-SWITCH adjudication_code devptr null",
+                        rc: -1,
+                    });
+                }
+                // CHUNK13_DIAG — same TRACED-variant routing as G26 above.
+                let rc = if cfg.branch_trace_dev != 0 {
+                    unsafe {
+                        prism_f1_launch_predicate_bridge_traced(
+                            adj_code_devptr,
+                            cfg.f1_parent_cond_handle,
+                            /*mask=*/ 0x3u32,
+                            md_stream.cu_stream() as *mut c_void,
+                            cfg.branch_trace_dev,
+                        )
+                    }
+                } else {
+                    unsafe {
+                        prism_f1_launch_predicate_bridge(
+                            adj_code_devptr,
+                            cfg.f1_parent_cond_handle,
+                            /*mask=*/ 0x3u32,
+                            md_stream.cu_stream() as *mut c_void,
+                        )
+                    }
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "F1-PARENT-SWITCH predicate bridge kernel",
+                        rc,
+                    });
+                }
             }
-        }
-        g26_bridge_node_hoisted = g26_bridge_node;
-        g26_cond_handle_hoisted = g26_cond_handle;
 
-        // ── 6.c-Pz2 Path Z.2 Dual-Manifold Pointer Roll — REMOVED in M1.2.20.C-B.
-        //
-        // The pre-Path-C scheme used a captured cuMemcpyDtoDAsync to copy
-        // tiles_dev → tiles_baseline_dev after every Adjudicator pass so the
-        // NEXT frame's adjudication had a temporal delta vs. the prior frame.
-        // Path C replaces this with a SAME-FRAME dual projection: relaxed and
-        // perturbed manifolds are both computed at frame N (not N vs. N-1),
-        // so there is no temporal roll to perform.  The DtoD copy that lived
-        // here would now overwrite the next replay's RELAXED manifold with
-        // the perturbed one — the opposite of intended semantics.
-
-        // ── 6.c Cross-stream FORK: MD → telemetry ────────────────────
-        // After Node C completes on md_stream, fire the
-        // md_to_telemetry_event; telemetry_stream waits on it before
-        // launching the DMA. Both operations are captured under
-        // MODE_GLOBAL, producing cross-stream dependency edges in
-        // the resulting graph.
-        unsafe {
-            let rc = cuEventRecord(md_to_telemetry_event, md_stream.cu_stream());
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "cuEventRecord (md → telemetry)", rc: rc as i32 });
-            }
-            let rc = cuStreamWaitEvent(telemetry_stream, md_to_telemetry_event, 0);
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "cuStreamWaitEvent (telemetry waits)", rc: rc as i32 });
-            }
-        }
-
-        // Schedule the async D2H to the ring's frame-0 write slot. The
-        // captured graph stamps frame_idx = initial_frame_id; subsequent
-        // launches reuse the same slot index (frame 0 % 3 = 0). The
-        // production wire-in (V2) replaces the constant frame_idx with
-        // a kernel-updatable pointer-stable counter, but for the V1
-        // LEGO brick the constant frame is sufficient to attest
-        // operator §2.2 "fired concurrently on the non-blocking stream".
-        schedule_async_tile_copy(
-            &ring,
-            manifest.tiles_dev_ptr as *const ContactShellTile,
-            cfg.n_clusters as usize,
-            telemetry_stream,
-            /* frame_idx = */ cfg.initial_frame_id as u64,
-        ).map_err(|rc| BuildError::Cuda {
-            stage: "schedule_async_tile_copy (ghost-pipe DMA)",
-            rc,
-        })?;
-
-        // ── 6.c-mid G23 ZSTR: position staging + fence signal ────────
-        // Node sequence on telemetry_stream (captured under MODE_GLOBAL):
-        //   [tile DMA] → [zstr_pos_stage_f4] → [zstr_signal_completion]
-        // Both launches record kernel nodes into the in-progress CUgraph.
-        // The fence-signal node fires __threadfence_system() before writing
-        // completion_fence=1, guaranteeing all position bytes are globally
-        // visible to the host ZSTR consumer before it reads them.
-        // Phase 3: dst_pinned/slot_fence baked at capture time (slot 0).
-        // Phase 4: cuGraphKernelNodeSetParams updates slot per launch.
-        // G23/G24: ZSTR pos_stage + fence_signal on telemetry_stream.
-        // After each launcher we snapshot the telemetry_stream's dependency
-        // frontier — under MODE_GLOBAL the frontier is exactly the node just
-        // recorded — to obtain the graph node handles needed by G24's
-        // cuGraphExecKernelNodeSetParams slot-roller.
-        // §3.III-hoist: per-iteration locals; we mirror to the outer
-        // hoisted scalars at the end of the ZSTR block below so
-        // post-capture wiring (line ~4983 / 4997) sees the latest.
-        let mut zstr_pos_stage_node: CUgraphNode = ptr::null_mut();
-        let mut zstr_fence_node:     CUgraphNode = ptr::null_mut();
-        let mut zstr_src_vram:       u64         = 0;
-        let mut zstr_n_atoms:        u32         = 0;
-
-        if let Some(ref zstr) = cfg.zstr {
-            zstr_src_vram = zstr.d_positions as u64;
-            zstr_n_atoms  = zstr.n_atoms;
-
-            let rc = unsafe {
-                zstr_launch_pos_stage(
-                    zstr.pinned_base as *mut c_void,
-                    zstr.inter_slot_stride,
-                    zstr.pos_offset_in_slot,
-                    zstr.d_positions as *const c_void,
-                    zstr.n_atoms,
-                    telemetry_stream as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda {
-                    stage: "zstr_pos_stage capture (G23)",
-                    rc,
-                });
-            }
-            // Snapshot pos_stage node: frontier on telemetry_stream is now
-            // [pos_stage_node] immediately after the <<<>>> launch.
+            // Step 5: snapshot bridge node handle (frontier == [bridge]).
+            // §3.III-hoist: write through to the outer scope so post-capture
+            // G26 SWITCH wiring (line ~4834) sees the latest bridge node.
+            // body_unroll > 1 ⇒ this scalar holds the LAST iteration's bridge.
+            let mut g26_bridge_node: CUgraphNode = ptr::null_mut();
             unsafe {
                 let mut s = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
                 let mut id: cuuint64_t = 0;
@@ -4671,148 +4756,283 @@ impl CapturedAdjudicationPipeline {
                 let mut dp: *const CUgraphNode = ptr::null();
                 let mut nd: usize = 0;
                 let rc = cuStreamGetCaptureInfo_v2(
-                    telemetry_stream, &mut s, &mut id, &mut g, &mut dp, &mut nd,
+                    md_stream.cu_stream(),
+                    &mut s,
+                    &mut id,
+                    &mut g,
+                    &mut dp,
+                    &mut nd,
                 );
                 if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
-                    zstr_pos_stage_node = *dp;
+                    g26_bridge_node = *dp;
                 }
             }
+            g26_bridge_node_hoisted = g26_bridge_node;
+            g26_cond_handle_hoisted = g26_cond_handle;
 
-            // ── T11 — force-stage (DMA + warp-shuffle Σ‖F‖² atomic-add) ──
-            // Captured on telemetry_stream after pos_stage. Reads d_forces
-            // AFTER the ASC kernel has retired (md_to_telemetry_event +
-            // tile DMA dependency chain establishes the cross-stream
-            // happens-before edge). Each warp lane-0 atomicAdds its
-            // Σ Fᵢ² into the active slot's force_norm field (offset 28).
-            let rc = unsafe {
-                zstr_launch_force_stage(
-                    zstr.pinned_base as *mut c_void,
-                    zstr.inter_slot_stride,
-                    zstr.force_offset_in_slot,
-                    zstr.force_norm_offset_in_slot,
-                    zstr.d_forces as *const c_void,
-                    zstr.n_atoms,
-                    telemetry_stream as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda {
-                    stage: "zstr_force_stage capture (T11)",
-                    rc,
-                });
-            }
+            // ── 6.c-Pz2 Path Z.2 Dual-Manifold Pointer Roll — REMOVED in M1.2.20.C-B.
+            //
+            // The pre-Path-C scheme used a captured cuMemcpyDtoDAsync to copy
+            // tiles_dev → tiles_baseline_dev after every Adjudicator pass so the
+            // NEXT frame's adjudication had a temporal delta vs. the prior frame.
+            // Path C replaces this with a SAME-FRAME dual projection: relaxed and
+            // perturbed manifolds are both computed at frame N (not N vs. N-1),
+            // so there is no temporal roll to perform.  The DtoD copy that lived
+            // here would now overwrite the next replay's RELAXED manifold with
+            // the perturbed one — the opposite of intended semantics.
 
-            // ── T11 — force_norm sqrt post-pass (single-thread) ──
-            // In-place sqrtf converts the running Σ‖F‖² into ‖F‖₂
-            // before the consumer reads. NaN propagates verbatim;
-            // the host G29 Reaper traps non-finite reads.
-            let rc = unsafe {
-                zstr_launch_force_norm_sqrt(
-                    zstr.pinned_base as *mut c_void,
-                    zstr.inter_slot_stride,
-                    zstr.force_norm_offset_in_slot,
-                    telemetry_stream as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda {
-                    stage: "zstr_force_norm_sqrt capture (T11)",
-                    rc,
-                });
-            }
-
-            // ── M1.2.18.5 — Hamiltonian audit-field stage (MANDATORY) ──
-            // Snapshots V_t (adj.d_potential_energy @ 112) + W_ext
-            // (*adj.d_external_work, where the pointer is at 128) into
-            // the active ZSTR slot at offsets 32 + 40 so the off-line
-            // replay can compute the First-Law drift trace per frame.
-            // Captured AFTER force_norm_sqrt so the slot already has all
-            // conservative observables.
-            const ZSTR_EXTERNAL_WORK_OFFSET:    u32 = 32;
-            const ZSTR_POTENTIAL_ENERGY_OFFSET: u32 = 40;
-            let rc = unsafe {
-                zstr_launch_stage_audit(
-                    zstr.pinned_base as *mut c_void,
-                    zstr.inter_slot_stride,
-                    ZSTR_EXTERNAL_WORK_OFFSET,
-                    ZSTR_POTENTIAL_ENERGY_OFFSET,
-                    adj_dev as *const c_void,
-                    telemetry_stream as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda {
-                    stage: "zstr_stage_audit capture (M1.2.18.5)",
-                    rc,
-                });
-            }
-
-            // Fence base = slot-0 base + fence_offset_in_slot.
-            let fence_base_ptr = unsafe {
-                zstr.pinned_base.add(zstr.fence_offset_in_slot as usize)
-            };
-            let rc = unsafe {
-                zstr_launch_fence_signal(
-                    fence_base_ptr as *mut c_void,
-                    zstr.inter_slot_stride,
-                    telemetry_stream as *mut c_void,
-                )
-            };
-            if rc != 0 {
-                return Err(BuildError::Cuda {
-                    stage: "zstr_fence_signal capture (G23)",
-                    rc,
-                });
-            }
-            // Snapshot fence node.
+            // ── 6.c Cross-stream FORK: MD → telemetry ────────────────────
+            // After Node C completes on md_stream, fire the
+            // md_to_telemetry_event; telemetry_stream waits on it before
+            // launching the DMA. Both operations are captured under
+            // MODE_GLOBAL, producing cross-stream dependency edges in
+            // the resulting graph.
             unsafe {
-                let mut s = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
-                let mut id: cuuint64_t = 0;
-                let mut g: CUgraph = ptr::null_mut();
-                let mut dp: *const CUgraphNode = ptr::null();
-                let mut nd: usize = 0;
-                let rc = cuStreamGetCaptureInfo_v2(
-                    telemetry_stream, &mut s, &mut id, &mut g, &mut dp, &mut nd,
-                );
-                if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
-                    zstr_fence_node = *dp;
+                let rc = cuEventRecord(md_to_telemetry_event, md_stream.cu_stream());
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "cuEventRecord (md → telemetry)",
+                        rc: rc as i32,
+                    });
+                }
+                let rc = cuStreamWaitEvent(telemetry_stream, md_to_telemetry_event, 0);
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "cuStreamWaitEvent (telemetry waits)",
+                        rc: rc as i32,
+                    });
                 }
             }
 
-            log::debug!(
-                "[G23] ZSTR nodes captured: pos_stage={:p} fence={:p} \
+            // Schedule the async D2H to the ring's frame-0 write slot. The
+            // captured graph stamps frame_idx = initial_frame_id; subsequent
+            // launches reuse the same slot index (frame 0 % 3 = 0). The
+            // production wire-in (V2) replaces the constant frame_idx with
+            // a kernel-updatable pointer-stable counter, but for the V1
+            // LEGO brick the constant frame is sufficient to attest
+            // operator §2.2 "fired concurrently on the non-blocking stream".
+            schedule_async_tile_copy(
+                &ring,
+                manifest.tiles_dev_ptr as *const ContactShellTile,
+                cfg.n_clusters as usize,
+                telemetry_stream,
+                /* frame_idx = */ cfg.initial_frame_id as u64,
+            )
+            .map_err(|rc| BuildError::Cuda {
+                stage: "schedule_async_tile_copy (ghost-pipe DMA)",
+                rc,
+            })?;
+
+            // ── 6.c-mid G23 ZSTR: position staging + fence signal ────────
+            // Node sequence on telemetry_stream (captured under MODE_GLOBAL):
+            //   [tile DMA] → [zstr_pos_stage_f4] → [zstr_signal_completion]
+            // Both launches record kernel nodes into the in-progress CUgraph.
+            // The fence-signal node fires __threadfence_system() before writing
+            // completion_fence=1, guaranteeing all position bytes are globally
+            // visible to the host ZSTR consumer before it reads them.
+            // Phase 3: dst_pinned/slot_fence baked at capture time (slot 0).
+            // Phase 4: cuGraphKernelNodeSetParams updates slot per launch.
+            // G23/G24: ZSTR pos_stage + fence_signal on telemetry_stream.
+            // After each launcher we snapshot the telemetry_stream's dependency
+            // frontier — under MODE_GLOBAL the frontier is exactly the node just
+            // recorded — to obtain the graph node handles needed by G24's
+            // cuGraphExecKernelNodeSetParams slot-roller.
+            // §3.III-hoist: per-iteration locals; we mirror to the outer
+            // hoisted scalars at the end of the ZSTR block below so
+            // post-capture wiring (line ~4983 / 4997) sees the latest.
+            let mut zstr_pos_stage_node: CUgraphNode = ptr::null_mut();
+            let mut zstr_fence_node: CUgraphNode = ptr::null_mut();
+            let mut zstr_src_vram: u64 = 0;
+            let mut zstr_n_atoms: u32 = 0;
+
+            if let Some(ref zstr) = cfg.zstr {
+                zstr_src_vram = zstr.d_positions as u64;
+                zstr_n_atoms = zstr.n_atoms;
+
+                let rc = unsafe {
+                    zstr_launch_pos_stage(
+                        zstr.pinned_base as *mut c_void,
+                        zstr.inter_slot_stride,
+                        zstr.pos_offset_in_slot,
+                        zstr.d_positions as *const c_void,
+                        zstr.n_atoms,
+                        telemetry_stream as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "zstr_pos_stage capture (G23)",
+                        rc,
+                    });
+                }
+                // Snapshot pos_stage node: frontier on telemetry_stream is now
+                // [pos_stage_node] immediately after the <<<>>> launch.
+                unsafe {
+                    let mut s = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+                    let mut id: cuuint64_t = 0;
+                    let mut g: CUgraph = ptr::null_mut();
+                    let mut dp: *const CUgraphNode = ptr::null();
+                    let mut nd: usize = 0;
+                    let rc = cuStreamGetCaptureInfo_v2(
+                        telemetry_stream,
+                        &mut s,
+                        &mut id,
+                        &mut g,
+                        &mut dp,
+                        &mut nd,
+                    );
+                    if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
+                        zstr_pos_stage_node = *dp;
+                    }
+                }
+
+                // ── T11 — force-stage (DMA + warp-shuffle Σ‖F‖² atomic-add) ──
+                // Captured on telemetry_stream after pos_stage. Reads d_forces
+                // AFTER the ASC kernel has retired (md_to_telemetry_event +
+                // tile DMA dependency chain establishes the cross-stream
+                // happens-before edge). Each warp lane-0 atomicAdds its
+                // Σ Fᵢ² into the active slot's force_norm field (offset 28).
+                let rc = unsafe {
+                    zstr_launch_force_stage(
+                        zstr.pinned_base as *mut c_void,
+                        zstr.inter_slot_stride,
+                        zstr.force_offset_in_slot,
+                        zstr.force_norm_offset_in_slot,
+                        zstr.d_forces as *const c_void,
+                        zstr.n_atoms,
+                        telemetry_stream as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "zstr_force_stage capture (T11)",
+                        rc,
+                    });
+                }
+
+                // ── T11 — force_norm sqrt post-pass (single-thread) ──
+                // In-place sqrtf converts the running Σ‖F‖² into ‖F‖₂
+                // before the consumer reads. NaN propagates verbatim;
+                // the host G29 Reaper traps non-finite reads.
+                let rc = unsafe {
+                    zstr_launch_force_norm_sqrt(
+                        zstr.pinned_base as *mut c_void,
+                        zstr.inter_slot_stride,
+                        zstr.force_norm_offset_in_slot,
+                        telemetry_stream as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "zstr_force_norm_sqrt capture (T11)",
+                        rc,
+                    });
+                }
+
+                // ── M1.2.18.5 — Hamiltonian audit-field stage (MANDATORY) ──
+                // Snapshots V_t (adj.d_potential_energy @ 112) + W_ext
+                // (*adj.d_external_work, where the pointer is at 128) into
+                // the active ZSTR slot at offsets 32 + 40 so the off-line
+                // replay can compute the First-Law drift trace per frame.
+                // Captured AFTER force_norm_sqrt so the slot already has all
+                // conservative observables.
+                const ZSTR_EXTERNAL_WORK_OFFSET: u32 = 32;
+                const ZSTR_POTENTIAL_ENERGY_OFFSET: u32 = 40;
+                let rc = unsafe {
+                    zstr_launch_stage_audit(
+                        zstr.pinned_base as *mut c_void,
+                        zstr.inter_slot_stride,
+                        ZSTR_EXTERNAL_WORK_OFFSET,
+                        ZSTR_POTENTIAL_ENERGY_OFFSET,
+                        adj_dev as *const c_void,
+                        telemetry_stream as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "zstr_stage_audit capture (M1.2.18.5)",
+                        rc,
+                    });
+                }
+
+                // Fence base = slot-0 base + fence_offset_in_slot.
+                let fence_base_ptr =
+                    unsafe { zstr.pinned_base.add(zstr.fence_offset_in_slot as usize) };
+                let rc = unsafe {
+                    zstr_launch_fence_signal(
+                        fence_base_ptr as *mut c_void,
+                        zstr.inter_slot_stride,
+                        telemetry_stream as *mut c_void,
+                    )
+                };
+                if rc != 0 {
+                    return Err(BuildError::Cuda {
+                        stage: "zstr_fence_signal capture (G23)",
+                        rc,
+                    });
+                }
+                // Snapshot fence node.
+                unsafe {
+                    let mut s = CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE;
+                    let mut id: cuuint64_t = 0;
+                    let mut g: CUgraph = ptr::null_mut();
+                    let mut dp: *const CUgraphNode = ptr::null();
+                    let mut nd: usize = 0;
+                    let rc = cuStreamGetCaptureInfo_v2(
+                        telemetry_stream,
+                        &mut s,
+                        &mut id,
+                        &mut g,
+                        &mut dp,
+                        &mut nd,
+                    );
+                    if matches!(rc, CUresult::CUDA_SUCCESS) && nd > 0 {
+                        zstr_fence_node = *dp;
+                    }
+                }
+
+                log::debug!(
+                    "[G23] ZSTR nodes captured: pos_stage={:p} fence={:p} \
                  n_atoms={} src_vram={:#x}",
-                zstr_pos_stage_node, zstr_fence_node,
-                zstr.n_atoms, zstr.d_positions as u64,
-            );
-            // §3.III-hoist: mirror this iteration's snapshots to the outer
-            // hoisted scalars so post-capture wiring sees them.
-            zstr_pos_stage_node_hoisted = zstr_pos_stage_node;
-            zstr_fence_node_hoisted     = zstr_fence_node;
-            zstr_src_vram_hoisted       = zstr_src_vram;
-            zstr_n_atoms_hoisted        = zstr_n_atoms;
-        }
-        // §3.III-hoist: mirror adj_node_set to outer scope (Vec move via
-        // clone — the Vec is small, ~handful of nodes per iteration).
-        adj_node_set_hoisted = adj_node_set.clone();
+                    zstr_pos_stage_node,
+                    zstr_fence_node,
+                    zstr.n_atoms,
+                    zstr.d_positions as u64,
+                );
+                // §3.III-hoist: mirror this iteration's snapshots to the outer
+                // hoisted scalars so post-capture wiring sees them.
+                zstr_pos_stage_node_hoisted = zstr_pos_stage_node;
+                zstr_fence_node_hoisted = zstr_fence_node;
+                zstr_src_vram_hoisted = zstr_src_vram;
+                zstr_n_atoms_hoisted = zstr_n_atoms;
+            }
+            // §3.III-hoist: mirror adj_node_set to outer scope (Vec move via
+            // clone — the Vec is small, ~handful of nodes per iteration).
+            adj_node_set_hoisted = adj_node_set.clone();
 
-        // ── 6.c-end Cross-stream JOIN: telemetry → MD ─────────────────
-        // After the DMA retires on the telemetry stream, fire the join
-        // event. md_stream waits on it BEFORE launching the trampoline,
-        // so cuStreamEndCapture sees a fully-joined dependency graph.
-        // (Operator §3 IGNITION: "Wrap the entire 2+2+2+2 sequence" —
-        // the JOIN is what makes "wrap" semantically correct under
-        // CUDA_ERROR_STREAM_CAPTURE_UNJOINED enforcement.)
-        unsafe {
-            let rc = cuEventRecord(telemetry_to_md_event, telemetry_stream);
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "cuEventRecord (telemetry → md JOIN)", rc: rc as i32 });
+            // ── 6.c-end Cross-stream JOIN: telemetry → MD ─────────────────
+            // After the DMA retires on the telemetry stream, fire the join
+            // event. md_stream waits on it BEFORE launching the trampoline,
+            // so cuStreamEndCapture sees a fully-joined dependency graph.
+            // (Operator §3 IGNITION: "Wrap the entire 2+2+2+2 sequence" —
+            // the JOIN is what makes "wrap" semantically correct under
+            // CUDA_ERROR_STREAM_CAPTURE_UNJOINED enforcement.)
+            unsafe {
+                let rc = cuEventRecord(telemetry_to_md_event, telemetry_stream);
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "cuEventRecord (telemetry → md JOIN)",
+                        rc: rc as i32,
+                    });
+                }
+                let rc = cuStreamWaitEvent(md_stream.cu_stream(), telemetry_to_md_event, 0);
+                if !matches!(rc, CUresult::CUDA_SUCCESS) {
+                    return Err(BuildError::Cuda {
+                        stage: "cuStreamWaitEvent (md JOIN)",
+                        rc: rc as i32,
+                    });
+                }
             }
-            let rc = cuStreamWaitEvent(md_stream.cu_stream(), telemetry_to_md_event, 0);
-            if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                return Err(BuildError::Cuda { stage: "cuStreamWaitEvent (md JOIN)", rc: rc as i32 });
-            }
-        }
         } // ── end §3.III BODY-UNROLL for-loop ─────────────────────────
 
         // ── 6.d Node C' (Trampoline) — DEFERRED to V2.
@@ -4856,9 +5076,8 @@ impl CapturedAdjudicationPipeline {
         // Snapshot the dependency-frontier into an owned Vec (the
         // pointer returned by cuStreamGetCaptureInfo is invalidated
         // by subsequent capture API calls).
-        let trampoline_node_set: Vec<CUgraphNode> = unsafe {
-            std::slice::from_raw_parts(deps_after_trampoline, n_deps_after).to_vec()
-        };
+        let trampoline_node_set: Vec<CUgraphNode> =
+            unsafe { std::slice::from_raw_parts(deps_after_trampoline, n_deps_after).to_vec() };
 
         // ── 7. End capture → final CUgraph ────────────────────────────
         let cu_graph = match capture_guard.end_capture_for_commit() {
@@ -4866,10 +5085,12 @@ impl CapturedAdjudicationPipeline {
                 capture_guard.commit(g);
                 g
             }
-            Ok(_) => return Err(BuildError::Cuda {
-                stage: "cuStreamEndCapture returned null graph",
-                rc: -1,
-            }),
+            Ok(_) => {
+                return Err(BuildError::Cuda {
+                    stage: "cuStreamEndCapture returned null graph",
+                    rc: -1,
+                })
+            }
             Err(e) => return Err(BuildError::Driver(e)),
         };
 
@@ -4909,7 +5130,9 @@ impl CapturedAdjudicationPipeline {
                 )
             };
             if rc != 0 {
-                unsafe { let _ = result::graph::destroy(cu_graph); }
+                unsafe {
+                    let _ = result::graph::destroy(cu_graph);
+                }
                 return Err(BuildError::Cuda {
                     stage: "B.3.2 prism_gearbox_wire_with_handle_ffi",
                     rc,
@@ -4921,7 +5144,9 @@ impl CapturedAdjudicationPipeline {
             // regress on toolkit upgrades).
             for i in 0..4 {
                 if g26_body_subgraphs[i].is_null() {
-                    unsafe { let _ = result::graph::destroy(cu_graph); }
+                    unsafe {
+                        let _ = result::graph::destroy(cu_graph);
+                    }
                     return Err(BuildError::Cuda {
                         stage: "B.3.2 SWITCH body_subgraphs null (driver regression)",
                         rc: -1,
@@ -4945,14 +5170,16 @@ impl CapturedAdjudicationPipeline {
                             cfg.d_velocities,
                             n_floats,
                             cruise_state_dev as *const c_void,
-                            ptr::null(),  // d_current_temp — Berendsen disabled in B.3.2 (PE wiring deferred)
-                            ptr::null(),  // d_dt
-                            300.0_f32,    // target_temp_K placeholder
-                            0.5_f32,      // tau_ps placeholder
+                            ptr::null(), // d_current_temp — Berendsen disabled in B.3.2 (PE wiring deferred)
+                            ptr::null(), // d_dt
+                            300.0_f32,   // target_temp_K placeholder
+                            0.5_f32,     // tau_ps placeholder
                         )
                     };
                     if rc != 0 {
-                        unsafe { let _ = result::graph::destroy(cu_graph); }
+                        unsafe {
+                            let _ = result::graph::destroy(cu_graph);
+                        }
                         return Err(BuildError::Cuda {
                             stage: "B.3.2 prism_gearbox_populate_switch_bodies_ffi",
                             rc,
@@ -4961,7 +5188,8 @@ impl CapturedAdjudicationPipeline {
                     log::info!(
                         "[B.3.2] G26 SWITCH wired: cond_node={:p} bodies populated \
                          (rescale + apply_dt for 0/1/2; trap for 3); n_floats={}",
-                        g26_cond_node, n_floats
+                        g26_cond_node,
+                        n_floats
                     );
                 }
             }
@@ -4974,14 +5202,18 @@ impl CapturedAdjudicationPipeline {
         // Claude-2's `prism_wire_f1_switch_ffi` C-ABI bypass. Abort
         // cleanly on failure so the raw CUgraph isn't leaked.
         if let Err(rc) = hook(cu_graph, &adj_node_set_hoisted, adj_dev) {
-            unsafe { let _ = result::graph::destroy(cu_graph); }
+            unsafe {
+                let _ = result::graph::destroy(cu_graph);
+            }
             // Stream-ordered free of pool allocations so the pool
             // drop on `pool` in the early-return doesn't see live
             // pointers.
             let _ = pool.free_async(tiles_dev, md_raw);
             let _ = pool.free_async(adj_dev, md_raw);
             let _ = pool.free_async(burst_marker_dev, md_raw);
-            if sisr_mask_dev != 0 { let _ = pool.free_async(sisr_mask_dev, md_raw); }
+            if sisr_mask_dev != 0 {
+                let _ = pool.free_async(sisr_mask_dev, md_raw);
+            }
             let _ = pool.free_async(cruise_state_dev, md_raw);
             return Err(BuildError::V2HookFailed { rc });
         }
@@ -5037,9 +5269,9 @@ impl CapturedAdjudicationPipeline {
         // func fields stay null — `launch_with_zstr_slot` no-ops.
         // §3.III-hoist: read hoisted snapshots (last iteration of body).
         let zstr_pos_stage_node = zstr_pos_stage_node_hoisted;
-        let zstr_fence_node     = zstr_fence_node_hoisted;
-        let zstr_src_vram       = zstr_src_vram_hoisted;
-        let zstr_n_atoms        = zstr_n_atoms_hoisted;
+        let zstr_fence_node = zstr_fence_node_hoisted;
+        let zstr_src_vram = zstr_src_vram_hoisted;
+        let zstr_n_atoms = zstr_n_atoms_hoisted;
         let zstr_pos_stage_func: CUfunction = if !zstr_pos_stage_node.is_null() {
             let mut p: CUDA_KERNEL_NODE_PARAMS = unsafe { std::mem::zeroed() };
             let rc = unsafe { cuGraphKernelNodeGetParams_v2(zstr_pos_stage_node, &mut p) };
@@ -5124,7 +5356,10 @@ impl CapturedAdjudicationPipeline {
             // sequential ordering on md_stream). V2 lands the
             // explicit cuGraphAddNode(CONDITIONAL, deps=[trampoline])
             // which IS the §2.3 explicit-edge mandate.
-            n_dependency_edges_explicit: { let _ = cond_node; 0u32 },
+            n_dependency_edges_explicit: {
+                let _ = cond_node;
+                0u32
+            },
         })
     }
 
@@ -5137,9 +5372,7 @@ impl CapturedAdjudicationPipeline {
     ///
     /// # Safety
     /// `parent_graph` must be a valid, mutable, uninstantiated CUgraph.
-    pub unsafe fn create_parent_g26_cond_handle(
-        parent_graph: CUgraph,
-    ) -> Result<u64, BuildError> {
+    pub unsafe fn create_parent_g26_cond_handle(parent_graph: CUgraph) -> Result<u64, BuildError> {
         if parent_graph.is_null() {
             return Err(BuildError::InvalidConfig {
                 reason: "parent graph is null for G26 handle creation",
@@ -5227,8 +5460,8 @@ impl CapturedAdjudicationPipeline {
                 d_velocities,
                 n_floats,
                 self.cruise_state_dev as *const c_void,
-                ptr::null(),  // d_current_temp — Berendsen disabled in B.3.2
-                ptr::null(),  // d_dt
+                ptr::null(), // d_current_temp — Berendsen disabled in B.3.2
+                ptr::null(), // d_dt
                 300.0_f32,
                 0.5_f32,
             );
@@ -5241,13 +5474,15 @@ impl CapturedAdjudicationPipeline {
             log::info!(
                 "[TIER8-G26] parent SWITCH wired: cond_node={:p} \
                  bodies populated; n_floats={}",
-                g26_cond_node, n_floats
+                g26_cond_node,
+                n_floats
             );
         } else {
             log::warn!(
                 "[TIER8-G26] parent SWITCH wired without velocity bodies \
                  (d_velocities={:p}, n_floats={}); bodies remain empty",
-                d_velocities, n_floats
+                d_velocities,
+                n_floats
             );
         }
 
@@ -5265,9 +5500,7 @@ impl CapturedAdjudicationPipeline {
     ///
     /// # Safety
     /// `parent_graph` must be a valid, mutable, uninstantiated CUgraph.
-    pub unsafe fn create_parent_f1_cond_handle(
-        parent_graph: CUgraph,
-    ) -> Result<u64, BuildError> {
+    pub unsafe fn create_parent_f1_cond_handle(parent_graph: CUgraph) -> Result<u64, BuildError> {
         if parent_graph.is_null() {
             return Err(BuildError::InvalidConfig {
                 reason: "parent graph is null for F1 handle creation",
@@ -5276,7 +5509,7 @@ impl CapturedAdjudicationPipeline {
         let mut handle: u64 = 0;
         let rc = prism_f1_create_handle_ffi(
             parent_graph,
-            /*default_value=*/ 0u32,    // PRISM_ADJ_PRUNE — F1 case 0
+            /*default_value=*/ 0u32, // PRISM_ADJ_PRUNE — F1 case 0
             &mut handle as *mut u64,
         );
         if rc != 0 {
@@ -5352,9 +5585,7 @@ impl CapturedAdjudicationPipeline {
             }
         }
 
-        let rc = prism_f1_populate_switch_bodies_ffi(
-            f1_body_subgraphs.as_mut_ptr(),
-        );
+        let rc = prism_f1_populate_switch_bodies_ffi(f1_body_subgraphs.as_mut_ptr());
         if rc != 0 {
             return Err(BuildError::Cuda {
                 stage: "F1-PARENT-SWITCH prism_f1_populate_switch_bodies_ffi(parent)",
@@ -5366,7 +5597,8 @@ impl CapturedAdjudicationPipeline {
             "[F1-PARENT-SWITCH] parent SWITCH wired: cond_node={:p} \
              handle={:#x} size=3 (Prune/Construct/Violation), \
              body[2]=trap kernel populated",
-            f1_cond_node, f1_cond_handle
+            f1_cond_node,
+            f1_cond_handle
         );
 
         Ok(f1_cond_node)
@@ -5403,26 +5635,30 @@ impl CapturedAdjudicationPipeline {
         // F2-pool allocations exceed this at 256-byte alignment by
         // construction (cudaMallocFromPoolAsync contract).
         let pointers: [(&str, u64); 7] = [
-            ("tiles_dev",         tiles_dev_ptr),
-            ("tiles_baseline",    tiles_baseline_ptr),
-            ("adj_dev",           adj_dev_ptr),
-            ("burst_marker",      burst_marker_ptr),
-            ("cruise_state",      cruise_state_ptr),
-            ("energy_pe_scalar",  energy_pe_scalar_ptr),
-            ("energy_window",     energy_window_ptr),
+            ("tiles_dev", tiles_dev_ptr),
+            ("tiles_baseline", tiles_baseline_ptr),
+            ("adj_dev", adj_dev_ptr),
+            ("burst_marker", burst_marker_ptr),
+            ("cruise_state", cruise_state_ptr),
+            ("energy_pe_scalar", energy_pe_scalar_ptr),
+            ("energy_window", energy_window_ptr),
         ];
 
         for (name, ptr) in pointers {
             // Skip null pointers (legitimate when the corresponding
             // captured-graph branch is gated off — e.g., energy
             // monitor when n_atoms_for_pe == 0).
-            if ptr == 0 { continue; }
+            if ptr == 0 {
+                continue;
+            }
             assert!(
                 ptr % 16 == 0,
                 "FATAL ARCHITECTURAL VIOLATION (G19.5 PAG): {} pointer \
                  (0x{:x}) is not 16-byte aligned (mod 16 = {}). \
                  Blackwell sm_120 vector loads will trap. HALT.",
-                name, ptr, ptr % 16
+                name,
+                ptr,
+                ptr % 16
             );
         }
     }
@@ -5523,11 +5759,10 @@ impl CapturedAdjudicationPipeline {
     /// # Errors
     ///
     /// Returns `DriverError::CudaError` on cuMemcpy failures.
-    pub fn freeze_baseline(
-        &self,
-    ) -> Result<(), DriverError> {
-        use cudarc::driver::sys::{cuMemcpyDtoDAsync_v2, cuMemcpyHtoDAsync_v2,
-                                  CUdeviceptr, CUresult};
+    pub fn freeze_baseline(&self) -> Result<(), DriverError> {
+        use cudarc::driver::sys::{
+            cuMemcpyDtoDAsync_v2, cuMemcpyHtoDAsync_v2, CUdeviceptr, CUresult,
+        };
         // Step 1: snapshot tiles_baseline_dev → p_frozen_dev (DtoD).
         unsafe {
             let rc = cuMemcpyDtoDAsync_v2(
@@ -5538,7 +5773,8 @@ impl CapturedAdjudicationPipeline {
             );
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 log::error!(
-                    "M1.2.26 freeze_baseline: cuMemcpyDtoD baseline→p_frozen rc={:?}", rc
+                    "M1.2.26 freeze_baseline: cuMemcpyDtoD baseline→p_frozen rc={:?}",
+                    rc
                 );
                 return Err(DriverError(rc));
             }
@@ -5556,7 +5792,8 @@ impl CapturedAdjudicationPipeline {
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
                 log::error!(
                     "M1.2.26 freeze_baseline: cuMemcpyHtoD adj.relaxed_manifold_ptr=0x{:x} rc={:?}",
-                    p_frozen_value, rc
+                    p_frozen_value,
+                    rc
                 );
                 return Err(DriverError(rc));
             }
@@ -5565,7 +5802,9 @@ impl CapturedAdjudicationPipeline {
             "[M1.2.26.RECOUPLE Part 4] P_frozen locked: \
              tiles_baseline_dev=0x{:x} → p_frozen_dev=0x{:x} \
              ({} bytes); adj.relaxed_manifold_ptr redirected.",
-            self.tiles_baseline_dev, self.p_frozen_dev, self.tiles_bytes
+            self.tiles_baseline_dev,
+            self.p_frozen_dev,
+            self.tiles_bytes
         );
         Ok(())
     }
@@ -5607,9 +5846,7 @@ impl CapturedAdjudicationPipeline {
             );
             for (rc, what) in [(rc1, "total_kl_mu"), (rc2, "total_kl_sigma")] {
                 if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                    log::error!(
-                        "M1.2.26 write_kl_native_mu_sigma: {} rc={:?}", what, rc
-                    );
+                    log::error!("M1.2.26 write_kl_native_mu_sigma: {} rc={:?}", what, rc);
                     return Err(DriverError(rc));
                 }
             }
@@ -5618,7 +5855,8 @@ impl CapturedAdjudicationPipeline {
             "[M1.2.26.RECOUPLE Part 3] KL-native threshold engaged: \
              total_kl_mu={:.4e} total_kl_sigma={:.4e} \
              discovery_threshold={:.4e} (= μ + 12σ)",
-            total_kl_mu, total_kl_sigma,
+            total_kl_mu,
+            total_kl_sigma,
             total_kl_mu + 12.0 * total_kl_sigma
         );
         Ok(())
@@ -5629,9 +5867,7 @@ impl CapturedAdjudicationPipeline {
     /// Used by the host's Phase-2 variance accumulation loop. Returns
     /// the latest scalar `total_kl` written by the captured graph's
     /// adjudicator kernel (FFI offset 48).
-    pub fn read_current_divergence(
-        &self,
-    ) -> Result<f32, DriverError> {
+    pub fn read_current_divergence(&self) -> Result<f32, DriverError> {
         use cudarc::driver::sys::{cuMemcpyDtoH_v2, CUdeviceptr, CUresult};
         let mut value: f32 = 0.0;
         unsafe {
@@ -5641,9 +5877,7 @@ impl CapturedAdjudicationPipeline {
                 4,
             );
             if !matches!(rc, CUresult::CUDA_SUCCESS) {
-                log::error!(
-                    "M1.2.26 read_current_divergence: cuMemcpyDtoH rc={:?}", rc
-                );
+                log::error!("M1.2.26 read_current_divergence: cuMemcpyDtoH rc={:?}", rc);
                 return Err(DriverError(rc));
             }
         }
@@ -5761,8 +5995,8 @@ impl Drop for CapturedAdjudicationPipeline {
             let _ = self.pool.free_async(self.sisr_count_dev, md_raw);
         }
         // Wave 3 / Path B Dynamic T7 buffers (always allocated).
-        let _ = self.pool.free_async(self.dynt7_acc_dev,   md_raw);
-        let _ = self.pool.free_async(self.dynt7_idx_dev,   md_raw);
+        let _ = self.pool.free_async(self.dynt7_acc_dev, md_raw);
+        let _ = self.pool.free_async(self.dynt7_idx_dev, md_raw);
         let _ = self.pool.free_async(self.dynt7_stats_dev, md_raw);
         // Wave B.1 — G26 ChronometricStateTensor (always allocated).
         let _ = self.pool.free_async(self.cruise_state_dev, md_raw);
@@ -5819,7 +6053,7 @@ unsafe fn add_conditional_node(
         &mut cond_node as *mut _,
         parent_graph,
         dependencies.as_ptr(),
-        ptr::null(),  // dependencyData = default edge type
+        ptr::null(), // dependencyData = default edge type
         dependencies.len(),
         &mut node_params as *mut _,
     );
@@ -5857,17 +6091,17 @@ unsafe fn add_burst_marker_memset_node(
     // takes the CUcontext as a separate trailing argument.
     let params = CUDA_MEMSET_NODE_PARAMS {
         dst: burst_marker_dev as CUdeviceptr,
-        pitch: 4,        // tight: single 4-byte element
-        value: 1,        // any non-zero sentinel — body fired ⇒ burst_marker != 0
-        elementSize: 4,  // u32
-        width: 1,        // 1 element
+        pitch: 4,       // tight: single 4-byte element
+        value: 1,       // any non-zero sentinel — body fired ⇒ burst_marker != 0
+        elementSize: 4, // u32
+        width: 1,       // 1 element
         height: 1,
     };
     let mut memset_node: CUgraphNode = ptr::null_mut();
     let rc = cuGraphAddMemsetNode(
         &mut memset_node as *mut _,
         body_subgraph,
-        ptr::null(),  // no in-body dependencies; this is the only body node
+        ptr::null(), // no in-body dependencies; this is the only body node
         0,
         &params as *const _,
         ctx.cu_ctx() as CUcontext,
@@ -5887,30 +6121,44 @@ unsafe fn add_burst_marker_memset_node(
 
 #[derive(Debug)]
 pub enum BuildError {
-    InvalidConfig { reason: &'static str },
+    InvalidConfig {
+        reason: &'static str,
+    },
     PoolCreate(String),
-    PoolAlloc { what: &'static str, reason: String },
+    PoolAlloc {
+        what: &'static str,
+        reason: String,
+    },
     PinnedRing(i32),
     TelemetryStream(i32),
-    Cuda { stage: &'static str, rc: i32 },
+    Cuda {
+        stage: &'static str,
+        rc: i32,
+    },
     Driver(DriverError),
-    AlignmentDrift { what: &'static str, got: usize, required: usize },
+    AlignmentDrift {
+        what: &'static str,
+        got: usize,
+        required: usize,
+    },
     CaptureNotActive,
     CaptureFrontierEmpty,
     CaptureProducedNullGraph,
     /// V2 IGNITION hook (e.g., Claude-2's `prism_wire_f1_switch_ffi`)
     /// returned a non-success cudaError. Build aborts and the raw
     /// graph + all F2 allocations are cleaned up.
-    V2HookFailed { rc: i32 },
+    V2HookFailed {
+        rc: i32,
+    },
     /// TIER 8 context/stream guard failure in the raw CUDA path used
     /// to diagnose graph-build context ownership without cudarc's
     /// `bind_to_thread()` wrapper.
     Tier8Context {
-        stage:    &'static str,
-        rc:       i32,
+        stage: &'static str,
+        rc: i32,
         expected: usize,
-        before:   usize,
-        after:    usize,
+        before: usize,
+        after: usize,
     },
     /// **TIER 8 (2026-05-03)** — Splice-legality preflight rejected
     /// the child template because it contains conditional nodes.
@@ -5920,11 +6168,11 @@ pub enum BuildError {
     /// fix: lift the conditional out of the child template and
     /// install it at the parent graph level (TIER 8 architecture).
     SpliceIllegal {
-        what:              &'static str,
-        total_nodes:       usize,
+        what: &'static str,
+        total_nodes: usize,
         conditional_count: usize,
-        allocation_count:  usize,
-        free_count:        usize,
+        allocation_count: usize,
+        free_count: usize,
     },
 }
 
@@ -5938,17 +6186,27 @@ impl std::fmt::Display for BuildError {
             BuildError::TelemetryStream(rc) => write!(f, "telemetry stream create: cuda {}", rc),
             BuildError::Cuda { stage, rc } => write!(f, "cuda error at {}: rc={}", stage, rc),
             BuildError::Driver(e) => write!(f, "driver error: {:?}", e),
-            BuildError::AlignmentDrift { what, got, required } => write!(
-                f, "{} alignment drift: got {:#x}, required {} bytes",
+            BuildError::AlignmentDrift {
+                what,
+                got,
+                required,
+            } => write!(
+                f,
+                "{} alignment drift: got {:#x}, required {} bytes",
                 what, got, required
             ),
             BuildError::CaptureNotActive => write!(f, "stream is not in CAPTURE_STATUS_ACTIVE"),
-            BuildError::CaptureFrontierEmpty =>
-                write!(f, "no captured nodes after trampoline launch — capture chain broken"),
-            BuildError::CaptureProducedNullGraph =>
-                write!(f, "cuStreamEndCapture / cuGraphAddNode produced a null handle"),
-            BuildError::V2HookFailed { rc } =>
-                write!(f, "V2 IGNITION hook returned cudaError {}", rc),
+            BuildError::CaptureFrontierEmpty => write!(
+                f,
+                "no captured nodes after trampoline launch — capture chain broken"
+            ),
+            BuildError::CaptureProducedNullGraph => write!(
+                f,
+                "cuStreamEndCapture / cuGraphAddNode produced a null handle"
+            ),
+            BuildError::V2HookFailed { rc } => {
+                write!(f, "V2 IGNITION hook returned cudaError {}", rc)
+            }
             BuildError::Tier8Context {
                 stage,
                 rc,
@@ -5990,11 +6248,15 @@ mod tests {
     use crate::ghost_telemetry::{is_pinned_host, stream_flags};
     use cudarc::driver::CudaContext;
 
-    fn build_test_pipeline() -> Option<(Arc<CudaContext>, CapturedAdjudicationPipeline,
-                                        Vec<u32>, Vec<RichSpike>,
-                                        cudarc::driver::CudaSlice<u8>,
-                                        cudarc::driver::CudaSlice<u32>,
-                                        Arc<CudaStream>)> {
+    fn build_test_pipeline() -> Option<(
+        Arc<CudaContext>,
+        CapturedAdjudicationPipeline,
+        Vec<u32>,
+        Vec<RichSpike>,
+        cudarc::driver::CudaSlice<u8>,
+        cudarc::driver::CudaSlice<u32>,
+        Arc<CudaStream>,
+    )> {
         let ctx = match CudaContext::new(0) {
             Ok(c) => c,
             Err(e) => {
@@ -6006,25 +6268,25 @@ mod tests {
         let raw = stream.cu_stream() as usize;
 
         // Init K_LM (required by SO(3) kernel).
-        let rc = unsafe {
-            crate::sh_basis::ffi::prism_sh_basis_init(raw as *mut c_void)
-        };
+        let rc = unsafe { crate::sh_basis::ffi::prism_sh_basis_init(raw as *mut c_void) };
         assert_eq!(rc, crate::sh_basis::ffi::CUDA_SUCCESS);
         stream.synchronize().expect("post-sh-init sync");
         let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
 
         // Synthesize 1 cluster with 16 spikes.
         const N_CLUSTERS: u32 = 1;
-        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
-            let mut s = RichSpike::zero();
-            let theta = 0.3 + (i as f32) * 0.2;
-            let phi   = 0.4 + (i as f32) * 0.3;
-            s.x = 4.0 * theta.sin() * phi.cos();
-            s.y = 4.0 * theta.sin() * phi.sin();
-            s.z = 4.0 * theta.cos();
-            s.cluster_id = 0;
-            s
-        }).collect();
+        let spikes: Vec<RichSpike> = (0..16u32)
+            .map(|i| {
+                let mut s = RichSpike::zero();
+                let theta = 0.3 + (i as f32) * 0.2;
+                let phi = 0.4 + (i as f32) * 0.3;
+                s.x = 4.0 * theta.sin() * phi.cos();
+                s.y = 4.0 * theta.sin() * phi.sin();
+                s.z = 4.0 * theta.cos();
+                s.cluster_id = 0;
+                s
+            })
+            .collect();
         let offsets: Vec<u32> = vec![0, spikes.len() as u32];
 
         let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
@@ -6032,9 +6294,15 @@ mod tests {
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod spikes");
-        let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc offsets");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod offsets");
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod spikes");
+        let mut d_offsets = stream
+            .alloc_zeros::<u32>(offsets.len())
+            .expect("alloc offsets");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod offsets");
 
         use cudarc::driver::DevicePtr;
         // Scope the device_ptr guards so they drop before we return
@@ -6043,7 +6311,7 @@ mod tests {
         // as long as `d_spikes_b` / `d_offsets` live in the caller's
         // scope.
         let (sp_dev, off_dev) = {
-            let (sp, _g1)  = d_spikes_b.device_ptr(&stream);
+            let (sp, _g1) = d_spikes_b.device_ptr(&stream);
             let (off, _g2) = d_offsets.device_ptr(&stream);
             (sp, off)
         };
@@ -6056,7 +6324,7 @@ mod tests {
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
             diagnostic_stream_id: None,
-            asc:  None,
+            asc: None,
             zstr: None,
             sisr: None,
             noise_floor_override: None,
@@ -6076,7 +6344,8 @@ mod tests {
             d_forces_anchor: 0,
             d_masses: 0,
             force_burst_step: None,
-            n_spikes: 0, branch_trace_dev: 0,
+            n_spikes: 0,
+            branch_trace_dev: 0,
         };
 
         let pipeline = match CapturedAdjudicationPipeline::build(&ctx, &stream, &cfg) {
@@ -6086,7 +6355,9 @@ mod tests {
                 return None;
             }
         };
-        Some((ctx, pipeline, offsets, spikes, d_spikes_b, d_offsets, stream))
+        Some((
+            ctx, pipeline, offsets, spikes, d_spikes_b, d_offsets, stream,
+        ))
     }
 
     #[test]
@@ -6094,7 +6365,9 @@ mod tests {
         // G18 — Graph Capture Integrity. End-to-end build must
         // succeed: F2 pool, capture, post-capture conditional node
         // injection, instantiate.
-        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else { return; };
+        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else {
+            return;
+        };
 
         assert_eq!(pipeline.n_clusters, 1);
         // Post-M1.2.18.5 baseline kernel nodes (V1 fixture, d_external_work=null,
@@ -6115,9 +6388,12 @@ mod tests {
         // ordering on md_stream gives the C → C' chain). V2 adds the
         // explicit `cuGraphAddNode(CONDITIONAL, deps=[trampoline])`
         // call which IS the operator's §2.3 explicit-edge mandate.
-        assert_eq!(pipeline.n_explicit_edges(), 0,
+        assert_eq!(
+            pipeline.n_explicit_edges(),
+            0,
             "V1 ships with 0 explicit edges (capture handles the chain); \
-             V2 will assert >= 1 (trampoline → conditional)");
+             V2 will assert >= 1 (trampoline → conditional)"
+        );
     }
 
     #[test]
@@ -6127,12 +6403,19 @@ mod tests {
         // handle is `0` in V1 (no handle created — V2 lands the
         // conditional node + handle together so the resulting graph
         // is well-formed end-to-end).
-        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else { return; };
-        assert!(pipeline.tile_alignment_ok(),
+        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else {
+            return;
+        };
+        assert!(
+            pipeline.tile_alignment_ok(),
             "tiles_dev_ptr {:#x} not 128-byte aligned",
-            pipeline.tiles_dev);
-        assert_eq!(pipeline.conditional_handle(), 0,
-            "V1: conditional handle deferred to V2; expected 0");
+            pipeline.tiles_dev
+        );
+        assert_eq!(
+            pipeline.conditional_handle(),
+            0,
+            "V1: conditional handle deferred to V2; expected 0"
+        );
     }
 
     #[test]
@@ -6141,11 +6424,16 @@ mod tests {
         // must carry the CU_STREAM_NON_BLOCKING flag (= 1) so the DMA
         // does not implicitly synchronize against the MD integrator
         // stream.
-        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else { return; };
-        let flags = stream_flags(pipeline.telemetry_stream())
-            .expect("cuStreamGetFlags");
-        assert_eq!(flags & 1, 1,
-            "telemetry stream NON_BLOCKING flag missing (got 0x{:x})", flags);
+        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else {
+            return;
+        };
+        let flags = stream_flags(pipeline.telemetry_stream()).expect("cuStreamGetFlags");
+        assert_eq!(
+            flags & 1,
+            1,
+            "telemetry stream NON_BLOCKING flag missing (got 0x{:x})",
+            flags
+        );
         // Pinned ring's base pointer must be CU_MEMORYTYPE_HOST.
         let pinned = is_pinned_host(pipeline.ring().base_ptr() as *const c_void)
             .expect("cuPointerGetAttribute");
@@ -6160,8 +6448,11 @@ mod tests {
         // Claude-2's `prism_wire_f1_switch_ffi` will receive these
         // exact values when the C-ABI bypass commits.
         use std::cell::RefCell;
-        let Some((ctx, _pipeline_skip, _offsets, _spikes, _d_spikes_b, _d_offsets, stream))
-            = build_test_pipeline() else { return; };
+        let Some((ctx, _pipeline_skip, _offsets, _spikes, _d_spikes_b, _d_offsets, stream)) =
+            build_test_pipeline()
+        else {
+            return;
+        };
         // Drop the no-op pipeline so we can rebuild with the hook.
         drop(_pipeline_skip);
         // Re-create the same config inline (the helper doesn't expose
@@ -6173,28 +6464,34 @@ mod tests {
         stream.synchronize().expect("sync");
         let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
 
-        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
-            let mut s = RichSpike::zero();
-            let theta = 0.3 + (i as f32) * 0.2;
-            let phi   = 0.4 + (i as f32) * 0.3;
-            s.x = 4.0 * theta.sin() * phi.cos();
-            s.y = 4.0 * theta.sin() * phi.sin();
-            s.z = 4.0 * theta.cos();
-            s.cluster_id = 0;
-            s
-        }).collect();
+        let spikes: Vec<RichSpike> = (0..16u32)
+            .map(|i| {
+                let mut s = RichSpike::zero();
+                let theta = 0.3 + (i as f32) * 0.2;
+                let phi = 0.4 + (i as f32) * 0.3;
+                s.x = 4.0 * theta.sin() * phi.cos();
+                s.y = 4.0 * theta.sin() * phi.sin();
+                s.z = 4.0 * theta.cos();
+                s.cluster_id = 0;
+                s
+            })
+            .collect();
         let offsets: Vec<u32> = vec![0, spikes.len() as u32];
         let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
         let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc");
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod");
         let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc o");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod o");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod o");
         use cudarc::driver::DevicePtr;
         let (sp_dev, off_dev) = {
-            let (sp, _g1)  = d_spikes_b.device_ptr(&stream);
+            let (sp, _g1) = d_spikes_b.device_ptr(&stream);
             let (off, _g2) = d_offsets.device_ptr(&stream);
             (sp, off)
         };
@@ -6206,7 +6503,7 @@ mod tests {
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
             diagnostic_stream_id: None,
-            asc:  None,
+            asc: None,
             zstr: None,
             sisr: None,
             noise_floor_override: None,
@@ -6219,7 +6516,8 @@ mod tests {
             n_atoms_for_pe: 0,
             d_external_work: ptr::null_mut(),
             d_forces_anchor: 0,
-            n_spikes: 0, branch_trace_dev: 0,
+            n_spikes: 0,
+            branch_trace_dev: 0,
             force_burst_step: None,
             d_masses: 0,
             ghost_tile_ring_dev: 0,
@@ -6229,15 +6527,18 @@ mod tests {
             body_unroll: 1,
         };
 
-        let observed = RefCell::new(None::<(usize /* graph */, usize /* n_nodes */, usize /* adj_dev */)>);
-        let hook = |raw_graph: CUgraph, adj_nodes: &[CUgraphNode], adj_dev_ptr: usize|
-            -> Result<(), i32>
-        {
-            *observed.borrow_mut() = Some((
-                raw_graph as usize,
-                adj_nodes.len(),
-                adj_dev_ptr,
-            ));
+        let observed = RefCell::new(
+            None::<(
+                usize, /* graph */
+                usize, /* n_nodes */
+                usize, /* adj_dev */
+            )>,
+        );
+        let hook = |raw_graph: CUgraph,
+                    adj_nodes: &[CUgraphNode],
+                    adj_dev_ptr: usize|
+         -> Result<(), i32> {
+            *observed.borrow_mut() = Some((raw_graph as usize, adj_nodes.len(), adj_dev_ptr));
             Ok(())
         };
 
@@ -6246,20 +6547,28 @@ mod tests {
 
         let (g, n_nodes, adj_dev) = observed.borrow().expect("hook fired");
         assert!(g != 0, "hook received null CUgraph");
-        assert!(n_nodes >= 1,
+        assert!(
+            n_nodes >= 1,
             "hook received empty Adjudicator-node snapshot — operator §2.3 \
-             explicit-edge dependency target is missing");
+             explicit-edge dependency target is missing"
+        );
         assert!(adj_dev != 0, "hook received null adj_dev_ptr");
-        assert_eq!(adj_dev % 128, 0,
-            "adj_dev_ptr {:#x} not 128-byte aligned (CSR §M)", adj_dev);
+        assert_eq!(
+            adj_dev % 128,
+            0,
+            "adj_dev_ptr {:#x} not 128-byte aligned (CSR §M)",
+            adj_dev
+        );
 
         // V2 prep accessors return the same handles.
         assert_eq!(pipeline.cu_graph_raw() as usize, g);
         assert_eq!(pipeline.adj_dev_ptr(), adj_dev);
         assert!(!pipeline.cu_graph_exec_raw().is_null());
 
-        eprintln!("[v2-hook] CUgraph=0x{:x}, adj_nodes.len()={}, adj_dev_ptr=0x{:x} (128-aligned ✓)",
-                  g, n_nodes, adj_dev);
+        eprintln!(
+            "[v2-hook] CUgraph=0x{:x}, adj_nodes.len()={}, adj_dev_ptr=0x{:x} (128-aligned ✓)",
+            g, n_nodes, adj_dev
+        );
     }
 
     #[test]
@@ -6267,7 +6576,9 @@ mod tests {
         // Verify the hook's Err return path: build aborts with
         // V2HookFailed and the F2 pool / streams / events are
         // released without leaking handles.
-        let Some((ctx, _, _, _, _, _, stream)) = build_test_pipeline() else { return; };
+        let Some((ctx, _, _, _, _, _, stream)) = build_test_pipeline() else {
+            return;
+        };
         let raw = stream.cu_stream() as usize;
         unsafe {
             let _ = crate::sh_basis::ffi::prism_sh_basis_init(raw as *mut c_void);
@@ -6275,25 +6586,34 @@ mod tests {
         stream.synchronize().expect("sync");
         let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
 
-        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
-            let mut s = RichSpike::zero();
-            let t = 0.3 + (i as f32) * 0.2;
-            let p = 0.4 + (i as f32) * 0.3;
-            s.x = 4.0 * t.sin() * p.cos(); s.y = 4.0 * t.sin() * p.sin(); s.z = 4.0 * t.cos();
-            s.cluster_id = 0; s
-        }).collect();
+        let spikes: Vec<RichSpike> = (0..16u32)
+            .map(|i| {
+                let mut s = RichSpike::zero();
+                let t = 0.3 + (i as f32) * 0.2;
+                let p = 0.4 + (i as f32) * 0.3;
+                s.x = 4.0 * t.sin() * p.cos();
+                s.y = 4.0 * t.sin() * p.sin();
+                s.z = 4.0 * t.cos();
+                s.cluster_id = 0;
+                s
+            })
+            .collect();
         let offsets: Vec<u32> = vec![0, spikes.len() as u32];
         let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
         let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc");
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod");
         let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc o");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod o");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod o");
         use cudarc::driver::DevicePtr;
         let (sp_dev, off_dev) = {
-            let (sp, _g1)  = d_spikes_b.device_ptr(&stream);
+            let (sp, _g1) = d_spikes_b.device_ptr(&stream);
             let (off, _g2) = d_offsets.device_ptr(&stream);
             (sp, off)
         };
@@ -6301,15 +6621,18 @@ mod tests {
         let cfg = PipelineConfig {
             d_spikes: sp_dev as *const RichSpike,
             d_cluster_offsets: off_dev as *const u32,
-            n_clusters: 1, d_k_lm: k_lm_dev, initial_frame_id: 0,
+            n_clusters: 1,
+            d_k_lm: k_lm_dev,
+            initial_frame_id: 0,
             diagnostic_stream_id: None,
-            asc:  None,
+            asc: None,
             zstr: None,
             sisr: None,
             noise_floor_override: None,
             mar_v2: None,
             d_dt: ptr::null_mut(),
-            n_spikes: 0, branch_trace_dev: 0,
+            n_spikes: 0,
+            branch_trace_dev: 0,
             d_velocities: ptr::null_mut(),
             g26_parent_cond_handle: 0,
             f1_parent_cond_handle: 0,
@@ -6327,9 +6650,10 @@ mod tests {
         };
 
         // Synthetic "FFI returned cudaErrorIllegalAddress (700)" via hook.
-        let result = CapturedAdjudicationPipeline::build_with_v2_hook(
-            &ctx, &stream, &cfg, |_, _, _| Err(700),
-        );
+        let result =
+            CapturedAdjudicationPipeline::build_with_v2_hook(&ctx, &stream, &cfg, |_, _, _| {
+                Err(700)
+            });
         match result {
             Err(BuildError::V2HookFailed { rc: 700 }) => {
                 eprintln!("[v2-hook-fail] graceful abort confirmed: V2HookFailed{{rc=700}}");
@@ -6362,7 +6686,9 @@ mod tests {
         use crate::interferometric_adjudicator::ffi as adj_ffi;
         use crate::interferometric_adjudicator::InterferometricAdjudicatorFfi;
 
-        let Some((ctx, _drop_pipeline_skip, _, _, _, _, stream)) = build_test_pipeline() else { return; };
+        let Some((ctx, _drop_pipeline_skip, _, _, _, _, stream)) = build_test_pipeline() else {
+            return;
+        };
         // Drop the no-op pipeline; we'll rebuild with the V2 hook.
         drop(_drop_pipeline_skip);
 
@@ -6374,28 +6700,34 @@ mod tests {
         stream.synchronize().expect("sync");
         let k_lm_dev = crate::sh_basis::k_lm_device_ptr().expect("k_lm");
 
-        let spikes: Vec<RichSpike> = (0..16u32).map(|i| {
-            let mut s = RichSpike::zero();
-            let t = 0.3 + (i as f32) * 0.2;
-            let p = 0.4 + (i as f32) * 0.3;
-            s.x = 4.0 * t.sin() * p.cos();
-            s.y = 4.0 * t.sin() * p.sin();
-            s.z = 4.0 * t.cos();
-            s.cluster_id = 0;
-            s
-        }).collect();
+        let spikes: Vec<RichSpike> = (0..16u32)
+            .map(|i| {
+                let mut s = RichSpike::zero();
+                let t = 0.3 + (i as f32) * 0.2;
+                let p = 0.4 + (i as f32) * 0.3;
+                s.x = 4.0 * t.sin() * p.cos();
+                s.y = 4.0 * t.sin() * p.sin();
+                s.z = 4.0 * t.cos();
+                s.cluster_id = 0;
+                s
+            })
+            .collect();
         let offsets: Vec<u32> = vec![0, spikes.len() as u32];
         let spike_bytes = spikes.len() * std::mem::size_of::<RichSpike>();
         let mut d_spikes_b = stream.alloc_zeros::<u8>(spike_bytes).expect("alloc");
         let spikes_bytes: Vec<u8> = unsafe {
             std::slice::from_raw_parts(spikes.as_ptr() as *const u8, spike_bytes).to_vec()
         };
-        stream.memcpy_htod(&spikes_bytes, &mut d_spikes_b).expect("htod");
+        stream
+            .memcpy_htod(&spikes_bytes, &mut d_spikes_b)
+            .expect("htod");
         let mut d_offsets = stream.alloc_zeros::<u32>(offsets.len()).expect("alloc o");
-        stream.memcpy_htod(&offsets, &mut d_offsets).expect("htod o");
+        stream
+            .memcpy_htod(&offsets, &mut d_offsets)
+            .expect("htod o");
         use cudarc::driver::DevicePtr;
         let (sp_dev, off_dev) = {
-            let (sp, _g1)  = d_spikes_b.device_ptr(&stream);
+            let (sp, _g1) = d_spikes_b.device_ptr(&stream);
             let (off, _g2) = d_offsets.device_ptr(&stream);
             (sp, off)
         };
@@ -6408,8 +6740,9 @@ mod tests {
             d_k_lm: k_lm_dev,
             initial_frame_id: 0,
             diagnostic_stream_id: None,
-            n_spikes: 0, branch_trace_dev: 0,
-            asc:  None,
+            n_spikes: 0,
+            branch_trace_dev: 0,
+            asc: None,
             zstr: None,
             force_burst_step: None,
             sisr: None,
@@ -6438,14 +6771,22 @@ mod tests {
 
         // V2 IGNITION HOOK — the moment of fusion.
         let pipeline = CapturedAdjudicationPipeline::build_with_v2_hook(
-            &ctx, &stream, &cfg,
+            &ctx,
+            &stream,
+            &cfg,
             |raw_graph, adj_nodes, adj_dev_ptr| {
                 assert!(!raw_graph.is_null(), "hook received null CUgraph");
-                assert_eq!(adj_nodes.len(), 1,
-                    "operator §2.3 dependency frontier must hold exactly the Adjudicator node");
-                assert_eq!(adj_dev_ptr % 128, 0,
+                assert_eq!(
+                    adj_nodes.len(),
+                    1,
+                    "operator §2.3 dependency frontier must hold exactly the Adjudicator node"
+                );
+                assert_eq!(
+                    adj_dev_ptr % 128,
+                    0,
                     "adj_dev_ptr {:#x} not 128-byte aligned (CSR §M)",
-                    adj_dev_ptr);
+                    adj_dev_ptr
+                );
 
                 // Predicate device pointer: Claude-2's existing FFI
                 // helper that returns &adj->adjudication_code at byte
@@ -6455,8 +6796,10 @@ mod tests {
                         adj_dev_ptr as *const InterferometricAdjudicatorFfi,
                     )
                 };
-                assert!(!predicate_ptr.is_null(),
-                    "prism_get_adjudication_code_devptr returned null");
+                assert!(
+                    !predicate_ptr.is_null(),
+                    "prism_get_adjudication_code_devptr returned null"
+                );
 
                 // The C-ABI bypass.
                 let mut cond_node: CUgraphNode = ptr::null_mut();
@@ -6469,23 +6812,31 @@ mod tests {
                     )
                 };
                 if rc != 0 {
-                    eprintln!("[v2-ignition] prism_wire_f1_switch_ffi returned cudaError {}", rc);
+                    eprintln!(
+                        "[v2-ignition] prism_wire_f1_switch_ffi returned cudaError {}",
+                        rc
+                    );
                     return Err(rc);
                 }
                 if cond_node.is_null() {
-                    eprintln!("[v2-ignition] prism_wire_f1_switch_ffi succeeded but \
-                              left out_conditional_node = null");
+                    eprintln!(
+                        "[v2-ignition] prism_wire_f1_switch_ffi succeeded but \
+                              left out_conditional_node = null"
+                    );
                     return Err(-1);
                 }
                 observed_cond_node.set(cond_node as usize);
                 Ok(())
             },
-        ).expect("V2 IGNITION build_with_v2_hook must succeed");
+        )
+        .expect("V2 IGNITION build_with_v2_hook must succeed");
 
         // The bypass populated the conditional node handle.
         let cond_node = observed_cond_node.get();
-        assert!(cond_node != 0,
-            "V2 IGNITION: conditional-node handle was not populated by the C-ABI bypass");
+        assert!(
+            cond_node != 0,
+            "V2 IGNITION: conditional-node handle was not populated by the C-ABI bypass"
+        );
 
         // Pipeline instantiated (hook returned Ok, so build did
         // cuGraphInstantiate). Launch must succeed end-to-end.
@@ -6501,12 +6852,14 @@ mod tests {
         // the read path is intact — V2 IGNITION's structural success).
         let marker = pipeline.read_burst_marker().expect("read burst_marker");
 
-        eprintln!("[v2-ignition] LIVE: CUgraph=0x{:x}, cond_node=0x{:x}, \
+        eprintln!(
+            "[v2-ignition] LIVE: CUgraph=0x{:x}, cond_node=0x{:x}, \
                   predicate_ptr OK (128-aligned), 3 launches OK, \
                   burst_marker={} (route attestation)",
-                  pipeline.cu_graph_raw() as usize,
-                  cond_node,
-                  marker);
+            pipeline.cu_graph_raw() as usize,
+            cond_node,
+            marker
+        );
     }
 
     #[test]
@@ -6515,7 +6868,9 @@ mod tests {
         // Routing semantics (does the Adjudicator produce code 0/1/2
         // correctly?) are deferred to the integration test; here we
         // only attest the IGNITION sequence runs.
-        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else { return; };
+        let Some((_ctx, pipeline, ..)) = build_test_pipeline() else {
+            return;
+        };
         let stream = pipeline.md_stream.clone();
         // Fire 3 launches on the captured graph.
         for _ in 0..3 {
@@ -6530,7 +6885,10 @@ mod tests {
         // not-yet-calibrated input is undefined; we ONLY assert the
         // marker is readable post-launch (no driver error).
         let marker = pipeline.read_burst_marker().expect("read burst_marker");
-        eprintln!("[captured-pipeline] post-launch burst_marker = {} \
-                  (0 = Prune route, 1 = Burst route)", marker);
+        eprintln!(
+            "[captured-pipeline] post-launch burst_marker = {} \
+                  (0 = Prune route, 1 = Burst route)",
+            marker
+        );
     }
 }

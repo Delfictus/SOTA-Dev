@@ -44,6 +44,7 @@ members = [
     # Correlation and Evidence-Pack Generator
     # ═══════════════════════════════════════════════════════════════════════════
     "crates/prism-report", "crates/optix-sys", "crates/prism-optix",          # Site-level correlation + decision artifacts
+    "crates/prism-spike-shipper",   # Kernel inotify → validate → Parquet/zstd → R2
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Foundation Crates (Production-grade GPU Implementations) - DISABLED: missing dirs

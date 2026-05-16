@@ -8,7 +8,7 @@
 // Kernels:
 //   heartbeat_check       — NaN/divergence detection (samples every 32nd atom)
 //   apply_ca_restraints   — harmonic CA position restraints (replaces CPU memcpy)
-//   coupling_buffer_clear — zeroes the write-side coupling buffer based on phase
+//   coupling_buffer_clear — zeroes the stale read-side coupling buffer based on phase
 //   com_reduce            — warp-shuffle mass-weighted velocity reduction
 //   com_correct           — broadcast COM velocity subtraction
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -79,11 +79,13 @@ extern "C" __global__ void apply_ca_restraints(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// coupling_buffer_clear — zero the write-side coupling buffer
+// coupling_buffer_clear — zero the stale read-side coupling buffer
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Reads coupling_phase from ProtocolState to determine which buffer is
-// the write side. Phase 0 → clear B, Phase 1 → clear A.
+// Reads coupling_phase from ProtocolState to determine which buffer was read
+// during the just-finished step. Phase 0 read A / wrote B, so clear A. Phase 1
+// read B / wrote A, so clear B. The newly written buffer must survive because
+// the Director toggles coupling_phase at the next step and reads it then.
 // Replaces the CPU-conditional memset_zeros.
 //
 // Launch: <<<ceil(total_voxels/256), 256>>>
@@ -98,12 +100,12 @@ extern "C" __global__ void coupling_buffer_clear(
     if (tid >= total_voxels) return;
 
     // Director already toggled coupling_phase for THIS step.
-    // Phase 0: read A, write B → clear B for next step's write
-    // Phase 1: read B, write A → clear A for next step's write
+    // Phase 0: read A, write B → clear stale A
+    // Phase 1: read B, write A → clear stale B
     if (d_protocol->coupling_phase == 0) {
-        coupling_b[tid] = 0.0f;
-    } else {
         coupling_a[tid] = 0.0f;
+    } else {
+        coupling_b[tid] = 0.0f;
     }
 }
 

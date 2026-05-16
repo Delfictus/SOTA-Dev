@@ -442,6 +442,15 @@ pub struct CryoUvProtocol {
     pub stepped_holds: Vec<(f32, i32)>,
 }
 
+/// Production aromatic UV scan channels. The fifth 254 nm channel preserves the
+/// BNZ/HIS shoulder used by the full nhs_rt protocol instead of truncating it in
+/// helper/default protocol constructors.
+pub const PRODUCTION_UV_SCAN_WAVELENGTHS: [f32; 5] = [280.0, 274.0, 258.0, 254.0, 211.0];
+
+fn production_uv_scan_wavelengths() -> Vec<f32> {
+    PRODUCTION_UV_SCAN_WAVELENGTHS.to_vec()
+}
+
 impl CryoUvProtocol {
     /// Standard liquid nitrogen cryo-UV protocol (77K → 310K)
     ///
@@ -454,6 +463,7 @@ impl CryoUvProtocol {
     /// - 280 nm: TRP (tryptophan)
     /// - 274 nm: TYR (tyrosine)
     /// - 258 nm: PHE (phenylalanine)
+    /// - 254 nm: BNZ/HIS shoulder / compact aromatic probe
     /// - 211 nm: HIS/HID/HIE/HIP (histidine imidazole ring)
     pub fn standard() -> Self {
         Self {
@@ -466,8 +476,8 @@ impl CryoUvProtocol {
             uv_burst_energy: 30.0,
             uv_burst_interval: 500,
             uv_burst_duration: 50,
-            // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            // Full aromatic coverage: TRP, TYR, PHE, BNZ/HIS shoulder, HIS.
+            scan_wavelengths: production_uv_scan_wavelengths(),
             wavelength_dwell_steps: 500,
             ramp_down_steps: 6000,   // Symmetric cooldown 300K→50K (hysteresis)
             cold_return_steps: 4000, // Cold return hold (detect re-closure)
@@ -514,6 +524,7 @@ impl CryoUvProtocol {
     /// - 280 nm: TRP (tryptophan)
     /// - 274 nm: TYR (tyrosine)
     /// - 258 nm: PHE (phenylalanine)
+    /// - 254 nm: BNZ/HIS shoulder / compact aromatic probe
     /// - 211 nm: HIS/HID/HIE/HIP (histidine imidazole ring)
     pub fn fast_35k() -> Self {
         Self {
@@ -526,8 +537,8 @@ impl CryoUvProtocol {
             uv_burst_energy: 42.0, // +40% energy: faster aromatic excitation (was 30.0)
             uv_burst_interval: 250, // More frequent probing (was 400)
             uv_burst_duration: 50,
-            // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            // Full aromatic coverage: TRP, TYR, PHE, BNZ/HIS shoulder, HIS.
+            scan_wavelengths: production_uv_scan_wavelengths(),
             wavelength_dwell_steps: 300, // Proportionally reduced (was 400)
             ramp_down_steps: 6000,       // Symmetric cooldown 300K→50K (hysteresis)
             cold_return_steps: 4000,     // Cold return hold (detect re-closure)
@@ -556,8 +567,8 @@ impl CryoUvProtocol {
             uv_burst_energy: 42.0,  // Same as fast_35k
             uv_burst_interval: 250, // Same as fast_35k
             uv_burst_duration: 50,
-            // Full aromatic coverage: TRP, TYR, PHE, HIS (all protonation states)
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            // Full aromatic coverage: TRP, TYR, PHE, BNZ/HIS shoulder, HIS.
+            scan_wavelengths: production_uv_scan_wavelengths(),
             wavelength_dwell_steps: 300, // Same as fast_35k
             ramp_down_steps: 3000,       // Compact cooldown (hysteresis)
             cold_return_steps: 2000,     // Brief cold return
@@ -585,7 +596,7 @@ impl CryoUvProtocol {
             uv_burst_energy: 48.0,  // High UV — aggressive probing
             uv_burst_interval: 200, // Frequent bursts
             uv_burst_duration: 60,
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            scan_wavelengths: production_uv_scan_wavelengths(),
             wavelength_dwell_steps: 250,
             ramp_down_steps: 5000,
             cold_return_steps: 4000,
@@ -606,7 +617,7 @@ impl CryoUvProtocol {
             uv_burst_energy: 25.0, // Moderate UV — observation, not perturbation
             uv_burst_interval: 400, // Less frequent
             uv_burst_duration: 40,
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            scan_wavelengths: production_uv_scan_wavelengths(),
             wavelength_dwell_steps: 400,
             ramp_down_steps: 5000,
             cold_return_steps: 3000,
@@ -648,7 +659,7 @@ impl CryoUvProtocol {
             uv_burst_energy: 35.0, // Moderate UV
             uv_burst_interval: 300,
             uv_burst_duration: 50,
-            scan_wavelengths: vec![280.0, 274.0, 258.0, 211.0],
+            scan_wavelengths: production_uv_scan_wavelengths(),
             wavelength_dwell_steps: 300,
             ramp_down_steps: 8000, // SLOW cooldown — key for hysteresis detection
             cold_return_steps: 8000, // EXTENDED cold return — watch for re-closure
@@ -1756,8 +1767,12 @@ const MAX_GRID_DIM: usize = 128; // Must match CUDA MAX_GRID_DIM in nhs_amber_fu
 /// Block size for 1D kernels
 const BLOCK_SIZE_1D: usize = 256;
 
-/// Maximum spikes per step (increased from 10000 to handle UV-LIF coupling which generates many spikes)
-const MAX_SPIKES_PER_STEP: usize = 500000;
+/// Maximum spikes held per GPU sync interval.
+///
+/// This is not a lossy sampling knob. If a kernel reports more events than
+/// this buffer can hold, host collection fails closed instead of truncating
+/// the high-density spike tail that feeds teacher labels.
+const MAX_SPIKES_PER_STEP: usize = 2_000_000;
 
 /// Maximum hydrogen clusters
 const MAX_H_CLUSTERS: usize = 10000;
@@ -1808,6 +1823,9 @@ pub struct NhsAmberFusedEngine {
 
     // Kernel functions
     fused_step_kernel: CudaFunction,
+    uv_pump_probe_kernel: CudaFunction,
+    external_work_reduce_kernel: CudaFunction,
+    velocity_second_half_kernel: CudaFunction,
     voxel_step_kernel: CudaFunction,
     init_rng_kernel: CudaFunction,
     init_lif_kernel: CudaFunction,
@@ -1843,15 +1861,12 @@ pub struct NhsAmberFusedEngine {
     /// monitor node downstream of fused_step_kernel.
     d_potential_energy_components: CudaSlice<f64>,
 
-    /// **M1.2.18.5 — VRAM-native total external work scalar (1 × f64).**
-    /// F2-pool stable address; the 70th parameter of nhs_amber_fused_step
-    /// binds the device pointer of this buffer so apply_vibrational_transfer
-    /// can `atomicAdd_f64(d_external_work, delta_k)` in-place.  The
-    /// captured pipeline emits cuMemsetD8Async at the head of every
-    /// replay window, so each chunk starts with W_ext == 0.0.  The SFA
-    /// stability fuse dereferences `*adj.d_external_work` (pointer at
-    /// adj offset 128) and uses the value in the First-Law drift formula
-    /// |V_t − (V_{t-1} + W_ext)| / |V_{t-1} + W_ext|.
+    /// **M1.2.18.5 — VRAM-native total external work components (n_atoms × f64).**
+    /// F2-pool stable address; the fused integrator writes per-atom clamp
+    /// work to this buffer and the ordered UV pump-probe kernel writes
+    /// per-neighbor kick work. A fixed-order reducer then stores the scalar
+    /// total in element 0, preserving the existing SFA pointer contract while
+    /// removing floating-point work atomics from the teacher path.
     d_external_work_buffer: CudaSlice<f64>,
 
     // AMBER parameter buffers (as raw bytes for GPU compatibility)
@@ -1863,6 +1878,18 @@ pub struct NhsAmberFusedEngine {
     d_exclusion_offsets: CudaSlice<i32>,
     d_pairs14_list: CudaSlice<i32>,
     d_pairs14_offsets: CudaSlice<i32>,
+    d_atom_bond_list: CudaSlice<i32>,
+    d_atom_bond_count: CudaSlice<i32>,
+    d_atom_bond_position: CudaSlice<i32>,
+    max_bonds_per_atom: i32,
+    d_atom_angle_list: CudaSlice<i32>,
+    d_atom_angle_count: CudaSlice<i32>,
+    d_atom_angle_position: CudaSlice<i32>,
+    max_angles_per_atom: i32,
+    d_atom_dihedral_list: CudaSlice<i32>,
+    d_atom_dihedral_count: CudaSlice<i32>,
+    d_atom_dihedral_position: CudaSlice<i32>,
+    max_dihedrals_per_atom: i32,
 
     // LADD: atom classification (8 categories, u8 per atom)
     d_atom_categories: CudaSlice<u8>,
@@ -1904,7 +1931,7 @@ pub struct NhsAmberFusedEngine {
     /// CA atom indices in topology: [n_residues] int32
     d_nma_ca_indices: Option<CudaSlice<i32>>,
     /// Per-mode spike counts for adaptive scheduling: [n_modes] int32
-    d_nma_spike_counts: Option<CudaSlice<i32>>,
+    d_nma_spike_counts: Option<CudaSlice<f32>>,
     /// NMA mode count
     nma_n_modes: usize,
     /// NMA residue count
@@ -2007,6 +2034,7 @@ pub struct NhsAmberFusedEngine {
     d_coupling_b: CudaSlice<f32>,        // [total_voxels] double-buffer B
     coupling_phase: bool,                // false = read A/write B, true = read B/write A
     multi_lif_kernel: CudaFunction,
+    coupling_build_kernel: Option<CudaFunction>,
     init_multi_neuron_kernel: CudaFunction,
 
     // Sparse tile index: only launch blocks for tiles containing atoms
@@ -2029,7 +2057,7 @@ pub struct NhsAmberFusedEngine {
     // is built; never written from anywhere else.
     gearbox_active: bool,
 
-    // PRISM-TWIN v3.0: GPU-resident protocol state (148 bytes in VRAM)
+    // PRISM-TWIN v3.0: GPU-resident protocol state in VRAM
     // The Director kernel updates this each step BEFORE physics kernels read from it.
     // All three physics kernels (fused_step, voxel_step, multi_lif) read from this pointer.
     pub d_protocol_state: CudaSlice<u8>,
@@ -2109,8 +2137,8 @@ pub struct NhsAmberFusedEngine {
     // ====================================================================
     // Cell list constants (matches CUDA kernel)
     cell_size: f32,            // = 10.0 Å (matches NB_CUTOFF)
-    max_atoms_per_cell: usize, // = 128
-    neighbor_list_size: usize, // = 256 per atom
+    max_atoms_per_cell: usize, // = 512
+    neighbor_list_size: usize, // = 1024 per atom
 
     // Cell grid dimensions (computed from bounding box)
     cell_nx: i32,
@@ -2293,7 +2321,7 @@ impl NhsAmberFusedEngine {
         ptr
     }
 
-    /// B.3 — raw device pointer to `d_protocol_state[84..88]` — the
+    /// B.3 — raw device pointer to the `dt` field inside ProtocolState — the
     /// `dt` field within `ProtocolState` (per
     /// `crates/prism-gpu/src/kernels/protocol_state.cuh:45`).  All three
     /// integrator kernels (nhs_amber_fused_step, nhs_voxel_step,
@@ -2302,20 +2330,10 @@ impl NhsAmberFusedEngine {
     /// apply_fixed_dt kernels write to it through `*(adj->d_dt)` once
     /// the captured pipeline wires this address into the FFI struct's
     /// offset 112.
-    ///
-    /// Offset 84 is pinned by the C-side `ProtocolState` struct layout
-    /// (4 + 4 + 4 + 4 + 4 + 4×4(phase boundaries) + 4 + 4 + 4 + 4×4 +
-    /// 4×scan_wavelengths + 4 + 4 = 84).  Drift in the C-side struct
-    /// would silently corrupt this address; the layout is currently
-    /// stable per the protocol_state.cuh static_assert chain.
     pub fn d_protocol_dt_dev_ptr(&self, stream: &Arc<CudaStream>) -> u64 {
         use cudarc::driver::DevicePtr;
         let (base, _guard) = self.d_protocol_state.device_ptr(stream);
-        // Offset of `dt` field within ProtocolState struct (mirrors
-        // protocol_state.cuh layout: header + temp + phase boundaries
-        // + UV burst + scan wavelengths == 84 bytes before `dt`).
-        const PROTOCOL_DT_OFFSET: u64 = 84;
-        base + PROTOCOL_DT_OFFSET
+        base + std::mem::offset_of!(crate::protocol_state::ProtocolState, dt) as u64
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -2517,6 +2535,11 @@ impl NhsAmberFusedEngine {
             .load_function("nhs_voxel_step")
             .unwrap_or_else(|_| fused_step_kernel.clone());
         let fused_step_kernel = fused_module.load_function("nhs_amber_fused_step")?;
+        let uv_pump_probe_kernel = fused_module.load_function("nhs_uv_pump_probe_step")?;
+        let external_work_reduce_kernel =
+            fused_module.load_function("nhs_reduce_external_work_components")?;
+        let velocity_second_half_kernel =
+            fused_module.load_function("nhs_velocity_second_half_step")?;
         let init_rng_kernel = fused_module.load_function("init_rng_states")?;
         let init_lif_kernel = fused_module.load_function("init_lif_state")?;
         // These kernels are optional - try to load, use defaults if missing
@@ -2539,6 +2562,16 @@ impl NhsAmberFusedEngine {
         let init_multi_neuron_kernel = fused_module
             .load_function("init_multi_neuron")
             .unwrap_or_else(|_| fused_step_kernel.clone());
+        let coupling_build_kernel = fused_module
+            .load_function("nhs_build_coupling_from_spike_grid")
+            .ok();
+        if coupling_build_kernel.is_some() {
+            log::info!("  Deterministic RAF coupling builder: ✓ loaded");
+        } else {
+            log::warn!(
+                "  Deterministic RAF coupling builder missing; multi-LIF coupling will fail closed"
+            );
+        }
 
         // PRISM-TWIN v3.0: Protocol Director kernel (GPU-resident state machine)
         let director_fn = {
@@ -2687,13 +2720,11 @@ impl NhsAmberFusedEngine {
         // Zeroed at the start of every integration step; populated by
         // the AMBER force kernels via atomicAdd_f64 of split V terms.
         let d_potential_energy_components: CudaSlice<f64> = stream.alloc_zeros(n_atoms)?;
-        // M1.2.18.5 — VRAM-native total-external-work buffer (1 × f64).
-        // Sized exactly 1 element (8 B); the captured graph emits a
-        // cuMemsetD8Async at the head of every replay window so each
-        // chunk starts with W_ext == 0.0.  AMBER fused step's 70th
-        // parameter binds this address; apply_vibrational_transfer
-        // atomicAdd-f64s ΔK = ½·m·(v_new² − v_old²) per UV kick.
-        let d_external_work_buffer: CudaSlice<f64> = stream.alloc_zeros(1)?;
+        // M1.2.18.5 — VRAM-native total-external-work components (n_atoms × f64).
+        // The fused and ordered UV kernels write per-atom components; a fixed
+        // reducer stores the scalar total in element 0 for the existing SFA
+        // pointer contract.
+        let d_external_work_buffer: CudaSlice<f64> = stream.alloc_zeros(n_atoms.max(1))?;
         // Reference positions for CA position restraints (prevents unfolding in vacuum)
         let mut d_reference_positions: CudaSlice<f32> = stream.alloc_zeros(n_atoms * 3)?;
         stream.memcpy_htod(&topology.positions, &mut d_reference_positions)?;
@@ -2945,6 +2976,70 @@ impl NhsAmberFusedEngine {
         let d_pairs14_list: CudaSlice<i32> = stream.alloc_zeros(pairs14_list.len().max(1))?;
         let d_pairs14_offsets: CudaSlice<i32> = stream.alloc_zeros(pairs14_offsets.len().max(1))?;
 
+        // Atom-owned incidence tables for deterministic force gathering.
+        let mut atom_bond_slots = vec![Vec::<(i32, i32)>::new(); n_atoms];
+        for (idx, bond) in topology.bonds.iter().enumerate() {
+            atom_bond_slots[bond.i].push((idx as i32, 0));
+            atom_bond_slots[bond.j].push((idx as i32, 1));
+        }
+        let (atom_bond_list, atom_bond_count, atom_bond_position, max_bonds_per_atom) =
+            Self::flatten_atom_incidence(atom_bond_slots);
+
+        let mut atom_angle_slots = vec![Vec::<(i32, i32)>::new(); n_atoms];
+        for (idx, angle) in topology.angles.iter().enumerate() {
+            atom_angle_slots[angle.i].push((idx as i32, 0));
+            atom_angle_slots[angle.j].push((idx as i32, 1));
+            atom_angle_slots[angle.k_idx].push((idx as i32, 2));
+        }
+        let (atom_angle_list, atom_angle_count, atom_angle_position, max_angles_per_atom) =
+            Self::flatten_atom_incidence(atom_angle_slots);
+
+        let mut atom_dihedral_slots = vec![Vec::<(i32, i32)>::new(); n_atoms];
+        for (idx, dihedral) in topology.dihedrals.iter().enumerate() {
+            atom_dihedral_slots[dihedral.i].push((idx as i32, 0));
+            atom_dihedral_slots[dihedral.j].push((idx as i32, 1));
+            atom_dihedral_slots[dihedral.k_idx].push((idx as i32, 2));
+            atom_dihedral_slots[dihedral.l].push((idx as i32, 3));
+        }
+        let (
+            atom_dihedral_list,
+            atom_dihedral_count,
+            atom_dihedral_position,
+            max_dihedrals_per_atom,
+        ) = Self::flatten_atom_incidence(atom_dihedral_slots);
+
+        log::info!(
+            "  deterministic incidence: max bonds/atom={}, angles/atom={}, dihedrals/atom={}",
+            max_bonds_per_atom,
+            max_angles_per_atom,
+            max_dihedrals_per_atom
+        );
+
+        let mut d_atom_bond_list: CudaSlice<i32> = stream.alloc_zeros(atom_bond_list.len())?;
+        let mut d_atom_bond_count: CudaSlice<i32> = stream.alloc_zeros(atom_bond_count.len())?;
+        let mut d_atom_bond_position: CudaSlice<i32> =
+            stream.alloc_zeros(atom_bond_position.len())?;
+        let mut d_atom_angle_list: CudaSlice<i32> = stream.alloc_zeros(atom_angle_list.len())?;
+        let mut d_atom_angle_count: CudaSlice<i32> = stream.alloc_zeros(atom_angle_count.len())?;
+        let mut d_atom_angle_position: CudaSlice<i32> =
+            stream.alloc_zeros(atom_angle_position.len())?;
+        let mut d_atom_dihedral_list: CudaSlice<i32> =
+            stream.alloc_zeros(atom_dihedral_list.len())?;
+        let mut d_atom_dihedral_count: CudaSlice<i32> =
+            stream.alloc_zeros(atom_dihedral_count.len())?;
+        let mut d_atom_dihedral_position: CudaSlice<i32> =
+            stream.alloc_zeros(atom_dihedral_position.len())?;
+
+        stream.memcpy_htod(&atom_bond_list, &mut d_atom_bond_list)?;
+        stream.memcpy_htod(&atom_bond_count, &mut d_atom_bond_count)?;
+        stream.memcpy_htod(&atom_bond_position, &mut d_atom_bond_position)?;
+        stream.memcpy_htod(&atom_angle_list, &mut d_atom_angle_list)?;
+        stream.memcpy_htod(&atom_angle_count, &mut d_atom_angle_count)?;
+        stream.memcpy_htod(&atom_angle_position, &mut d_atom_angle_position)?;
+        stream.memcpy_htod(&atom_dihedral_list, &mut d_atom_dihedral_list)?;
+        stream.memcpy_htod(&atom_dihedral_count, &mut d_atom_dihedral_count)?;
+        stream.memcpy_htod(&atom_dihedral_position, &mut d_atom_dihedral_position)?;
+
         // ====================================================================
         // BUILD SHAKE H-CLUSTERS
         // ====================================================================
@@ -3136,8 +3231,8 @@ impl NhsAmberFusedEngine {
 
         // Cell list constants (must match CUDA kernel defines)
         const CELL_SIZE: f32 = 10.0; // Matches NB_CUTOFF
-        const MAX_ATOMS_PER_CELL: usize = 128;
-        const NEIGHBOR_LIST_SIZE: usize = 256;
+        const MAX_ATOMS_PER_CELL: usize = 512;
+        const NEIGHBOR_LIST_SIZE: usize = 1024;
         const MAX_CELLS_PER_DIM: i32 = 32;
 
         // Compute cell grid dimensions from bounding box
@@ -3388,6 +3483,9 @@ impl NhsAmberFusedEngine {
             _fused_module: fused_module,
             voxel_step_kernel,
             fused_step_kernel,
+            uv_pump_probe_kernel,
+            external_work_reduce_kernel,
+            velocity_second_half_kernel,
             init_rng_kernel,
             init_lif_kernel,
             init_warp_matrix_kernel,
@@ -3411,6 +3509,18 @@ impl NhsAmberFusedEngine {
             d_exclusion_offsets,
             d_pairs14_list,
             d_pairs14_offsets,
+            d_atom_bond_list,
+            d_atom_bond_count,
+            d_atom_bond_position,
+            max_bonds_per_atom,
+            d_atom_angle_list,
+            d_atom_angle_count,
+            d_atom_angle_position,
+            max_angles_per_atom,
+            d_atom_dihedral_list,
+            d_atom_dihedral_count,
+            d_atom_dihedral_position,
+            max_dihedrals_per_atom,
             d_atom_categories,
             d_atom_voxel_curr,
             d_atom_voxel_prev,
@@ -3525,6 +3635,7 @@ impl NhsAmberFusedEngine {
             d_coupling_b,
             coupling_phase: false,
             multi_lif_kernel,
+            coupling_build_kernel,
             init_multi_neuron_kernel,
             kde_density_peak_kernel,
             burial_centroid_kernel,
@@ -4009,8 +4120,9 @@ impl NhsAmberFusedEngine {
     }
 
     /// ASC steering: write focus residue + UV boost to GPU ProtocolState.
-    /// Downloads full 164-byte struct, modifies steering fields, re-uploads.
+    /// Downloads full ProtocolState, modifies steering fields, re-uploads.
     pub fn set_steering_focus_residue(&mut self, residue_id: i32) {
+        use crate::protocol_state::ProtocolState;
         let size = std::mem::size_of::<crate::protocol_state::ProtocolState>();
         let mut buf = vec![0u8; size];
         if self
@@ -4018,13 +4130,19 @@ impl NhsAmberFusedEngine {
             .memcpy_dtoh(&self.d_protocol_state, &mut buf)
             .is_ok()
         {
-            // steering_uv_boost at offset 148
-            buf[148..152].copy_from_slice(&1.5f32.to_ne_bytes());
-            // steering_focus_residue at offset 156
-            buf[156..160].copy_from_slice(&residue_id.to_ne_bytes());
+            let uv_boost = std::mem::offset_of!(ProtocolState, steering_uv_boost);
+            let focus_residue = std::mem::offset_of!(ProtocolState, steering_focus_residue);
+            let steering_flags = std::mem::offset_of!(ProtocolState, steering_flags);
+            buf[uv_boost..uv_boost + 4].copy_from_slice(&1.5f32.to_ne_bytes());
+            buf[focus_residue..focus_residue + 4].copy_from_slice(&residue_id.to_ne_bytes());
             // steering_flags: set phase_lock (0x1)
-            let flags = i32::from_ne_bytes([buf[160], buf[161], buf[162], buf[163]]) | 0x1;
-            buf[160..164].copy_from_slice(&flags.to_ne_bytes());
+            let flags = i32::from_ne_bytes([
+                buf[steering_flags],
+                buf[steering_flags + 1],
+                buf[steering_flags + 2],
+                buf[steering_flags + 3],
+            ]) | 0x1;
+            buf[steering_flags..steering_flags + 4].copy_from_slice(&flags.to_ne_bytes());
             let _ = self.stream.memcpy_htod(&buf, &mut self.d_protocol_state);
         }
     }
@@ -4247,7 +4365,7 @@ impl NhsAmberFusedEngine {
         let mut d_ca: CudaSlice<i32> = self.stream.alloc_zeros(ca_indices.len())?;
         self.stream.memcpy_htod(&ca_indices, &mut d_ca)?;
 
-        let d_spike_counts: CudaSlice<i32> = self.stream.alloc_zeros(n_modes)?;
+        let d_spike_counts: CudaSlice<f32> = self.stream.alloc_zeros(n_modes * n_residues)?;
 
         self.d_nma_displacements = Some(d_disp);
         self.d_nma_force_scales = Some(d_scales);
@@ -4668,11 +4786,47 @@ impl NhsAmberFusedEngine {
         bytes
     }
 
+    /// Build atom-owned incidence tables for deterministic force gathering.
+    ///
+    /// Each row is sorted by interaction index so the CUDA force phase sees a
+    /// stable summation order independent of block scheduling.
+    fn flatten_atom_incidence(
+        mut per_atom: Vec<Vec<(i32, i32)>>,
+    ) -> (Vec<i32>, Vec<i32>, Vec<i32>, i32) {
+        for slots in &mut per_atom {
+            slots.sort_by_key(|&(interaction_idx, position)| (interaction_idx, position));
+        }
+
+        let n_atoms = per_atom.len();
+        let max_per_atom = per_atom
+            .iter()
+            .map(|slots| slots.len())
+            .max()
+            .unwrap_or(0)
+            .max(1);
+
+        let mut list = vec![-1i32; n_atoms * max_per_atom];
+        let mut position = vec![-1i32; n_atoms * max_per_atom];
+        let mut count = vec![0i32; n_atoms];
+
+        for (atom_idx, slots) in per_atom.iter().enumerate() {
+            count[atom_idx] = slots.len() as i32;
+            let base = atom_idx * max_per_atom;
+            for (slot_idx, &(interaction_idx, pos)) in slots.iter().enumerate() {
+                list[base + slot_idx] = interaction_idx;
+                position[base + slot_idx] = pos;
+            }
+        }
+
+        (list, count, position, max_per_atom as i32)
+    }
+
     /// Generate Maxwell-Boltzmann distributed velocities
     fn generate_maxwell_boltzmann_velocities(&self, masses: &[f32], temperature: f32) -> Vec<f32> {
+        use rand::SeedableRng;
         use rand_distr::{Distribution, Normal};
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0x5052_4953_4d5f_4d42);
         let mut velocities = vec![0.0f32; self.n_atoms * 3];
 
         // kB in kcal/(mol·K)
@@ -5298,6 +5452,40 @@ impl NhsAmberFusedEngine {
         .context("Failed to launch build_neighbor_list")?;
 
         self.stream.synchronize()?;
+        let mut cell_counts = vec![0i32; n_total_cells];
+        self.stream
+            .memcpy_dtoh(&self.d_cell_counts, &mut cell_counts)
+            .context("Failed to audit neighbor cell counts")?;
+        if let Some((cell_idx, &count)) = cell_counts
+            .iter()
+            .enumerate()
+            .find(|(_, &count)| count as usize > self.max_atoms_per_cell)
+        {
+            bail!(
+                "neighbor cell overflow at cell {}: {} atoms exceed capacity {}; refusing truncated force field",
+                cell_idx,
+                count,
+                self.max_atoms_per_cell
+            );
+        }
+
+        let mut neighbor_counts = vec![0i32; self.n_atoms];
+        self.stream
+            .memcpy_dtoh(&self.d_n_neighbors, &mut neighbor_counts)
+            .context("Failed to audit neighbor list counts")?;
+        if let Some((atom_idx, &count)) = neighbor_counts
+            .iter()
+            .enumerate()
+            .find(|(_, &count)| count as usize >= self.neighbor_list_size)
+        {
+            bail!(
+                "neighbor list saturated at atom {}: {} neighbors reached capacity {}; refusing order-dependent truncation",
+                atom_idx,
+                count,
+                self.neighbor_list_size
+            );
+        }
+
         self.steps_since_rebuild = 0;
 
         Ok(())
@@ -5342,6 +5530,73 @@ impl NhsAmberFusedEngine {
                 .launch(cfg)
         }
         .context("Failed to launch compute_nonbonded_neighborlist")?;
+
+        Ok(())
+    }
+
+    fn launch_post_fused_phase_split(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        context_label: &str,
+    ) -> Result<()> {
+        let n_atoms_i32 = self.n_atoms as i32;
+        let n_aromatics_i32 = self.n_aromatics as i32;
+
+        let serial_cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (1, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            stream
+                .launch_builder(&self.uv_pump_probe_kernel)
+                .arg(&mut self.d_protocol_state)
+                .arg(&mut self.d_velocities)
+                .arg(&self.d_masses)
+                .arg(&mut self.d_is_excited)
+                .arg(&mut self.d_time_since_excitation)
+                .arg(&mut self.d_electronic_population)
+                .arg(&mut self.d_vibrational_energy)
+                .arg(&mut self.d_franck_condon_progress)
+                .arg(&self.d_aromatic_type)
+                .arg(&self.d_ring_normals)
+                .arg(&self.d_aromatic_neighbors)
+                .arg(&n_aromatics_i32)
+                .arg(&mut self.d_external_work_buffer)
+                .launch(serial_cfg)
+        }
+        .with_context(|| format!("{context_label}: nhs_uv_pump_probe_step failed"))?;
+
+        let reduce_cfg = LaunchConfig {
+            grid_dim: (1, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            stream
+                .launch_builder(&self.external_work_reduce_kernel)
+                .arg(&mut self.d_external_work_buffer)
+                .arg(&n_atoms_i32)
+                .launch(reduce_cfg)
+        }
+        .with_context(|| format!("{context_label}: nhs_reduce_external_work_components failed"))?;
+
+        let atom_cfg = LaunchConfig {
+            grid_dim: ((self.n_atoms as u32).div_ceil(BLOCK_SIZE_1D as u32), 1, 1),
+            block_dim: (BLOCK_SIZE_1D as u32, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        unsafe {
+            stream
+                .launch_builder(&self.velocity_second_half_kernel)
+                .arg(&mut self.d_velocities)
+                .arg(&self.d_forces)
+                .arg(&self.d_masses)
+                .arg(&n_atoms_i32)
+                .arg(&self.d_protocol_state)
+                .launch(atom_cfg)
+        }
+        .with_context(|| format!("{context_label}: nhs_velocity_second_half_step failed"))?;
 
         Ok(())
     }
@@ -5752,6 +6007,31 @@ impl NhsAmberFusedEngine {
                         .arg(&self.d_neighbor_list)
                         .arg(&self.d_n_neighbors)
                         .arg(&use_neighbor_list_i32)
+                        .arg(&self.d_efp_potential)
+                        .arg(&self.d_efp_potential_prev)
+                        .arg(&self.d_efp_lif_potential)
+                        .arg(&self.d_spike_grid_efp)
+                        .arg(&self.d_atom_lambda)
+                        .arg(&self.d_voxel_hit_grid)
+                        .arg(&self.d_last_uv_step)
+                        .arg(&self.d_coupled_spike_grid)
+                        .arg(&self.d_primary_residue_id)
+                        .arg(&self.d_primary_residue_count)
+                        .arg(&self.d_residue_step_causal)
+                        .arg(&self.d_potential_energy_components)
+                        .arg(&self.d_external_work_buffer)
+                        .arg(&self.d_atom_bond_list)
+                        .arg(&self.d_atom_bond_count)
+                        .arg(&self.d_atom_bond_position)
+                        .arg(&self.max_bonds_per_atom)
+                        .arg(&self.d_atom_angle_list)
+                        .arg(&self.d_atom_angle_count)
+                        .arg(&self.d_atom_angle_position)
+                        .arg(&self.max_angles_per_atom)
+                        .arg(&self.d_atom_dihedral_list)
+                        .arg(&self.d_atom_dihedral_count)
+                        .arg(&self.d_atom_dihedral_position)
+                        .arg(&self.max_dihedrals_per_atom)
                         .launch(cfg)
                 }
                 .context("Failed to launch parallel fused_step_kernel")?;
@@ -5771,11 +6051,20 @@ impl NhsAmberFusedEngine {
             let mut spike_count = [0i32];
             self.stream_pool[replica.replica_id]
                 .memcpy_dtoh(&replica.d_spike_count, &mut spike_count)?;
+            let n_spikes = spike_count[0].max(0) as usize;
+            if n_spikes > MAX_SPIKES_PER_STEP {
+                bail!(
+                    "parallel replica {} spike buffer overflow after step: kernel emitted {} events but buffer holds {}; refusing to truncate teacher signal",
+                    replica.replica_id,
+                    n_spikes,
+                    MAX_SPIKES_PER_STEP
+                );
+            }
 
             results.push(StepResult {
                 timestep: replica.timestep,
                 temperature: current_temp,
-                spike_count: spike_count[0] as usize,
+                spike_count: n_spikes,
                 uv_burst_active,
                 current_wavelength_nm: if uv_burst_active {
                     Some(uv_wavelength_nm)
@@ -5824,7 +6113,15 @@ impl NhsAmberFusedEngine {
             // Get spike count
             let mut spike_count = [0i32];
             stream.memcpy_dtoh(&replica.d_spike_count, &mut spike_count)?;
-            let n_spikes = spike_count[0].min(MAX_SPIKES_PER_STEP as i32) as usize;
+            let n_spikes = spike_count[0].max(0) as usize;
+            if n_spikes > MAX_SPIKES_PER_STEP {
+                bail!(
+                    "parallel replica {} spike buffer overflow: kernel emitted {} events but buffer holds {}; refusing to truncate teacher signal",
+                    replica_id,
+                    n_spikes,
+                    MAX_SPIKES_PER_STEP
+                );
+            }
 
             // Download spike events
             if n_spikes > 0 {
@@ -5927,7 +6224,7 @@ impl NhsAmberFusedEngine {
     ///     uv_burst_energy: 30.0,
     ///     uv_burst_interval: 500,
     ///     uv_burst_duration: 50,
-    ///     scan_wavelengths: vec![280.0, 274.0, 258.0],
+    ///     scan_wavelengths: crate::fused_engine::PRODUCTION_UV_SCAN_WAVELENGTHS.to_vec(),
     ///     wavelength_dwell_steps: 500,
     ///     current_step: 0,
     ///     ramp_down_steps: 0,
@@ -6280,6 +6577,7 @@ impl NhsAmberFusedEngine {
             // memset retires before the kernel launch reads.
             self.stream
                 .memset_zeros(&mut self.d_potential_energy_components)?;
+            self.stream.memset_zeros(&mut self.d_external_work_buffer)?;
 
             unsafe {
                 self.stream
@@ -6371,9 +6669,24 @@ impl NhsAmberFusedEngine {
                     // M1.2.18.5 — VRAM-native total-external-work scalar (f64, 1 element).
                     // apply_vibrational_transfer atomicAdd-f64s ΔK here per UV kick.
                     .arg(&mut self.d_external_work_buffer)
+                    .arg(&self.d_atom_bond_list)
+                    .arg(&self.d_atom_bond_count)
+                    .arg(&self.d_atom_bond_position)
+                    .arg(&self.max_bonds_per_atom)
+                    .arg(&self.d_atom_angle_list)
+                    .arg(&self.d_atom_angle_count)
+                    .arg(&self.d_atom_angle_position)
+                    .arg(&self.max_angles_per_atom)
+                    .arg(&self.d_atom_dihedral_list)
+                    .arg(&self.d_atom_dihedral_count)
+                    .arg(&self.d_atom_dihedral_position)
+                    .arg(&self.max_dihedrals_per_atom)
                     .launch(cfg)
             }
             .context("Failed to launch nhs_amber_fused_step kernel")?;
+
+            let stream = self.stream.clone();
+            self.launch_post_fused_phase_split(&stream, "step")?;
 
             // ── CA POSITION RESTRAINTS (GPU-side, Gate 2) ──
             // Replaces CPU memcpy_dtoh→correct→memcpy_htod with a single GPU kernel.
@@ -6590,6 +6903,36 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch nhs_voxel_step_multi_lif kernel")?;
 
+        // Phase-split deterministic coupling field. The multi-LIF kernel emits
+        // spikes and refractory state only; this kernel assigns one writer per
+        // destination voxel and scans neighbors in fixed order, replacing the
+        // previous f32 atomicAdd coupling stencil.
+        {
+            let build_fn = self
+                .coupling_build_kernel
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!(
+                    "nhs_build_coupling_from_spike_grid missing from fused PTX; refusing nondeterministic RAF coupling fallback"
+                ))?;
+            let total_voxels_i32 = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
+            let coupling_cfg = LaunchConfig {
+                grid_dim: ((total_voxels_i32 as u32).div_ceil(256), 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            unsafe {
+                self.stream
+                    .launch_builder(build_fn)
+                    .arg(&self.d_spike_grid)
+                    .arg(&mut self.d_coupling_a)
+                    .arg(&mut self.d_coupling_b)
+                    .arg(&grid_dim_i32)
+                    .arg(&self.d_protocol_state)
+                    .launch(coupling_cfg)
+            }
+            .context("Failed to launch nhs_build_coupling_from_spike_grid kernel")?;
+        }
+
         // ── LADD: per-step voxel tracking + density ──
         if self.ladd_enabled {
             if let (Some(ref k_update), Some(ref k_reset), Some(ref k_accum), Some(ref k_ref)) = (
@@ -6733,7 +7076,7 @@ impl NhsAmberFusedEngine {
                         }
 
                         // 5c. Detect depletion + emit spikes (using sorted departure buffer)
-                        let max_spikes_i32 = 500000i32;
+                        let max_spikes_i32 = MAX_SPIKES_PER_STEP as i32;
                         let timestep_i32 = self.timestep;
                         unsafe {
                             self.stream
@@ -6773,7 +7116,8 @@ impl NhsAmberFusedEngine {
         // Swap coupling double-buffer — Director already toggled coupling_phase in ProtocolState.
         // CPU-side tracking kept in sync for non-graph paths.
         self.coupling_phase = !self.coupling_phase;
-        // Clear the write-side buffer (GPU kernel reads coupling_phase from ProtocolState)
+        // Clear the stale read-side buffer. The just-written buffer becomes
+        // next step's read side after Director toggles coupling_phase again.
         if let Some(ref clear_fn) = self.coupling_clear_fn {
             let total_voxels = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
             let clear_cfg = LaunchConfig {
@@ -6792,11 +7136,11 @@ impl NhsAmberFusedEngine {
             }
             .context("Failed to launch coupling_buffer_clear")?;
         } else {
-            // Fallback: CPU-conditional memset
+            // Fallback: CPU-conditional memset of the stale read side.
             if self.coupling_phase {
-                self.stream.memset_zeros(&mut self.d_coupling_a)?;
-            } else {
                 self.stream.memset_zeros(&mut self.d_coupling_b)?;
+            } else {
+                self.stream.memset_zeros(&mut self.d_coupling_a)?;
             }
         }
 
@@ -6977,7 +7321,15 @@ impl NhsAmberFusedEngine {
             let mut spike_count_host = [0i32];
             self.stream
                 .memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
-            let spikes = spike_count_host[0] as usize;
+            let spikes = spike_count_host[0].max(0) as usize;
+            if spikes > MAX_SPIKES_PER_STEP {
+                bail!(
+                    "spike buffer overflow at timestep {}: kernel emitted {} events but buffer holds {}; refusing to truncate teacher signal",
+                    self.timestep,
+                    spikes,
+                    MAX_SPIKES_PER_STEP
+                );
+            }
 
             // Activity-based snapshot capture - multiple triggers
             let uv_active = self.uv_config.is_burst_active();
@@ -7021,11 +7373,12 @@ impl NhsAmberFusedEngine {
 
             // If spike accumulation is enabled, download and store spikes before reset
             if self.accumulate_spikes && spikes > 0 {
-                let n_to_download = spikes.min(MAX_SPIKES_PER_STEP);
-                let bytes_needed = n_to_download * self.spike_event_size;
+                let n_to_download = spikes;
+                let _bytes_needed = n_to_download * self.spike_event_size;
 
-                // Download ONLY the actual spike bytes (not the full 6MB buffer!)
-                // This is a major performance optimization - copies bytes_needed instead of 6MB
+                // Download the fixed device event buffer, then parse only the
+                // reported event range. Overflow above the fixed buffer is
+                // rejected before this point.
                 let mut full_buffer = vec![0u8; MAX_SPIKES_PER_STEP * self.spike_event_size];
                 self.stream
                     .memcpy_dtoh(&self.d_spike_events, &mut full_buffer)?;
@@ -7320,6 +7673,7 @@ impl NhsAmberFusedEngine {
             // M1.2.17 — zero per-atom PE components before each step.
             self.stream
                 .memset_zeros(&mut self.d_potential_energy_components)?;
+            self.stream.memset_zeros(&mut self.d_external_work_buffer)?;
 
             unsafe {
                 self.stream
@@ -7400,9 +7754,24 @@ impl NhsAmberFusedEngine {
                     .arg(&mut self.d_potential_energy_components)
                     // M1.2.18.5 — VRAM-native total-external-work scalar.
                     .arg(&mut self.d_external_work_buffer)
+                    .arg(&self.d_atom_bond_list)
+                    .arg(&self.d_atom_bond_count)
+                    .arg(&self.d_atom_bond_position)
+                    .arg(&self.max_bonds_per_atom)
+                    .arg(&self.d_atom_angle_list)
+                    .arg(&self.d_atom_angle_count)
+                    .arg(&self.d_atom_angle_position)
+                    .arg(&self.max_angles_per_atom)
+                    .arg(&self.d_atom_dihedral_list)
+                    .arg(&self.d_atom_dihedral_count)
+                    .arg(&self.d_atom_dihedral_position)
+                    .arg(&self.max_dihedrals_per_atom)
                     .launch(cfg)
             }
             .context("Failed to launch nhs_amber_fused_step kernel")?;
+
+            let stream = self.stream.clone();
+            self.launch_post_fused_phase_split(&stream, "step_batch")?;
 
             // O(N) neighbor list rebuild check (if enabled)
             if self.use_neighbor_list {
@@ -7428,7 +7797,14 @@ impl NhsAmberFusedEngine {
         let mut spike_count_host = [0i32];
         self.stream
             .memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
-        let num_spikes = spike_count_host[0] as usize;
+        let num_spikes = spike_count_host[0].max(0) as usize;
+        if num_spikes > MAX_SPIKES_PER_STEP {
+            bail!(
+                "batch spike buffer overflow: kernel emitted {} events but buffer holds {}; refusing to truncate teacher signal",
+                num_spikes,
+                MAX_SPIKES_PER_STEP
+            );
+        }
 
         Ok(StepResult {
             timestep: self.timestep,
@@ -8005,6 +8381,7 @@ impl NhsAmberFusedEngine {
 
         // M1.2.17 — zero per-atom PE components before this step's kernels.
         stream.memset_zeros(&mut self.d_potential_energy_components)?;
+        stream.memset_zeros(&mut self.d_external_work_buffer)?;
 
         unsafe {
             stream
@@ -8080,11 +8457,30 @@ impl NhsAmberFusedEngine {
                 .arg(&mut self.d_potential_energy_components)
                 // M1.2.18.5 — VRAM-native total-external-work scalar.
                 .arg(&mut self.d_external_work_buffer)
+                .arg(&self.d_atom_bond_list)
+                .arg(&self.d_atom_bond_count)
+                .arg(&self.d_atom_bond_position)
+                .arg(&self.max_bonds_per_atom)
+                .arg(&self.d_atom_angle_list)
+                .arg(&self.d_atom_angle_count)
+                .arg(&self.d_atom_angle_position)
+                .arg(&self.max_angles_per_atom)
+                .arg(&self.d_atom_dihedral_list)
+                .arg(&self.d_atom_dihedral_count)
+                .arg(&self.d_atom_dihedral_position)
+                .arg(&self.max_dihedrals_per_atom)
                 .launch(physics_cfg)
         }
         .context("step_autonomous: Physics kernel failed")?;
         if let Some(t) = tagger.as_deref_mut() {
             let _ = t.record_node("fused_step")?;
+        }
+
+        self.launch_post_fused_phase_split(stream, "step_autonomous")?;
+        if let Some(t) = tagger.as_deref_mut() {
+            let _ = t.record_node("uv_pump_probe")?;
+            let _ = t.record_node("external_work_reduce")?;
+            let _ = t.record_node("velocity_second_half")?;
         }
 
         // CA restraints SKIPPED in autonomous path — from housekeeping module (cross-module capture issue).
@@ -8179,6 +8575,34 @@ impl NhsAmberFusedEngine {
         .context("step_autonomous: multi_lif failed")?;
         if let Some(t) = tagger.as_deref_mut() {
             let _ = t.record_node("multi_lif")?;
+        }
+
+        {
+            let build_fn = self.coupling_build_kernel.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "step_autonomous: nhs_build_coupling_from_spike_grid missing from fused PTX"
+                )
+            })?;
+            let total_voxels_i32 = (self.grid_dim * self.grid_dim * self.grid_dim) as i32;
+            let coupling_cfg = LaunchConfig {
+                grid_dim: ((total_voxels_i32 as u32).div_ceil(256), 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            unsafe {
+                stream
+                    .launch_builder(build_fn)
+                    .arg(&self.d_spike_grid)
+                    .arg(&mut self.d_coupling_a)
+                    .arg(&mut self.d_coupling_b)
+                    .arg(&grid_dim_i32)
+                    .arg(&self.d_protocol_state)
+                    .launch(coupling_cfg)
+            }
+            .context("step_autonomous: deterministic coupling build failed")?;
+        }
+        if let Some(t) = tagger.as_deref_mut() {
+            let _ = t.record_node("coupling_build")?;
         }
 
         // Heartbeat + coupling clear SKIPPED in autonomous path.
@@ -8298,17 +8722,22 @@ impl NhsAmberFusedEngine {
             spike_count[0]
         };
 
-        // Cap at both max_spikes parameter AND MAX_SPIKES_PER_STEP (buffer size limit)
-        let n_spikes = (effective_count as usize)
-            .min(max_spikes)
-            .min(MAX_SPIKES_PER_STEP);
+        let effective_count = effective_count.max(0) as usize;
+        if effective_count > MAX_SPIKES_PER_STEP {
+            bail!(
+                "spike buffer overflow during download: kernel emitted {} events but buffer holds {}; refusing to truncate teacher signal",
+                effective_count,
+                MAX_SPIKES_PER_STEP
+            );
+        }
+        let n_spikes = effective_count.min(max_spikes);
 
         if n_spikes == 0 {
             return Ok(Vec::new());
         }
 
         // Download spike events
-        let bytes_needed = n_spikes * self.spike_event_size;
+        let _bytes_needed = n_spikes * self.spike_event_size;
 
         // Create a view into just the spike events we need
         let full_bytes = MAX_SPIKES_PER_STEP * self.spike_event_size;
@@ -8400,10 +8829,30 @@ impl NhsAmberFusedEngine {
         Ok(events)
     }
 
+    fn synchronize_stream_raw(&self, label: &str) -> Result<()> {
+        let rc_ctx = unsafe { sys::cuCtxSetCurrent(self.stream.context().cu_ctx()) };
+        if !matches!(rc_ctx, sys::CUresult::CUDA_SUCCESS) {
+            bail!(
+                "{} cuCtxSetCurrent failed: CUDA driver rc={}",
+                label,
+                rc_ctx as i32
+            );
+        }
+        let rc_sync = unsafe { sys::cuStreamSynchronize(self.stream.cu_stream()) };
+        if !matches!(rc_sync, sys::CUresult::CUDA_SUCCESS) {
+            bail!(
+                "{} cuStreamSynchronize failed: CUDA driver rc={}",
+                label,
+                rc_sync as i32
+            );
+        }
+        Ok(())
+    }
+
     /// Run KCC final descriptors computation and download per-residue results.
     /// Must be called after simulation completes (all steps done).
     pub fn compute_and_download_kcc(&mut self) -> Result<KccData> {
-        self.stream.synchronize()?;
+        self.synchronize_stream_raw("KCC precompute stream synchronize")?;
 
         if self.n_residues == 0 {
             return Ok(KccData::empty());
@@ -8417,6 +8866,12 @@ impl NhsAmberFusedEngine {
             block_dim: (256, 1, 1),
             shared_mem_bytes: 0,
         };
+        if let Err(e) = self.stream.context().check_err() {
+            log::debug!(
+                "KCC pre-launch drained stale CUDA context error before descriptor kernel: {:?}",
+                e
+            );
+        }
         unsafe {
             self.stream
                 .launch_builder(&self.kcc_compute_descriptors_kernel)
@@ -8445,9 +8900,16 @@ impl NhsAmberFusedEngine {
         }
         .context("Failed to launch kcc_compute_rich_descriptors kernel")?;
 
-        self.stream.synchronize()?;
+        self.synchronize_stream_raw("KCC descriptor kernel synchronize")?;
 
-        // Download all results
+        // Final teardown readback intentionally uses synchronous driver copies.
+        // cudarc's async memcpy_dtoh/pinned-host path repeatedly calls
+        // bind_to_thread(), which first drains the shared CudaContext.error_state.
+        // During multi-stream teardown, unrelated CudaSlice/CudaStream drops can
+        // record stale errors into that shared state and make the first KCC
+        // readback look like a CUDA fault. The stream synchronize above is the
+        // correctness barrier for kernel writes; the raw copies below only need
+        // the current context that synchronize() already established.
         let nr = self.n_residues;
         let mut temporal_corr = vec![0.0f32; nr];
         let mut direction_score = vec![0.0f32; nr];
@@ -8464,33 +8926,62 @@ impl NhsAmberFusedEngine {
         let mut net_dz = vec![0.0f32; nr];
         let mut sum_m = vec![0.0f32; nr];
 
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_temporal_corr, &mut temporal_corr)?;
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_direction_score, &mut direction_score)?;
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_motion_efficiency, &mut motion_efficiency)?;
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_burst_motion, &mut burst_motion)?;
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_phase_shift, &mut phase_shift)?;
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_causal_lag, &mut causal_lag)?;
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_lag_corr_peak, &mut lag_corr_peak)?;
-        self.stream
-            .memcpy_dtoh(&self.d_kcc_local_cov, &mut local_cov)?;
-        self.stream
-            .memcpy_dtoh(&self.d_residue_count, &mut residue_count)?;
-        self.stream
-            .memcpy_dtoh(&self.d_residue_active_causal, &mut active_causal)?;
-        self.stream
-            .memcpy_dtoh(&self.d_residue_net_dx, &mut net_dx)?;
-        self.stream
-            .memcpy_dtoh(&self.d_residue_net_dy, &mut net_dy)?;
-        self.stream
-            .memcpy_dtoh(&self.d_residue_net_dz, &mut net_dz)?;
-        self.stream.memcpy_dtoh(&self.d_residue_sum_m, &mut sum_m)?;
+        macro_rules! copy_kcc_field {
+            ($label:literal, $src:expr, $dst:expr, $ty:ty) => {{
+                let (src_dev, _record_src) = $src.device_ptr(&self.stream);
+                let nbytes = $dst.len() * std::mem::size_of::<$ty>();
+                let rc = unsafe {
+                    cudarc::driver::sys::cuMemcpyDtoH_v2(
+                        $dst.as_mut_ptr() as *mut std::ffi::c_void,
+                        src_dev as cudarc::driver::sys::CUdeviceptr,
+                        nbytes,
+                    )
+                };
+                if !matches!(rc, cudarc::driver::sys::CUresult::CUDA_SUCCESS) {
+                    bail!("KCC DtoH {} failed: CUDA driver rc={}", $label, rc as i32);
+                }
+            }};
+        }
+
+        copy_kcc_field!(
+            "temporal_corr",
+            &self.d_kcc_temporal_corr,
+            temporal_corr,
+            f32
+        );
+        copy_kcc_field!(
+            "direction_score",
+            &self.d_kcc_direction_score,
+            direction_score,
+            f32
+        );
+        copy_kcc_field!(
+            "motion_efficiency",
+            &self.d_kcc_motion_efficiency,
+            motion_efficiency,
+            f32
+        );
+        copy_kcc_field!("burst_motion", &self.d_kcc_burst_motion, burst_motion, f32);
+        copy_kcc_field!("phase_shift", &self.d_kcc_phase_shift, phase_shift, f32);
+        copy_kcc_field!("causal_lag", &self.d_kcc_causal_lag, causal_lag, f32);
+        copy_kcc_field!(
+            "lag_corr_peak",
+            &self.d_kcc_lag_corr_peak,
+            lag_corr_peak,
+            f32
+        );
+        copy_kcc_field!("local_cov", &self.d_kcc_local_cov, local_cov, f32);
+        copy_kcc_field!("residue_count", &self.d_residue_count, residue_count, u32);
+        copy_kcc_field!(
+            "active_causal",
+            &self.d_residue_active_causal,
+            active_causal,
+            u32
+        );
+        copy_kcc_field!("net_dx", &self.d_residue_net_dx, net_dx, f32);
+        copy_kcc_field!("net_dy", &self.d_residue_net_dy, net_dy, f32);
+        copy_kcc_field!("net_dz", &self.d_residue_net_dz, net_dz, f32);
+        copy_kcc_field!("sum_m", &self.d_residue_sum_m, sum_m, f32);
 
         let n_with_causal = active_causal.iter().filter(|&&v| v > 0).count();
         let max_corr = temporal_corr
@@ -8539,7 +9030,7 @@ impl NhsAmberFusedEngine {
     /// - Dominant residue driver (primary_residue_id + count)
     pub fn download_signal_preservation(&self) -> Result<SignalPreservationData> {
         // Synchronize stream to ensure all kernel writes are complete
-        self.stream.synchronize()?;
+        self.synchronize_stream_raw("signal-grid pre-download stream synchronize")?;
 
         let total_voxels = self.grid_dim * self.grid_dim * self.grid_dim;
         let mut voxel_hit_grid = vec![0i32; total_voxels];
@@ -8547,14 +9038,104 @@ impl NhsAmberFusedEngine {
         let mut primary_residue_id = vec![0i32; total_voxels];
         let mut primary_residue_count = vec![0i32; total_voxels];
 
-        self.stream
-            .memcpy_dtoh(&self.d_voxel_hit_grid, &mut voxel_hit_grid)?;
-        self.stream
-            .memcpy_dtoh(&self.d_coupled_spike_grid, &mut coupled_spike_grid)?;
-        self.stream
-            .memcpy_dtoh(&self.d_primary_residue_id, &mut primary_residue_id)?;
-        self.stream
-            .memcpy_dtoh(&self.d_primary_residue_count, &mut primary_residue_count)?;
+        macro_rules! copy_signal_grid {
+            ($label:literal, $src:expr, $dst:expr) => {{
+                let mut copied = false;
+                let mut last_error: Option<String> = None;
+                for attempt in 1..=3 {
+                    if attempt > 1 {
+                        if let Err(e) =
+                            self.synchronize_stream_raw("signal-grid retry pre-drain")
+                        {
+                            log::warn!(
+                                "Signal preservation DtoH {} attempt {} pre-drain failed: {:#}",
+                                $label,
+                                attempt,
+                                e
+                            );
+                        }
+                        std::thread::sleep(Duration::from_millis(10 * attempt as u64));
+                    }
+
+                    // The stream synchronize above already binds this CUDA context on
+                    // the current worker thread and is the real correctness barrier
+                    // for pending kernel writes. Calling cudarc's bind_to_thread()
+                    // again here is actively harmful in the multi-stream teardown:
+                    // unrelated CudaSlice/CudaStream drops can record stale errors
+                    // into the shared CudaContext.error_state, and bind_to_thread()
+                    // drains that state before it ever reaches cuCtxSetCurrent. A
+                    // raw synchronous DtoH copy only needs the current context that
+                    // synchronize() already established.
+                    let (src_dev, _record_src) = $src.device_ptr(&self.stream);
+                    let nbytes = $dst.len() * std::mem::size_of::<i32>();
+                    let rc = unsafe {
+                        cudarc::driver::sys::cuMemcpyDtoH_v2(
+                            $dst.as_mut_ptr() as *mut std::ffi::c_void,
+                            src_dev as cudarc::driver::sys::CUdeviceptr,
+                            nbytes,
+                        )
+                    };
+                    if matches!(rc, cudarc::driver::sys::CUresult::CUDA_SUCCESS) {
+                        if attempt > 1 {
+                            log::info!(
+                                "Signal preservation DtoH {} recovered on attempt {}",
+                                $label,
+                                attempt
+                            );
+                        }
+                        copied = true;
+                        break;
+                    } else {
+                        let msg = format!("CUDA driver rc={}", rc as i32);
+                        log::warn!(
+                            "Signal preservation DtoH {} attempt {}/3 sync copy failed: {}",
+                            $label,
+                            attempt,
+                            msg
+                        );
+                        last_error = Some(msg);
+                        if let Err(e) = self.stream.synchronize() {
+                            let msg = format!("{:?}", e);
+                            log::warn!(
+                                "Signal preservation DtoH {} attempt {}/3 post-failure drain failed: {}",
+                                $label,
+                                attempt,
+                                msg
+                            );
+                            last_error = Some(msg);
+                        }
+                    }
+                }
+
+                if !copied {
+                    bail!(
+                        "signal-grid DtoH {} failed after 3 attempts{}",
+                        $label,
+                        last_error
+                            .as_deref()
+                            .map(|e| format!("; last_error={}", e))
+                            .unwrap_or_default()
+                    );
+                }
+            }};
+        }
+
+        copy_signal_grid!("voxel_hit_grid", &self.d_voxel_hit_grid, voxel_hit_grid);
+        copy_signal_grid!(
+            "coupled_spike_grid",
+            &self.d_coupled_spike_grid,
+            coupled_spike_grid
+        );
+        copy_signal_grid!(
+            "primary_residue_id",
+            &self.d_primary_residue_id,
+            primary_residue_id
+        );
+        copy_signal_grid!(
+            "primary_residue_count",
+            &self.d_primary_residue_count,
+            primary_residue_count
+        );
 
         let n_recurrent = voxel_hit_grid.iter().filter(|&&v| v > 0).count();
         let max_recurrence = voxel_hit_grid.iter().copied().max().unwrap_or(0);
@@ -8605,12 +9186,19 @@ impl NhsAmberFusedEngine {
         let mut spike_count_host = [0i32];
         self.stream
             .memcpy_dtoh(&self.d_spike_count, &mut spike_count_host)?;
-        let spikes = spike_count_host[0] as usize;
+        let spikes = spike_count_host[0].max(0) as usize;
         if spikes == 0 {
             return Ok(0);
         }
 
-        let n_to_download = spikes.min(crate::fused_engine::MAX_SPIKES_PER_STEP);
+        if spikes > crate::fused_engine::MAX_SPIKES_PER_STEP {
+            bail!(
+                "force spike sync overflow: kernel emitted {} events but buffer holds {}; refusing to truncate teacher signal",
+                spikes,
+                crate::fused_engine::MAX_SPIKES_PER_STEP
+            );
+        }
+        let n_to_download = spikes;
         let mut full_buffer =
             vec![0u8; crate::fused_engine::MAX_SPIKES_PER_STEP * self.spike_event_size];
         self.stream

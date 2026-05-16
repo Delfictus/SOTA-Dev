@@ -99,7 +99,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(name = "prism-ghost-evidence-scan")]
-#[command(about = "Path B Ghost/ZSTR evidence scanner — emits features for prism-materialize-sites.")]
+#[command(
+    about = "Path B Ghost/ZSTR evidence scanner — emits features for prism-materialize-sites."
+)]
 struct Args {
     /// md_evidence_manifest.json path produced by `nhs_rt_full --md-only-evidence`.
     #[arg(short = 'm', long)]
@@ -261,7 +263,9 @@ fn discover_files(run_dir: &Path) -> Result<Vec<DiscoveredFile>> {
         .with_context(|| format!("read run dir {}", run_dir.display()))?;
     for e in entries.flatten() {
         let p = e.path();
-        let Some(name) = p.file_name().and_then(|s| s.to_str()) else { continue };
+        let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
         let kind = if name.ends_with("_ghost_tiles.bin") {
             FileKind::GhostTiles
         } else if name.starts_with("prism_zstr_") && name.ends_with(".bin") {
@@ -273,7 +277,12 @@ fn discover_files(run_dir: &Path) -> Result<Vec<DiscoveredFile>> {
         };
         let file_size = p.metadata().map(|m| m.len()).unwrap_or(0);
         let stream_id = parse_stream_id_from_filename(&p);
-        out.push(DiscoveredFile { path: p, stream_id, file_kind: kind, file_size });
+        out.push(DiscoveredFile {
+            path: p,
+            stream_id,
+            file_kind: kind,
+            file_size,
+        });
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
@@ -333,7 +342,8 @@ fn validate_ghost_tiles_schema(f: &DiscoveredFile) -> FileSchemaValidation {
             let n = u32::from_le_bytes(buf);
             record_count = Some(n as u64);
             // Verify file size = counter_sector + n * 4096.
-            let expected = ghost_schema::COUNTER_SECTOR_BYTES + (n as u64) * ghost_schema::RECORD_BYTES;
+            let expected =
+                ghost_schema::COUNTER_SECTOR_BYTES + (n as u64) * ghost_schema::RECORD_BYTES;
             if f.file_size == expected {
                 parse_status = "envelope_consistent";
             } else if f.file_size >= expected {
@@ -374,12 +384,14 @@ fn validate_zstr_schema(f: &DiscoveredFile) -> FileSchemaValidation {
     let mut record_count: Option<u64> = None;
     let mut byte_stride: Option<u64> = None;
     let mut parse_status: &'static str = "header_only";
-    let schema_status: &'static str = "header_offsets_verified_in_zstr_rs_67_114_per_slot_size_unknown_until_n_atoms_read";
+    let schema_status: &'static str =
+        "header_offsets_verified_in_zstr_rs_67_114_per_slot_size_unknown_until_n_atoms_read";
 
     if f.file_size < zstr_schema::HEADER_BYTES {
         notes.push(format!(
             "file_size {} < header_bytes {} — cannot contain even one ZstrFrameHeader",
-            f.file_size, zstr_schema::HEADER_BYTES
+            f.file_size,
+            zstr_schema::HEADER_BYTES
         ));
         return FileSchemaValidation {
             file_path: f.path.display().to_string(),
@@ -402,7 +414,11 @@ fn validate_zstr_schema(f: &DiscoveredFile) -> FileSchemaValidation {
         let mut br = BufReader::new(file);
         let mut hdr = [0u8; 4096];
         if br.read_exact(&mut hdr).is_ok() {
-            let n_atoms = u32::from_le_bytes(hdr[zstr_schema::OFF_N_ATOMS..zstr_schema::OFF_N_ATOMS + 4].try_into().unwrap());
+            let n_atoms = u32::from_le_bytes(
+                hdr[zstr_schema::OFF_N_ATOMS..zstr_schema::OFF_N_ATOMS + 4]
+                    .try_into()
+                    .unwrap(),
+            );
             let pos_bytes_raw = (n_atoms as u64) * 12;
             let pos_bytes_aligned = (pos_bytes_raw + 15) & !15;
             let force_bytes = (n_atoms as u64) * 12;
@@ -411,7 +427,11 @@ fn validate_zstr_schema(f: &DiscoveredFile) -> FileSchemaValidation {
             byte_stride = Some(frame_size);
             if frame_size == 0 {
                 notes.push("derived frame_size = 0 — n_atoms in first header likely zero (file may be only the first header padded)".to_string());
-                record_count = Some(if f.file_size >= zstr_schema::HEADER_BYTES { 1 } else { 0 });
+                record_count = Some(if f.file_size >= zstr_schema::HEADER_BYTES {
+                    1
+                } else {
+                    0
+                });
                 parse_status = "first_header_only";
             } else {
                 let n = f.file_size / frame_size;
@@ -476,7 +496,9 @@ fn validate_prism_v2_schema(f: &DiscoveredFile) -> FileSchemaValidation {
             record_count = Some(n);
             if n == 0 && f.file_size == 8 {
                 parse_status = "empty_trajectory_n_frames_zero";
-                notes.push("V2 was not live this run; only the 8-byte header was written".to_string());
+                notes.push(
+                    "V2 was not live this run; only the 8-byte header was written".to_string(),
+                );
             } else {
                 parse_status = "header_present_payload_present";
             }
@@ -607,7 +629,11 @@ fn parse_ghost_tiles_file(
     file.seek(SeekFrom::Start(ghost_schema::COUNTER_SECTOR_BYTES))?;
     let mut br = BufReader::with_capacity(1 << 20, file);
     let mut buf = [0u8; 4096];
-    let cap = if max_events == 0 { n_records } else { (max_events as u64).min(n_records) };
+    let cap = if max_events == 0 {
+        n_records
+    } else {
+        (max_events as u64).min(n_records)
+    };
     for k in 0..cap {
         if br.read_exact(&mut buf).is_err() {
             break;
@@ -634,8 +660,14 @@ fn parse_ghost_tiles_file(
         let schema_version_v2: u32 = u32::from_le_bytes(buf[128..132].try_into().unwrap());
         let is_v2 = schema_version_v2 == 2u32;
         let (
-            v2_obs_pass, v2_disc_pass, v2_perturb_chan, v2_uv_nm,
-            v2_field_complete_flags, v2_gear_id, v2_dt_fs, v2_step_idx,
+            v2_obs_pass,
+            v2_disc_pass,
+            v2_perturb_chan,
+            v2_uv_nm,
+            v2_field_complete_flags,
+            v2_gear_id,
+            v2_dt_fs,
+            v2_step_idx,
         ) = if is_v2 {
             (
                 buf[132] != 0,
@@ -709,7 +741,11 @@ fn parse_ghost_tiles_file(
             perturbation_channel_evidence: if is_v2 && v2_perturb_chan != 0xFF {
                 PerturbationChannelEvidence {
                     qi_bits: Some(v2_perturb_chan as u32),
-                    uv_wavelength_nm: if v2_uv_nm > 0 { Some(v2_uv_nm as u32) } else { None },
+                    uv_wavelength_nm: if v2_uv_nm > 0 {
+                        Some(v2_uv_nm as u32)
+                    } else {
+                        None
+                    },
                     uv_label: match v2_perturb_chan {
                         0 => Some("260nm_PHE_dominant"),
                         1 => Some("280nm_TRP_primary"),
@@ -741,7 +777,9 @@ fn parse_ghost_tiles_file(
                 let dt_ok = v2_dt_fs > 0.0 && v2_dt_fs.is_finite();
                 let phys = if dt_ok {
                     Some((v2_step_idx as f64) * (v2_dt_fs as f64))
-                } else { None };
+                } else {
+                    None
+                };
                 GearTimingEvidence {
                     gear_id: Some(v2_gear_id),
                     dt_fs: if dt_ok { Some(v2_dt_fs) } else { None },
@@ -913,14 +951,23 @@ fn score_ghost_tile_event(ev: &GhostTileEvent) -> (f64, serde_json::Value) {
 
     let kl_factor: f64 = if ev.field_completeness.kl_divergence {
         let v = ev.kl_divergence as f64;
-        if v.is_finite() && v > 0.0 { (v / (v + 1.0)).clamp(0.0, 1.0) } else { 0.5 }
+        if v.is_finite() && v > 0.0 {
+            (v / (v + 1.0)).clamp(0.0, 1.0)
+        } else {
+            0.5
+        }
     } else {
         0.5
     };
-    let geo_band_sum: f64 = ev.power_spectrum[0..6].iter().map(|x| (*x as f64).max(0.0)).sum();
+    let geo_band_sum: f64 = ev.power_spectrum[0..6]
+        .iter()
+        .map(|x| (*x as f64).max(0.0))
+        .sum();
     let geo_factor: f64 = if ev.field_completeness.power_spectrum_geo {
         (geo_band_sum / (geo_band_sum + 1.0)).clamp(0.0, 1.0)
-    } else { 0.5 };
+    } else {
+        0.5
+    };
     let flux_factor: f64 = match (ev.flux_coupling.eta_status, ev.flux_coupling.eta) {
         ("computed", Some(eta)) => {
             let v = eta as f64;
@@ -929,10 +976,14 @@ fn score_ghost_tile_event(ev: &GhostTileEvent) -> (f64, serde_json::Value) {
         }
         _ => 0.5,
     };
-    let causal_factor: f64 = if ev.field_completeness.causal_lead_residue_resolved { 1.0 } else { 0.5 };
+    let causal_factor: f64 = if ev.field_completeness.causal_lead_residue_resolved {
+        1.0
+    } else {
+        0.5
+    };
     let adj_factor: f64 = match ev.adj_code {
-        1 => 1.0,                 // Construct
-        2 => 0.6,                 // Violation
+        1 => 1.0, // Construct
+        2 => 0.6, // Violation
         _ => 0.5,
     };
     let class_factor: f64 = if ev.class_tainted { 0.3 } else { 1.0 };
@@ -949,8 +1000,15 @@ fn score_ghost_tile_event(ev: &GhostTileEvent) -> (f64, serde_json::Value) {
         "asc_vector_format_unverified_no_compute" => 1.0,
         _ => 1.0,
     };
-    let tile_score = kl_factor * geo_factor * flux_factor * causal_factor * adj_factor
-        * class_factor * perturbation_factor * gear_factor * asc_factor;
+    let tile_score = kl_factor
+        * geo_factor
+        * flux_factor
+        * causal_factor
+        * adj_factor
+        * class_factor
+        * perturbation_factor
+        * gear_factor
+        * asc_factor;
 
     let components = serde_json::json!({
         "kl_divergence_factor":          kl_factor,
@@ -976,18 +1034,26 @@ fn score_ghost_tile_event(ev: &GhostTileEvent) -> (f64, serde_json::Value) {
 
 #[derive(Debug, Deserialize, Default, Clone)]
 struct GhostTimeMapStream {
-    #[allow(dead_code)] stream_id: u32,
-    #[serde(default)] gear_id: u32,
-    #[serde(default)] dt_fs: f32,
-    #[serde(default)] physical_time_fs: f64,
-    #[serde(default)] dt_source: Option<String>,
-    #[serde(default)] gear_id_status: Option<String>,
+    #[allow(dead_code)]
+    stream_id: u32,
+    #[serde(default)]
+    gear_id: u32,
+    #[serde(default)]
+    dt_fs: f32,
+    #[serde(default)]
+    physical_time_fs: f64,
+    #[serde(default)]
+    dt_source: Option<String>,
+    #[serde(default)]
+    gear_id_status: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct GhostTimeMap {
-    #[serde(default)] schema_version: u32,
-    #[serde(default)] streams: Vec<GhostTimeMapStream>,
+    #[serde(default)]
+    schema_version: u32,
+    #[serde(default)]
+    streams: Vec<GhostTimeMapStream>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1004,10 +1070,14 @@ struct GhostSiteMapEntry {
 
 #[derive(Debug, Deserialize, Default)]
 struct GhostSiteMap {
-    #[serde(default)] schema_version: u32,
-    #[serde(default)] status: Option<String>,
-    #[serde(default)] coordinate_frame: Option<String>,
-    #[serde(default)] entries: Vec<GhostSiteMapEntry>,
+    #[serde(default)]
+    schema_version: u32,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    coordinate_frame: Option<String>,
+    #[serde(default)]
+    entries: Vec<GhostSiteMapEntry>,
 }
 
 /// Read path_a_completion.json from the run dir; extract branch-trace fields
@@ -1016,28 +1086,36 @@ fn read_branch_trace(run_dir: &Path, target: &str) -> serde_json::Value {
     let p = run_dir.join(format!("{}_path_a_completion.json", target));
     let s = match std::fs::read_to_string(&p) {
         Ok(s) => s,
-        Err(_) => return serde_json::json!({
-            "status": "path_a_completion_json_absent",
-            "branch_decision_status": "no_completion_json_to_read",
-        }),
+        Err(_) => {
+            return serde_json::json!({
+                "status": "path_a_completion_json_absent",
+                "branch_decision_status": "no_completion_json_to_read",
+            })
+        }
     };
     let v: serde_json::Value = match serde_json::from_str(&s) {
         Ok(v) => v,
-        Err(e) => return serde_json::json!({
-            "status": "parse_error",
-            "branch_decision_status": "completion_json_parse_failed",
-            "error": e.to_string(),
-        }),
+        Err(e) => {
+            return serde_json::json!({
+                "status": "parse_error",
+                "branch_decision_status": "completion_json_parse_failed",
+                "error": e.to_string(),
+            })
+        }
     };
     // The watchdog's emit_minimal_completion_json carries branch_trace_by_stream
     // when CHUNK13 trace was registered. For graceful runs the field may be
     // absent — emit explicit "default_branch_only" only if the predicate
     // counts say so; otherwise honestly mark absent.
-    let trace = v.get("branch_trace_by_stream")
+    let trace = v
+        .get("branch_trace_by_stream")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
     let monomer_passthrough = v.get("monomer_passthrough").and_then(|x| x.as_bool());
-    let bilateral_status = v.get("bilateral_status").and_then(|x| x.as_str()).map(|x| x.to_string());
+    let bilateral_status = v
+        .get("bilateral_status")
+        .and_then(|x| x.as_str())
+        .map(|x| x.to_string());
     serde_json::json!({
         "status":                  if trace.is_null() { "branch_trace_absent_in_completion_json" } else { "available" },
         "branch_trace_by_stream":  trace,
@@ -1074,11 +1152,17 @@ fn main() -> Result<()> {
     let manifest: Manifest = serde_json::from_str(&manifest_text)
         .with_context(|| format!("parse manifest {}", args.manifest.display()))?;
     if manifest.schema_kind != "md_evidence_manifest" {
-        eprintln!("ERROR: manifest schema_kind = {:?}, expected \"md_evidence_manifest\"", manifest.schema_kind);
+        eprintln!(
+            "ERROR: manifest schema_kind = {:?}, expected \"md_evidence_manifest\"",
+            manifest.schema_kind
+        );
         std::process::exit(1);
     }
     if manifest.schema_version != 1 {
-        eprintln!("ERROR: manifest schema_version = {} (this scanner supports 1)", manifest.schema_version);
+        eprintln!(
+            "ERROR: manifest schema_version = {} (this scanner supports 1)",
+            manifest.schema_version
+        );
         std::process::exit(1);
     }
     let run_dir = args
@@ -1092,7 +1176,10 @@ fn main() -> Result<()> {
     let stem = manifest.target.clone();
     eprintln!(
         "run_id={} target={} stream_count={} run_dir={}",
-        manifest.run_id, stem, manifest.stream_count, run_dir.display()
+        manifest.run_id,
+        stem,
+        manifest.stream_count,
+        run_dir.display()
     );
     eprintln!("topology: {}", manifest.topology_input);
 
@@ -1121,9 +1208,18 @@ fn main() -> Result<()> {
 
     // ─── Phase 1 — file discovery + schema validation ──────────────────────
     let discovered = discover_files(&run_dir)?;
-    let n_ghost = discovered.iter().filter(|f| f.file_kind == FileKind::GhostTiles).count();
-    let n_zstr = discovered.iter().filter(|f| f.file_kind == FileKind::Zstr).count();
-    let n_v2 = discovered.iter().filter(|f| f.file_kind == FileKind::PrismV2Trajectory).count();
+    let n_ghost = discovered
+        .iter()
+        .filter(|f| f.file_kind == FileKind::GhostTiles)
+        .count();
+    let n_zstr = discovered
+        .iter()
+        .filter(|f| f.file_kind == FileKind::Zstr)
+        .count();
+    let n_v2 = discovered
+        .iter()
+        .filter(|f| f.file_kind == FileKind::PrismV2Trajectory)
+        .count();
     eprintln!(
         "discovered files: ghost_tiles={} zstr={} prism_v2_trajectory={} (run_dir scan)",
         n_ghost, n_zstr, n_v2
@@ -1149,8 +1245,12 @@ fn main() -> Result<()> {
     };
     eprintln!(
         "sidecars: ghost_time_map={} ghost_site_map={} branch_trace={}",
-        gtm_status, gsm_status,
-        branch_trace.get("status").and_then(|x| x.as_str()).unwrap_or("?")
+        gtm_status,
+        gsm_status,
+        branch_trace
+            .get("status")
+            .and_then(|x| x.as_str())
+            .unwrap_or("?")
     );
 
     if n_ghost == 0 && n_zstr == 0 {
@@ -1173,7 +1273,12 @@ fn main() -> Result<()> {
         };
         eprintln!(
             "  {} kind={} status={} parse={} records={:?} stride={:?}",
-            v.file_path, v.file_kind, v.schema_status, v.parse_status, v.record_count, v.byte_stride
+            v.file_path,
+            v.file_kind,
+            v.schema_status,
+            v.parse_status,
+            v.record_count,
+            v.byte_stride
         );
         validations.push(v);
     }
@@ -1196,12 +1301,8 @@ fn main() -> Result<()> {
             }));
             continue;
         }
-        let events = parse_ghost_tiles_file(
-            &f.path,
-            f.stream_id.unwrap_or(u32::MAX),
-            n,
-            args.max_events,
-        )?;
+        let events =
+            parse_ghost_tiles_file(&f.path, f.stream_id.unwrap_or(u32::MAX), n, args.max_events)?;
         ghost_streams_summary.push(serde_json::json!({
             "stream_id":     f.stream_id,
             "file":          f.path.display().to_string(),
@@ -1262,15 +1363,24 @@ fn main() -> Result<()> {
             ],
         });
     }
-    ranked.sort_by(|a, b| b.tile_score.partial_cmp(&a.tile_score).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.sort_by(|a, b| {
+        b.tile_score
+            .partial_cmp(&a.tile_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     for (i, r) in ranked.iter_mut().enumerate() {
         r.rank = i as u32;
     }
-    let n_emit = if args.emit_all_events { ranked.len() } else { ranked.len().min(200) };
+    let n_emit = if args.emit_all_events {
+        ranked.len()
+    } else {
+        ranked.len().min(200)
+    };
     let ranked_to_emit: Vec<&RankedTileEvent> = ranked.iter().take(n_emit).collect();
 
     // ─── Phase 8 — candidate features for materializer ─────────────────────
-    let mut per_stream_ghost_support: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut per_stream_ghost_support: serde_json::Map<String, serde_json::Value> =
+        serde_json::Map::new();
     for ev in all_ghost_events.iter() {
         let key = ev.stream_id.to_string();
         let entry = per_stream_ghost_support
@@ -1280,7 +1390,10 @@ fn main() -> Result<()> {
         let prev = m.get("events").and_then(|x| x.as_u64()).unwrap_or(0);
         m.insert("events".into(), serde_json::Value::from(prev + 1));
         if ev.flux_coupling.eta_status == "computed" {
-            let p = m.get("with_finite_eta").and_then(|x| x.as_u64()).unwrap_or(0);
+            let p = m
+                .get("with_finite_eta")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0);
             m.insert("with_finite_eta".into(), serde_json::Value::from(p + 1));
         }
     }
@@ -1288,15 +1401,33 @@ fn main() -> Result<()> {
     // ─── Output: tile_field_completeness.json ──────────────────────────────
     let any_intensity_packed = false; // Ghost tiles never carry intensity_packed.
     let any_qi_extracted = false;
-    let any_gear_id_present = zstr_summaries.iter().any(|s| s.first_header.as_ref().map(|h| h.gear_id != 0).unwrap_or(false));
-    let any_dt_resolved = zstr_summaries.iter().any(|s| s.first_header.as_ref().map(|h| h.dt_fs > 0.0).unwrap_or(false));
+    let any_gear_id_present = zstr_summaries.iter().any(|s| {
+        s.first_header
+            .as_ref()
+            .map(|h| h.gear_id != 0)
+            .unwrap_or(false)
+    });
+    let any_dt_resolved = zstr_summaries.iter().any(|s| {
+        s.first_header
+            .as_ref()
+            .map(|h| h.dt_fs > 0.0)
+            .unwrap_or(false)
+    });
     let asc_vectors_present = manifest
         .artifacts
         .iter()
         .any(|a| a.present && a.path.ends_with("_asc_vectors.bin"))
-        || std::fs::read_dir(&run_dir).map(|d| d.flatten().any(|e| {
-            e.path().file_name().and_then(|s| s.to_str()).map(|n| n.ends_with("_asc_vectors.bin")).unwrap_or(false)
-        })).unwrap_or(false);
+        || std::fs::read_dir(&run_dir)
+            .map(|d| {
+                d.flatten().any(|e| {
+                    e.path()
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|n| n.ends_with("_asc_vectors.bin"))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
     let tile_field_completeness = serde_json::json!({
         "schema_version": 1,
         "schema_kind":    "pathb_ghost_zstr_tile_field_completeness",
@@ -1360,9 +1491,8 @@ fn main() -> Result<()> {
             }
         }
     }
-    let planes_1_3_any_populated = plane_nonzero_counts[1] > 0
-        || plane_nonzero_counts[2] > 0
-        || plane_nonzero_counts[3] > 0;
+    let planes_1_3_any_populated =
+        plane_nonzero_counts[1] > 0 || plane_nonzero_counts[2] > 0 || plane_nonzero_counts[3] > 0;
     let planes_status_string: String = if planes_1_3_any_populated {
         format!(
             "wired_per_M1_2_25_nonzero_counts_geo_{}_caus_{}_therm_{}_chem_{}",
@@ -1495,18 +1625,26 @@ fn main() -> Result<()> {
                 let v = ev.power_spectrum[plane * 6 + l];
                 if v.is_finite() {
                     sums += v as f64;
-                    if v > maxv { maxv = v; }
+                    if v > maxv {
+                        maxv = v;
+                    }
                     all_vals.push(v);
                 }
             }
         }
         let n_total = all_vals.len();
-        let mean = if n_total > 0 { sums / (n_total as f64) } else { 0.0 };
+        let mean = if n_total > 0 {
+            sums / (n_total as f64)
+        } else {
+            0.0
+        };
         all_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let p95 = if n_total > 0 {
             let idx = ((n_total as f64) * 0.95) as usize;
             all_vals[idx.min(n_total - 1)]
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let nonzero_count = plane_nonzero_counts[plane];
         let status = if total_events == 0 {
             "no_events"
@@ -1686,16 +1824,24 @@ fn main() -> Result<()> {
     }
     if args.strict_schema {
         let any_unverified = validations.iter().any(|v| {
-            v.schema_status.starts_with("verified_offsets_but_file_truncated")
+            v.schema_status
+                .starts_with("verified_offsets_but_file_truncated")
                 || v.parse_status == "envelope_size_mismatch"
         });
         if any_unverified {
-            eprintln!("\n--strict-schema set and one or more files failed envelope validation → exit 3.");
+            eprintln!(
+                "\n--strict-schema set and one or more files failed envelope validation → exit 3."
+            );
             std::process::exit(3);
         }
     }
-    eprintln!("\nDone. {} ghost files / {} zstr files / {} events / {} ranked.",
-              n_ghost, n_zstr, all_ghost_events.len(), ranked.len());
+    eprintln!(
+        "\nDone. {} ghost files / {} zstr files / {} events / {} ranked.",
+        n_ghost,
+        n_zstr,
+        all_ghost_events.len(),
+        ranked.len()
+    );
     Ok(())
 }
 

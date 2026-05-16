@@ -3,7 +3,7 @@
 //! Replaces the per-site `*.spike_events.json` dump (15 GB across 5 sites,
 //! partial schema, JSON serialization on the critical path) with a single
 //! per-target `*.spike_events.arrow` file (~3-4 GB total uncompressed,
-//! columnar, 30 columns of full per-spike tagging including the stratified
+//! columnar, 31 columns of full per-spike tagging including the stratified
 //! background spike bucket).
 //!
 //! ## Why Apache Arrow IPC and not Parquet?
@@ -28,10 +28,10 @@
 //!
 //! Reference: https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc
 //!
-//! ## What's in the schema (30 columns)
+//! ## What's in the schema (31 columns)
 //!
 //! Each row is one spike, with three classes of fields. Counts: 6
-//! provenance + 18 physical state + 6 classification = 30 columns total.
+//! provenance + 19 physical state + 6 classification = 31 columns total.
 //!
 //! ### Provenance (6 columns)
 //!   - `spike_id`         u64  — sequential global ID across the run
@@ -49,6 +49,8 @@
 //!   - `x`, `y`, `z`      f32 × 3 — voxel center position
 //!   - `intensity`        f32  — spike intensity
 //!   - `spike_source`     i32  — raw numeric source (Opp #1, was string)
+//!   - `mechanism_tag`    utf8 — stable mechanism class for downstream ML;
+//!                                UNK + LIF maps to LIF_THERMAL_SHAPE
 //!   - `aromatic_type`    i32  — raw numeric type (Opp #3, was string)
 //!   - `aromatic_residue_id` i32
 //!   - `phase_bits`       u32  — 10-bit CCNS phase (Opp #2, was dropped)
@@ -94,7 +96,7 @@ use std::sync::Arc;
 
 use arrow::array::{
     ArrayRef, FixedSizeListBuilder, Float32Builder, Int32Array, Int32Builder, RecordBatch,
-    UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
+    StringBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
 };
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::writer::FileWriter;
@@ -106,7 +108,7 @@ pub const NEARBY_RESIDUES_LEN: i32 = 8;
 
 /// Build the canonical Arrow schema for the per-spike output.
 ///
-/// 30 columns total — see the module-level documentation for the field
+/// 31 columns total — see the module-level documentation for the field
 /// list and rationale. Field order is **stable** and used by downstream
 /// readers; do not reorder without bumping a schema version.
 pub fn build_spike_schema() -> Arc<Schema> {
@@ -133,6 +135,7 @@ pub fn build_spike_schema() -> Arc<Schema> {
         Field::new("z", DataType::Float32, false),
         Field::new("intensity", DataType::Float32, false),
         Field::new("spike_source", DataType::Int32, false),
+        Field::new("mechanism_tag", DataType::Utf8, false),
         Field::new("aromatic_type", DataType::Int32, false),
         Field::new("aromatic_residue_id", DataType::Int32, false),
         Field::new("phase_bits", DataType::UInt32, false),
@@ -200,6 +203,18 @@ pub mod background_class {
     pub const SURFACE_NOISE: u8 = 2;
     pub const NEAR_MISS: u8 = 3;
     pub const RELABEL_CANDIDATE: u8 = 4;
+}
+
+#[inline]
+pub fn mechanism_tag_for_spike(spike: &GpuSpikeEvent) -> &'static str {
+    match spike.spike_source {
+        1 => "UV_AROMATIC_PERTURBATION",
+        3 => "EFP_ELECTROSTATIC_FIELD",
+        4 => "LADD_ATOM_DEPARTURE",
+        5 => "COFIRE_COHERENCE",
+        _ if spike.aromatic_type < 0 => "LIF_THERMAL_SHAPE",
+        _ => "LIF_LOCAL_INTENSITY",
+    }
 }
 
 /// Compute the TWIN group_id from a stream index given the multi-differential
@@ -382,7 +397,7 @@ pub fn compute_background_percentiles(
 /// Build a `RecordBatch` from parallel slices of spikes and classifications.
 ///
 /// Both slices must have the same length. Returns an error if any column
-/// builder fails. The output batch contains all 30 columns of the canonical
+/// builder fails. The output batch contains all 31 columns of the canonical
 /// schema.
 pub fn build_spike_record_batch(
     spikes: &[GpuSpikeEvent],
@@ -412,6 +427,7 @@ pub fn build_spike_record_batch(
     let mut z_b = Float32Builder::with_capacity(n);
     let mut intensity_b = Float32Builder::with_capacity(n);
     let mut spike_source_b = Int32Builder::with_capacity(n);
+    let mut mechanism_tag_b = StringBuilder::with_capacity(n, n * 24);
     let mut aromatic_type_b = Int32Builder::with_capacity(n);
     let mut aromatic_resid_b = Int32Builder::with_capacity(n);
     let mut phase_bits_b = UInt32Builder::with_capacity(n);
@@ -448,6 +464,7 @@ pub fn build_spike_record_batch(
         z_b.append_value(spike.position[2]);
         intensity_b.append_value(spike.intensity);
         spike_source_b.append_value(spike.spike_source);
+        mechanism_tag_b.append_value(mechanism_tag_for_spike(spike));
         aromatic_type_b.append_value(spike.aromatic_type);
         aromatic_resid_b.append_value(spike.aromatic_residue_id);
         phase_bits_b.append_value(spike.phase_bits);
@@ -493,6 +510,7 @@ pub fn build_spike_record_batch(
         Arc::new(z_b.finish()),
         Arc::new(intensity_b.finish()),
         Arc::new(spike_source_b.finish()),
+        Arc::new(mechanism_tag_b.finish()),
         Arc::new(aromatic_type_b.finish()),
         Arc::new(aromatic_resid_b.finish()),
         Arc::new(phase_bits_b.finish()),
@@ -561,10 +579,11 @@ mod tests {
 
     #[test]
     fn schema_has_expected_columns() {
-        // 6 provenance + 18 physical state + 6 classification = 30 columns total
+        // 6 provenance + 19 physical state + 6 classification = 31 columns total
         // (see module-level documentation for the exact field list)
         let s = build_spike_schema();
-        assert_eq!(s.fields().len(), 30);
+        assert_eq!(s.fields().len(), 31);
+        assert!(s.field_with_name("mechanism_tag").is_ok());
     }
 
     #[test]

@@ -40,13 +40,16 @@ pub struct SteerEntry {
 /// Maximum number of focus residues the steering buffer can hold.
 /// MUST match the CUDA `steering_focus_residues[64]` array dimension.
 pub const STEERING_FOCUS_MAX: usize = 64;
+/// Maximum protocol UV scan wavelengths retained in GPU ProtocolState.
+/// MUST match `scan_wavelengths[8]` in protocol_state.cuh.
+pub const MAX_SCAN_WAVELENGTHS: usize = 8;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ProtocolState — must match protocol_state.cuh struct exactly
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// GPU-resident protocol state. Layout must be identical to the CUDA struct
-/// in protocol_state.cuh (148 bytes, naturally aligned).
+/// in protocol_state.cuh (716 bytes, naturally aligned).
 ///
 /// Fields are partitioned into:
 /// - **Immutable** (set once at init, safe to bake as scalar args)
@@ -78,9 +81,9 @@ pub struct ProtocolState {
     pub uv_target_idx: i32,     // DYNAMIC: current aromatic target
 
     // ── Wavelength scan table ──
-    pub scan_wavelengths: [f32; 4],  // Immutable
-    pub n_wavelengths: i32,          // Immutable
-    pub wavelength_dwell_steps: i32, // Immutable
+    pub scan_wavelengths: [f32; MAX_SCAN_WAVELENGTHS], // Immutable
+    pub n_wavelengths: i32,                            // Immutable
+    pub wavelength_dwell_steps: i32,                   // Immutable
 
     // ── Langevin parameters ──
     pub dt: f32,     // DYNAMIC if adaptive_dt enabled
@@ -199,13 +202,14 @@ const _: () = {
     // +  16 (legacy single-residue ASC hooks)
     // +   4 (current_phase_bits)
     // +   4 (steering_focus_count)         ← Stage 2
+    // +  16 (expanded scan_wavelengths[8])
     // + 512 (steering_focus_residues[64])  ← Stage 2 (64 × 8 bytes)
     // +   4 (focus_match_count)            ← Stage 2 calibration
     // +   4 (processed_spike_count)        ← Stage 2 calibration
     // +   4 (last_seen_focus_id)           ← Stage 2 calibration
     // +   4 (last_seen_spike_residue)      ← Stage 2 calibration
-    // = 700 bytes total
-    assert!(std::mem::size_of::<ProtocolState>() == 700);
+    // = 716 bytes total
+    assert!(std::mem::size_of::<ProtocolState>() == 716);
     assert!(std::mem::size_of::<SteerEntry>() == 8);
 };
 
@@ -232,9 +236,9 @@ impl ProtocolState {
         let warm_hold_end = ramp_end + protocol.warm_hold_steps;
         let ramp_down_end = warm_hold_end + protocol.ramp_down_steps;
 
-        // Pack up to 4 wavelengths
-        let mut scan_wl = [0.0f32; 4];
-        let n_wl = protocol.scan_wavelengths.len().min(4);
+        // Pack all production protocol wavelengths without truncating HIS/BNZ channels.
+        let mut scan_wl = [0.0f32; MAX_SCAN_WAVELENGTHS];
+        let n_wl = protocol.scan_wavelengths.len().min(MAX_SCAN_WAVELENGTHS);
         for i in 0..n_wl {
             scan_wl[i] = protocol.scan_wavelengths[i];
         }
@@ -348,7 +352,7 @@ impl ProtocolState {
 
 /// Manages the GPU-resident ProtocolState and Director kernel launches.
 pub struct ProtocolDirector {
-    /// Device allocation for ProtocolState (148 bytes).
+    /// Device allocation for ProtocolState.
     /// Passed as `const ProtocolState*` to physics kernels.
     pub d_state: CudaSlice<u8>,
     /// Cached host-side copy for diagnostics
@@ -518,8 +522,8 @@ mod tests {
 
     #[test]
     fn test_protocol_state_size() {
-        // Stage 2 + calibration counters: 688 + 12 (3 × u32 diagnostics) = 700 bytes
-        assert_eq!(std::mem::size_of::<ProtocolState>(), 700);
+        // 700-byte Stage 2 layout + 16 bytes for scan_wavelengths[8].
+        assert_eq!(std::mem::size_of::<ProtocolState>(), 716);
         assert_eq!(std::mem::size_of::<SteerEntry>(), 8);
     }
 
@@ -555,8 +559,11 @@ mod tests {
         assert_eq!(state.ramp_down_end, 41000);
         assert_eq!(state.uv_burst_energy, 42.0);
         assert_eq!(state.uv_burst_interval, 250);
-        assert_eq!(state.n_wavelengths, 4);
-        assert_eq!(state.scan_wavelengths, [280.0, 274.0, 258.0, 211.0]);
+        assert_eq!(state.n_wavelengths, 5);
+        assert_eq!(
+            &state.scan_wavelengths[..state.n_wavelengths as usize],
+            &[280.0, 274.0, 258.0, 254.0, 211.0]
+        );
         assert_eq!(state.fused_inner_steps, 4);
         // Gate 1 fields
         assert_eq!(state.gamma_base, 1.0);
@@ -566,6 +573,21 @@ mod tests {
         assert_eq!(state.adaptive_dt_enabled, 1);
         assert_eq!(state.base_dt, 0.002);
         assert_eq!(state.coupling_phase, 0);
+    }
+
+    #[test]
+    fn test_from_cryo_uv_preserves_up_to_eight_wavelengths() {
+        let mut protocol = CryoUvProtocol::fast_35k();
+        protocol.scan_wavelengths = vec![
+            280.0, 274.0, 258.0, 254.0, 211.0, 250.0, 265.0, 290.0, 300.0,
+        ];
+        let state = ProtocolState::from_cryo_uv(&protocol, 45000, 0.002, 1.0, 9.0, 4, true, true);
+
+        assert_eq!(state.n_wavelengths, MAX_SCAN_WAVELENGTHS as i32);
+        assert_eq!(
+            &state.scan_wavelengths,
+            &[280.0, 274.0, 258.0, 254.0, 211.0, 250.0, 265.0, 290.0]
+        );
     }
 
     #[test]

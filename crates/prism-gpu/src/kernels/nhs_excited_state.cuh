@@ -492,18 +492,13 @@ __device__ __forceinline__ void apply_vibrational_transfer(
     unsigned int seed,           // For random direction component
     int aromatic_type,           // ChromophoreType enum (0=TRP, 1=TYR, 2=PHE, 3=SS)
     float uv_wavelength_nm,      // Current UV wavelength for debug output
-    // M1.2.18.5 — Total External Work POINTER (Hamiltonian audit).
-    // VRAM-native f64 scalar at *adj.d_external_work (FFI offset 128 holds
-    // the *mut f64 pointer; the captured pipeline writes the F2-pool buffer
-    // address there pre-capture, then emits a cuMemsetD8Async at the head
-    // of every replay so each chunk starts with *d_external_work == 0.0).
-    // Each UV velocity kick contributes
-    //   ΔK = ½·m·(v_new² − v_old²)
-    // computed in bit-accurate f64 from the float3 components, atomicAdd_f64'd
-    // here.  The SFA stability fuse subtracts W_ext from ΔV before computing
-    // drift so UV gasps don't false-trigger Gear 3.  Pass nullptr to skip
-    // accumulation (legacy / non-V2 builds).
-    double* d_external_work
+    // M1.2.18.5 — Total External Work COMPONENTS (Hamiltonian audit).
+    // One f64 component per atom. The caller is responsible for invoking this
+    // function from an ordered single-thread UV phase, so overlapping aromatic
+    // neighborhoods accumulate in aromatic-index order without velocity or
+    // work atomics. A downstream fixed-order reducer writes the scalar total to
+    // d_external_work_components[0] for the SFA stability fuse.
+    double* d_external_work_components
 ) {
     if (energy_to_transfer < 0.001f || n_neighbors == 0) return;
 
@@ -570,7 +565,7 @@ __device__ __forceinline__ void apply_vibrational_transfer(
             v_old.z + kick_dir.z * vel_magnitude
         );
 
-        if (d_external_work != nullptr) {
+        if (d_external_work_components != nullptr) {
             const double m_d = (double)mass;
             const double vnx = (double)v_new.x;
             const double vny = (double)v_new.y;
@@ -583,15 +578,10 @@ __device__ __forceinline__ void apply_vibrational_transfer(
               - vox * vox - voy * voy - voz * voz
             );
             const double delta_k_kcal_mol = delta_k_amu_a2_ps2 / 418.4;
-            // sm_120 native f64 atomic.
-            atomicAdd(d_external_work, delta_k_kcal_mol);
+            d_external_work_components[neighbor] += delta_k_kcal_mol;
         }
 
-        // Apply velocity kick (use atomicAdd for thread safety against
-        // concurrent NMA / other UV writers across the warp).
-        atomicAdd(&velocities[neighbor].x, kick_dir.x * vel_magnitude);
-        atomicAdd(&velocities[neighbor].y, kick_dir.y * vel_magnitude);
-        atomicAdd(&velocities[neighbor].z, kick_dir.z * vel_magnitude);
+        velocities[neighbor] = v_new;
 
 #ifdef DEBUG_UV_PHYSICS
         // Verify energy conservation: KE = 0.5 * m * v² / 418.4 kcal/mol

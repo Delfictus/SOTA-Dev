@@ -72,7 +72,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(name = "prism-materialize-sites")]
-#[command(about = "Path B offline materializer skeleton — consumes MD-only evidence handoff bundle.")]
+#[command(
+    about = "Path B offline materializer skeleton — consumes MD-only evidence handoff bundle."
+)]
 struct Args {
     /// md_evidence_manifest.json path produced by `nhs_rt_full --md-only-evidence`.
     #[arg(short, long)]
@@ -272,8 +274,7 @@ fn read_envelope_header<R: Read>(r: &mut R) -> Result<EnvelopeHeader> {
     let stream_id = read_u32_le(r)?;
     let run_id_len = read_u64_le(r)? as usize;
     let run_id_bytes = read_bytes(r, run_id_len)?;
-    let run_id = String::from_utf8(run_id_bytes)
-        .context("envelope: run_id not utf-8")?;
+    let run_id = String::from_utf8(run_id_bytes).context("envelope: run_id not utf-8")?;
     let stem_len = read_u64_le(r)? as usize;
     let stem_bytes = read_bytes(r, stem_len)?;
     let stem = String::from_utf8(stem_bytes).context("envelope: stem not utf-8")?;
@@ -310,14 +311,12 @@ fn validate_artifact(
     let on_disk_size = std::fs::metadata(artifact_path)
         .with_context(|| format!("stat {}", artifact_path.display()))?
         .len();
-    let f = File::open(artifact_path)
-        .with_context(|| format!("open {}", artifact_path.display()))?;
+    let f =
+        File::open(artifact_path).with_context(|| format!("open {}", artifact_path.display()))?;
     let mut r = BufReader::with_capacity(1 << 20, f);
     let header = read_envelope_header(&mut r)?;
-    let header_size_so_far: u64 = 8 + 4 + 4 + 4
-        + 8 + header.run_id.len() as u64
-        + 8 + header.stem.len() as u64
-        + 8 + 8 + 8;
+    let header_size_so_far: u64 =
+        8 + 4 + 4 + 4 + 8 + header.run_id.len() as u64 + 8 + header.stem.len() as u64 + 8 + 8 + 8;
 
     let declared_total = header_size_so_far + header.payload_size + 8 /* checksum */ + 8 /* trailer */;
     let size_consistency = declared_total == on_disk_size;
@@ -326,11 +325,12 @@ fn validate_artifact(
     let endian_ok_le = header.endian_marker == 0x01020304u32;
 
     // Compute payload checksum (streaming) — unless headers_only.
-    let computed_checksum: u64 = if headers_only || !magic_match || !endian_ok_le || !size_consistency {
-        0
-    } else {
-        fnv1a_64_streamed(&mut r, header.payload_size)?
-    };
+    let computed_checksum: u64 =
+        if headers_only || !magic_match || !endian_ok_le || !size_consistency {
+            0
+        } else {
+            fnv1a_64_streamed(&mut r, header.payload_size)?
+        };
 
     // Read trailing 8 bytes checksum + 8 bytes trailer.
     let mut tail_checksum_bytes = [0u8; 8];
@@ -346,15 +346,12 @@ fn validate_artifact(
     };
     let trailer_match = !headers_only && &trailer_bytes == expected_trailer;
 
-    let checksum_matches_manifest = manifest_checksum_hex.map(|hex| {
-        format!("{:016x}", computed_checksum) == hex.to_ascii_lowercase()
-    });
+    let checksum_matches_manifest = manifest_checksum_hex
+        .map(|hex| format!("{:016x}", computed_checksum) == hex.to_ascii_lowercase());
 
-    let record_count_matches_manifest = manifest_record_count
-        .map(|n| n == header.record_count);
+    let record_count_matches_manifest = manifest_record_count.map(|n| n == header.record_count);
 
-    let stream_id_matches_filename =
-        manifest_filename_stream_id.map(|id| id == header.stream_id);
+    let stream_id_matches_filename = manifest_filename_stream_id.map(|id| id == header.stream_id);
 
     let valid = magic_match
         && endian_ok_le
@@ -456,12 +453,12 @@ struct StreamSpikeSummary {
 /// We do NOT mirror the whole struct — we only parse the fields needed for
 /// density-peak generation and basic summary stats.
 mod spike_offsets {
-    pub const POSITION_X:    usize = 8;   // f32
-    pub const POSITION_Y:    usize = 12;  // f32
-    pub const POSITION_Z:    usize = 16;  // f32
-    pub const INTENSITY:     usize = 20;  // f32
-    pub const SPIKE_SOURCE:  usize = 60;  // i32 — 1=UV, 2=LIF
-    pub const AROMATIC_TYPE: usize = 68;  // i32 — 0=TRP, 1=TYR, 2=PHE, 3=SS, -1=none
+    pub const POSITION_X: usize = 8; // f32
+    pub const POSITION_Y: usize = 12; // f32
+    pub const POSITION_Z: usize = 16; // f32
+    pub const INTENSITY: usize = 20; // f32
+    pub const SPIKE_SOURCE: usize = 60; // i32 — 1=UV, 2=LIF
+    pub const AROMATIC_TYPE: usize = 68; // i32 — 0=TRP, 1=TYR, 2=PHE, 3=SS, -1=none
 }
 
 fn read_f32_at(buf: &[u8], offset: usize) -> f32 {
@@ -528,14 +525,30 @@ fn process_spikes_stream(
             let intensity = read_f32_at(rec, spike_offsets::INTENSITY);
             let source = read_i32_at(rec, spike_offsets::SPIKE_SOURCE);
             let arom = read_i32_at(rec, spike_offsets::AROMATIC_TYPE);
-            if px < summary.bbox_min[0] { summary.bbox_min[0] = px; }
-            if py < summary.bbox_min[1] { summary.bbox_min[1] = py; }
-            if pz < summary.bbox_min[2] { summary.bbox_min[2] = pz; }
-            if px > summary.bbox_max[0] { summary.bbox_max[0] = px; }
-            if py > summary.bbox_max[1] { summary.bbox_max[1] = py; }
-            if pz > summary.bbox_max[2] { summary.bbox_max[2] = pz; }
-            if intensity < summary.intensity_min { summary.intensity_min = intensity; }
-            if intensity > summary.intensity_max { summary.intensity_max = intensity; }
+            if px < summary.bbox_min[0] {
+                summary.bbox_min[0] = px;
+            }
+            if py < summary.bbox_min[1] {
+                summary.bbox_min[1] = py;
+            }
+            if pz < summary.bbox_min[2] {
+                summary.bbox_min[2] = pz;
+            }
+            if px > summary.bbox_max[0] {
+                summary.bbox_max[0] = px;
+            }
+            if py > summary.bbox_max[1] {
+                summary.bbox_max[1] = py;
+            }
+            if pz > summary.bbox_max[2] {
+                summary.bbox_max[2] = pz;
+            }
+            if intensity < summary.intensity_min {
+                summary.intensity_min = intensity;
+            }
+            if intensity > summary.intensity_max {
+                summary.intensity_max = intensity;
+            }
             intensity_sum += intensity as f64;
             match source {
                 1 => summary.n_uv += 1,
@@ -561,7 +574,8 @@ fn process_spikes_stream(
     if header.record_count != expected_record_count {
         anyhow::bail!(
             "spikes record_count mismatch: header {} vs manifest {}",
-            header.record_count, expected_record_count
+            header.record_count,
+            expected_record_count
         );
     }
     if summary.n_spikes > 0 {
@@ -657,7 +671,11 @@ impl TopologyMin {
                 continue;
             }
             let i = (ca_idx as usize) * 3;
-            out[rid] = Some([self.positions[i], self.positions[i + 1], self.positions[i + 2]]);
+            out[rid] = Some([
+                self.positions[i],
+                self.positions[i + 1],
+                self.positions[i + 2],
+            ]);
         }
         out
     }
@@ -841,8 +859,8 @@ struct So3Support {
     /// asc_vectors parsers are implemented.
     local_frame_stability: Option<f64>,
     rotation_dispersion: Option<f64>,
-    warp_matrix_support: &'static str,    // "deferred_format_not_parsed"
-    asc_vector_support: &'static str,     // "deferred_format_not_parsed"
+    warp_matrix_support: &'static str, // "deferred_format_not_parsed"
+    asc_vector_support: &'static str,  // "deferred_format_not_parsed"
     force_direction_support: &'static str, // "deferred_format_not_parsed"
     evidence_files: Vec<String>,
 }
@@ -1178,9 +1196,11 @@ fn load_ghost_features(path: &Path) -> GhostFeaturesState {
     let total_ghost_events = v
         .get("per_stream_ghost_support")
         .and_then(|x| x.as_object())
-        .map(|m| m.values()
-                  .filter_map(|s| s.get("events").and_then(|y| y.as_u64()))
-                  .sum::<u64>())
+        .map(|m| {
+            m.values()
+                .filter_map(|s| s.get("events").and_then(|y| y.as_u64()))
+                .sum::<u64>()
+        })
         .unwrap_or(0);
     let spatial_status_text = v
         .get("spatial_status")
@@ -1272,10 +1292,7 @@ fn main() -> Result<()> {
     eprintln!("output dir: {}", output_dir.display());
     eprintln!(
         "run_id: {}  target: {}  streams: {}/{}",
-        manifest.run_id,
-        manifest.target,
-        manifest.streams_serialized,
-        manifest.stream_count
+        manifest.run_id, manifest.target, manifest.streams_serialized, manifest.stream_count
     );
     eprintln!("topology: {}", manifest.topology_input);
     eprintln!(
@@ -1299,9 +1316,9 @@ fn main() -> Result<()> {
         }
         let p = PathBuf::from(&art.path);
         let (magic, trailer): (Option<[u8; 8]>, Option<[u8; 8]>) = match art.kind.as_str() {
-            "spikes"      => (Some(*b"PRSPK001"), Some(*b"PRSPKEND")),
+            "spikes" => (Some(*b"PRSPK001"), Some(*b"PRSPKEND")),
             "signal_grid" => (Some(*b"PRSGD001"), Some(*b"PRSGDEND")),
-            "kcc_v2full"  => (Some(*b"PRKCC001"), Some(*b"PRKCCEND")),
+            "kcc_v2full" => (Some(*b"PRKCC001"), Some(*b"PRKCCEND")),
             // rayon_scope_emit (warp_matrix, forces, etc.) — no PRISM envelope.
             _ => (None, None),
         };
@@ -1325,7 +1342,11 @@ fn main() -> Result<()> {
                 if v.valid {
                     eprintln!(
                         "  ✓ {} kind={} stream={} records={} stride={}",
-                        p.display(), art.kind, v.stream_id, v.record_count, v.byte_stride
+                        p.display(),
+                        art.kind,
+                        v.stream_id,
+                        v.record_count,
+                        v.byte_stride
                     );
                     if art.kind == "spikes" {
                         spike_artifacts.push((v.stream_id, art.path.clone(), v.record_count));
@@ -1333,7 +1354,9 @@ fn main() -> Result<()> {
                 } else {
                     eprintln!(
                         "  ✗ {} kind={} INVALID: {}",
-                        p.display(), art.kind, v.failure_reason.as_deref().unwrap_or("(unknown)")
+                        p.display(),
+                        art.kind,
+                        v.failure_reason.as_deref().unwrap_or("(unknown)")
                     );
                 }
                 validations.push(v);
@@ -1551,8 +1574,8 @@ fn main() -> Result<()> {
         "binding_sites_materialized": false,
     });
     {
-        let f = File::create(&fcr_path)
-            .with_context(|| format!("create {}", fcr_path.display()))?;
+        let f =
+            File::create(&fcr_path).with_context(|| format!("create {}", fcr_path.display()))?;
         let mut bw = std::io::BufWriter::new(f);
         serde_json::to_writer_pretty(&mut bw, &fcr)?;
         use std::io::Write as _;
@@ -1619,7 +1642,8 @@ fn main() -> Result<()> {
     }
     eprintln!(
         "[materialize] voxel→candidate lookup built: {} voxel keys (radius={} voxels)",
-        voxel_to_cands.len(), radius_voxels
+        voxel_to_cands.len(),
+        radius_voxels
     );
 
     // ─── Pass 2 — accumulate per-candidate evidence ─────────────────────────
@@ -1689,9 +1713,16 @@ fn main() -> Result<()> {
                     ev.pos_sum_y += py as f64 * intensity as f64;
                     ev.pos_sum_z += pz as f64 * intensity as f64;
                     *ev.per_stream_spikes.entry(*stream_id).or_insert(0) += 1;
-                    ev.per_stream_voxels.entry(*stream_id).or_default().insert((vx, vy, vz));
-                    if timestep < ev.timestep_min { ev.timestep_min = timestep; }
-                    if timestep > ev.timestep_max { ev.timestep_max = timestep; }
+                    ev.per_stream_voxels
+                        .entry(*stream_id)
+                        .or_default()
+                        .insert((vx, vy, vz));
+                    if timestep < ev.timestep_min {
+                        ev.timestep_min = timestep;
+                    }
+                    if timestep > ev.timestep_max {
+                        ev.timestep_max = timestep;
+                    }
                     ev.chunk_set.insert(chunk_id);
                     *ev.bin_counts.entry(persistence_bin_id).or_insert(0) += 1;
                     ev.phase_hist[phase_bin] += 1;
@@ -1713,7 +1744,13 @@ fn main() -> Result<()> {
                         2 => ev.n_lif += 1,
                         _ => ev.n_other_source += 1,
                     }
-                    let arom_bin = match arom { 0 => 0, 1 => 1, 2 => 2, 3 => 3, _ => 4 };
+                    let arom_bin = match arom {
+                        0 => 0,
+                        1 => 1,
+                        2 => 2,
+                        3 => 3,
+                        _ => 4,
+                    };
                     ev.n_arom[arom_bin] += 1;
                     for j in 0..n_res {
                         *ev.residue_support.entry(nearby_res[j]).or_insert(0) += 1;
@@ -1723,8 +1760,14 @@ fn main() -> Result<()> {
             remaining -= batch;
         }
         let _ = record_count;
-        let total_attributed: u64 = evidence.iter().map(|e| e.per_stream_spikes.get(stream_id).copied().unwrap_or(0)).sum();
-        eprintln!("[materialize]  stream {} contributed {} attributed spikes", stream_id, total_attributed);
+        let total_attributed: u64 = evidence
+            .iter()
+            .map(|e| e.per_stream_spikes.get(stream_id).copied().unwrap_or(0))
+            .sum();
+        eprintln!(
+            "[materialize]  stream {} contributed {} attributed spikes",
+            stream_id, total_attributed
+        );
     }
 
     // ─── Pass 3 — load per-stream KCC, identify driver residues ─────────────
@@ -1769,35 +1812,54 @@ fn main() -> Result<()> {
                 let centers = t.ca_positions_by_residue();
                 eprintln!(
                     "[materialize] topology loaded: {} atoms, {} residues, {} CA centers resolved",
-                    t.n_atoms, t.n_residues,
+                    t.n_atoms,
+                    t.n_residues,
                     centers.iter().filter(|c| c.is_some()).count()
                 );
                 (Some(t), centers)
             }
             Err(e) => {
-                eprintln!("[materialize] topology load FAILED: {} (residue-based centroids skipped)", e);
+                eprintln!(
+                    "[materialize] topology load FAILED: {} (residue-based centroids skipped)",
+                    e
+                );
                 (None, Vec::new())
             }
         };
 
     // ─── Pass 5 — load ground truth and decide validation status ────────────
     let gt_path = output_dir.join(format!("{}_ground_truth.json", manifest.target));
-    let (ground_truth, gt_status, gt_skip_reason): (Option<GroundTruth>, &'static str, Option<String>) =
-        match std::fs::read_to_string(&gt_path) {
-            Ok(s) => match serde_json::from_str::<GroundTruth>(&s) {
-                Ok(gt) => {
-                    let valid = gt.valid_for_dcc_validation && gt.ligand_centroid.is_some();
-                    let status = if valid { "available" } else { "reference_unavailable" };
-                    let reason = gt.skip_reason.clone();
-                    (Some(gt), status, reason)
-                }
-                Err(e) => {
-                    eprintln!("[materialize] ground_truth.json parse failed: {}", e);
-                    (None, "reference_unavailable", Some(format!("parse_error: {}", e)))
-                }
-            },
-            Err(_) => (None, "reference_unavailable", Some("ground_truth_file_missing".to_string())),
-        };
+    let (ground_truth, gt_status, gt_skip_reason): (
+        Option<GroundTruth>,
+        &'static str,
+        Option<String>,
+    ) = match std::fs::read_to_string(&gt_path) {
+        Ok(s) => match serde_json::from_str::<GroundTruth>(&s) {
+            Ok(gt) => {
+                let valid = gt.valid_for_dcc_validation && gt.ligand_centroid.is_some();
+                let status = if valid {
+                    "available"
+                } else {
+                    "reference_unavailable"
+                };
+                let reason = gt.skip_reason.clone();
+                (Some(gt), status, reason)
+            }
+            Err(e) => {
+                eprintln!("[materialize] ground_truth.json parse failed: {}", e);
+                (
+                    None,
+                    "reference_unavailable",
+                    Some(format!("parse_error: {}", e)),
+                )
+            }
+        },
+        Err(_) => (
+            None,
+            "reference_unavailable",
+            Some("ground_truth_file_missing".to_string()),
+        ),
+    };
     eprintln!("[materialize] ground_truth status: {}", gt_status);
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1833,11 +1895,8 @@ fn main() -> Result<()> {
         .into_iter()
         .enumerate()
         .map(|(idx, ev)| {
-            let mut lining_pairs: Vec<(i32, u32)> = ev
-                .residue_support
-                .iter()
-                .map(|(r, c)| (*r, *c))
-                .collect();
+            let mut lining_pairs: Vec<(i32, u32)> =
+                ev.residue_support.iter().map(|(r, c)| (*r, *c)).collect();
             lining_pairs.sort_by(|a, b| b.1.cmp(&a.1));
             let top12: Vec<i32> = lining_pairs.iter().take(12).map(|(r, _)| *r).collect();
             RawPeak {
@@ -1851,7 +1910,10 @@ fn main() -> Result<()> {
         .collect();
     // Sort by raw n_spikes descending so the highest-density peak seeds each region.
     raw_peaks.sort_by(|a, b| b.evidence.n_spikes.cmp(&a.evidence.n_spikes));
-    eprintln!("[v2] Stage A — {} raw peaks (sorted by n_spikes)", raw_peaks.len());
+    eprintln!(
+        "[v2] Stage A — {} raw peaks (sorted by n_spikes)",
+        raw_peaks.len()
+    );
 
     // ─── Stage B — greedy consolidation into candidate regions ───────────
     fn aggregate_centroid_of_evidence(ev: &CandidateEvidence) -> [f32; 3] {
@@ -1885,19 +1947,29 @@ fn main() -> Result<()> {
                 .map(|(r, _)| *r)
                 .collect();
             // The above pattern is ugly; rebuild more cleanly:
-            let mut tmp: Vec<(i32, u32)> = region.residue_support.iter().map(|(r, c)| (*r, *c)).collect();
+            let mut tmp: Vec<(i32, u32)> = region
+                .residue_support
+                .iter()
+                .map(|(r, c)| (*r, *c))
+                .collect();
             tmp.sort_by(|a, b| b.1.cmp(&a.1));
             rep_top12 = tmp.into_iter().take(12).map(|(r, _)| r).collect();
             let jacc = jaccard_overlap(&raw.top12_lining_residues, &rep_top12);
             if d <= args.consolidation_radius_a {
                 merge_into = Some(ri);
-                merge_reasons.push(format!("centroid_distance_{:.2}A_le_{:.1}", d, args.consolidation_radius_a));
+                merge_reasons.push(format!(
+                    "centroid_distance_{:.2}A_le_{:.1}",
+                    d, args.consolidation_radius_a
+                ));
                 residue_overlap_observed = jacc;
                 break;
             }
             if jacc >= args.consolidation_jaccard {
                 merge_into = Some(ri);
-                merge_reasons.push(format!("residue_jaccard_{:.2}_ge_{:.2}_centroid_dist_{:.2}A", jacc, args.consolidation_jaccard, d));
+                merge_reasons.push(format!(
+                    "residue_jaccard_{:.2}_ge_{:.2}_centroid_dist_{:.2}A",
+                    jacc, args.consolidation_jaccard, d
+                ));
                 residue_overlap_observed = jacc;
                 break;
             }
@@ -1921,14 +1993,22 @@ fn main() -> Result<()> {
                     entry.insert(*v);
                 }
             }
-            if raw.evidence.timestep_min < region.timestep_min { region.timestep_min = raw.evidence.timestep_min; }
-            if raw.evidence.timestep_max > region.timestep_max { region.timestep_max = raw.evidence.timestep_max; }
-            for c in raw.evidence.chunk_set.iter() { region.chunk_set.insert(*c); }
+            if raw.evidence.timestep_min < region.timestep_min {
+                region.timestep_min = raw.evidence.timestep_min;
+            }
+            if raw.evidence.timestep_max > region.timestep_max {
+                region.timestep_max = raw.evidence.timestep_max;
+            }
+            for c in raw.evidence.chunk_set.iter() {
+                region.chunk_set.insert(*c);
+            }
             for (b, c) in raw.evidence.bin_counts.iter() {
                 *region.bin_counts.entry(*b).or_insert(0) += c;
                 region.persistence_bin_set.insert(*b);
             }
-            for k in 0..10 { region.phase_hist[k] += raw.evidence.phase_hist[k]; }
+            for k in 0..10 {
+                region.phase_hist[k] += raw.evidence.phase_hist[k];
+            }
             region.phase_cos_sum += raw.evidence.phase_cos_sum;
             region.phase_sin_sum += raw.evidence.phase_sin_sum;
             for k in 0..3 {
@@ -1940,18 +2020,28 @@ fn main() -> Result<()> {
             region.n_uv += raw.evidence.n_uv;
             region.n_lif += raw.evidence.n_lif;
             region.n_other_source += raw.evidence.n_other_source;
-            for k in 0..5 { region.n_arom[k] += raw.evidence.n_arom[k]; }
+            for k in 0..5 {
+                region.n_arom[k] += raw.evidence.n_arom[k];
+            }
             for (rid, cnt) in raw.evidence.residue_support.iter() {
                 *region.residue_support.entry(*rid).or_insert(0) += cnt;
             }
             // Recompute aggregate centroid from updated sums.
             region.aggregate_centroid_a = if region.intensity_sum > 0.0 {
-                vec3_div([region.pos_sum_x, region.pos_sum_y, region.pos_sum_z], region.intensity_sum)
-            } else { region.aggregate_centroid_a };
-            region.region_radius_a = region.region_radius_a.max(dist3(&raw_centroid, &region.aggregate_centroid_a));
+                vec3_div(
+                    [region.pos_sum_x, region.pos_sum_y, region.pos_sum_z],
+                    region.intensity_sum,
+                )
+            } else {
+                region.aggregate_centroid_a
+            };
+            region.region_radius_a = region
+                .region_radius_a
+                .max(dist3(&raw_centroid, &region.aggregate_centroid_a));
             region.centroid_spread_a = region.region_radius_a;
-            region.residue_shell_overlap_with_rep =
-                region.residue_shell_overlap_with_rep.max(residue_overlap_observed);
+            region.residue_shell_overlap_with_rep = region
+                .residue_shell_overlap_with_rep
+                .max(residue_overlap_observed);
         } else {
             // New region seeded from this raw peak.
             let region_id = regions.len() as u32;
@@ -1993,7 +2083,10 @@ fn main() -> Result<()> {
     }
     eprintln!(
         "[v2] Stage B — {} raw peaks consolidated to {} regions (radius={} Å, jaccard>={})",
-        raw_peaks.len(), regions.len(), args.consolidation_radius_a, args.consolidation_jaccard
+        raw_peaks.len(),
+        regions.len(),
+        args.consolidation_radius_a,
+        args.consolidation_jaccard
     );
 
     // Build duplicate-cluster records (only for regions that absorbed peaks).
@@ -2001,7 +2094,8 @@ fn main() -> Result<()> {
         if region.merged_raw_peak_ids.len() <= 1 {
             continue;
         }
-        let suppressed: Vec<u32> = region.merged_raw_peak_ids
+        let suppressed: Vec<u32> = region
+            .merged_raw_peak_ids
             .iter()
             .filter(|&&id| id != region.representative_raw_peak_id)
             .copied()
@@ -2040,12 +2134,18 @@ fn main() -> Result<()> {
             let s = load_ghost_features(p);
             eprintln!(
                 "[ghost-features] {} → loaded={} spatial_mapped={} total_events={} status={}",
-                p.display(), s.loaded, s.spatial_mapped, s.total_ghost_events, s.spatial_status_text
+                p.display(),
+                s.loaded,
+                s.spatial_mapped,
+                s.total_ghost_events,
+                s.spatial_status_text
             );
             s
         }
         None => {
-            eprintln!("[ghost-features] not supplied → ghost_zstr_factor = 1.0 (neutral) for all regions");
+            eprintln!(
+                "[ghost-features] not supplied → ghost_zstr_factor = 1.0 (neutral) for all regions"
+            );
             GhostFeaturesState::default()
         }
     };
@@ -2078,9 +2178,16 @@ fn main() -> Result<()> {
     for region in regions.iter() {
         let region_id = region.region_id;
         // ── stream support / balance ────────────────────────────────────────
-        let supporting_streams: Vec<u32> = region.per_stream_spikes
+        let supporting_streams: Vec<u32> = region
+            .per_stream_spikes
             .iter()
-            .filter_map(|(s, c)| if *c >= min_spikes_per_stream { Some(*s) } else { None })
+            .filter_map(|(s, c)| {
+                if *c >= min_spikes_per_stream {
+                    Some(*s)
+                } else {
+                    None
+                }
+            })
             .collect();
         let mut supporting_sorted = supporting_streams.clone();
         supporting_sorted.sort_unstable();
@@ -2111,34 +2218,52 @@ fn main() -> Result<()> {
         let counts: Vec<u64> = region.bin_counts.values().copied().collect();
         let total_bins: i32 = if region.timestep_max > region.timestep_min {
             ((region.timestep_max - region.timestep_min) / args.persistence_bin_steps.max(1)) + 1
-        } else { 1 };
+        } else {
+            1
+        };
         let persistence_fraction = if total_bins > 0 {
             region.persistence_bin_set.len() as f64 / total_bins as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let mean_count = if !counts.is_empty() {
             counts.iter().sum::<u64>() as f64 / counts.len() as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let var = if counts.len() > 1 {
             let m = mean_count;
             counts.iter().map(|c| (*c as f64 - m).powi(2)).sum::<f64>() / counts.len() as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let burstiness_score = if mean_count > 0.0 {
             (var.sqrt() / mean_count).min(2.0) / 2.0
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let temporal_entropy = if !counts.is_empty() {
             let total: f64 = counts.iter().map(|&c| c as f64).sum();
             if total > 0.0 {
                 let mut ent = 0.0;
                 for c in counts.iter() {
                     let p = (*c as f64) / total;
-                    if p > 0.0 { ent -= p * p.ln(); }
+                    if p > 0.0 {
+                        ent -= p * p.ln();
+                    }
                 }
                 ent
-            } else { 0.0 }
-        } else { 0.0 };
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
         let temporal_status: &'static str = if region.bin_counts.is_empty() {
             "coarse_non_discriminative"
-        } else { "available" };
+        } else {
+            "available"
+        };
         let refined_temporal = RefinedTemporalSupport {
             persistence_bin_size_steps: args.persistence_bin_steps,
             persistence_bins_observed: region.persistence_bin_set.len() as u32,
@@ -2151,10 +2276,13 @@ fn main() -> Result<()> {
         let temporal_persistence_factor: f64 = if temporal_status == "available" {
             // Reward high persistence, penalize bursty.
             (persistence_fraction.powf(0.5)) * (1.0 - 0.5 * burstiness_score).max(0.0)
-        } else { 1.0 };
+        } else {
+            1.0
+        };
 
         // ── lining residues / driver residues / residue shell features ─────
-        let mut lining_pairs: Vec<(i32, u32)> = region.residue_support
+        let mut lining_pairs: Vec<(i32, u32)> = region
+            .residue_support
             .iter()
             .map(|(r, c)| (*r, *c))
             .collect();
@@ -2166,13 +2294,17 @@ fn main() -> Result<()> {
         let mut n_terminal: u32 = 0;
         for r in lining_residues.iter() {
             let r = *r;
-            if r >= 0 && (r < terminal_threshold || r >= (n_residues_topo as i32 - terminal_threshold)) {
+            if r >= 0
+                && (r < terminal_threshold || r >= (n_residues_topo as i32 - terminal_threshold))
+            {
                 n_terminal += 1;
             }
         }
         let terminal_residue_fraction = if !lining_residues.is_empty() {
             n_terminal as f64 / lining_residues.len() as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let tail_penalty = terminal_residue_fraction;
         let tail_penalty_factor = (1.0 - tail_penalty).max(0.05);
 
@@ -2187,12 +2319,19 @@ fn main() -> Result<()> {
                 if (*r as usize) < topology_residue_names.len() {
                     let name = topology_residue_names[*r as usize].as_str();
                     name_set.insert(name);
-                    if AROMATIC.contains(&name) { aromatic_count += 1; }
-                    if HYDROPHOBIC.contains(&name) { hydrophobic_count += 1; }
-                    if POLAR.contains(&name) { polar_count += 1; }
+                    if AROMATIC.contains(&name) {
+                        aromatic_count += 1;
+                    }
+                    if HYDROPHOBIC.contains(&name) {
+                        hydrophobic_count += 1;
+                    }
+                    if POLAR.contains(&name) {
+                        polar_count += 1;
+                    }
                 }
             }
-            residue_diversity_score = (name_set.len() as f64 / lining_residues.len() as f64).clamp(0.0, 1.0);
+            residue_diversity_score =
+                (name_set.len() as f64 / lining_residues.len() as f64).clamp(0.0, 1.0);
         }
         // Compactness: mean pairwise CA distance among lining residues.
         let mut compactness_a: Option<f64> = None;
@@ -2216,22 +2355,37 @@ fn main() -> Result<()> {
                 let mean_d = sum_d / n as f64;
                 compactness_a = Some(mean_d);
                 // Pocket-like = compact (mean d <~12 Å) AND multi-residue.
-                enclosure_proxy = Some((1.0 / (1.0 + (mean_d - 8.0).max(0.0) / 4.0))
-                    * (lining_residues.len() as f64 / 12.0).min(1.0));
+                enclosure_proxy = Some(
+                    (1.0 / (1.0 + (mean_d - 8.0).max(0.0) / 4.0))
+                        * (lining_residues.len() as f64 / 12.0).min(1.0),
+                );
             }
         }
         // Catalytic-like proxy = aromatic+polar mix without ligand-truth use.
         let catalytic_like = if !lining_residues.is_empty() {
             let mix = (aromatic_count.min(polar_count)) as f64 / lining_residues.len() as f64;
             (mix * (1.0 - tail_penalty)).min(1.0)
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let mut shell_reasoning: Vec<String> = Vec::new();
-        if tail_penalty > 0.5 { shell_reasoning.push(format!("dominated_by_terminal_residues ({:.0}%)", tail_penalty * 100.0)); }
-        if residue_diversity_score < 0.5 { shell_reasoning.push("low_residue_name_diversity".to_string()); }
-        if let Some(c) = compactness_a {
-            if c > 14.0 { shell_reasoning.push(format!("residue_shell_loose_mean_d={:.1}A", c)); }
+        if tail_penalty > 0.5 {
+            shell_reasoning.push(format!(
+                "dominated_by_terminal_residues ({:.0}%)",
+                tail_penalty * 100.0
+            ));
         }
-        if catalytic_like > 0.15 { shell_reasoning.push("aromatic_polar_mix_present".to_string()); }
+        if residue_diversity_score < 0.5 {
+            shell_reasoning.push("low_residue_name_diversity".to_string());
+        }
+        if let Some(c) = compactness_a {
+            if c > 14.0 {
+                shell_reasoning.push(format!("residue_shell_loose_mean_d={:.1}A", c));
+            }
+        }
+        if catalytic_like > 0.15 {
+            shell_reasoning.push("aromatic_polar_mix_present".to_string());
+        }
         let residue_shell = ResidueShellPlausibility {
             residue_shell_size: lining_residues.len() as u32,
             residue_diversity_score,
@@ -2256,7 +2410,9 @@ fn main() -> Result<()> {
         let mut driver_pairs: Vec<(i32, u64)> = lining_residues
             .iter()
             .filter_map(|r| {
-                driver_active_causal_sum.get(&(*r as usize)).map(|ac| (*r, *ac))
+                driver_active_causal_sum
+                    .get(&(*r as usize))
+                    .map(|ac| (*r, *ac))
             })
             .collect();
         driver_pairs.sort_by(|a, b| b.1.cmp(&a.1));
@@ -2264,30 +2420,41 @@ fn main() -> Result<()> {
         let driver_residue_count = driver_pairs.len() as u32;
         let driver_residue_fraction_of_shell = if !lining_residues.is_empty() {
             driver_residue_count as f64 / lining_residues.len() as f64
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let active_causal_support_sum: u64 = driver_pairs.iter().map(|(_, ac)| *ac).sum();
-        let causal_driver_centroid: Option<[f32; 3]> = if !residue_centers.is_empty() && !driver_pairs.is_empty() {
-            let mut sum = [0.0f64; 3];
-            let mut wsum = 0.0f64;
-            for (rid, ac) in driver_pairs.iter() {
-                let r = *rid as usize;
-                if r < residue_centers.len() {
-                    if let Some(c) = residue_centers[r] {
-                        let w = *ac as f64;
-                        sum[0] += c[0] as f64 * w;
-                        sum[1] += c[1] as f64 * w;
-                        sum[2] += c[2] as f64 * w;
-                        wsum += w;
+        let causal_driver_centroid: Option<[f32; 3]> =
+            if !residue_centers.is_empty() && !driver_pairs.is_empty() {
+                let mut sum = [0.0f64; 3];
+                let mut wsum = 0.0f64;
+                for (rid, ac) in driver_pairs.iter() {
+                    let r = *rid as usize;
+                    if r < residue_centers.len() {
+                        if let Some(c) = residue_centers[r] {
+                            let w = *ac as f64;
+                            sum[0] += c[0] as f64 * w;
+                            sum[1] += c[1] as f64 * w;
+                            sum[2] += c[2] as f64 * w;
+                            wsum += w;
+                        }
                     }
                 }
-            }
-            if wsum > 0.0 { Some(vec3_div(sum, wsum)) } else { None }
-        } else { None };
+                if wsum > 0.0 {
+                    Some(vec3_div(sum, wsum))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
         let kcc_field_completeness: &'static str = if n_total_kcc_streams >= 4 {
             "partial_strong"
         } else if n_total_kcc_streams > 0 {
             "partial_weak"
-        } else { "missing" };
+        } else {
+            "missing"
+        };
         let kcc_driver_factor: f64 = if n_total_kcc_streams == 0 {
             1.0 // neutral
         } else {
@@ -2295,10 +2462,19 @@ fn main() -> Result<()> {
         };
         let kcc_driver_score = if n_total_kcc_streams > 0 {
             driver_residue_fraction_of_shell * (active_causal_support_sum as f64).ln().max(0.0)
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let mut kcc_reasoning: Vec<String> = Vec::new();
-        if n_total_kcc_streams == 0 { kcc_reasoning.push("kcc_unavailable_neutral_factor".to_string()); }
-        if driver_residue_fraction_of_shell > 0.5 { kcc_reasoning.push(format!("driver_dominant_shell_fraction={:.2}", driver_residue_fraction_of_shell)); }
+        if n_total_kcc_streams == 0 {
+            kcc_reasoning.push("kcc_unavailable_neutral_factor".to_string());
+        }
+        if driver_residue_fraction_of_shell > 0.5 {
+            kcc_reasoning.push(format!(
+                "driver_dominant_shell_fraction={:.2}",
+                driver_residue_fraction_of_shell
+            ));
+        }
         let kcc_driver_block = KccDriverBlock {
             driver_residue_count,
             driver_residue_fraction_of_shell,
@@ -2312,14 +2488,23 @@ fn main() -> Result<()> {
 
         // ── Centroid manifold ───────────────────────────────────────────────
         let whole_site = if region.intensity_sum > 0.0 {
-            Some(vec3_div([region.pos_sum_x, region.pos_sum_y, region.pos_sum_z], region.intensity_sum))
-        } else { None };
+            Some(vec3_div(
+                [region.pos_sum_x, region.pos_sum_y, region.pos_sum_z],
+                region.intensity_sum,
+            ))
+        } else {
+            None
+        };
         let hot_phase = if region.n_hot >= 50 {
             Some(vec3_div(region.hot_pos_sum, region.n_hot as f64))
-        } else { None };
+        } else {
+            None
+        };
         let cold_phase = if region.n_cold >= 50 {
             Some(vec3_div(region.cold_pos_sum, region.n_cold as f64))
-        } else { None };
+        } else {
+            None
+        };
         let lining_mass: Option<[f32; 3]> = if !residue_centers.is_empty() {
             let mut sum = [0.0f64; 3];
             let mut wsum = 0.0f64;
@@ -2335,15 +2520,30 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            if wsum > 0.0 { Some(vec3_div(sum, wsum)) } else { None }
-        } else { None };
+            if wsum > 0.0 {
+                Some(vec3_div(sum, wsum))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let causal_driver = causal_driver_centroid;
-        let ligand_adjacent: Option<[f32; 3]> = ground_truth
-            .as_ref()
-            .and_then(|gt| if gt.valid_for_dcc_validation { gt.ligand_centroid } else { None });
+        let ligand_adjacent: Option<[f32; 3]> = ground_truth.as_ref().and_then(|gt| {
+            if gt.valid_for_dcc_validation {
+                gt.ligand_centroid
+            } else {
+                None
+            }
+        });
         let manifold = CentroidManifold {
-            whole_site, lining_mass, causal_driver, hot_phase, cold_phase,
-            return_phase: None, ligand_adjacent,
+            whole_site,
+            lining_mass,
+            causal_driver,
+            hot_phase,
+            cold_phase,
+            return_phase: None,
+            ligand_adjacent,
         };
 
         // Manifold consistency.
@@ -2351,16 +2551,35 @@ fn main() -> Result<()> {
         let d_whole_driver = whole_site.zip(causal_driver).map(|(a, b)| dist3(&a, &b));
         let d_hot_cold = hot_phase.zip(cold_phase).map(|(a, b)| dist3(&a, &b));
         let mut manifold_dispersion: Option<f32> = None;
-        let n_views_present = [whole_site, lining_mass, causal_driver, hot_phase, cold_phase]
-            .iter().filter(|v| v.is_some()).count() as u32;
-        let views_vec: Vec<[f32; 3]> = [whole_site, lining_mass, causal_driver, hot_phase, cold_phase]
-            .iter().flatten().copied().collect();
+        let n_views_present = [
+            whole_site,
+            lining_mass,
+            causal_driver,
+            hot_phase,
+            cold_phase,
+        ]
+        .iter()
+        .filter(|v| v.is_some())
+        .count() as u32;
+        let views_vec: Vec<[f32; 3]> = [
+            whole_site,
+            lining_mass,
+            causal_driver,
+            hot_phase,
+            cold_phase,
+        ]
+        .iter()
+        .flatten()
+        .copied()
+        .collect();
         if views_vec.len() >= 2 {
             let mut max_d: f32 = 0.0;
             for i in 0..views_vec.len() {
                 for j in (i + 1)..views_vec.len() {
                     let d = dist3(&views_vec[i], &views_vec[j]);
-                    if d > max_d { max_d = d; }
+                    if d > max_d {
+                        max_d = d;
+                    }
                 }
             }
             manifold_dispersion = Some(max_d);
@@ -2368,9 +2587,11 @@ fn main() -> Result<()> {
         // Manifold consistency: exp(-dispersion / 4Å).
         let manifold_consistency_score: f64 = if let Some(d) = manifold_dispersion {
             ((-(d as f64) / 4.0).exp()).clamp(0.0, 1.0)
-        } else { 0.5 };
-        let centroid_manifold_consistency_factor: f64 = manifold_consistency_score
-            * (n_views_present as f64 / 5.0).min(1.0).max(0.2);
+        } else {
+            0.5
+        };
+        let centroid_manifold_consistency_factor: f64 =
+            manifold_consistency_score * (n_views_present as f64 / 5.0).min(1.0).max(0.2);
         let manifold_block = ManifoldConsistency {
             d_whole_lining_a: d_whole_lining,
             d_whole_driver_a: d_whole_driver,
@@ -2403,10 +2624,14 @@ fn main() -> Result<()> {
         let n = region.n_spikes as f64;
         let r_stat = if n > 0.0 {
             (region.phase_cos_sum.powi(2) + region.phase_sin_sum.powi(2)).sqrt() / n
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let mean_phase = if r_stat > 1e-3 {
             Some(region.phase_sin_sum.atan2(region.phase_cos_sum))
-        } else { None };
+        } else {
+            None
+        };
         let phase_support = PhaseSupport {
             phase_bits_histogram: region.phase_hist,
             rayleigh_r_stat: r_stat,
@@ -2419,10 +2644,24 @@ fn main() -> Result<()> {
         let mut sources_present: f64 = 0.0;
         let mut sources_total: f64 = 0.0;
         for (status, weight) in [
-            ("present", 1.0),                               // spikes
-            ("present", 1.0),                               // phase_bits
-            (if signal_grid_present_any { "partial" } else { "missing" }, 1.0),
-            (if n_total_kcc_streams > 0 { "partial" } else { "missing" }, 1.0),
+            ("present", 1.0), // spikes
+            ("present", 1.0), // phase_bits
+            (
+                if signal_grid_present_any {
+                    "partial"
+                } else {
+                    "missing"
+                },
+                1.0,
+            ),
+            (
+                if n_total_kcc_streams > 0 {
+                    "partial"
+                } else {
+                    "missing"
+                },
+                1.0,
+            ),
         ] {
             sources_total += weight;
             sources_present += match status {
@@ -2436,20 +2675,29 @@ fn main() -> Result<()> {
         // ── M1.2.23 §12 — Ghost/ZSTR candidate-features factor ──────────────
         // Set per-region by main()-level ghost_zstr_summary; default neutral.
         // (Deferred per-region linking when a spatial map exists.)
-        let (ghost_zstr_factor, ghost_zstr_status, ghost_zstr_reasoning_extra) = ghost_zstr_summary_compute(&ghost_features_state, region);
+        let (ghost_zstr_factor, ghost_zstr_status, ghost_zstr_reasoning_extra) =
+            ghost_zstr_summary_compute(&ghost_features_state, region);
         let field_completeness = FieldCompleteness {
             spikes: "present",
             phase_bits: "present",
             warp_matrix: "deferred_format_not_parsed",
             asc_vectors: "deferred_format_not_parsed",
             forces: "deferred_format_not_parsed",
-            signal_grid: if signal_grid_present_any { "partial" } else { "missing" },
-            kcc: if n_total_kcc_streams > 0 { "partial" } else { "missing" },
+            signal_grid: if signal_grid_present_any {
+                "partial"
+            } else {
+                "missing"
+            },
+            kcc: if n_total_kcc_streams > 0 {
+                "partial"
+            } else {
+                "missing"
+            },
         };
 
         // ── Density score (log-normalized) ──────────────────────────────────
-        let density_score = (region.n_spikes as f64 + 1.0).ln()
-            / (max_n_spikes_for_density_normalize + 1.0).ln();
+        let density_score =
+            (region.n_spikes as f64 + 1.0).ln() / (max_n_spikes_for_density_normalize + 1.0).ln();
         // ── Duplicate region factor: representative regions have factor 1.0.
         let duplicate_region_factor: f64 = 1.0;
 
@@ -2467,14 +2715,38 @@ fn main() -> Result<()> {
 
         let mut score_explanation: Vec<String> = Vec::new();
         score_explanation.push(format!("density_score={:.3}", density_score));
-        score_explanation.push(format!("stream_balance={:.3} (gini={:.2})", stream_balance_score, gini));
-        score_explanation.push(format!("temporal_persistence={:.3} ({})", temporal_persistence_factor, temporal_status));
-        score_explanation.push(format!("residue_shell={:.3} (div={:.2}, encl={:?})", residue_shell_plausibility_factor, residue_diversity_score, enclosure_proxy));
-        score_explanation.push(format!("manifold={:.3} ({} views)", centroid_manifold_consistency_factor, n_views_present));
-        score_explanation.push(format!("kcc_driver={:.3} (drv_frac={:.2})", kcc_driver_factor, driver_residue_fraction_of_shell));
-        score_explanation.push(format!("field_completeness={:.3}", field_completeness_factor));
-        score_explanation.push(format!("tail_penalty_factor={:.3} (term_frac={:.2})", tail_penalty_factor, terminal_residue_fraction));
-        score_explanation.push(format!("ghost_zstr={:.3} ({})", ghost_zstr_factor, ghost_zstr_status));
+        score_explanation.push(format!(
+            "stream_balance={:.3} (gini={:.2})",
+            stream_balance_score, gini
+        ));
+        score_explanation.push(format!(
+            "temporal_persistence={:.3} ({})",
+            temporal_persistence_factor, temporal_status
+        ));
+        score_explanation.push(format!(
+            "residue_shell={:.3} (div={:.2}, encl={:?})",
+            residue_shell_plausibility_factor, residue_diversity_score, enclosure_proxy
+        ));
+        score_explanation.push(format!(
+            "manifold={:.3} ({} views)",
+            centroid_manifold_consistency_factor, n_views_present
+        ));
+        score_explanation.push(format!(
+            "kcc_driver={:.3} (drv_frac={:.2})",
+            kcc_driver_factor, driver_residue_fraction_of_shell
+        ));
+        score_explanation.push(format!(
+            "field_completeness={:.3}",
+            field_completeness_factor
+        ));
+        score_explanation.push(format!(
+            "tail_penalty_factor={:.3} (term_frac={:.2})",
+            tail_penalty_factor, terminal_residue_fraction
+        ));
+        score_explanation.push(format!(
+            "ghost_zstr={:.3} ({})",
+            ghost_zstr_factor, ghost_zstr_status
+        ));
         score_explanation.push(format!("FINAL={:.6}", final_prism_score));
 
         let mut score_components = PrismScoreComponents {
@@ -2482,7 +2754,8 @@ fn main() -> Result<()> {
             stream_balance_factor: stream_balance_score.clamp(0.05, 1.0),
             temporal_persistence_factor: temporal_persistence_factor.clamp(0.05, 1.0),
             residue_shell_plausibility_factor,
-            centroid_manifold_consistency_factor: centroid_manifold_consistency_factor.clamp(0.05, 1.0),
+            centroid_manifold_consistency_factor: centroid_manifold_consistency_factor
+                .clamp(0.05, 1.0),
             kcc_driver_factor,
             field_completeness_factor,
             duplicate_region_factor,
@@ -2499,30 +2772,57 @@ fn main() -> Result<()> {
 
         // ── Promotion criteria (tightened per directive Part 8) ─────────────
         let mut blocking: Vec<&'static str> = Vec::new();
-        if whole_site.is_none() { blocking.push("missing_whole_site_centroid"); }
-        if (supporting_sorted.len() as u32) < min_supporting_streams { blocking.push("insufficient_stream_support"); }
-        if region.n_spikes < 1000 { blocking.push("insufficient_spike_support"); }
-        if region.chunk_set.is_empty() { blocking.push("no_temporal_support"); }
+        if whole_site.is_none() {
+            blocking.push("missing_whole_site_centroid");
+        }
+        if (supporting_sorted.len() as u32) < min_supporting_streams {
+            blocking.push("insufficient_stream_support");
+        }
+        if region.n_spikes < 1000 {
+            blocking.push("insufficient_spike_support");
+        }
+        if region.chunk_set.is_empty() {
+            blocking.push("no_temporal_support");
+        }
         // At least one non-density PRISM evidence dimension active:
         let kcc_active = n_total_kcc_streams > 0 && driver_residue_count > 0;
         let manifold_active = n_views_present >= 2 && manifold_consistency_score > 0.4;
         let temporal_active = temporal_status == "available" && persistence_fraction > 0.3;
-        let shell_active = !lining_residues.is_empty() && tail_penalty < 0.8 && residue_diversity_score > 0.4;
+        let shell_active =
+            !lining_residues.is_empty() && tail_penalty < 0.8 && residue_diversity_score > 0.4;
         let signal_grid_active = signal_grid_present_any;
-        let n_active_dims = [kcc_active, manifold_active, temporal_active, shell_active, signal_grid_active]
-            .iter().filter(|x| **x).count();
-        if n_active_dims == 0 { blocking.push("no_non_density_evidence_dimension_active"); }
+        let n_active_dims = [
+            kcc_active,
+            manifold_active,
+            temporal_active,
+            shell_active,
+            signal_grid_active,
+        ]
+        .iter()
+        .filter(|x| **x)
+        .count();
+        if n_active_dims == 0 {
+            blocking.push("no_non_density_evidence_dimension_active");
+        }
 
         let materialization_level: &'static str = if blocking.is_empty() {
-            if gt_status == "available" { "materialized_dynamic_site_with_validation" }
-            else { "materialized_dynamic_site" }
+            if gt_status == "available" {
+                "materialized_dynamic_site_with_validation"
+            } else {
+                "materialized_dynamic_site"
+            }
         } else if !blocking.contains(&"missing_whole_site_centroid")
-                  && !blocking.contains(&"no_temporal_support") {
+            && !blocking.contains(&"no_temporal_support")
+        {
             "candidate_spatiotemporal_partial"
         } else {
             "candidate_density_only"
         };
-        let materialization_status: &'static str = if blocking.is_empty() { "materialized" } else { "non_materialized_candidate" };
+        let materialization_status: &'static str = if blocking.is_empty() {
+            "materialized"
+        } else {
+            "non_materialized_candidate"
+        };
         let promoted = blocking.is_empty();
 
         // ── Build manifest payload (one JSON value per region) ──────────────
@@ -2563,12 +2863,20 @@ fn main() -> Result<()> {
             let dcc_hot = hot_phase.map(|c| dist3(&c, &lig));
             let dcc_cold = cold_phase.map(|c| dist3(&c, &lig));
             let best = [dcc_whole, dcc_lining, dcc_driver, dcc_hot, dcc_cold]
-                .into_iter().flatten().fold(f32::INFINITY, f32::min);
-            let grade = if best <= 2.0 { "EXCELLENT" }
-                        else if best <= 3.0 { "ACCEPTABLE" }
-                        else if best <= 5.0 { "USEFUL" }
-                        else if best <= 8.0 { "LENIENT" }
-                        else { "MISS" };
+                .into_iter()
+                .flatten()
+                .fold(f32::INFINITY, f32::min);
+            let grade = if best <= 2.0 {
+                "EXCELLENT"
+            } else if best <= 3.0 {
+                "ACCEPTABLE"
+            } else if best <= 5.0 {
+                "USEFUL"
+            } else if best <= 8.0 {
+                "LENIENT"
+            } else {
+                "MISS"
+            };
             serde_json::json!({
                 "validation_status": "computed",
                 "ligand_centroid": lig,
@@ -2652,7 +2960,10 @@ fn main() -> Result<()> {
 
         scored.push(ScoredRegion {
             region_id,
-            old_density_rank: density_only_rank_by_region.get(&region_id).copied().unwrap_or(0),
+            old_density_rank: density_only_rank_by_region
+                .get(&region_id)
+                .copied()
+                .unwrap_or(0),
             score_components,
             manifest_payload: payload,
             materialization_level,
@@ -2663,7 +2974,8 @@ fn main() -> Result<()> {
 
     // ── Re-rank by final_prism_score ─────────────────────────────────────────
     scored.sort_by(|a, b| {
-        b.score_components.final_prism_score
+        b.score_components
+            .final_prism_score
             .partial_cmp(&a.score_components.final_prism_score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
@@ -2677,7 +2989,9 @@ fn main() -> Result<()> {
         if !sr.promoted {
             // Bucket non-promoted into spatiotemporal_partial vs density_only.
             match sr.materialization_level {
-                "candidate_spatiotemporal_partial" => spatiotemporal_partial_candidates.push(sr.manifest_payload.clone()),
+                "candidate_spatiotemporal_partial" => {
+                    spatiotemporal_partial_candidates.push(sr.manifest_payload.clone())
+                }
                 _ => density_only_candidates.push(sr.manifest_payload.clone()),
             }
             continue;
@@ -2746,16 +3060,19 @@ fn main() -> Result<()> {
         use std::io::Write as _;
         bw.flush()?;
     }
-    eprintln!("✓ wrote {} (sites={}, st_partial={}, density_only={})",
-              materialized_path.display(),
-              materialized_v2.len(),
-              spatiotemporal_partial_candidates.len(),
-              density_only_candidates.len());
+    eprintln!(
+        "✓ wrote {} (sites={}, st_partial={}, density_only={})",
+        materialized_path.display(),
+        materialized_v2.len(),
+        spatiotemporal_partial_candidates.len(),
+        density_only_candidates.len()
+    );
 
     // ─── Emit site_accuracy_report.json (post-hoc validation only) ─────────
     let accuracy_path = output_dir.join("site_accuracy_report.json");
     // Aggregate grade summary if validation was computed.
-    let (mut n_excellent, mut n_acceptable, mut n_useful, mut n_lenient, mut n_miss) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    let (mut n_excellent, mut n_acceptable, mut n_useful, mut n_lenient, mut n_miss) =
+        (0u32, 0u32, 0u32, 0u32, 0u32);
     let mut best_dcc_overall: Option<f32> = None;
     let mut best_grade_overall: Option<String> = None;
     let mut rank_first_lenient: Option<u32> = None;
@@ -2764,11 +3081,17 @@ fn main() -> Result<()> {
             let acc = &s["accuracy"];
             if let Some(best) = acc["best_dcc_a"].as_f64() {
                 let best_f = best as f32;
-                if best <= 2.0 { n_excellent += 1; }
-                else if best <= 3.0 { n_acceptable += 1; }
-                else if best <= 5.0 { n_useful += 1; }
-                else if best <= 8.0 { n_lenient += 1; }
-                else { n_miss += 1; }
+                if best <= 2.0 {
+                    n_excellent += 1;
+                } else if best <= 3.0 {
+                    n_acceptable += 1;
+                } else if best <= 5.0 {
+                    n_useful += 1;
+                } else if best <= 8.0 {
+                    n_lenient += 1;
+                } else {
+                    n_miss += 1;
+                }
                 if best_dcc_overall.is_none() || best_f < best_dcc_overall.unwrap() {
                     best_dcc_overall = Some(best_f);
                     best_grade_overall = acc["grade"].as_str().map(|x| x.to_string());
@@ -2892,30 +3215,50 @@ fn main() -> Result<()> {
     // show which component moved a region. Each scheme returns the top-10
     // region_ids in rank order.
     fn top_k_by<F: FnMut(&ScoredRegion) -> f64>(
-        scored: &[ScoredRegion], k: usize, mut score_fn: F,
+        scored: &[ScoredRegion],
+        k: usize,
+        mut score_fn: F,
     ) -> Vec<serde_json::Value> {
-        let mut s: Vec<(u32, f64, [f32; 3], Vec<i32>)> = scored.iter().map(|r| {
-            (r.region_id,
-             score_fn(r),
-             {
-                 let v = &r.manifest_payload["centroid_xyz"];
-                 [v[0].as_f64().unwrap_or(0.0) as f32,
-                  v[1].as_f64().unwrap_or(0.0) as f32,
-                  v[2].as_f64().unwrap_or(0.0) as f32]
-             },
-             r.manifest_payload["lining_residues"].as_array()
-                 .map(|a| a.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).take(5).collect())
-                 .unwrap_or_default(),
-            )
-        }).collect();
+        let mut s: Vec<(u32, f64, [f32; 3], Vec<i32>)> = scored
+            .iter()
+            .map(|r| {
+                (
+                    r.region_id,
+                    score_fn(r),
+                    {
+                        let v = &r.manifest_payload["centroid_xyz"];
+                        [
+                            v[0].as_f64().unwrap_or(0.0) as f32,
+                            v[1].as_f64().unwrap_or(0.0) as f32,
+                            v[2].as_f64().unwrap_or(0.0) as f32,
+                        ]
+                    },
+                    r.manifest_payload["lining_residues"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| x.as_i64().map(|n| n as i32))
+                                .take(5)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
         s.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        s.into_iter().take(k).enumerate().map(|(i, (rid, score, c, lining))| serde_json::json!({
-            "rank": i,
-            "region_id": rid,
-            "score": score,
-            "centroid_xyz": c,
-            "lining_residues_top5": lining,
-        })).collect()
+        s.into_iter()
+            .take(k)
+            .enumerate()
+            .map(|(i, (rid, score, c, lining))| {
+                serde_json::json!({
+                    "rank": i,
+                    "region_id": rid,
+                    "score": score,
+                    "centroid_xyz": c,
+                    "lining_residues_top5": lining,
+                })
+            })
+            .collect()
     }
     let abl_path = output_dir.join("ranking_ablation_report.json");
     let abl_json = serde_json::json!({
@@ -2947,9 +3290,17 @@ fn main() -> Result<()> {
     let mut families: Vec<Vec<u32>> = Vec::new();
     let mut family_lining: Vec<Vec<i32>> = Vec::new();
     for s in materialized_v2.iter() {
-        let region_id = s["provenance"]["region_id"].as_u64().map(|x| x as u32).unwrap_or(0);
-        let lining: Vec<i32> = s["lining_residues"].as_array()
-            .map(|a| a.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).collect())
+        let region_id = s["provenance"]["region_id"]
+            .as_u64()
+            .map(|x| x as u32)
+            .unwrap_or(0);
+        let lining: Vec<i32> = s["lining_residues"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_i64().map(|n| n as i32))
+                    .collect()
+            })
             .unwrap_or_default();
         let mut placed = false;
         for (fi, prev) in family_lining.iter_mut().enumerate() {
@@ -2957,7 +3308,9 @@ fn main() -> Result<()> {
                 families[fi].push(region_id);
                 // Update family lining to the union (capped at 12).
                 let mut union: std::collections::HashSet<i32> = prev.iter().copied().collect();
-                for r in &lining { union.insert(*r); }
+                for r in &lining {
+                    union.insert(*r);
+                }
                 let mut u: Vec<i32> = union.into_iter().collect();
                 u.sort();
                 u.truncate(12);
@@ -3005,7 +3358,10 @@ fn main() -> Result<()> {
         candidates.len(),
     );
     if n_total > 0 && n_valid < n_total {
-        eprintln!("WARNING: {} artifacts failed validation — see materialization_report.json", n_total - n_valid);
+        eprintln!(
+            "WARNING: {} artifacts failed validation — see materialization_report.json",
+            n_total - n_valid
+        );
     }
     eprintln!(
         "Materialization summary: {} sites materialized, {} non_materialized candidates, ground_truth={}",

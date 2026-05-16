@@ -305,7 +305,14 @@ __global__ void prism_so3_project_manifold_kernel(
         }
         __syncwarp();
 
-        // Lanes 0..n_in_tile-1 evaluate one spike each.
+        // Lanes 0..n_in_tile-1 evaluate one spike each. Per-plane
+        // weights are reduced with the same fixed shuffle tree as the
+        // centroid path; unordered f32 shared updates would make sum_w
+        // order-dependent under high-density clusters.
+        float w_g_local = 0.0f;
+        float w_c_local = 0.0f;
+        float w_t_local = 0.0f;
+        float w_h_local = 0.0f;
         if (lane < n_in_tile) {
             const RichSpike s = d_spikes[tile_base + lane];
 
@@ -332,11 +339,10 @@ __global__ void prism_so3_project_manifold_kernel(
                 const float w_c = fabsf(s.causal_lag);
                 const float w_t = s.water_density;
                 const float w_h = static_cast<float>(__popc(s.chem_flags));
-
-                atomicAdd(&s_sum_w[PLANE_GEO],   w_g);
-                atomicAdd(&s_sum_w[PLANE_CAUS],  w_c);
-                atomicAdd(&s_sum_w[PLANE_THERM], w_t);
-                atomicAdd(&s_sum_w[PLANE_CHEM],  w_h);
+                w_g_local = w_g;
+                w_c_local = w_c;
+                w_t_local = w_t;
+                w_h_local = w_h;
 
                 // Write tf32-down-converted, weighted Y_lm rows into
                 // each plane's tile slot at row=lane, col=k. Pad cols
@@ -350,6 +356,16 @@ __global__ void prism_so3_project_manifold_kernel(
                     s_plane_tile[PLANE_CHEM] [lane][k] = prism_f32_to_tf32(y * w_h);
                 }
             }
+        }
+        const float w_g_tile = warp_reduce_sum(w_g_local);
+        const float w_c_tile = warp_reduce_sum(w_c_local);
+        const float w_t_tile = warp_reduce_sum(w_t_local);
+        const float w_h_tile = warp_reduce_sum(w_h_local);
+        if (lane == 0u) {
+            s_sum_w[PLANE_GEO]   += w_g_tile;
+            s_sum_w[PLANE_CAUS]  += w_c_tile;
+            s_sum_w[PLANE_THERM] += w_t_tile;
+            s_sum_w[PLANE_CHEM]  += w_h_tile;
         }
         __syncwarp();
 
@@ -688,8 +704,8 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const float*        __restrict__ d_forces,           // [n_atoms × 3]
     const float*        __restrict__ d_masses,           // [n_atoms]
     const uint8_t*      __restrict__ adj_base,           // FFI offset arithmetic
-    float*              __restrict__ d_com_shift,        // [3] atomicAdd target — Σ m·Δr
-    float*              __restrict__ d_total_mass,       // [1] atomicAdd target — Σ m (Path Ω Option A)
+    float*              __restrict__ d_com_shift,        // nullable; deterministic COM kernel handles non-null case
+    float*              __restrict__ d_total_mass,       // nullable; deterministic COM kernel handles non-null case
     uint32_t                         /*current_step_unused — T21 reads __constant__*/,
     uint32_t                         n_spikes,
     uint32_t                         n_atoms
@@ -773,35 +789,12 @@ __global__ void prism_apply_gradient_gasp_kernel(
     const float dy = scale * fy;
     const float dz = scale * fz;
 
-    // M1.2.20.C-B — Momentum-Guard accumulator.  Σ m_i · Δr_i across
-    // all spikes; the post-pass `prism_momentum_guard_check_kernel`
-    // computes the magnitude.  atomicAdd (sm_120 native f32) —
-    // contention is tolerable here (~256 threads × few blocks).
-    //
-    // **Path Ω Option A (canonical interferometric formulation):**
-    // Pre-Option-A this accumulator was a strict guard: |Σ m·Δr| > 1e-4 Å
-    // ⇒ violation.  But ANY non-trivial gasp (η_eff > 0) produces a
-    // random-walk Σ ≈ √n_spikes × Δr × m that vastly exceeds 1e-4 for
-    // 500k spikes; the guard fired every chunk, the Adjudicator forked
-    // to Violation before computing KL, and Construct could never fire.
-    //
-    // The fix: accumulate Σ m alongside Σ m·Δr, and downstream the
-    // post-pass kernel computes the global COM displacement
-    //   correction[3] = Σ m·Δr / Σ m
-    // A subsequent kernel (`prism_apply_com_correction_kernel`)
-    // subtracts this correction from every perturbed spike's position
-    // BEFORE the perturbed-branch SO(3) projects.  Result: the
-    // perturbed manifold is COM-locked to the relaxed manifold by
-    // construction; the SO(3) KL captures relative structural
-    // divergence (the discovery signal), not global rigid drift.
-    if (d_com_shift != nullptr) {
-        atomicAdd(d_com_shift + 0, mass * dx);
-        atomicAdd(d_com_shift + 1, mass * dy);
-        atomicAdd(d_com_shift + 2, mass * dz);
-    }
-    if (d_total_mass != nullptr) {
-        atomicAdd(d_total_mass, mass);
-    }
+    // COM accumulation is intentionally absent here. The launcher routes
+    // non-null COM requests to prism_apply_gradient_gasp_com_kernel, which
+    // uses one fixed block and a deterministic reduction tree before the
+    // momentum guard consumes d_com_shift/d_total_mass.
+    (void)d_com_shift;
+    (void)d_total_mass;
 
     // Write the perturbed spike (struct-copy with x/y/z replaced).
     // The COM correction is applied LATER by
@@ -814,6 +807,124 @@ __global__ void prism_apply_gradient_gasp_kernel(
     out.y = spike_in.y + dy;
     out.z = spike_in.z + dz;
     d_spikes_out[i] = out;
+}
+
+extern "C"
+__global__ void prism_apply_gradient_gasp_com_kernel(
+    const RichSpike*    __restrict__ d_spikes_in,
+    RichSpike*          __restrict__ d_spikes_out,
+    const float*        __restrict__ d_forces,
+    const float*        __restrict__ d_masses,
+    const uint8_t*      __restrict__ adj_base,
+    float*              __restrict__ d_com_shift,
+    float*              __restrict__ d_total_mass,
+    uint32_t                         /*current_step_unused — T21 reads __constant__*/,
+    uint32_t                         n_spikes,
+    uint32_t                         n_atoms
+) {
+    constexpr uint32_t TPB = 256u;
+    const uint32_t lane = threadIdx.x;
+    if (blockIdx.x != 0u || lane >= TPB) return;
+
+    const uint32_t current_step = d_current_md_step;
+    const float    eta_base = *reinterpret_cast<const float*   >(adj_base + 136);
+    const uint32_t burst_at = *reinterpret_cast<const uint32_t*>(adj_base + 140);
+    float* const* p_d_dt    =  reinterpret_cast<float* const*>(adj_base + 120);
+    const float dt = (*p_d_dt != nullptr) ? __ldg(*p_d_dt) : 0.002f;
+
+    double sx = 0.0;
+    double sy = 0.0;
+    double sz = 0.0;
+    double sm = 0.0;
+    uint32_t local_reason_flags = 0u;
+
+    for (uint32_t i = lane; i < n_spikes; i += TPB) {
+        const RichSpike spike_in = d_spikes_in[i];
+        const int32_t res_id = spike_in.residue_id;
+        if (res_id < 0 || res_id >= 1024) {
+            d_spikes_out[i] = spike_in;
+            continue;
+        }
+
+        const uint32_t atom_idx = d_residue_to_calpha[res_id];
+        if (atom_idx == 0xFFFFFFFFu || atom_idx >= n_atoms) {
+            d_spikes_out[i] = spike_in;
+            continue;
+        }
+
+        const uint32_t f_off = atom_idx * 3u;
+        const float fx = __ldg(d_forces + f_off + 0u);
+        const float fy = __ldg(d_forces + f_off + 1u);
+        const float fz = __ldg(d_forces + f_off + 2u);
+        const float mass = fmaxf(__ldg(d_masses + atom_idx), 1.0e-3f);
+
+        const uint32_t uv_code = (spike_in.intensity_packed >> 30) & 0x3u;
+        const float Q_s = d_mu01_lut[uv_code];
+
+        constexpr float VIB_SOFT_FLOOR = 1.0e-2f;
+        constexpr float ETA_HARD_CAP   = 5.0f;
+        const float soft_vib = fmaxf(spike_in.vib_energy, VIB_SOFT_FLOOR);
+        float eta_eff = (0.5f * eta_base) / soft_vib;
+        if (eta_eff > ETA_HARD_CAP) {
+            local_reason_flags |= 0x8u;
+        }
+        eta_eff = fminf(eta_eff, ETA_HARD_CAP);
+
+        if (current_step == burst_at) {
+            eta_eff *= 10.0f;
+        }
+
+        const float scale = eta_eff * Q_s * (dt * dt) / mass;
+        const float dx = scale * fx;
+        const float dy = scale * fy;
+        const float dz = scale * fz;
+
+        sx += static_cast<double>(mass) * static_cast<double>(dx);
+        sy += static_cast<double>(mass) * static_cast<double>(dy);
+        sz += static_cast<double>(mass) * static_cast<double>(dz);
+        sm += static_cast<double>(mass);
+
+        RichSpike out = spike_in;
+        out.x = spike_in.x + dx;
+        out.y = spike_in.y + dy;
+        out.z = spike_in.z + dz;
+        d_spikes_out[i] = out;
+    }
+
+    __shared__ double s_x[TPB];
+    __shared__ double s_y[TPB];
+    __shared__ double s_z[TPB];
+    __shared__ double s_m[TPB];
+    __shared__ uint32_t s_flags[TPB];
+    s_x[lane] = sx;
+    s_y[lane] = sy;
+    s_z[lane] = sz;
+    s_m[lane] = sm;
+    s_flags[lane] = local_reason_flags;
+    __syncthreads();
+
+    #pragma unroll
+    for (uint32_t stride = TPB >> 1; stride > 0u; stride >>= 1) {
+        if (lane < stride) {
+            s_x[lane] += s_x[lane + stride];
+            s_y[lane] += s_y[lane + stride];
+            s_z[lane] += s_z[lane + stride];
+            s_m[lane] += s_m[lane + stride];
+            s_flags[lane] |= s_flags[lane + stride];
+        }
+        __syncthreads();
+    }
+
+    if (lane == 0u) {
+        d_com_shift[0] = static_cast<float>(s_x[0]);
+        d_com_shift[1] = static_cast<float>(s_y[0]);
+        d_com_shift[2] = static_cast<float>(s_z[0]);
+        d_total_mass[0] = static_cast<float>(s_m[0]);
+        if (s_flags[0] != 0u) {
+            *reinterpret_cast<uint32_t*>(const_cast<uint8_t*>(adj_base) + 156) |= s_flags[0];
+        }
+        __threadfence();
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1012,9 +1123,29 @@ int prism_apply_gradient_gasp_launch(
         d_forces == nullptr || d_masses == nullptr || adj_base == nullptr) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
+    if ((d_com_shift == nullptr) != (d_total_mass == nullptr)) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
     if (n_spikes == 0u || n_atoms == 0u) return static_cast<int>(cudaSuccess);
 
     constexpr uint32_t TPB = 256u;  // threads-per-block
+    if (d_com_shift != nullptr && d_total_mass != nullptr) {
+        prism_apply_gradient_gasp_com_kernel<<<1u, TPB, 0,
+            static_cast<cudaStream_t>(stream)>>>(
+            static_cast<const RichSpike*>(d_spikes_in),
+            static_cast<RichSpike*>(d_spikes_out),
+            static_cast<const float*>(d_forces),
+            static_cast<const float*>(d_masses),
+            static_cast<const uint8_t*>(adj_base),
+            static_cast<float*>(d_com_shift),
+            static_cast<float*>(d_total_mass),
+            current_step,
+            n_spikes,
+            n_atoms
+        );
+        return static_cast<int>(cudaGetLastError());
+    }
+
     const uint32_t blocks = (n_spikes + TPB - 1u) / TPB;
     prism_apply_gradient_gasp_kernel<<<blocks, TPB, 0,
         static_cast<cudaStream_t>(stream)>>>(

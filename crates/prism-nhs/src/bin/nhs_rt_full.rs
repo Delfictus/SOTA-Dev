@@ -15,11 +15,11 @@
 //!   From Stage 1B manifest (batch mode):
 //!     nhs-rt-full --manifest batch_manifest.json -o output_dir --fast
 
-use anyhow::{Context, Result};
-use clap::Parser;
+use anyhow::{bail, Context, Result};
+use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::time::Instant;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime};
 
 static MONOLITHIC_GRAPH_BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -141,12 +141,83 @@ fn build_m1_differential_json(
     })
 }
 
+#[cfg(all(feature = "gpu", not(feature = "diagnostic")))]
+#[derive(Debug, Clone, Copy)]
+enum M1AnchorSite {
+    Main,
+    Replica,
+    PerStream,
+}
+
+#[cfg(all(feature = "gpu", not(feature = "diagnostic")))]
+type M1Differential = serde_json::Value;
+
+#[cfg(all(feature = "gpu", not(feature = "diagnostic")))]
+#[allow(clippy::too_many_arguments)]
+fn maybe_run_m1_side_channel(
+    _enabled: bool,
+    _positions: &[f32],
+    _legacy_result: &prism_nhs::rt_clustering::RtClusteringResult,
+    _legacy_sites: &[ClusteredBindingSite],
+    _anchor_site: M1AnchorSite,
+    _stream_id: u32,
+    _frame: u64,
+    _records: &mut Vec<M1Differential>,
+    _m1_total_wall_ms: &mut f64,
+    _legacy_total_wall_ms: &mut f64,
+) {
+}
+
+#[cfg(all(feature = "gpu", not(feature = "diagnostic")))]
+fn build_m1_differential_json(
+    _enabled: bool,
+    _records: &[M1Differential],
+    _legacy_wall_ms: f64,
+    _m1_wall_ms: f64,
+) -> serde_json::Value {
+    serde_json::Value::Null
+}
+
 #[derive(Parser, Clone)]
 #[command(name = "nhs-rt-full")]
 #[command(about = "Full NHS pipeline with RT-core acceleration")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    #[command(flatten)]
+    args: Args,
+}
+
+#[derive(Subcommand, Clone)]
+enum Commands {
+    /// Finalize an ensemble manifest from ensemble_replica_*.json records.
+    EnsembleFinalize(EnsembleFinalizeArgs),
+}
+
+#[derive(clap::Args, Clone)]
+struct EnsembleFinalizeArgs {
+    /// Directory containing ensemble_replica_*.json records.
+    #[arg(long)]
+    target_dir: PathBuf,
+
+    /// Campaign id for the finalized ensemble manifest.
+    #[arg(long)]
+    campaign_id: String,
+
+    /// Base seed used to compute per-replica seed offsets.
+    #[arg(long, default_value = "42")]
+    base_seed: u64,
+
+    /// Expected number of replica records.
+    #[arg(long)]
+    n_replicas_expected: usize,
+}
+
+#[derive(clap::Args, Clone)]
 struct Args {
     /// Topology JSON file (for single structure mode)
-    #[arg(short, long, required_unless_present = "manifest")]
+    #[arg(short, long)]
     topology: Option<PathBuf>,
 
     /// Batch manifest from Stage 1B (for batch mode)
@@ -195,21 +266,39 @@ struct Args {
     #[arg(long, default_value = "5.0")]
     cluster_threshold: f32,
 
-    /// Enable UltimateEngine for 2-4x faster MD (requires SM86+)
-    #[arg(long, default_value = "true")]
+    /// Initialize the experimental UltimateEngine side path (requires SM86+).
+    /// The production teacher loop still runs the canonical fused NHS-AMBER
+    /// integrator via engine.run(); leave this off unless explicitly testing
+    /// step_ultimate/step_batch_ultimate wiring.
+    #[arg(long, default_value = "false")]
     ultimate_mode: bool,
 
     /// Lining residue cutoff distance (Å) - use 8+ to capture catalytic residues
     #[arg(long, default_value = "8.0")]
     lining_cutoff: f32,
 
-    /// Number of replicas to run in parallel (improves sampling accuracy)
+    /// Number of replicas to run in parallel.
+    /// Refused when docs/cuda_determinism_audit_results.csv has unresolved
+    /// HIGH/MEDIUM nondeterministic rows; see docs/DETERMINISM_BUDGET.md.
     #[arg(long, default_value = "1")]
     replicas: usize,
 
     /// Base random seed for replica initialization (each replica uses seed + replica_id)
     #[arg(long, default_value = "42")]
     replica_seed: u64,
+
+    /// Explicit replica id for ensemble_replica_<id>.json.
+    /// Defaults to replica_seed - ensemble_base_seed when possible.
+    #[arg(long)]
+    ensemble_replica_id: Option<u32>,
+
+    /// Optional campaign id embedded in per-replica ensemble records.
+    #[arg(long)]
+    ensemble_campaign_id: Option<String>,
+
+    /// Optional base seed used to compute ensemble seed offsets.
+    #[arg(long)]
+    ensemble_base_seed: Option<u64>,
 
     /// Gate G2 — Save trajectory frames every N MD steps to a binary
     /// sidecar `<output>.frames.bin` (24-byte header + raw f32 LE
@@ -223,6 +312,12 @@ struct Args {
     /// format, and the G2 verification gate for the loader contract.
     #[arg(long, default_value = "0")]
     save_trajectory_interval: u32,
+
+    /// Deprecated compatibility knob. V2 trajectory capture is now always
+    /// lossless: frame enqueue uses bounded blocking send and per-frame hashes.
+    /// Passing false is ignored because lossy V2 frames corrupt teacher labels.
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
+    lossless_v2_trajectory: bool,
 
     /// Enable multi-scale clustering for structure-agnostic detection
     /// Runs clustering at multiple epsilon values and finds persistent sites
@@ -329,6 +424,18 @@ struct Args {
     /// Default `None` preserves per-protocol intervals.
     #[arg(long)]
     uv_burst_step: Option<u32>,
+
+    /// Override protocol UV scan wavelengths as comma-separated nanometers.
+    /// Example: --uv-wavelengths 280,274,258,254,211. Supports 1..=8 channels;
+    /// the configured list is copied into GPU ProtocolState and per-spike
+    /// wavelength_nm tagging.
+    #[arg(long)]
+    uv_wavelengths: Option<String>,
+
+    /// Override dwell steps per UV wavelength before the next wavelength hop.
+    /// Applies with or without --uv-wavelengths.
+    #[arg(long)]
+    uv_wavelength_dwell_steps: Option<i32>,
 
     /// **Ghost-tile diagnostic firehose (post-audit operator directive
     /// 2026-05-03).**  Default ON.  When enabled, the Channel-B Ghost
@@ -623,7 +730,8 @@ struct Args {
     /// Emit per-site spike_events.json files with full per-spike temporal data.
     /// Enabled by default — these files contain the raw neuromorphic signals
     /// (timestep, intensity, n_nearby_excited, water_density, spike_source)
-    /// needed for spike-train ranking. Use --no-emit-spike-json to disable.
+    /// needed for spike-train ranking. Use --no-emit-spike-json or
+    /// --emit-spike-json false to disable.
     ///
     /// Note: when --multi-differential is enabled, the same data is also
     /// dumped to a single binary Apache Arrow IPC file
@@ -635,6 +743,22 @@ struct Args {
     /// difference between ~25 minutes and ~12 minutes per run.
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     emit_spike_json: bool,
+
+    /// Disable per-site spike_events.json emission while preserving the
+    /// canonical columnar spike_events.arrow artifact.
+    #[arg(long = "no-emit-spike-json", default_value_t = false)]
+    no_emit_spike_json: bool,
+
+    /// Treat the Arrow/Path-B materializer as the primary binding-site
+    /// surface. Dynamic LIGSITE is not run in this mode unless
+    /// --ligsite-geometry-qa is also set.
+    #[arg(long, default_value = "true")]
+    path_b_primary_surface: bool,
+
+    /// Run Dynamic LIGSITE as optional geometry QA over the spike-native
+    /// surface. Default OFF because Path-B/Arrow is the primary surface.
+    #[arg(long, default_value = "false")]
+    ligsite_geometry_qa: bool,
 
     /// Enable LADD (Local Atom Departure Detection) — 4th neuromorphic channel.
     #[arg(long, default_value = "false")]
@@ -767,23 +891,36 @@ struct Args {
     #[arg(long, default_value = "false")]
     cascade: bool,
 
-    /// Apply the v4 tokenized ranker (LOTO-learned 4D lookup) to the emitted
-    /// sites array as the final ranking pass. Computes per-site unsat_frac
-    /// from spike intensities, looks up the 256-bin probability, re-sorts
-    /// descending with spike_count as tiebreak. The ranker is baked into the
-    /// binary via `include_bytes!` — no external file needed.
+    /// Final site ordering surface. `phase-manifold` is the default production
+    /// path: it ranks after phase/localization/causal enrichment, using only
+    /// PRISM-native signals and no ligand truth. `xgb-v3` and `tokenized-v4`
+    /// remain explicit legacy selectors for reproducibility audits.
+    #[arg(
+        long,
+        default_value = "phase-manifold",
+        value_parser = ["phase-manifold", "gtckl", "tokenized-v4", "xgb-v3"]
+    )]
+    site_ranker: String,
+
+    /// Legacy compatibility flag for the v4 tokenized ranker. Prefer
+    /// `--site-ranker tokenized-v4`; this flag no longer overrides the default
+    /// phase-manifold production ranking by itself.
+    ///
+    /// Computes per-site unsat_frac from spike intensities and emits the
+    /// tokenized_score/tokenized_token metadata regardless of final selector.
     ///
     /// Evaluation (LOTO, 302 targets):
     ///     SR@1 = 36.4%   SR@3 = 81.1%   SR@5 = 94.7%
     ///
-    /// SUPERSEDED by --use-xgb-ranker (v3), which beats this by +11.4 pts SR@1.
     /// Kept for backward compatibility.
     #[arg(long, default_value = "false")]
     use_tokenized_ranker: bool,
 
-    /// Apply the v3 XGBoost ranker (ONNX-backed, 13 continuous features,
-    /// graded LOTO labels) to the emitted sites array as the final
-    /// ranking pass. Model baked into the binary via `include_bytes!`.
+    /// Deprecated legacy compatibility flag for the v3 XGBoost ranker
+    /// (ONNX-backed, 13 continuous features, graded LOTO labels). Prefer
+    /// `--site-ranker phase-manifold`. This flag is ignored unless
+    /// `--site-ranker xgb-v3` is also set, so stale run scripts cannot silently
+    /// re-enable the deprecated branch.
     ///
     /// Evaluation (LOTO, 345 targets):
     ///     SR@1 = 47.83%   SR@3 = 85.51%   SR@5 = 95.94%   SR@10 = 99.42%
@@ -792,9 +929,7 @@ struct Args {
     /// log_spike_count, log_interaction, spread, burial_score, spike_density,
     /// druggability, aromatic_score, n_lining_residues].
     ///
-    /// This is the PRODUCTION ranker. Set for all pct70+ canonical runs.
-    /// If both --use-xgb-ranker and --use-tokenized-ranker are set,
-    /// xgb-ranker is applied last (wins).
+    /// Deprecated: not the production path for v004 teacher generation.
     #[arg(long, default_value = "false")]
     use_xgb_ranker: bool,
 
@@ -976,6 +1111,93 @@ struct Args {
     /// per directive §15.2 ("disabled by default") and Gate G2.
     #[arg(long, default_value = "false")]
     force_gear_override_supervisor_shim: bool,
+}
+
+const MAX_RUNTIME_UV_WAVELENGTHS: usize = 8;
+
+fn parse_uv_wavelengths_csv(raw: &str) -> Result<Vec<f32>> {
+    let wavelengths: Vec<f32> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.parse::<f32>()
+                .with_context(|| format!("invalid UV wavelength '{}'", s))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if wavelengths.is_empty() {
+        bail!("--uv-wavelengths must contain at least one wavelength");
+    }
+    if wavelengths.len() > MAX_RUNTIME_UV_WAVELENGTHS {
+        bail!(
+            "--uv-wavelengths supports at most {} channels, got {}",
+            MAX_RUNTIME_UV_WAVELENGTHS,
+            wavelengths.len()
+        );
+    }
+    for wavelength in &wavelengths {
+        if !wavelength.is_finite() || *wavelength <= 0.0 {
+            bail!(
+                "--uv-wavelengths entries must be positive finite nm values, got {}",
+                wavelength
+            );
+        }
+    }
+
+    Ok(wavelengths)
+}
+
+#[cfg(feature = "gpu")]
+fn apply_runtime_protocol_overrides(
+    args: &Args,
+    protocol: &mut CryoUvProtocol,
+    label: &str,
+) -> Result<()> {
+    if let Some(e) = args.uv_burst_energy {
+        log::info!(
+            "    [{}] uv_burst_energy override: {:.3} -> {:.3} kcal/mol",
+            label,
+            protocol.uv_burst_energy,
+            e
+        );
+        protocol.uv_burst_energy = e;
+    }
+    if let Some(s) = args.uv_burst_step {
+        log::info!(
+            "    [{}] uv_burst_interval override: {} -> {} steps",
+            label,
+            protocol.uv_burst_interval,
+            s
+        );
+        protocol.uv_burst_interval = s as i32;
+    }
+    if let Some(ref raw) = args.uv_wavelengths {
+        let wavelengths = parse_uv_wavelengths_csv(raw)?;
+        log::info!(
+            "    [{}] uv_wavelengths override: {:?} -> {:?} nm",
+            label,
+            protocol.scan_wavelengths,
+            wavelengths
+        );
+        protocol.scan_wavelengths = wavelengths;
+    }
+    if let Some(dwell) = args.uv_wavelength_dwell_steps {
+        if dwell <= 0 {
+            bail!(
+                "--uv-wavelength-dwell-steps must be positive, got {}",
+                dwell
+            );
+        }
+        log::info!(
+            "    [{}] wavelength_dwell_steps override: {} -> {}",
+            label,
+            protocol.wavelength_dwell_steps,
+            dwell
+        );
+        protocol.wavelength_dwell_steps = dwell;
+    }
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1433,9 +1655,8 @@ fn md_evidence_write_signal_grid(
     payload.extend_from_slice(&(sig.grid_dim as u64).to_le_bytes());
     payload.extend_from_slice(&voxel_count.to_le_bytes());
     let push_i32_vec = |buf: &mut Vec<u8>, v: &[i32]| {
-        let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
-        };
+        let bytes: &[u8] =
+            unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
         buf.extend_from_slice(bytes);
     };
     push_i32_vec(&mut payload, &sig.voxel_hit_grid);
@@ -1486,26 +1707,26 @@ fn md_evidence_write_kcc_v2full(
     let mut bw = BufWriter::with_capacity(1 << 20, f);
     let n_res: u64 = kcc.n_residues as u64;
     let f32_fields: [(&str, &[f32]); 13] = [
-        ("temporal_corr",      &kcc.temporal_corr),
-        ("direction_score",    &kcc.direction_score),
-        ("motion_efficiency",  &kcc.motion_efficiency),
-        ("burst_motion",       &kcc.burst_motion),
-        ("phase_shift",        &kcc.phase_shift),
-        ("causal_lag",         &kcc.causal_lag),
-        ("lag_corr_peak",      &kcc.lag_corr_peak),
-        ("local_cov",          &kcc.local_cov),
-        ("net_dx",             &kcc.net_dx),
-        ("net_dy",             &kcc.net_dy),
-        ("net_dz",             &kcc.net_dz),
-        ("sum_m",              &kcc.sum_m),
+        ("temporal_corr", &kcc.temporal_corr),
+        ("direction_score", &kcc.direction_score),
+        ("motion_efficiency", &kcc.motion_efficiency),
+        ("burst_motion", &kcc.burst_motion),
+        ("phase_shift", &kcc.phase_shift),
+        ("causal_lag", &kcc.causal_lag),
+        ("lag_corr_peak", &kcc.lag_corr_peak),
+        ("local_cov", &kcc.local_cov),
+        ("net_dx", &kcc.net_dx),
+        ("net_dy", &kcc.net_dy),
+        ("net_dz", &kcc.net_dz),
+        ("sum_m", &kcc.sum_m),
         // padding handled below for u32 fields
-        ("__placeholder_f32",  &[]),
+        ("__placeholder_f32", &[]),
     ];
     let u32_fields: [(&str, &[u32]); 2] = [
-        ("residue_count",      &kcc.residue_count),
-        ("active_causal",      &kcc.active_causal),
+        ("residue_count", &kcc.residue_count),
+        ("active_causal", &kcc.active_causal),
     ];
-    let field_count: u64 = (f32_fields.len() as u64 - 1 /* placeholder */) + u32_fields.len() as u64;
+    let field_count: u64 = (f32_fields.len() as u64 - 1/* placeholder */) + u32_fields.len() as u64;
     let mut payload: Vec<u8> = Vec::new();
     payload.extend_from_slice(&n_res.to_le_bytes());
     payload.extend_from_slice(&field_count.to_le_bytes());
@@ -1524,24 +1745,26 @@ fn md_evidence_write_kcc_v2full(
         if v.len() as u64 != n_res {
             anyhow::bail!(
                 "md_evidence: kcc field {} length mismatch ({} vs n_residues={})",
-                name, v.len(), n_res
+                name,
+                v.len(),
+                n_res
             );
         }
-        let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
-        };
+        let bytes: &[u8] =
+            unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
         push_field(&mut payload, name, 1u8, bytes);
     }
     for (name, v) in u32_fields.iter() {
         if v.len() as u64 != n_res {
             anyhow::bail!(
                 "md_evidence: kcc field {} length mismatch ({} vs n_residues={})",
-                name, v.len(), n_res
+                name,
+                v.len(),
+                n_res
             );
         }
-        let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4)
-        };
+        let bytes: &[u8] =
+            unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, v.len() * 4) };
         push_field(&mut payload, name, 2u8, bytes);
     }
     let checksum = fnv1a_64(&payload);
@@ -1563,7 +1786,541 @@ fn md_evidence_write_kcc_v2full(
     Ok((bytes_written, checksum))
 }
 
+fn run_ensemble_finalize(args: &EnsembleFinalizeArgs) -> Result<()> {
+    let opts = prism_nhs::ensemble::manifest::EnsembleFinalizeOptions {
+        target_dir: args.target_dir.clone(),
+        campaign_id: args.campaign_id.clone(),
+        base_seed: args.base_seed,
+        n_replicas_expected: args.n_replicas_expected,
+    };
+    let manifest = prism_nhs::ensemble::manifest::finalize_manifest_from_replica_records(&opts)?;
+    let manifest_path = args.target_dir.join("ensemble_manifest.json");
+    manifest.write_pretty(&manifest_path)?;
+    println!("Ensemble manifest written: {}", manifest_path.display());
+    Ok(())
+}
+
+fn enforce_replica_determinism_gate(replica_count: usize) -> Result<()> {
+    prism_nhs::ensemble::manifest::enforce_cuda_determinism_gate(replica_count, None)
+}
+
+fn system_time_to_utc_string(t: SystemTime) -> String {
+    let dt: chrono::DateTime<chrono::Utc> = t.into();
+    dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+fn document_path_from_repo_root(name: &str) -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let from_cwd = cwd.join("docs").join(name);
+    if from_cwd.exists() {
+        return Some(from_cwd);
+    }
+    let from_manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs")
+        .join(name);
+    if from_manifest.exists() {
+        return Some(from_manifest);
+    }
+    None
+}
+
+fn current_git_commit() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn compiled_feature_list() -> Vec<String> {
+    let mut features = Vec::new();
+    #[cfg(feature = "gpu")]
+    features.push("gpu".to_string());
+    #[cfg(feature = "diagnostic")]
+    features.push("diagnostic".to_string());
+    #[cfg(feature = "v2_ignition")]
+    features.push("v2_ignition".to_string());
+    #[cfg(feature = "ensemble")]
+    features.push("ensemble".to_string());
+    #[cfg(feature = "force_gear_override_supervisor_shim")]
+    features.push("force_gear_override_supervisor_shim".to_string());
+    features
+}
+
+fn current_engine_metadata() -> prism_nhs::ensemble::manifest::EngineMetadata {
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("unknown"));
+    let binary_sha256 = prism_nhs::ensemble::manifest::sha256_file_or_absent(&exe);
+    let binary_built_at = std::fs::metadata(&exe)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .map(system_time_to_utc_string)
+        .unwrap_or_else(|| "unknown".to_string());
+    let determinism_budget_doc_sha256 = document_path_from_repo_root("DETERMINISM_BUDGET.md")
+        .map(prism_nhs::ensemble::manifest::sha256_file_or_absent)
+        .unwrap_or_else(|| "absent".to_string());
+    prism_nhs::ensemble::manifest::EngineMetadata {
+        binary_sha256,
+        binary_built_at,
+        binary_version: format!("prism-nhs-{}", env!("CARGO_PKG_VERSION")),
+        build_features: compiled_feature_list(),
+        cuda_arch: std::env::var("PRISM_CUDA_ARCH").unwrap_or_else(|_| "unknown".to_string()),
+        git_commit: current_git_commit(),
+        determinism_budget_doc_sha256,
+    }
+}
+
+fn active_engine_flags(args: &Args) -> Vec<String> {
+    let mut flags = vec![
+        format!("--steps={}", args.steps),
+        format!("--temperature={}", args.temperature),
+        format!("--cryo-temp={}", args.cryo_temp),
+        format!("--rt-clustering={}", args.rt_clustering),
+        format!("--cluster-threshold={}", args.cluster_threshold),
+        format!("--ultimate-mode={}", args.ultimate_mode),
+        format!("--lining-cutoff={}", args.lining_cutoff),
+        format!(
+            "--save-trajectory-interval={}",
+            args.save_trajectory_interval
+        ),
+        format!("--multi-scale={}", args.multi_scale),
+        format!("--fast={}", args.fast),
+        format!("--fast-25k={}", args.fast_25k),
+        format!("--protocol-cap-bypass={}", args.protocol_cap_bypass),
+        format!("--dimer-mode={}", args.dimer_mode),
+        format!("--multi-stream={}", args.multi_stream),
+        format!("--spike-percentile={}", args.spike_percentile),
+        format!("--fused-steps={}", args.fused_steps),
+        format!("--hmr={}", args.hmr),
+        format!("--adaptive-dt={}", args.adaptive_dt),
+        format!("--hysteresis={}", args.hysteresis),
+        format!("--prism-therm={}", args.prism_therm),
+        format!("--multi-differential={}", args.multi_differential),
+        format!("--closed-loop-steering={}", args.closed_loop_steering),
+        format!("--asymmetric-steering={}", args.asymmetric_steering),
+        format!("--clustering-backend={}", args.clustering_backend),
+        format!("--m1-monolithic-discovery={}", args.m1_monolithic_discovery),
+        format!("--mar-v2-telemetry={}", args.mar_v2_telemetry),
+        format!("--path-a-evidence-exit={}", args.path_a_evidence_exit),
+        format!("--path-a-t7-max-chunks={:?}", args.path_a_t7_max_chunks),
+        format!(
+            "--path-a-v2-trigger-steps={:?}",
+            args.path_a_v2_trigger_steps
+        ),
+    ];
+    if let Some(v) = args.cold_hold_override {
+        flags.push(format!("--cold-hold-override={}", v));
+    }
+    if let Some(v) = args.noise_floor_mu {
+        flags.push(format!("--noise-floor-mu={}", v));
+    }
+    if let Some(v) = args.noise_floor_sigma {
+        flags.push(format!("--noise-floor-sigma={}", v));
+    }
+    if let Some(v) = args.force_burst_at_step {
+        flags.push(format!("--force-burst-at-step={}", v));
+    }
+    if let Some(v) = args.uv_burst_energy {
+        flags.push(format!("--uv-burst-energy={}", v));
+    }
+    if let Some(v) = args.uv_burst_step {
+        flags.push(format!("--uv-burst-step={}", v));
+    }
+    if let Some(v) = args.uv_wavelengths.as_ref() {
+        flags.push(format!("--uv-wavelengths={}", v));
+    }
+    if let Some(v) = args.uv_wavelength_dwell_steps {
+        flags.push(format!("--uv-wavelength-dwell-steps={}", v));
+    }
+    flags.sort();
+    flags
+}
+
+fn file_artifact_tuple(run_dir: &Path, path: &Path) -> Option<(String, String, u64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() == 0 {
+        return None;
+    }
+    let rel = prism_nhs::ensemble::manifest::relative_path_string(run_dir, path);
+    let hash = prism_nhs::ensemble::manifest::sha256_file(path)
+        .ok()
+        .map(|h| format!("sha256:{}", h))?;
+    Some((rel, hash, meta.len()))
+}
+
+#[cfg(feature = "gpu")]
+fn resolve_source_pdb_path(topology_path: &Path, source_pdb: &str) -> PathBuf {
+    let raw = PathBuf::from(source_pdb);
+    if raw.exists() || raw.is_absolute() {
+        return raw;
+    }
+    topology_path
+        .parent()
+        .map(|p| p.join(&raw))
+        .filter(|p| p.exists())
+        .unwrap_or(raw)
+}
+
+#[cfg(feature = "gpu")]
+fn parse_ground_truth_sidecar(
+    topology_path: &Path,
+    output_dir: &Path,
+    stem: &str,
+) -> (
+    bool,
+    Option<String>,
+    Option<String>,
+    Option<[f64; 3]>,
+    Option<String>,
+    bool,
+) {
+    let mut candidates = vec![output_dir.join(format!("{}_ground_truth.json", stem))];
+    candidates.push(output_dir.join("ground_truth.json"));
+    if let Some(parent) = topology_path.parent() {
+        candidates.push(parent.join(format!("{}_ground_truth.json", stem)));
+        candidates.push(parent.join(format!("{}.ground_truth.json", stem)));
+        candidates.push(parent.join("ground_truth.json"));
+    }
+    let Some(path) = candidates.into_iter().find(|p| p.exists()) else {
+        return (false, None, None, None, None, false);
+    };
+    let value = std::fs::read(&path)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .unwrap_or(serde_json::Value::Null);
+    let str_field = |keys: &[&str]| -> Option<String> {
+        keys.iter()
+            .find_map(|key| value.get(*key).and_then(|v| v.as_str()))
+            .map(ToOwned::to_owned)
+    };
+    let centroid = ["ligand_centroid", "holo_ligand_centroid", "centroid"]
+        .iter()
+        .find_map(|key| value.get(*key))
+        .and_then(|v| v.as_array())
+        .and_then(|a| {
+            if a.len() == 3 {
+                Some([
+                    a[0].as_f64().unwrap_or(0.0),
+                    a[1].as_f64().unwrap_or(0.0),
+                    a[2].as_f64().unwrap_or(0.0),
+                ])
+            } else {
+                None
+            }
+        });
+    let valid_for_dcc = value
+        .get("valid_for_dcc")
+        .or_else(|| value.get("dcc_valid"))
+        .or_else(|| value.get("valid"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    (
+        true,
+        str_field(&["uniprot_id", "uniprot"]),
+        str_field(&["pdb_holo", "holo_pdb", "holo_pdb_id"]),
+        centroid,
+        str_field(&["ligand_resname", "ligand_residue_name", "ligand"]),
+        valid_for_dcc,
+    )
+}
+
+#[cfg(feature = "gpu")]
+fn build_target_metadata(
+    topology_path: &Path,
+    output_dir: &Path,
+    topology: &PrismPrepTopology,
+    stem: &str,
+) -> prism_nhs::ensemble::manifest::TargetMetadata {
+    let source_pdb_path = resolve_source_pdb_path(topology_path, &topology.source_pdb);
+    let input_pdb_sha256 = prism_nhs::ensemble::manifest::sha256_file(&source_pdb_path)
+        .unwrap_or_else(|_| "absent".to_string());
+    let (gt_present, gt_uniprot, gt_holo, gt_centroid, gt_ligand, gt_valid) =
+        parse_ground_truth_sidecar(topology_path, output_dir, stem);
+    let target_chain = topology
+        .chain_ids
+        .iter()
+        .find(|s| !s.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| "A".to_string());
+    prism_nhs::ensemble::manifest::TargetMetadata {
+        pdb_id: stem.to_string(),
+        target_chain,
+        input_pdb_path_relative: topology.source_pdb.clone(),
+        input_pdb_sha256,
+        topology_json_path_relative: topology_path.to_string_lossy().into_owned(),
+        topology_json_sha256: prism_nhs::ensemble::manifest::sha256_file_or_absent(topology_path),
+        n_residues: topology.n_residues,
+        n_atoms: topology.n_atoms,
+        ground_truth_present: gt_present,
+        ground_truth_uniprot_id: gt_uniprot,
+        ground_truth_pdb_holo: gt_holo,
+        ground_truth_ligand_centroid: gt_centroid,
+        ground_truth_ligand_resname: gt_ligand,
+        ground_truth_valid_for_dcc: gt_valid,
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn build_replica_outputs(
+    output_dir: &Path,
+    output_base: &Path,
+    structure_name: &str,
+) -> prism_nhs::ensemble::manifest::ReplicaOutputs {
+    let mut outputs = prism_nhs::ensemble::manifest::ReplicaOutputs::default();
+
+    let arrow = output_dir.join(format!("{}.spike_events.arrow", structure_name));
+    if let Some((rel, hash, bytes)) = file_artifact_tuple(output_dir, &arrow) {
+        outputs.trajectory_arrow_relative = Some(rel);
+        outputs.trajectory_arrow_sha256 = Some(hash);
+        outputs.trajectory_arrow_bytes = Some(bytes);
+    }
+    let binding = output_base.with_extension("binding_sites.json");
+    if let Some((rel, hash, _)) = file_artifact_tuple(output_dir, &binding) {
+        outputs.binding_sites_json_relative = Some(rel);
+        outputs.binding_sites_json_sha256 = Some(hash);
+    }
+    let kcc = output_base.with_extension("kcc_visualization.json");
+    if let Some((rel, hash, _)) = file_artifact_tuple(output_dir, &kcc) {
+        outputs.kcc_visualization_json_relative = Some(rel);
+        outputs.kcc_visualization_json_sha256 = Some(hash);
+    }
+    let kcc_validation = output_base.with_extension("kcc_validation.json");
+    if let Some((rel, _, _)) = file_artifact_tuple(output_dir, &kcc_validation) {
+        outputs.kcc_validation_json_relative = Some(rel);
+    }
+    let prism_therm = output_base.with_extension("prism_therm_telemetry.json");
+    if let Some((rel, hash, _)) = file_artifact_tuple(output_dir, &prism_therm) {
+        outputs.topology_prism_therm_json_relative = Some(rel);
+        outputs.topology_prism_therm_json_sha256 = Some(hash);
+    }
+    let asc = output_base.with_extension("asc_consensus.json");
+    if let Some((rel, _, _)) = file_artifact_tuple(output_dir, &asc) {
+        outputs.topology_asc_consensus_json_relative = Some(rel);
+    }
+    let gcpid = output_base.with_extension("gcpid_synergy.json");
+    if let Some((rel, _, _)) = file_artifact_tuple(output_dir, &gcpid) {
+        outputs.topology_gcpid_synergy_json_relative = Some(rel);
+    }
+    let phasors = output_base.with_extension("phasors.bin");
+    if let Some((rel, hash, _)) = file_artifact_tuple(output_dir, &phasors) {
+        outputs.topology_phasors_bin_relative = Some(rel);
+        outputs.topology_phasors_bin_sha256 = Some(hash);
+    }
+    let acl = output_base.with_extension("acl_contrast.bin");
+    if let Some((rel, _, _)) = file_artifact_tuple(output_dir, &acl) {
+        outputs.topology_acl_contrast_bin_relative = Some(rel);
+    }
+    let pdb = output_base.with_extension("v2_final.pdb");
+    if let Some((rel, _, _)) = file_artifact_tuple(output_dir, &pdb) {
+        outputs.topology_druggability_pdb_relative = Some(rel);
+    }
+    let ensemble_json = output_base.with_extension("ensemble_trajectory.json");
+    if let Some((rel, _, _)) = file_artifact_tuple(output_dir, &ensemble_json) {
+        outputs.ensemble_trajectory_json_relative = Some(rel);
+    }
+    outputs
+}
+
+#[cfg(feature = "gpu")]
+fn replica_id_from_args(args: &Args) -> u32 {
+    if let Some(id) = args.ensemble_replica_id {
+        return id;
+    }
+    if let Ok(id) = std::env::var("PRISM_ENSEMBLE_REPLICA_ID") {
+        if let Ok(id) = id.parse::<u32>() {
+            return id;
+        }
+    }
+    let base_seed = args
+        .ensemble_base_seed
+        .or_else(|| {
+            std::env::var("PRISM_ENSEMBLE_BASE_SEED")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+        })
+        .unwrap_or(42);
+    args.replica_seed
+        .saturating_sub(base_seed)
+        .min(u32::MAX as u64) as u32
+}
+
+#[cfg(feature = "gpu")]
+fn campaign_metadata_from_args(
+    args: &Args,
+    started_at: String,
+    completed_at: String,
+) -> Option<prism_nhs::ensemble::manifest::CampaignMetadata> {
+    let campaign_id = args
+        .ensemble_campaign_id
+        .clone()
+        .or_else(|| std::env::var("PRISM_ENSEMBLE_CAMPAIGN_ID").ok())?;
+    Some(prism_nhs::ensemble::manifest::CampaignMetadata {
+        campaign_id,
+        started_at,
+        completed_at,
+        pod_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string()),
+        operator: std::env::var("USER").unwrap_or_else(|_| "unknown".to_string()),
+    })
+}
+
+#[cfg(feature = "gpu")]
+#[allow(clippy::too_many_arguments)]
+fn write_ensemble_replica_record(
+    args: &Args,
+    topology_path: &Path,
+    topology: &PrismPrepTopology,
+    output_base: &Path,
+    structure_name: &str,
+    stem: &str,
+    n_streams: usize,
+    total_spikes: usize,
+    stream_summaries: &[serde_json::Value],
+    sim_elapsed: Duration,
+    steps_per_stream: i32,
+) -> Result<PathBuf> {
+    let output_dir = output_base
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("output_base has no parent: {}", output_base.display()))?;
+    let completed_at = prism_nhs::ensemble::manifest::now_utc_string();
+    let started_at = {
+        let delta =
+            chrono::Duration::from_std(sim_elapsed).unwrap_or_else(|_| chrono::Duration::zero());
+        (chrono::Utc::now() - delta).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    };
+    let frame_audit =
+        prism_nhs::ensemble::manifest::frame_audit_from_v2_sidecars(output_dir, stem, n_streams);
+    frame_audit
+        .validate()
+        .context("ensemble replica frame audit failed; refusing to emit usable teacher record")?;
+
+    let failures: Vec<String> = stream_summaries
+        .iter()
+        .filter_map(|summary| {
+            let stream_id = summary
+                .get("stream_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            summary
+                .get("error")
+                .and_then(|v| v.as_str())
+                .map(|err| format!("stream {}: {}", stream_id, err))
+        })
+        .collect();
+    let n_failed = failures.len();
+    let n_completed = n_streams.saturating_sub(n_failed);
+    let status = if n_failed == 0 {
+        prism_nhs::ensemble::manifest::ReplicaStatus::Ok
+    } else {
+        prism_nhs::ensemble::manifest::ReplicaStatus::PartialStreams
+    };
+    let dt_ps = if args.hmr { 0.004 } else { 0.002 };
+    let base_seed = args
+        .ensemble_base_seed
+        .or_else(|| {
+            std::env::var("PRISM_ENSEMBLE_BASE_SEED")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+        })
+        .unwrap_or(args.replica_seed);
+    let replica_id = replica_id_from_args(args);
+    let seed_offset = args.replica_seed as i128 - base_seed as i128;
+    let seed_offsets = if seed_offset >= i64::MIN as i128 && seed_offset <= i64::MAX as i128 {
+        vec![seed_offset as i64]
+    } else {
+        Vec::new()
+    };
+    let replica = prism_nhs::ensemble::manifest::ReplicaManifest {
+        replica_id,
+        run_seed: args.replica_seed,
+        status,
+        started_at: started_at.clone(),
+        completed_at: completed_at.clone(),
+        duration_seconds: sim_elapsed.as_secs_f64(),
+        pod_id: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string()),
+        n_streams_planned: n_streams,
+        n_streams_completed: n_completed,
+        n_streams_failed: n_failed,
+        stream_failures: failures,
+        memory_plan: prism_nhs::ensemble::manifest::MemoryPlan {
+            adaptive_grid_used: args.adaptive_epsilon,
+            ..Default::default()
+        },
+        frame_audit,
+        outputs: build_replica_outputs(output_dir, output_base, structure_name),
+        engine_telemetry: prism_nhs::ensemble::manifest::EngineTelemetry {
+            total_spikes: total_spikes as u64,
+            total_pockets_detected: 0,
+            n_cryptic_pockets: 0,
+            tide_residues_mapped: 0,
+            kv_top1_vs_top2_separation: None,
+            n_consensus_residues: 0,
+        },
+        physical_time: prism_nhs::ensemble::manifest::PhysicalTime {
+            dt_ps,
+            save_interval_steps: args.save_trajectory_interval,
+            n_steps_total: steps_per_stream.max(0) as u64,
+            physical_duration_ps: dt_ps * steps_per_stream.max(0) as f32,
+            hmr_used: args.hmr,
+            hmr_dt_ps_effective: args.hmr.then_some(dt_ps),
+            adaptive_dt_used: args.adaptive_dt,
+            adaptive_dt_average_ps: None,
+        },
+    };
+    let audit_log = prism_nhs::ensemble::manifest::AuditLog {
+        validation_steps: vec![
+            prism_nhs::ensemble::manifest::ValidationStep {
+                step: "all_streams_completed".to_string(),
+                passed: n_failed == 0 && n_completed == n_streams,
+                details: Some(format!("{}/{} streams completed", n_completed, n_streams)),
+            },
+            prism_nhs::ensemble::manifest::ValidationStep {
+                step: "frame_count_match_per_replica".to_string(),
+                passed: true,
+                details: Some("producer == writer == disk for every stream".to_string()),
+            },
+            prism_nhs::ensemble::manifest::ValidationStep {
+                step: "frame_hash_match_per_replica".to_string(),
+                passed: true,
+                details: Some("producer == writer rolling hashes for every stream".to_string()),
+            },
+        ],
+        validator_version: prism_nhs::ensemble::manifest::ENSEMBLE_VALIDATOR_VERSION.to_string(),
+        validated_at: completed_at.clone(),
+    };
+    let record = prism_nhs::ensemble::manifest::EnsembleReplicaRecord {
+        schema_version: prism_nhs::ensemble::manifest::ENSEMBLE_MANIFEST_SCHEMA_VERSION.to_string(),
+        campaign: campaign_metadata_from_args(args, started_at, completed_at),
+        engine: current_engine_metadata(),
+        target: build_target_metadata(topology_path, output_dir, topology, stem),
+        ensemble_config: prism_nhs::ensemble::manifest::EnsembleConfig {
+            n_replicas_planned: 1,
+            n_replicas_completed: 1,
+            n_replicas_failed: 0,
+            all_replicas_passed_audit: true,
+            replica_seed_strategy: "deterministic_offsets".to_string(),
+            base_seed,
+            seed_offsets,
+            concurrent_replicas_per_pod: 1,
+            engine_flags_per_replica: active_engine_flags(args),
+        },
+        replica,
+        audit_log,
+    };
+    let record_path = output_dir.join(format!("ensemble_replica_{}.json", replica_id));
+    record.write_pretty(&record_path)?;
+    Ok(record_path)
+}
+
 fn main() -> Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let cli = Cli::parse();
+
+    if let Some(Commands::EnsembleFinalize(args)) = &cli.command {
+        return run_ensemble_finalize(args);
+    }
+
     // ── PRISM_VALIDATED gate ─────────────────────────────────────────────
     // Direct invocation of nhs_rt_full is prohibited.
     // All runs MUST go through scripts/prism-validate-and-run.sh which sets
@@ -1574,8 +2331,10 @@ fn main() -> Result<()> {
         std::process::exit(2);
     }
 
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let args = Args::parse();
+    let mut args = cli.args;
+    if args.no_emit_spike_json {
+        args.emit_spike_json = false;
+    }
 
     // ── OPERATOR MANDATE 2026-05-08 §3.V — CU_CTX_SCHED_BLOCKING_SYNC ──
     //
@@ -1600,9 +2359,7 @@ fn main() -> Result<()> {
     // takes effect for every primary-context retain that follows.
     #[cfg(feature = "gpu")]
     {
-        use cudarc::driver::sys::{
-            cuDevicePrimaryCtxSetFlags_v2, cuInit, CUresult,
-        };
+        use cudarc::driver::sys::{cuDevicePrimaryCtxSetFlags_v2, cuInit, CUresult};
         unsafe {
             // cuInit is idempotent within a process; cudarc calls it on
             // first context creation but we need it ordered BEFORE the
@@ -1750,8 +2507,14 @@ fn main() -> Result<()> {
         #[cfg(not(feature = "gpu"))]
         {
             match backend_str {
-                "auto" | "gpu-hash" | "ghost-phase-lattice-4d" | "ghost-lattice"
-                | "lattice-4d" | "optix" | "lbvh" | "grid" => {
+                "auto"
+                | "gpu-hash"
+                | "ghost-phase-lattice-4d"
+                | "ghost-lattice"
+                | "lattice-4d"
+                | "optix"
+                | "lbvh"
+                | "grid" => {
                     log::info!(
                         "  [SPATIAL-INDEX] backend request (no-gpu build): {}",
                         backend_str
@@ -1844,6 +2607,7 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
     } else {
         max_batch_replicas.max(1)
     };
+    enforce_replica_determinism_gate(replicas)?;
 
     // Sort ALL structures by atom count for size-tier grouping
     all_structures.sort_by_key(|s| s.atoms);
@@ -1999,6 +2763,8 @@ fn run_from_manifest(args: &Args, manifest_path: &PathBuf) -> Result<()> {
 /// Run single structure (original behavior)
 #[cfg(feature = "gpu")]
 fn run_single_structure(args: &Args, topology_path: &PathBuf) -> Result<()> {
+    enforce_replica_determinism_gate(args.replicas)?;
+
     // PRISM-TWIN Multi-Differential: 4 groups × N engines via multi-stream
     if args.multi_differential {
         let n = args.multi_stream.max(8); // at least 8 engines for 4 groups × 2
@@ -2296,20 +3062,7 @@ fn run_coupled_twin_multi_pipeline(
         // controlled-perturbation runs without modifying the protocol
         // database itself.
         let mut prot_for_engine = prot.clone();
-        if let Some(e) = args.uv_burst_energy {
-            log::info!(
-                "    [HRDB-CLI] uv_burst_energy override: {:.3} → {:.3} kcal/mol",
-                prot_for_engine.uv_burst_energy, e
-            );
-            prot_for_engine.uv_burst_energy = e;
-        }
-        if let Some(s) = args.uv_burst_step {
-            log::info!(
-                "    [HRDB-CLI] uv_burst_interval override: {} → {} steps",
-                prot_for_engine.uv_burst_interval, s
-            );
-            prot_for_engine.uv_burst_interval = s as i32;
-        }
+        apply_runtime_protocol_overrides(args, &mut prot_for_engine, "HRDB-CLI")?;
         engine.set_cryo_uv_protocol(prot_for_engine)?;
         engine.set_spike_accumulation(true);
 
@@ -2616,6 +3369,8 @@ fn run_full_pipeline_internal(
     args: &Args,
     n_replicas: usize,
 ) -> Result<(usize, usize)> {
+    enforce_replica_determinism_gate(n_replicas)?;
+
     let start_time = Instant::now();
 
     // Create output directory
@@ -2820,7 +3575,7 @@ fn run_full_pipeline_internal(
     };
 
     // Apply hysteresis if requested (adds cooling ramp + cold return)
-    let protocol = if args.hysteresis {
+    let mut protocol = if args.hysteresis {
         log::info!(
             "  CCNS Hysteresis: ENABLED (full thermal cycle {}K → {}K → {}K)",
             protocol.start_temp,
@@ -2831,6 +3586,7 @@ fn run_full_pipeline_internal(
     } else {
         protocol
     };
+    apply_runtime_protocol_overrides(args, &mut protocol, "single-protocol")?;
     let target_end_temp = protocol.end_temp;
     engine.set_cryo_uv_protocol(protocol.clone())?;
 
@@ -3957,6 +4713,13 @@ fn run_full_pipeline_internal(
             "total_steps": steps_per_replica,
             "simulation_time_sec": sim_time.as_secs_f64(),
             "spike_count": accumulated_spikes.len(),
+            "uv_protocol": {
+                "scan_wavelengths_nm": protocol.scan_wavelengths.clone(),
+                "wavelength_dwell_steps": protocol.wavelength_dwell_steps,
+                "uv_burst_energy": protocol.uv_burst_energy,
+                "uv_burst_interval": protocol.uv_burst_interval,
+                "uv_burst_duration": protocol.uv_burst_duration,
+            },
             "binding_sites": clustered_sites.len(),
             "druggable_sites": clustered_sites.iter().filter(|s| s.druggability.is_druggable).count(),
             "lining_residue_cutoff_angstroms": args.lining_cutoff,
@@ -4226,11 +4989,12 @@ fn run_batch_gpu_concurrent(
             stepped_holds: vec![],
         }
     };
-    let protocol = if args.hysteresis {
+    let mut protocol = if args.hysteresis {
         protocol.with_hysteresis()
     } else {
         protocol
     };
+    apply_runtime_protocol_overrides(args, &mut protocol, "batch-protocol")?;
 
     // Determine steps: --fast/--fast-25k uses full protocol length (respects hysteresis)
     let steps_per_structure = if args.fast || args.fast_25k {
@@ -4293,6 +5057,8 @@ fn run_batch_gpu_concurrent(
         gamma,
         protocol.uv_burst_interval as usize,
         protocol.uv_burst_energy,
+        &protocol.scan_wavelengths,
+        protocol.wavelength_dwell_steps,
         &mut all_entry_spikes,
         &mut previous_positions,
         &mut current_step,
@@ -4320,6 +5086,8 @@ fn run_batch_gpu_concurrent(
         gamma,
         protocol.uv_burst_interval as usize,
         protocol.uv_burst_energy,
+        &protocol.scan_wavelengths,
+        protocol.wavelength_dwell_steps,
         &mut all_entry_spikes,
         &mut previous_positions,
         &mut current_step,
@@ -4346,6 +5114,8 @@ fn run_batch_gpu_concurrent(
             gamma,
             protocol.uv_burst_interval as usize,
             protocol.uv_burst_energy,
+            &protocol.scan_wavelengths,
+            protocol.wavelength_dwell_steps,
             &mut all_entry_spikes,
             &mut previous_positions,
             &mut current_step,
@@ -4641,6 +5411,13 @@ fn run_batch_gpu_concurrent(
                 "replicas": replicas,
                 "consensus_threshold": consensus_threshold,
                 "spike_count": total_raw_spikes,
+                "uv_protocol": {
+                    "scan_wavelengths_nm": protocol.scan_wavelengths.clone(),
+                    "wavelength_dwell_steps": protocol.wavelength_dwell_steps,
+                    "uv_burst_energy": protocol.uv_burst_energy,
+                    "uv_burst_interval": protocol.uv_burst_interval,
+                    "uv_burst_duration": protocol.uv_burst_duration,
+                },
                 "per_replica_stats": per_replica_stats,
                 "binding_sites": clustered_sites.len(),
                 "druggable_sites": clustered_sites.iter().filter(|s| s.druggability.is_druggable).count(),
@@ -4728,6 +5505,8 @@ fn run_batch_phase(
     gamma: f32,
     uv_interval: usize,
     uv_energy: f32,
+    uv_wavelengths: &[f32],
+    wavelength_dwell_steps: i32,
     all_entry_spikes: &mut [Vec<prism_nhs::fused_engine::GpuSpikeEvent>],
     previous_positions: &mut [Vec<f32>],
     current_step: &mut usize,
@@ -4740,14 +5519,19 @@ fn run_batch_phase(
         *current_step += frame_interval;
 
         // Apply UV burst if at interval
-        if *current_step % uv_interval < frame_interval {
-            apply_batch_uv_burst(
+        let mut spike_source = 0;
+        let mut active_wavelength_nm = 0.0f32;
+        if uv_interval > 0 && uv_energy > 0.0 && *current_step % uv_interval < frame_interval {
+            active_wavelength_nm = apply_batch_uv_burst(
                 batch,
                 aromatic_indices_per_structure,
                 topologies,
                 uv_energy,
+                uv_wavelengths,
+                wavelength_dwell_steps,
                 *current_step,
             )?;
+            spike_source = 1;
         }
 
         // Extract positions and detect spikes per entry (structure × replica)
@@ -4768,6 +5552,8 @@ fn run_batch_phase(
                 topology,
                 aromatic_indices,
                 *current_step,
+                spike_source,
+                active_wavelength_nm,
             );
             all_entry_spikes[entry_idx].extend(spikes);
 
@@ -4802,6 +5588,8 @@ fn run_batch_ramp_phase(
     gamma: f32,
     uv_interval: usize,
     uv_energy: f32,
+    uv_wavelengths: &[f32],
+    wavelength_dwell_steps: i32,
     all_entry_spikes: &mut [Vec<prism_nhs::fused_engine::GpuSpikeEvent>],
     previous_positions: &mut [Vec<f32>],
     current_step: &mut usize,
@@ -4818,14 +5606,19 @@ fn run_batch_ramp_phase(
         *current_step += frame_interval;
 
         // Apply UV burst if at interval
-        if *current_step % uv_interval < frame_interval {
-            apply_batch_uv_burst(
+        let mut spike_source = 0;
+        let mut active_wavelength_nm = 0.0f32;
+        if uv_interval > 0 && uv_energy > 0.0 && *current_step % uv_interval < frame_interval {
+            active_wavelength_nm = apply_batch_uv_burst(
                 batch,
                 aromatic_indices_per_structure,
                 topologies,
                 uv_energy,
+                uv_wavelengths,
+                wavelength_dwell_steps,
                 *current_step,
             )?;
+            spike_source = 1;
         }
 
         // Extract positions and detect spikes per entry (structure × replica)
@@ -4846,6 +5639,8 @@ fn run_batch_ramp_phase(
                 topology,
                 aromatic_indices,
                 *current_step,
+                spike_source,
+                active_wavelength_nm,
             );
             all_entry_spikes[entry_idx].extend(spikes);
 
@@ -4863,17 +5658,17 @@ fn apply_batch_uv_burst(
     aromatic_indices_per_structure: &[Vec<usize>],
     topologies: &[PrismPrepTopology],
     _energy: f32,
+    uv_wavelengths: &[f32],
+    wavelength_dwell_steps: i32,
     current_step: usize,
-) -> Result<()> {
+) -> Result<f32> {
     use prism_nhs::config::{
         extinction_to_cross_section, wavelength_to_ev, CALIBRATED_PHOTON_FLUENCE, HEAT_YIELD_PHE,
         HEAT_YIELD_TRP, HEAT_YIELD_TYR, KB_EV_K, NEFF_PHE, NEFF_TRP, NEFF_TYR,
     };
 
-    // Wavelength cycling: rotate through chromophore-specific wavelengths
-    // 280nm=TRP, 274nm=TYR, 258nm=PHE, 211nm=HIS
-    let wavelengths = [280.0f32, 274.0, 258.0, 211.0];
-    let wavelength = wavelengths[current_step / 250 % wavelengths.len()];
+    let wavelength =
+        select_protocol_wavelength(uv_wavelengths, wavelength_dwell_steps, current_step);
 
     let mut velocities = batch.get_velocities()?;
     let max_stride = batch.max_atoms_per_struct() * 3;
@@ -4971,7 +5766,20 @@ fn apply_batch_uv_burst(
     }
 
     batch.set_velocities(&velocities)?;
-    Ok(())
+    Ok(wavelength)
+}
+
+#[cfg(feature = "gpu")]
+fn select_protocol_wavelength(
+    uv_wavelengths: &[f32],
+    wavelength_dwell_steps: i32,
+    current_step: usize,
+) -> f32 {
+    if uv_wavelengths.is_empty() {
+        return 280.0;
+    }
+    let dwell = wavelength_dwell_steps.max(1) as usize;
+    uv_wavelengths[(current_step / dwell) % uv_wavelengths.len()]
 }
 
 /// Detect spikes from position changes (simplified aromatic proximity method)
@@ -4982,6 +5790,8 @@ fn detect_spikes_from_positions(
     topology: &PrismPrepTopology,
     aromatic_indices: &[usize],
     timestep: usize,
+    spike_source: i32,
+    wavelength_nm: f32,
 ) -> Vec<prism_nhs::fused_engine::GpuSpikeEvent> {
     use prism_nhs::fused_engine::GpuSpikeEvent;
 
@@ -5044,8 +5854,8 @@ fn detect_spikes_from_positions(
                     intensity,
                     nearby_residues: [0; 8],
                     n_residues: 0,
-                    spike_source: 0,
-                    wavelength_nm: 0.0,
+                    spike_source,
+                    wavelength_nm,
                     aromatic_type: -1,
                     aromatic_residue_id: -1,
                     water_density: 0.0,
@@ -5059,6 +5869,390 @@ fn detect_spikes_from_positions(
     }
 
     spikes
+}
+
+#[cfg(feature = "gpu")]
+#[derive(Debug, Clone, Copy)]
+struct MultiStreamGridPlan {
+    base_grid_dim: usize,
+    grid_dim: usize,
+    grid_spacing: f32,
+    padded_extent_angstrom: f32,
+    free_bytes: u64,
+    total_bytes: u64,
+    budget_bytes: u64,
+    estimated_bytes: u64,
+}
+
+#[cfg(feature = "gpu")]
+fn default_multistream_grid_dim(n_atoms: usize) -> usize {
+    if n_atoms < 500 {
+        64
+    } else if n_atoms < 2000 {
+        96
+    } else {
+        128
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn padded_topology_extent_angstrom(topology: &PrismPrepTopology, padding_each_side: f32) -> f32 {
+    let (min_pos, max_pos) = topology.bounding_box();
+    let mut extent = 0.0f32;
+    for axis in 0..3 {
+        let axis_extent = max_pos[axis] - min_pos[axis] + 2.0 * padding_each_side;
+        if axis_extent.is_finite() {
+            extent = extent.max(axis_extent);
+        }
+    }
+    extent.max(0.0)
+}
+
+#[cfg(feature = "gpu")]
+fn grid_spacing_for_coverage(
+    topology: &PrismPrepTopology,
+    grid_dim: usize,
+    floor_spacing: f32,
+) -> (f32, f32) {
+    let padded_extent = padded_topology_extent_angstrom(topology, 5.0);
+    if grid_dim == 0 || padded_extent <= 0.0 {
+        return (floor_spacing, padded_extent);
+    }
+
+    // Match fused_engine::new_on_stream origin policy (min - 5A). When the
+    // grid is reduced for memory safety, preserve full target coverage by
+    // increasing spacing instead of silently clipping large proteins.
+    let required_spacing = (padded_extent / grid_dim as f32) * 1.02;
+    (floor_spacing.max(required_spacing), padded_extent)
+}
+
+#[cfg(feature = "gpu")]
+fn estimate_persistent_stream_bytes(grid_dim: usize, n_atoms: usize) -> u64 {
+    let voxels = (grid_dim as u64)
+        .saturating_mul(grid_dim as u64)
+        .saturating_mul(grid_dim as u64);
+
+    // The fused engine allocates several voxel-wide buffers per stream. The
+    // largest two observed in source are the 136B warp matrix and the 8-neuron
+    // LIF bank, plus exclusion/signal/EFP/spike support buffers. 384B/voxel
+    // tracks the measured TRPV1 20-stream 128^3 footprint without depending on
+    // driver-side allocator internals.
+    const VOXEL_BYTES_PER_STREAM: u64 = 384;
+    const FIXED_BYTES_PER_STREAM: u64 = 96 * 1024 * 1024;
+    const ATOM_BYTES_PER_STREAM: u64 = 1024;
+
+    voxels
+        .saturating_mul(VOXEL_BYTES_PER_STREAM)
+        .saturating_add(FIXED_BYTES_PER_STREAM)
+        .saturating_add((n_atoms as u64).saturating_mul(ATOM_BYTES_PER_STREAM))
+}
+
+#[cfg(feature = "gpu")]
+fn plan_multistream_grid(
+    topology: &PrismPrepTopology,
+    n_streams: usize,
+    floor_spacing: f32,
+) -> MultiStreamGridPlan {
+    let base_grid_dim = default_multistream_grid_dim(topology.n_atoms);
+    let (free_raw, total_raw) = cudarc::driver::result::mem_get_info().unwrap_or((0, 0));
+    let free_bytes = free_raw as u64;
+    let total_bytes = total_raw as u64;
+    let reserve_bytes = if total_bytes > 0 {
+        (total_bytes / 20).clamp(512 * 1024 * 1024, 1536 * 1024 * 1024)
+    } else {
+        0
+    };
+    let budget_bytes = if free_bytes > 0 {
+        free_bytes.saturating_sub(reserve_bytes).saturating_mul(90) / 100
+    } else {
+        u64::MAX
+    };
+
+    let mut candidates = vec![base_grid_dim];
+    for dim in [96usize, 64usize] {
+        if dim < base_grid_dim && !candidates.contains(&dim) {
+            candidates.push(dim);
+        }
+    }
+
+    let stream_count = n_streams.max(1) as u64;
+    let selected_grid_dim = candidates
+        .iter()
+        .copied()
+        .find(|&dim| {
+            estimate_persistent_stream_bytes(dim, topology.n_atoms).saturating_mul(stream_count)
+                <= budget_bytes
+        })
+        .unwrap_or_else(|| *candidates.last().unwrap_or(&base_grid_dim));
+
+    let estimated_bytes = estimate_persistent_stream_bytes(selected_grid_dim, topology.n_atoms)
+        .saturating_mul(stream_count);
+    let (grid_spacing, padded_extent_angstrom) =
+        grid_spacing_for_coverage(topology, selected_grid_dim, floor_spacing);
+
+    MultiStreamGridPlan {
+        base_grid_dim,
+        grid_dim: selected_grid_dim,
+        grid_spacing,
+        padded_extent_angstrom,
+        free_bytes,
+        total_bytes,
+        budget_bytes,
+        estimated_bytes,
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn is_cuda_oom_like_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("out of memory")
+        || lower.contains("outofmemory")
+        || lower.contains("oom")
+        || lower.contains("memory allocation")
+        || lower.contains("memoryallocation")
+}
+
+#[cfg(feature = "gpu")]
+#[derive(Debug)]
+struct V2TrajectoryFrame {
+    step: u64,
+    positions: Vec<f32>,
+    producer_hash64: u64,
+}
+
+#[cfg(feature = "gpu")]
+#[derive(Debug, Clone, Serialize)]
+struct V2TrajectoryFrameAudit {
+    frame_index: u64,
+    step: u64,
+    n_floats: u32,
+    producer_hash64: String,
+    writer_hash64: String,
+}
+
+#[cfg(feature = "gpu")]
+#[derive(Debug, Clone, Serialize)]
+struct V2TrajectoryWriterReport {
+    stream_id: usize,
+    path: String,
+    lossless_required: bool,
+    channel_depth: usize,
+    producer_frames_enqueued: u64,
+    frames_written: u64,
+    bytes_written: u64,
+    send_blocked_ns: String,
+    first_step: Option<u64>,
+    last_step: Option<u64>,
+    expected_floats_per_frame: Option<u32>,
+    hash_mismatches: u64,
+    rolling_hash64: String,
+    frames: Vec<V2TrajectoryFrameAudit>,
+}
+
+#[cfg(feature = "gpu")]
+fn v2_hash_update(mut hash: u64, bytes: &[u8]) -> u64 {
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01B3;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+#[cfg(feature = "gpu")]
+fn v2_hash64_hex(hash: u64) -> String {
+    format!("{:016x}", hash)
+}
+
+#[cfg(feature = "gpu")]
+fn v2_trajectory_frame_hash(step: u64, positions: &[f32]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut hash = v2_hash_update(FNV_OFFSET, &step.to_le_bytes());
+    let n_floats = positions.len() as u32;
+    hash = v2_hash_update(hash, &n_floats.to_le_bytes());
+    for x in positions {
+        hash = v2_hash_update(hash, &x.to_le_bytes());
+    }
+    hash
+}
+
+#[cfg(feature = "gpu")]
+fn write_v2_trajectory_stream(
+    stream_id: usize,
+    writer_tmp_path: std::path::PathBuf,
+    v2_snap_rx: std::sync::mpsc::Receiver<V2TrajectoryFrame>,
+) -> Result<V2TrajectoryWriterReport> {
+    use std::io::{Seek, SeekFrom, Write};
+
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    let f = std::fs::File::create(&writer_tmp_path).with_context(|| {
+        format!(
+            "[V2-traj writer {}] cannot create {}",
+            stream_id,
+            writer_tmp_path.display()
+        )
+    })?;
+    let mut bw = std::io::BufWriter::with_capacity(1 << 20, f);
+
+    bw.write_all(&0u64.to_le_bytes()).with_context(|| {
+        format!(
+            "[V2-traj writer {}] write frame-count placeholder",
+            stream_id
+        )
+    })?;
+
+    let mut frames_written = 0u64;
+    let mut bytes_written = 8u64;
+    let mut first_step = None;
+    let mut last_step = None;
+    let mut expected_floats_per_frame = None;
+    let mut hash_mismatches = 0u64;
+    let mut rolling_hash = FNV_OFFSET;
+    let mut frames = Vec::new();
+
+    while let Ok(frame) = v2_snap_rx.recv() {
+        let n_floats = frame.positions.len() as u32;
+        match expected_floats_per_frame {
+            Some(expected) if expected != n_floats => bail!(
+                "[V2-traj writer {}] inconsistent frame width: expected {} floats, got {} at step {}",
+                stream_id,
+                expected,
+                n_floats,
+                frame.step
+            ),
+            None => expected_floats_per_frame = Some(n_floats),
+            _ => {}
+        }
+
+        let writer_hash = v2_trajectory_frame_hash(frame.step, &frame.positions);
+        if writer_hash != frame.producer_hash64 {
+            hash_mismatches += 1;
+        }
+
+        bw.write_all(&frame.step.to_le_bytes()).with_context(|| {
+            format!(
+                "[V2-traj writer {}] write step for frame {}",
+                stream_id, frames_written
+            )
+        })?;
+        bw.write_all(&n_floats.to_le_bytes()).with_context(|| {
+            format!(
+                "[V2-traj writer {}] write n_floats for frame {}",
+                stream_id, frames_written
+            )
+        })?;
+        for x in &frame.positions {
+            bw.write_all(&x.to_le_bytes()).with_context(|| {
+                format!(
+                    "[V2-traj writer {}] write position payload for frame {}",
+                    stream_id, frames_written
+                )
+            })?;
+        }
+
+        first_step.get_or_insert(frame.step);
+        last_step = Some(frame.step);
+        rolling_hash = v2_hash_update(rolling_hash, &writer_hash.to_le_bytes());
+        frames.push(V2TrajectoryFrameAudit {
+            frame_index: frames_written,
+            step: frame.step,
+            n_floats,
+            producer_hash64: v2_hash64_hex(frame.producer_hash64),
+            writer_hash64: v2_hash64_hex(writer_hash),
+        });
+        frames_written += 1;
+        bytes_written += 8 + 4 + (n_floats as u64 * 4);
+    }
+
+    bw.flush()
+        .with_context(|| format!("[V2-traj writer {}] flush payload", stream_id))?;
+    let mut inner = bw
+        .into_inner()
+        .with_context(|| format!("[V2-traj writer {}] finalize buffered writer", stream_id))?;
+    inner
+        .seek(SeekFrom::Start(0))
+        .with_context(|| format!("[V2-traj writer {}] seek frame-count header", stream_id))?;
+    inner
+        .write_all(&frames_written.to_le_bytes())
+        .with_context(|| format!("[V2-traj writer {}] patch frame-count header", stream_id))?;
+    inner
+        .flush()
+        .with_context(|| format!("[V2-traj writer {}] flush patched header", stream_id))?;
+
+    Ok(V2TrajectoryWriterReport {
+        stream_id,
+        path: writer_tmp_path.display().to_string(),
+        lossless_required: true,
+        channel_depth: 0,
+        producer_frames_enqueued: 0,
+        frames_written,
+        bytes_written,
+        send_blocked_ns: "0".to_string(),
+        first_step,
+        last_step,
+        expected_floats_per_frame,
+        hash_mismatches,
+        rolling_hash64: v2_hash64_hex(rolling_hash),
+        frames,
+    })
+}
+
+#[cfg(all(test, feature = "gpu"))]
+mod v2_trajectory_writer_tests {
+    use super::*;
+
+    #[test]
+    fn writer_patches_frame_count_and_reports_hashes() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("v2_frames.bin");
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let writer_path = path.clone();
+        let writer = std::thread::spawn(move || write_v2_trajectory_stream(0, writer_path, rx));
+
+        for (step, positions) in [
+            (5_000u64, vec![1.0f32, -2.0, 3.5, 4.0, 5.25, -6.75]),
+            (10_000u64, vec![7.0f32, 8.5, 9.25, -10.0, 11.5, 12.75]),
+        ] {
+            let producer_hash64 = v2_trajectory_frame_hash(step, &positions);
+            tx.send(V2TrajectoryFrame {
+                step,
+                positions,
+                producer_hash64,
+            })?;
+        }
+        drop(tx);
+
+        let report = writer
+            .join()
+            .map_err(|_| anyhow::anyhow!("v2 writer test thread panicked"))??;
+        assert_eq!(report.frames_written, 2);
+        assert_eq!(report.hash_mismatches, 0);
+        assert_eq!(report.expected_floats_per_frame, Some(6));
+
+        let bytes = std::fs::read(path)?;
+        let mut header = [0u8; 8];
+        header.copy_from_slice(&bytes[..8]);
+        assert_eq!(u64::from_le_bytes(header), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn writer_detects_producer_hash_mismatch() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("v2_frames.bin");
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        tx.send(V2TrajectoryFrame {
+            step: 5_000,
+            positions: vec![1.0f32, 2.0, 3.0],
+            producer_hash64: 0,
+        })?;
+        drop(tx);
+
+        let report = write_v2_trajectory_stream(0, path, rx)?;
+        assert_eq!(report.frames_written, 1);
+        assert_eq!(report.hash_mismatches, 1);
+        Ok(())
+    }
 }
 
 /// True multi-stream pipeline: N independent CUDA streams, each running
@@ -5136,9 +6330,13 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // convenience macro: it fills in sane defaults for the three
     // sub-flags when they are otherwise unset.  Explicit per-flag
     // overrides take precedence.
-    let path_a_v2_trigger_steps: Option<u32> = args
-        .path_a_v2_trigger_steps
-        .or(if args.path_a_production_profile { Some(6000) } else { None });
+    let path_a_v2_trigger_steps: Option<u32> =
+        args.path_a_v2_trigger_steps
+            .or(if args.path_a_production_profile {
+                Some(6000)
+            } else {
+                None
+            });
     // EVIDENCE_COMPLETE_INDEXING followup. The original
     // `if production_profile { Some(40) }` was chunk-indexed and
     // step-equivalent only at sealed chunk_size=500 (40*500=20_000
@@ -5157,8 +6355,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     } else {
         None
     };
-    let path_a_evidence_exit: bool =
-        args.path_a_evidence_exit || args.path_a_production_profile;
+    let path_a_evidence_exit: bool = args.path_a_evidence_exit || args.path_a_production_profile;
     // PATHA-MAX-WALL-SECONDS — opt-in only. Default None preserves
     // existing behavior unconditionally. Effective only at chunk
     // boundary AND only when `path_a_evidence_exit` is also active
@@ -5225,10 +6422,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // Construction here is unconditional (cheap); the watchdog thread
     // is only spawned when path_a_any_active so default behavior is
     // unchanged when no Path-A flag is passed.
-    let path_a_heartbeats =
-        prism_nhs::path_a_watchdog::PathAHeartbeat::new(n_streams);
-    let path_a_watchdog_state =
-        prism_nhs::path_a_watchdog::WatchdogState::new();
+    let path_a_heartbeats = prism_nhs::path_a_watchdog::PathAHeartbeat::new(n_streams);
+    let path_a_watchdog_state = prism_nhs::path_a_watchdog::WatchdogState::new();
 
     // Apply HMR if requested
     if args.hmr {
@@ -5251,17 +6446,44 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         );
     }
 
-    // Adaptive grid: scale to protein bounding box
-    let ms_grid_dim = if topology.n_atoms < 500 {
-        64
-    } else if topology.n_atoms < 2000 {
-        96
+    let default_grid_spacing = PersistentBatchConfig::default().grid_spacing;
+    let grid_plan = plan_multistream_grid(&topology, n_streams, default_grid_spacing);
+    if grid_plan.grid_dim < grid_plan.base_grid_dim {
+        log::warn!(
+            "  [adaptive-memory] lowering multi-stream grid {}³ -> {}³ for {} streams \
+             (est {:.0} MB, budget {:.0} MB, free {:.0}/{:.0} MB)",
+            grid_plan.base_grid_dim,
+            grid_plan.grid_dim,
+            n_streams,
+            grid_plan.estimated_bytes as f64 / (1024.0 * 1024.0),
+            grid_plan.budget_bytes as f64 / (1024.0 * 1024.0),
+            grid_plan.free_bytes as f64 / (1024.0 * 1024.0),
+            grid_plan.total_bytes as f64 / (1024.0 * 1024.0),
+        );
     } else {
-        128
-    };
+        log::info!(
+            "  [adaptive-memory] multi-stream grid {}³ accepted for {} streams \
+             (est {:.0} MB, budget {:.0} MB, free {:.0}/{:.0} MB)",
+            grid_plan.grid_dim,
+            n_streams,
+            grid_plan.estimated_bytes as f64 / (1024.0 * 1024.0),
+            grid_plan.budget_bytes as f64 / (1024.0 * 1024.0),
+            grid_plan.free_bytes as f64 / (1024.0 * 1024.0),
+            grid_plan.total_bytes as f64 / (1024.0 * 1024.0),
+        );
+    }
+    if grid_plan.grid_spacing > default_grid_spacing * 1.001 {
+        log::info!(
+            "  [adaptive-memory] grid spacing {:.3}A -> {:.3}A to preserve {:.1}A padded target coverage",
+            default_grid_spacing,
+            grid_plan.grid_spacing,
+            grid_plan.padded_extent_angstrom,
+        );
+    }
     log::info!(
-        "  Adaptive grid: {}³ for {} atoms",
-        ms_grid_dim,
+        "  Adaptive grid: {}³ @ {:.3}A for {} atoms",
+        grid_plan.grid_dim,
+        grid_plan.grid_spacing,
         topology.n_atoms
     );
     let config = PersistentBatchConfig {
@@ -5272,7 +6494,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         temperature: args.temperature,
         cryo_temp: args.cryo_temp,
         cryo_hold: 50000,
-        grid_dim: ms_grid_dim,
+        grid_dim: grid_plan.grid_dim,
+        grid_spacing: grid_plan.grid_spacing,
         ..Default::default()
     };
 
@@ -5368,11 +6591,12 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             stepped_holds: vec![],
         }
     };
-    let protocol = if args.hysteresis {
+    let mut protocol = if args.hysteresis {
         protocol.with_hysteresis()
     } else {
         protocol
     };
+    apply_runtime_protocol_overrides(args, &mut protocol, "stream-base-protocol")?;
     let _target_end_temp = protocol.end_temp;
 
     // Steps per stream: use full protocol length for --fast/--fast-25k (respects hysteresis),
@@ -5736,9 +6960,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         let _watchdog_handle = prism_nhs::path_a_watchdog::spawn_watchdog(
             std::sync::Arc::clone(&path_a_heartbeats),
             std::sync::Arc::clone(&path_a_watchdog_state),
-            5,    // poll_interval_secs
-            60,   // stall_threshold_secs (one stream lagging > 60s while others advanced)
-            30,   // deadman_grace_secs (after cancel, give healthy streams 30s to break)
+            5,  // poll_interval_secs
+            60, // stall_threshold_secs (one stream lagging > 60s while others advanced)
+            30, // deadman_grace_secs (after cancel, give healthy streams 30s to break)
             completion_path_for_wd,
             phase3_run_id.clone(),
             stem_for_wd,
@@ -5758,6 +6982,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // can hold a clone without fighting over ownership across map iterations.
     #[cfg(feature = "v2_ignition")]
     let v2_was_live = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    // MD compute remains fully concurrent. Final evidence extraction is
+    // serialized because all worker streams share one CUDA context and the
+    // signal/KCC teardown path performs large DtoH transfers plus a final KCC
+    // kernel launch. Letting all 8 workers enter that path together caused
+    // intermittent CUDA_ERROR_INVALID_VALUE and missing stream artifacts while
+    // the underlying MD/spike data was present.
+    let teardown_download_lock = std::sync::Arc::new(std::sync::Mutex::new(()));
 
     let stream_results: Vec<
         Result<(
@@ -6052,6 +7284,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 // V2 hard-gate sentinel — cheap Arc clone per stream.
                 #[cfg(feature = "v2_ignition")]
                 let v2_was_live = std::sync::Arc::clone(&v2_was_live);
+                let teardown_download_lock_local =
+                    std::sync::Arc::clone(&teardown_download_lock);
 
                 s.spawn(move || -> Result<(Vec<prism_nhs::fused_engine::GpuSpikeEvent>, Vec<prism_nhs::fused_engine::EnsembleSnapshot>, Option<prism_nhs::fused_engine::SignalPreservationData>, Option<prism_nhs::fused_engine::KccData>)> {
                     log::info!("    [stream {}] Starting (seed: {})...", i, seed);
@@ -6302,20 +7536,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     // protocol site so --uv-burst-energy / --uv-burst-step are
                     // honored on every stream regardless of protocol group.
                     let mut prot_for_engine = prot.clone();
-                    if let Some(e) = args.uv_burst_energy {
-                        log::info!(
-                            "    [HRDB-CLI stream {}] uv_burst_energy override: {:.3} → {:.3} kcal/mol",
-                            i, prot_for_engine.uv_burst_energy, e
-                        );
-                        prot_for_engine.uv_burst_energy = e;
-                    }
-                    if let Some(s) = args.uv_burst_step {
-                        log::info!(
-                            "    [HRDB-CLI stream {}] uv_burst_interval override: {} → {} steps",
-                            i, prot_for_engine.uv_burst_interval, s
-                        );
-                        prot_for_engine.uv_burst_interval = s as i32;
-                    }
+                    let override_label = format!("HRDB-CLI stream {}", i);
+                    apply_runtime_protocol_overrides(args, &mut prot_for_engine, &override_label)?;
                     engine.set_cryo_uv_protocol(prot_for_engine)?;
                     engine.set_spike_accumulation(true);
 
@@ -6495,13 +7717,17 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         // Bounded MPSC channel: sender stays in the chunk loop,
                         // receiver is consumed by a background writer thread that
                         // flushes frames to disk as they arrive.  Host RAM usage is
-                        // O(channel_depth × n_atoms × 4) = bounded at ~244 KB for
-                        // 4LPK with depth=4.  The writer owns the file handle; the
-                        // chunk loop only try_send()s — it NEVER blocks on I/O.
+                        // O(channel_depth × n_atoms × 4), and the producer uses
+                        // blocking send.  Backpressure is deliberate: V2 trajectory
+                        // frames are teacher data, so dropping them is corruption.
                         //
                         // Frame wire format (all LE):
                         //   [0..8]  placeholder for n_frames (u64) — seeked back at close
                         //   per frame: [step: u64][n_floats: u32][positions: n_floats × f32]
+                        // Audit sidecar:
+                        //   prism_v2_<pid>_<stream>.bin.audit.json records producer count,
+                        //   writer count, per-frame producer/writer FNV-1a hashes, and
+                        //   rolling hash. Any mismatch fails the stream.
                         // M1.2.19.D — write V2 trajectory binary directly into the
                         // run output dir (no /tmp staging + cross-device rename).
                         // Eliminates the "Invalid cross-device link (os error 18)"
@@ -6518,39 +7744,48 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             )
                         };
                         #[cfg(feature = "v2_ignition")]
+                        let v2_audit_tmp = {
+                            let file_name = v2_frames_tmp
+                                .file_name()
+                                .map(|s| s.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| format!("prism_v2_{}_{}.bin", v2_snap_pid, i));
+                            v2_frames_tmp.with_file_name(format!("{}.audit.json", file_name))
+                        };
+                        #[cfg(feature = "v2_ignition")]
+                        if !args.lossless_v2_trajectory {
+                            static LOSSLESS_V2_FALSE_WARN_ONCE: std::sync::Once =
+                                std::sync::Once::new();
+                            LOSSLESS_V2_FALSE_WARN_ONCE.call_once(|| {
+                                log::warn!(
+                                    "  [V2 trajectory] --lossless-v2-trajectory=false is ignored; \
+                                     V2 trajectory capture is always lossless because lossy \
+                                     frames corrupt teacher labels"
+                                );
+                            });
+                        }
+                        #[cfg(feature = "v2_ignition")]
+                        let v2_snap_channel_depth: usize = if topo_ref.n_atoms > 50_000 {
+                            2
+                        } else if topo_ref.n_atoms > 20_000 {
+                            4
+                        } else {
+                            8
+                        };
+                        #[cfg(feature = "v2_ignition")]
                         let (v2_snap_tx, v2_snap_rx) =
-                            std::sync::mpsc::sync_channel::<(u64, Vec<f32>)>(4);
+                            std::sync::mpsc::sync_channel::<V2TrajectoryFrame>(
+                                v2_snap_channel_depth,
+                            );
                         #[cfg(feature = "v2_ignition")]
                         let writer_tmp_path = v2_frames_tmp.clone();
                         #[cfg(feature = "v2_ignition")]
-                        let v2_writer_handle = std::thread::spawn(move || -> u64 {
-                            use std::io::{Seek, SeekFrom, Write};
-                            let Ok(f) = std::fs::File::create(&writer_tmp_path) else {
-                                log::warn!("[V2-traj writer {}] cannot create {:?}",
-                                           i, writer_tmp_path);
-                                return 0;
-                            };
-                            let mut bw = std::io::BufWriter::with_capacity(1 << 20, f);
-                            // Reserve 8 bytes for the n_frames header (written at close).
-                            let _ = bw.write_all(&0u64.to_le_bytes());
-                            let mut n_frames = 0u64;
-                            while let Ok((step, positions)) = v2_snap_rx.recv() {
-                                let n_floats = positions.len() as u32;
-                                let _ = bw.write_all(&step.to_le_bytes());
-                                let _ = bw.write_all(&n_floats.to_le_bytes());
-                                for x in &positions {
-                                    let _ = bw.write_all(&x.to_le_bytes());
-                                }
-                                n_frames += 1;
-                            }
-                            // Seekback: patch the n_frames header.
-                            if let Ok(mut inner) = bw.into_inner() {
-                                let _ = inner.seek(SeekFrom::Start(0));
-                                let _ = inner.write_all(&n_frames.to_le_bytes());
-                                let _ = inner.flush();
-                            }
-                            n_frames
+                        let v2_writer_handle = std::thread::spawn(move || {
+                            write_v2_trajectory_stream(i, writer_tmp_path, v2_snap_rx)
                         });
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_frames_enqueued: u64 = 0;
+                        #[cfg(feature = "v2_ignition")]
+                        let mut v2_send_blocked_ns: u128 = 0;
 
                         // ── T7 NOISE-FLOOR CALIBRATION — Path B (host-side, real production data) ──
                         // Per operator directive 2026-04-30 ("Path B Honest-Data
@@ -7435,8 +8670,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                                     _ => None,
                                                 };
                                                 // B.3 — wire d_dt to the integrator's
-                                                // `d_protocol->dt` field (offset 84 within
-                                                // ProtocolState). The G26 gearbox PointerSwap +
+                                                // `d_protocol->dt` field within ProtocolState.
+                                                // The G26 gearbox PointerSwap +
                                                 // apply_fixed_dt kernels write to this address via
                                                 // `*(adj->d_dt)` to commit the active gear's timestep
                                                 // before the next integrator launch reads it.
@@ -8861,8 +10096,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
 
                                 // V2 trajectory snapshot — DtoH pull every N steps.
                                 // GPU is guaranteed idle (synchronize() just returned).
-                                // try_send: if the writer is backlogged, drop this frame
-                                // rather than stalling the chunk loop.
+                                // Lossless teacher-data path: the producer uses bounded blocking
+                                // send. If the writer falls behind, the engine waits here instead
+                                // of dropping frames and corrupting phasor/coherence labels.
                                 // Fires only once v2_pipeline is live (warm_hold phase).
                                 #[cfg(feature = "v2_ignition")]
                                 if v2_pipeline.is_some() {
@@ -8870,9 +10106,42 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     let prev = steps_run;
                                     let next = steps_run + this_chunk;
                                     if next / V2_SNAP_EVERY > prev / V2_SNAP_EVERY {
-                                        if let Ok(positions) = engine.get_positions() {
-                                            let _ = v2_snap_tx
-                                                .try_send((steps_run as u64, positions));
+                                        let frame_step = next as u64;
+                                        let positions = engine.get_positions().with_context(|| {
+                                            format!(
+                                                "[V2 trajectory stream {}] get_positions failed at step {}",
+                                                i, frame_step
+                                            )
+                                        })?;
+                                        let producer_hash64 =
+                                            v2_trajectory_frame_hash(frame_step, &positions);
+                                        let send_started = Instant::now();
+                                        v2_snap_tx
+                                            .send(V2TrajectoryFrame {
+                                                step: frame_step,
+                                                positions,
+                                                producer_hash64,
+                                            })
+                                            .map_err(|e| {
+                                                anyhow::anyhow!(
+                                                    "[V2 trajectory stream {}] lossless send failed at step {}: {}",
+                                                    i,
+                                                    frame_step,
+                                                    e
+                                                )
+                                            })?;
+                                        let blocked = send_started.elapsed();
+                                        v2_frames_enqueued += 1;
+                                        v2_send_blocked_ns += blocked.as_nanos();
+                                        if blocked.as_millis() >= 10 {
+                                            log::info!(
+                                                "  [V2 trajectory stream {}] lossless backpressure: step={} blocked_ms={:.3} queued_frames={} depth={}",
+                                                i,
+                                                frame_step,
+                                                blocked.as_secs_f64() * 1000.0,
+                                                v2_frames_enqueued,
+                                                v2_snap_channel_depth
+                                            );
                                         }
                                     }
                                 }
@@ -9234,12 +10503,17 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                             let mut host_bytes: Vec<u8> = vec![0u8; bytes_to_read];
                                             let stream_ref = engine.cuda_stream();
                                             let (src_dev, _g) = buf_gpu.device_ptr(stream_ref);
-                                            let copy_rc = unsafe {
-                                                cudarc::driver::sys::cuMemcpyDtoH_v2(
-                                                    host_bytes.as_mut_ptr() as *mut std::ffi::c_void,
-                                                    src_dev as cudarc::driver::sys::CUdeviceptr,
-                                                    bytes_to_read,
-                                                )
+                                            let copy_rc = {
+                                                let _teardown_guard = teardown_download_lock_local
+                                                    .lock()
+                                                    .expect("teardown evidence DtoH lock poisoned");
+                                                unsafe {
+                                                    cudarc::driver::sys::cuMemcpyDtoH_v2(
+                                                        host_bytes.as_mut_ptr() as *mut std::ffi::c_void,
+                                                        src_dev as cudarc::driver::sys::CUdeviceptr,
+                                                        bytes_to_read,
+                                                    )
+                                                }
                                             };
                                             if matches!(copy_rc,
                                                 cudarc::driver::sys::CUresult::CUDA_SUCCESS)
@@ -9393,21 +10667,27 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     let adj_dev = pipeline.adj_dev_ptr();
                                     let mut reason_flags: u32 = 0;
                                     let mut mom_flag:    u32 = 0;
-                                    let rc1 = unsafe {
-                                        cuMemcpyDtoH_v2(
-                                            &mut reason_flags as *mut u32
-                                                as *mut std::ffi::c_void,
-                                            (adj_dev + 148) as CUdeviceptr,
-                                            4,
-                                        )
-                                    };
-                                    let rc2 = unsafe {
-                                        cuMemcpyDtoH_v2(
-                                            &mut mom_flag as *mut u32
-                                                as *mut std::ffi::c_void,
-                                            (adj_dev + 144) as CUdeviceptr,
-                                            4,
-                                        )
+                                    let (rc1, rc2) = {
+                                        let _teardown_guard = teardown_download_lock_local
+                                            .lock()
+                                            .expect("teardown evidence DtoH lock poisoned");
+                                        let rc1 = unsafe {
+                                            cuMemcpyDtoH_v2(
+                                                &mut reason_flags as *mut u32
+                                                    as *mut std::ffi::c_void,
+                                                (adj_dev + 148) as CUdeviceptr,
+                                                4,
+                                            )
+                                        };
+                                        let rc2 = unsafe {
+                                            cuMemcpyDtoH_v2(
+                                                &mut mom_flag as *mut u32
+                                                    as *mut std::ffi::c_void,
+                                                (adj_dev + 144) as CUdeviceptr,
+                                                4,
+                                            )
+                                        };
+                                        (rc1, rc2)
                                     };
                                     if matches!(rc1, CUresult::CUDA_SUCCESS)
                                         && matches!(rc2, CUresult::CUDA_SUCCESS)
@@ -9472,13 +10752,18 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                         // force_spike_sync.
                                         let mut host_forces: Vec<f32> =
                                             vec![0.0f32; n_floats];
-                                        let rc = unsafe {
-                                            cuMemcpyDtoH_v2(
-                                                host_forces.as_mut_ptr()
-                                                    as *mut std::ffi::c_void,
-                                                d_forces_ptr as CUdeviceptr,
-                                                nbytes,
-                                            )
+                                        let rc = {
+                                            let _teardown_guard = teardown_download_lock_local
+                                                .lock()
+                                                .expect("teardown evidence DtoH lock poisoned");
+                                            unsafe {
+                                                cuMemcpyDtoH_v2(
+                                                    host_forces.as_mut_ptr()
+                                                        as *mut std::ffi::c_void,
+                                                    d_forces_ptr as CUdeviceptr,
+                                                    nbytes,
+                                                )
+                                            }
                                         };
                                         if matches!(rc, CUresult::CUDA_SUCCESS) {
                                             // Lazy-create + write n_atoms
@@ -10882,20 +12167,26 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 let mut host_forces: Vec<f32> = vec![0.0f32; n_floats];
                                 let stream_raw = engine.cuda_stream().cu_stream()
                                     as *mut std::ffi::c_void;
-                                let rc = unsafe {
-                                    cuMemcpyDtoHAsync_v2(
-                                        host_forces.as_mut_ptr() as *mut std::ffi::c_void,
-                                        d_forces_ptr as CUdeviceptr,
-                                        nbytes,
-                                        stream_raw as cudarc::driver::sys::CUstream,
-                                    )
-                                };
-                                let mut sync_ok = false;
-                                if matches!(rc, CUresult::CUDA_SUCCESS) {
-                                    if engine.cuda_stream().synchronize().is_ok() {
-                                        sync_ok = true;
+                                let (rc, sync_ok) = {
+                                    let _teardown_guard = teardown_download_lock_local
+                                        .lock()
+                                        .expect("teardown evidence DtoH lock poisoned");
+                                    let rc = unsafe {
+                                        cuMemcpyDtoHAsync_v2(
+                                            host_forces.as_mut_ptr() as *mut std::ffi::c_void,
+                                            d_forces_ptr as CUdeviceptr,
+                                            nbytes,
+                                            stream_raw as cudarc::driver::sys::CUstream,
+                                        )
+                                    };
+                                    let mut sync_ok = false;
+                                    if matches!(rc, CUresult::CUDA_SUCCESS) {
+                                        if engine.cuda_stream().synchronize().is_ok() {
+                                            sync_ok = true;
+                                        }
                                     }
-                                }
+                                    (rc, sync_ok)
+                                };
                                 let topo_stem = topology_path_capture
                                     .file_stem()
                                     .and_then(|s| s.to_str())
@@ -11014,19 +12305,25 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 let adj_dev = pipeline.adj_dev_ptr();
                                 let mut reason_flags: u32 = 0;
                                 let mut mom_flag:    u32 = 0;
-                                let rc1 = unsafe {
-                                    cuMemcpyDtoH_v2(
-                                        &mut reason_flags as *mut u32 as *mut std::ffi::c_void,
-                                        (adj_dev + 148) as CUdeviceptr,
-                                        4,
-                                    )
-                                };
-                                let rc2 = unsafe {
-                                    cuMemcpyDtoH_v2(
-                                        &mut mom_flag as *mut u32 as *mut std::ffi::c_void,
-                                        (adj_dev + 144) as CUdeviceptr,
-                                        4,
-                                    )
+                                let (rc1, rc2) = {
+                                    let _teardown_guard = teardown_download_lock_local
+                                        .lock()
+                                        .expect("teardown evidence DtoH lock poisoned");
+                                    let rc1 = unsafe {
+                                        cuMemcpyDtoH_v2(
+                                            &mut reason_flags as *mut u32 as *mut std::ffi::c_void,
+                                            (adj_dev + 148) as CUdeviceptr,
+                                            4,
+                                        )
+                                    };
+                                    let rc2 = unsafe {
+                                        cuMemcpyDtoH_v2(
+                                            &mut mom_flag as *mut u32 as *mut std::ffi::c_void,
+                                            (adj_dev + 144) as CUdeviceptr,
+                                            4,
+                                        )
+                                    };
+                                    (rc1, rc2)
                                 };
                                 if matches!(rc1, CUresult::CUDA_SUCCESS)
                                     && matches!(rc2, CUresult::CUDA_SUCCESS)
@@ -11161,7 +12458,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             );
 
                             // ── Phase A teardown DtoH ──────────────────────────────
-                            // Write the final ProtocolState (700 B, #[repr(C)]) as a
+                            // Write the final ProtocolState (#[repr(C)]) as a
                             // human-readable JSON sidecar so the post-run aggregator
                             // can reconstruct phase / state progression per stream.
                             // The struct's [SteerEntry; 64] fixed-size array would
@@ -11197,8 +12494,21 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 let f_warm_hold_end = final_state.warm_hold_end;
                                 let f_ramp_down_end = final_state.ramp_down_end;
                                 let f_uv_burst_active = final_state.uv_burst_active;
+                                let f_uv_burst_energy = final_state.uv_burst_energy;
+                                let f_uv_burst_interval = final_state.uv_burst_interval;
+                                let f_uv_burst_duration = final_state.uv_burst_duration;
                                 let f_uv_wavelength_nm = final_state.uv_wavelength_nm;
                                 let f_uv_target_idx = final_state.uv_target_idx;
+                                let f_n_wavelengths = final_state.n_wavelengths;
+                                let f_wavelength_dwell_steps =
+                                    final_state.wavelength_dwell_steps;
+                                let f_scan_wavelengths_raw =
+                                    final_state.scan_wavelengths;
+                                let f_scan_wavelength_count =
+                                    (f_n_wavelengths.max(0) as usize)
+                                        .min(prism_nhs::protocol_state::MAX_SCAN_WAVELENGTHS);
+                                let f_scan_wavelengths: Vec<f32> =
+                                    f_scan_wavelengths_raw[..f_scan_wavelength_count].to_vec();
                                 let f_dt = final_state.dt;
                                 let f_gamma = final_state.gamma;
                                 let f_effective_gamma = final_state.effective_gamma;
@@ -11228,8 +12538,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     "warm_hold_end": f_warm_hold_end,
                                     "ramp_down_end": f_ramp_down_end,
                                     "uv_burst_active": f_uv_burst_active,
+                                    "uv_burst_energy_kcal_mol": f_uv_burst_energy,
+                                    "uv_burst_interval_steps": f_uv_burst_interval,
+                                    "uv_burst_duration_steps": f_uv_burst_duration,
                                     "uv_wavelength_nm": f_uv_wavelength_nm,
                                     "uv_target_idx": f_uv_target_idx,
+                                    "scan_wavelengths_nm": f_scan_wavelengths,
+                                    "n_wavelengths": f_n_wavelengths,
+                                    "wavelength_dwell_steps": f_wavelength_dwell_steps,
                                     "dt_ps": f_dt,
                                     "gamma": f_gamma,
                                     "effective_gamma": f_effective_gamma,
@@ -11293,6 +12609,42 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 .map(|s| s.trim_end_matches(".topology").to_string())
                                 .unwrap_or_else(|| "unknown_target".to_string());
 
+                            let _teardown_guard = teardown_download_lock_local
+                                .lock()
+                                .expect("teardown evidence DtoH lock poisoned");
+                            let mut context_bound = false;
+                            for attempt in 1..=3 {
+                                match engine.cuda_stream().context().bind_to_thread() {
+                                    Ok(()) => {
+                                        if attempt > 1 {
+                                            log::info!(
+                                                "[VRAM-Teardown stream {}] CUDA context bind recovered on attempt {}",
+                                                i,
+                                                attempt
+                                            );
+                                        }
+                                        context_bound = true;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "[VRAM-Teardown stream {}] CUDA context bind attempt {}/3 failed before raw DtoH: {:?}",
+                                            i,
+                                            attempt,
+                                            e
+                                        );
+                                        std::thread::sleep(std::time::Duration::from_millis(
+                                            10 * attempt as u64,
+                                        ));
+                                    }
+                                }
+                            }
+                            if !context_bound {
+                                log::warn!(
+                                    "[VRAM-Teardown stream {}] raw VRAM DtoH skipped after CUDA context bind failure",
+                                    i
+                                );
+                            } else {
                             // (1) d_warp_matrix — full spatial warp/adjudication
                             // context.  Layout: total_voxels × sizeof(GpuWarpEntry)
                             // (= 136 B/voxel, packed).  Pulled as raw bytes; the
@@ -11487,6 +12839,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     i, e,
                                 );
                             }
+                            }
                         }
 
                         // V2 trajectory: drop the sender so the writer thread sees
@@ -11507,10 +12860,52 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                 prism_nhs::path_a_watchdog::PHASE_TEARDOWN_V2_WRITER_JOIN,
                             );
                             drop(v2_snap_tx);
-                            let v2_n_frames = v2_writer_handle.join().unwrap_or(0);
+                            let mut v2_report = v2_writer_handle
+                                .join()
+                                .map_err(|_| {
+                                    anyhow::anyhow!(
+                                        "[V2-traj stream {}] writer thread panicked",
+                                        i
+                                    )
+                                })??;
+                            v2_report.channel_depth = v2_snap_channel_depth;
+                            v2_report.producer_frames_enqueued = v2_frames_enqueued;
+                            v2_report.send_blocked_ns = v2_send_blocked_ns.to_string();
+                            if v2_report.frames_written != v2_frames_enqueued {
+                                bail!(
+                                    "[V2-traj stream {}] producer/writer frame-count mismatch: enqueued {}, wrote {}",
+                                    i,
+                                    v2_frames_enqueued,
+                                    v2_report.frames_written
+                                );
+                            }
+                            if v2_report.hash_mismatches != 0 {
+                                bail!(
+                                    "[V2-traj stream {}] writer detected {} producer/writer frame hash mismatches",
+                                    i,
+                                    v2_report.hash_mismatches
+                                );
+                            }
+                            let audit_payload =
+                                serde_json::to_vec_pretty(&v2_report).with_context(|| {
+                                    format!(
+                                        "[V2-traj stream {}] serialize trajectory audit sidecar",
+                                        i
+                                    )
+                                })?;
+                            std::fs::write(&v2_audit_tmp, audit_payload).with_context(|| {
+                                format!(
+                                    "[V2-traj stream {}] write trajectory audit sidecar {}",
+                                    i,
+                                    v2_audit_tmp.display()
+                                )
+                            })?;
                             log::info!(
-                                "    [V2-traj stream {}] writer joined: {} frames → {:?}",
-                                i, v2_n_frames, v2_frames_tmp
+                                "    [V2-traj stream {}] writer joined losslessly: {} frames → {:?} (blocked_ms={:.3})",
+                                i,
+                                v2_report.frames_written,
+                                v2_frames_tmp,
+                                (v2_send_blocked_ns as f64) / 1.0e6
                             );
                         }
 
@@ -11551,24 +12946,85 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     // is on disk; return an empty vec so teardown uses the disk file.
                     let snapshots = engine.get_snapshots();
 
-                    // Download signal preservation grids from this stream's GPU buffers.
-                    // POST_CHUNK_LOOP_TEARDOWN_STALL diag — DtoH for sig grids.
-                    path_a_heartbeats_local.mark(
-                        i,
-                        -1,
-                        0,
-                        prism_nhs::path_a_watchdog::PHASE_TEARDOWN_DOWNLOAD_SIG,
-                    );
-                    let sig_data = engine.download_signal_preservation().ok();
-                    // Compute and download KCC v2-full descriptors.
-                    // POST_CHUNK_LOOP_TEARDOWN_STALL diag — kernel + DtoH for KCC.
-                    path_a_heartbeats_local.mark(
-                        i,
-                        -1,
-                        0,
-                        prism_nhs::path_a_watchdog::PHASE_TEARDOWN_DOWNLOAD_KCC,
-                    );
-                    let kcc_data = engine.compute_and_download_kcc().ok();
+                    let (sig_data, kcc_data) = {
+                        let _teardown_guard = teardown_download_lock_local
+                            .lock()
+                            .expect("teardown evidence lock poisoned");
+
+                        // Download signal preservation grids from this stream's GPU buffers.
+                        // POST_CHUNK_LOOP_TEARDOWN_STALL diag — DtoH for sig grids.
+                        path_a_heartbeats_local.mark(
+                            i,
+                            -1,
+                            0,
+                            prism_nhs::path_a_watchdog::PHASE_TEARDOWN_DOWNLOAD_SIG,
+                        );
+                        let mut sig_data = None;
+                        for attempt in 1..=3 {
+                            match engine.download_signal_preservation() {
+                                Ok(data) => {
+                                    if attempt > 1 {
+                                        log::info!(
+                                            "    [stream {}] download_signal_preservation recovered on attempt {}",
+                                            i,
+                                            attempt
+                                        );
+                                    }
+                                    sig_data = Some(data);
+                                    break;
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "    [stream {}] download_signal_preservation attempt {}/3 failed during MD-only teardown: {:#}",
+                                        i,
+                                        attempt,
+                                        e
+                                    );
+                                    std::thread::sleep(std::time::Duration::from_millis(
+                                        25 * attempt as u64,
+                                    ));
+                                }
+                            }
+                        }
+
+                        // Compute and download KCC v2-full descriptors.
+                        // POST_CHUNK_LOOP_TEARDOWN_STALL diag — kernel + DtoH for KCC.
+                        path_a_heartbeats_local.mark(
+                            i,
+                            -1,
+                            0,
+                            prism_nhs::path_a_watchdog::PHASE_TEARDOWN_DOWNLOAD_KCC,
+                        );
+                        let mut kcc_data = None;
+                        for attempt in 1..=3 {
+                            match engine.compute_and_download_kcc() {
+                                Ok(data) => {
+                                    if attempt > 1 {
+                                        log::info!(
+                                            "    [stream {}] compute_and_download_kcc recovered on attempt {}",
+                                            i,
+                                            attempt
+                                        );
+                                    }
+                                    kcc_data = Some(data);
+                                    break;
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "    [stream {}] compute_and_download_kcc attempt {}/3 failed during MD-only teardown: {:#}",
+                                        i,
+                                        attempt,
+                                        e
+                                    );
+                                    std::thread::sleep(std::time::Duration::from_millis(
+                                        25 * attempt as u64,
+                                    ));
+                                }
+                            }
+                        }
+
+                        (sig_data, kcc_data)
+                    };
 
                     log::info!("    [stream {}] Complete: {} spikes, {} snapshots, T={:.1}K",
                         i, spikes.len(), snapshots.len(), summary.end_temperature);
@@ -11608,8 +13064,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // The teardown block below flushes ALL host-accessible metadata to disk
     // before returning, per the comprehensive audit (2026-05-01).
     #[cfg(feature = "v2_ignition")]
-    let v2_was_live_for_lattice =
-        v2_was_live.load(std::sync::atomic::Ordering::Acquire);
+    let v2_was_live_for_lattice = v2_was_live.load(std::sync::atomic::Ordering::Acquire);
     #[cfg(not(feature = "v2_ignition"))]
     let v2_was_live_for_lattice = false;
 
@@ -11648,8 +13103,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
 
     if lattice_explicit_request || lattice_auto_request {
         use prism_nhs::ghost_phase_lattice::{
-            load_ghost_v2_payloads_from_dir, GhostPhaseLattice4D,
-            GhostPhaseLatticeConfig, QuartilePhaseSchedule,
+            load_ghost_v2_payloads_from_dir, GhostPhaseLattice4D, GhostPhaseLatticeConfig,
+            QuartilePhaseSchedule,
         };
 
         // Resolve the topo stem the per-stream ghost_tiles writer used.
@@ -11694,8 +13149,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             // L10706: `{output_dir}/{topo_stem}_stream{NN}_ghost_tiles.bin`.
             let lattice_cfg = GhostPhaseLatticeConfig {
                 spatial_cell_size_a: args.ghost_phase_lattice_cell_a,
-                max_temporal_edge_steps: args
-                    .ghost_phase_lattice_max_temporal_edge_steps,
+                max_temporal_edge_steps: args.ghost_phase_lattice_max_temporal_edge_steps,
                 step_bucket_size: args.ghost_phase_lattice_step_bucket_size,
                 so3_threshold: args.ghost_phase_lattice_so3_threshold,
             };
@@ -11748,10 +13202,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     min_step = min_step.min(n.step_idx);
                     max_step = max_step.max(n.step_idx);
                 }
-                probe_schedule = QuartilePhaseSchedule {
-                    min_step,
-                    max_step,
-                };
+                probe_schedule = QuartilePhaseSchedule { min_step, max_step };
                 // Re-project with the calibrated quartile schedule so
                 // protocol_phase ordinals reflect the actual run extent.
                 let nodes_recalibrated = match load_ghost_v2_payloads_from_dir(
@@ -11765,7 +13216,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         log::warn!(
                             "  [GHOST-LATTICE-4D] recalibrated load failed ({}); \
                              using probe-loaded nodes (step span [{}, {}]).",
-                            e, min_step, max_step
+                            e,
+                            min_step,
+                            max_step
                         );
                         payload_probe
                     }
@@ -11805,8 +13258,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             );
                             match backend.cluster(&nodes_recalibrated) {
                                 Ok(outcome) => {
-                                    lattice_kernel_ms =
-                                        outcome.stats.kernel_elapsed_ms;
+                                    lattice_kernel_ms = outcome.stats.kernel_elapsed_ms;
                                     log::info!(
                                         "[GHOST-GRAPH] 4D intersection: {:.2} ms \
                                          (host_total {:.2} ms, components={}, \
@@ -11817,16 +13269,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                         outcome.stats.n_directed_edges
                                     );
                                     lattice_run_status = "ok";
-                                    lattice_outcome_handle =
-                                        Some((nodes_recalibrated, outcome));
+                                    lattice_outcome_handle = Some((nodes_recalibrated, outcome));
                                 }
                                 Err(e) => {
-                                    log::error!(
-                                        "  [GHOST-LATTICE-4D] cluster() failed: {:#}",
-                                        e
-                                    );
-                                    lattice_run_status = if lattice_explicit_request
-                                    {
+                                    log::error!("  [GHOST-LATTICE-4D] cluster() failed: {:#}", e);
+                                    lattice_run_status = if lattice_explicit_request {
                                         "failure_lattice_kernel_error"
                                     } else {
                                         "auto_fallback_lattice_kernel_error"
@@ -11895,8 +13342,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         let status_path = args.output.join("ghost_lattice_routing_status.json");
         match std::fs::write(
             &status_path,
-            serde_json::to_string_pretty(&status_json)
-                .unwrap_or_else(|_| "{}".to_string()),
+            serde_json::to_string_pretty(&status_json).unwrap_or_else(|_| "{}".to_string()),
         ) {
             Ok(()) => log::info!(
                 "  [GHOST-LATTICE-4D] routing status → {}",
@@ -12102,35 +13548,117 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             let dst = args
                                 .output
                                 .join(format!("{}_stream{:02}_v2_frames.bin", stem, i));
+                            let audit_tmp_src = {
+                                let file_name = tmp_src
+                                    .file_name()
+                                    .map(|s| s.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| {
+                                        format!("prism_v2_{}_{}.bin", std::process::id(), i)
+                                    });
+                                tmp_src.with_file_name(format!("{}.audit.json", file_name))
+                            };
+                            let audit_dst = args
+                                .output
+                                .join(format!("{}_stream{:02}_v2_frames.audit.json", stem, i));
                             // Read n_frames header (first 8 bytes u64 LE).
-                            let disk_frames = std::fs::read(&tmp_src)
-                                .ok()
-                                .and_then(|b| {
-                                    b.get(..8).map(|hdr| {
-                                        u64::from_le_bytes(hdr.try_into().unwrap_or([0u8; 8]))
-                                    })
-                                })
-                                .unwrap_or(0);
-                            match std::fs::rename(&tmp_src, &dst) {
-                                Ok(()) => {
-                                    n_frames = disk_frames as usize;
-                                    log::info!(
-                                        "  [V2 teardown] ✓ stream {} streamed \
-                                         trajectory: {} frames → {}",
-                                        i,
-                                        disk_frames,
-                                        dst.display()
-                                    );
-                                }
-                                Err(e) => log::warn!(
-                                    "  [V2 teardown] stream {} move {}→{} \
-                                     failed: {}",
+                            let frame_payload = std::fs::read(&tmp_src).with_context(|| {
+                                format!(
+                                    "V2 teardown: read streamed trajectory header {}",
+                                    tmp_src.display()
+                                )
+                            })?;
+                            let header = frame_payload.get(..8).ok_or_else(|| {
+	                                anyhow::anyhow!(
+	                                    "V2 teardown: streamed trajectory {} is shorter than 8-byte frame-count header",
+	                                    tmp_src.display()
+	                                )
+	                            })?;
+                            let mut header_bytes = [0u8; 8];
+                            header_bytes.copy_from_slice(header);
+                            let disk_frames = u64::from_le_bytes(header_bytes);
+
+                            let audit_payload =
+                                std::fs::read(&audit_tmp_src).with_context(|| {
+                                    format!(
+                                        "V2 teardown: missing trajectory audit sidecar {}",
+                                        audit_tmp_src.display()
+                                    )
+                                })?;
+                            let audit_json: serde_json::Value =
+                                serde_json::from_slice(&audit_payload).with_context(|| {
+                                    format!(
+                                        "V2 teardown: parse trajectory audit sidecar {}",
+                                        audit_tmp_src.display()
+                                    )
+                                })?;
+                            let audit_frames = audit_json
+                                .get("frames_written")
+                                .and_then(|v| v.as_u64())
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "V2 teardown: audit sidecar {} missing frames_written",
+                                        audit_tmp_src.display()
+                                    )
+                                })?;
+                            let producer_frames = audit_json
+	                                .get("producer_frames_enqueued")
+	                                .and_then(|v| v.as_u64())
+	                                .ok_or_else(|| {
+	                                    anyhow::anyhow!(
+	                                        "V2 teardown: audit sidecar {} missing producer_frames_enqueued",
+	                                        audit_tmp_src.display()
+	                                    )
+	                                })?;
+                            let hash_mismatches = audit_json
+                                .get("hash_mismatches")
+                                .and_then(|v| v.as_u64())
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "V2 teardown: audit sidecar {} missing hash_mismatches",
+                                        audit_tmp_src.display()
+                                    )
+                                })?;
+                            if disk_frames != audit_frames || disk_frames != producer_frames {
+                                bail!(
+	                                    "V2 teardown: stream {} frame-count mismatch before finalization: disk={}, audit_written={}, producer_enqueued={}",
+	                                    i,
+	                                    disk_frames,
+	                                    audit_frames,
+	                                    producer_frames
+	                                );
+                            }
+                            if hash_mismatches != 0 {
+                                bail!(
+                                    "V2 teardown: stream {} audit reports {} frame hash mismatches",
+                                    i,
+                                    hash_mismatches
+                                );
+                            }
+
+                            std::fs::rename(&tmp_src, &dst).with_context(|| {
+                                format!(
+                                    "V2 teardown: finalize stream {} trajectory {} -> {}",
                                     i,
                                     tmp_src.display(),
-                                    dst.display(),
-                                    e
-                                ),
-                            }
+                                    dst.display()
+                                )
+                            })?;
+                            std::fs::rename(&audit_tmp_src, &audit_dst).with_context(|| {
+                                format!(
+                                    "V2 teardown: finalize stream {} trajectory audit {} -> {}",
+                                    i,
+                                    audit_tmp_src.display(),
+                                    audit_dst.display()
+                                )
+                            })?;
+                            n_frames = disk_frames as usize;
+                            log::info!(
+	                                "  [V2 teardown] ✓ stream {} streamed trajectory: {} verified frames → {} (+ audit {})",
+	                                i,
+	                                disk_frames,
+	                                dst.display(),
+	                                audit_dst.display()
+	                            );
                         }
                     }
 
@@ -12951,7 +14479,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "wall_clock_s": sim_elapsed.as_secs_f64(),
             "n_streams":    n_streams,
             "total_spikes": total_spikes,
-            "streams":      stream_summaries,
+            "streams":      stream_summaries.clone(),
             "artifacts": [
                 "phasor_kcc_state.json",
                 "prism_therm_telemetry.json",
@@ -13018,10 +14546,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             // ─── Ring status: one record per stream × channel ───────────────
             let mut ring_records: Vec<f2::F2RingStatus> = Vec::new();
             for sid in 0..(n_streams as u32) {
-                let ghost_path = output_dir.join(format!(
-                    "{}_stream{:02}_ghost_tiles.bin",
-                    stem, sid
-                ));
+                let ghost_path =
+                    output_dir.join(format!("{}_stream{:02}_ghost_tiles.bin", stem, sid));
                 let ghost_meta = std::fs::metadata(&ghost_path).ok();
                 let ghost_present = ghost_meta.is_some();
                 let ghost_bytes = ghost_meta.as_ref().map(|m| m.len()).unwrap_or(0);
@@ -13075,10 +14601,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             // ─── Write-commit log: one entry per artifact actually on disk ──
             let mut commits: Vec<f2::F2WriteCommit> = Vec::new();
             for sid in 0..(n_streams as u32) {
-                let p = output_dir.join(format!(
-                    "{}_stream{:02}_ghost_tiles.bin",
-                    stem, sid
-                ));
+                let p = output_dir.join(format!("{}_stream{:02}_ghost_tiles.bin", stem, sid));
                 if let Ok(bytes) = std::fs::read(&p) {
                     let hash = format!("fnv1a64:{:016x}", fnv1a64(&bytes));
                     let mut wc = f2::F2WriteCommit::new(
@@ -13091,9 +14614,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     );
                     wc.frames_written = None;
                     wc.close_status = f2::ZstrExitStatus::Clean;
-                    wc.close_status_reason = Some(
-                        "file present on disk; frame count not propagated".to_string(),
-                    );
+                    wc.close_status_reason =
+                        Some("file present on disk; frame count not propagated".to_string());
                     wc.truncation_guarantee = true;
                     commits.push(wc);
                 }
@@ -13118,8 +14640,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                             wc.frames_written = None;
                             wc.close_status = f2::ZstrExitStatus::Clean;
                             wc.close_status_reason = Some(
-                                "file present on disk; per-stream owner not propagated"
-                                    .to_string(),
+                                "file present on disk; per-stream owner not propagated".to_string(),
                             );
                             wc.truncation_guarantee = true;
                             commits.push(wc);
@@ -13186,10 +14707,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 expected.push(entry);
             }
             for sid in 0..(n_streams as u32) {
-                let p = output_dir.join(format!(
-                    "{}_stream{:02}_ghost_tiles.bin",
-                    stem, sid
-                ));
+                let p = output_dir.join(format!("{}_stream{:02}_ghost_tiles.bin", stem, sid));
                 let meta = std::fs::metadata(&p).ok();
                 let exists = meta.is_some();
                 let size = meta.as_ref().map(|m| m.len());
@@ -13270,8 +14788,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 overall_status,
             };
 
-            let completeness_path =
-                output_base.with_extension("f2_artifact_completeness.json");
+            let completeness_path = output_base.with_extension("f2_artifact_completeness.json");
             match std::fs::write(
                 &completeness_path,
                 serde_json::to_string_pretty(&completeness).unwrap_or_default(),
@@ -13279,10 +14796,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 Ok(()) => {
                     log::info!("  [V2 teardown] ✓ {}", completeness_path.display())
                 }
-                Err(e) => log::warn!(
-                    "  [V2 teardown] f2_artifact_completeness.json: {}",
-                    e
-                ),
+                Err(e) => log::warn!("  [V2 teardown] f2_artifact_completeness.json: {}", e),
             }
         }
 
@@ -13304,9 +14818,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         //   trace artifacts emitted yet — those come with the control_trace
         //   NDJSON wire-up in a separate later commit).
         {
-            let dag_now_iso = chrono::Utc::now()
-                .format("%Y-%m-%dT%H:%M:%SZ")
-                .to_string();
+            let dag_now_iso = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
             let output_dir_dag = output_base
                 .parent()
                 .map(|p| p.to_path_buf())
@@ -13420,8 +14932,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             // Per-stream Stream nodes + edges
             for sid in 0..(n_streams as u32) {
                 let sid_str = format!("stream{:02}", sid);
-                let stream_node_id =
-                    dag_id("stream", &[phase3_run_id.as_str(), sid_str.as_str()]);
+                let stream_node_id = dag_id("stream", &[phase3_run_id.as_str(), sid_str.as_str()]);
                 nodes.push(serde_json::json!({
                     "id": stream_node_id,
                     "kind": "Stream",
@@ -13467,12 +14978,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     Err(_) => continue,
                 };
                 let hash = format!("fnv1a64:{:016x}", fnv1a64(&bytes));
-                let artifact_ref_id =
-                    dag_id("artifact-ref", &[ext, phase3_run_id.as_str()]);
-                let artifact_node_id = dag_id(
-                    "json-artifact",
-                    &[ext, phase3_run_id.as_str()],
-                );
+                let artifact_ref_id = dag_id("artifact-ref", &[ext, phase3_run_id.as_str()]);
+                let artifact_node_id = dag_id("json-artifact", &[ext, phase3_run_id.as_str()]);
                 let mut node = serde_json::json!({
                     "id": artifact_node_id,
                     "kind": "JsonArtifact",
@@ -13482,8 +14989,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     "metadata": { "size_bytes": size },
                 });
                 if let Some(sv) = schema_v {
-                    node["metadata"]["schema_version"] =
-                        serde_json::json!(*sv);
+                    node["metadata"]["schema_version"] = serde_json::json!(*sv);
                 }
                 nodes.push(node);
                 edges.push(serde_json::json!({
@@ -13507,10 +15013,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
 
             // Per-stream binary artifacts (ghost_tiles.bin)
             for sid in 0..(n_streams as u32) {
-                let p = output_dir_dag.join(format!(
-                    "{}_stream{:02}_ghost_tiles.bin",
-                    stem_dag, sid
-                ));
+                let p =
+                    output_dir_dag.join(format!("{}_stream{:02}_ghost_tiles.bin", stem_dag, sid));
                 let meta = std::fs::metadata(&p).ok();
                 let exists = meta.is_some();
                 let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
@@ -13699,6 +15203,24 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             }
         }
 
+        let ensemble_record_path = write_ensemble_replica_record(
+            args,
+            topology_path,
+            &topology,
+            &output_base,
+            &structure_name,
+            stem,
+            n_streams,
+            total_spikes,
+            &stream_summaries,
+            sim_elapsed,
+            steps_per_stream,
+        )?;
+        log::info!(
+            "  [ENSEMBLE] ✓ replica record {}",
+            ensemble_record_path.display()
+        );
+
         // ── Audit log: un-capturable metadata ────────────────────────────
         log::warn!("  [V2 teardown] METADATA GAPS (arch changes required to capture):");
         log::warn!("    d_forces: VRAM-only; no host download before thread exit");
@@ -13760,7 +15282,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             .strip_suffix(".topology")
             .unwrap_or(&structure_name);
         std::fs::create_dir_all(&args.output).with_context(|| {
-            format!("md_only_evidence: create output dir {}", args.output.display())
+            format!(
+                "md_only_evidence: create output dir {}",
+                args.output.display()
+            )
         })?;
         // Per-stream serialization + manifest accumulation.
         #[derive(serde::Serialize)]
@@ -13810,8 +15335,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         i, e
                     );
                     if serialization_failure.is_none() {
-                        serialization_failure =
-                            Some(format!("stream {} closure error: {}", i, e));
+                        serialization_failure = Some(format!("stream {} closure error: {}", i, e));
                     }
                     continue;
                 }
@@ -13828,8 +15352,12 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 let mut lo = i32::MAX;
                 let mut hi = i32::MIN;
                 for s in spikes.iter() {
-                    if s.timestep < lo { lo = s.timestep; }
-                    if s.timestep > hi { hi = s.timestep; }
+                    if s.timestep < lo {
+                        lo = s.timestep;
+                    }
+                    if s.timestep > hi {
+                        hi = s.timestep;
+                    }
                 }
                 (lo, hi)
             };
@@ -13842,20 +15370,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             });
 
             // (1) spikes.bin
-            let spikes_path = args
-                .output
-                .join(format!("{}_stream{}_spikes.bin", stem, i));
-            match md_evidence_write_spikes(
-                &spikes_path,
-                &spikes,
-                stream_id,
-                &phase3_run_id,
-                stem,
-            ) {
+            let spikes_path = args.output.join(format!("{}_stream{}_spikes.bin", stem, i));
+            match md_evidence_write_spikes(&spikes_path, &spikes, stream_id, &phase3_run_id, stem) {
                 Ok((bytes_written, checksum)) => {
                     log::info!(
                         "  [MD-ONLY EVIDENCE] stream {} spikes.bin: {} records, {} bytes",
-                        i, spikes.len(), bytes_written
+                        i,
+                        spikes.len(),
+                        bytes_written
                     );
                     artifacts.push(ArtifactRecord {
                         kind: "spikes",
@@ -13873,11 +15395,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 Err(e) => {
                     log::error!(
                         "  [MD-ONLY EVIDENCE] stream {} spikes.bin write FAILED: {}",
-                        i, e
+                        i,
+                        e
                     );
                     if serialization_failure.is_none() {
-                        serialization_failure =
-                            Some(format!("stream {} spikes.bin: {}", i, e));
+                        serialization_failure = Some(format!("stream {} spikes.bin: {}", i, e));
                     }
                     artifacts.push(ArtifactRecord {
                         kind: "spikes",
@@ -13898,18 +15420,16 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 .output
                 .join(format!("{}_stream{}_signal_grid.bin", stem, i));
             if let Some(sig) = sig_data_opt.as_ref() {
-                match md_evidence_write_signal_grid(
-                    &sig_path,
-                    sig,
-                    stream_id,
-                    &phase3_run_id,
-                    stem,
-                ) {
+                match md_evidence_write_signal_grid(&sig_path, sig, stream_id, &phase3_run_id, stem)
+                {
                     Ok((bytes_written, checksum)) => {
                         log::info!(
                             "  [MD-ONLY EVIDENCE] stream {} signal_grid.bin: \
                              {} voxels, grid_dim={}, {} bytes",
-                            i, sig.voxel_hit_grid.len(), sig.grid_dim, bytes_written
+                            i,
+                            sig.voxel_hit_grid.len(),
+                            sig.grid_dim,
+                            bytes_written
                         );
                         artifacts.push(ArtifactRecord {
                             kind: "signal_grid",
@@ -13927,7 +15447,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     Err(e) => {
                         log::error!(
                             "  [MD-ONLY EVIDENCE] stream {} signal_grid.bin write FAILED: {}",
-                            i, e
+                            i,
+                            e
                         );
                         if serialization_failure.is_none() {
                             serialization_failure =
@@ -13969,18 +15490,15 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 .output
                 .join(format!("{}_stream{}_kcc_v2full.bin", stem, i));
             if let Some(kcc) = kcc_data_opt.as_ref() {
-                match md_evidence_write_kcc_v2full(
-                    &kcc_path,
-                    kcc,
-                    stream_id,
-                    &phase3_run_id,
-                    stem,
-                ) {
+                match md_evidence_write_kcc_v2full(&kcc_path, kcc, stream_id, &phase3_run_id, stem)
+                {
                     Ok((bytes_written, checksum)) => {
                         log::info!(
                             "  [MD-ONLY EVIDENCE] stream {} kcc_v2full.bin: \
                              {} residues, {} bytes",
-                            i, kcc.n_residues, bytes_written
+                            i,
+                            kcc.n_residues,
+                            bytes_written
                         );
                         artifacts.push(ArtifactRecord {
                             kind: "kcc_v2full",
@@ -13998,7 +15516,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     Err(e) => {
                         log::error!(
                             "  [MD-ONLY EVIDENCE] stream {} kcc_v2full.bin write FAILED: {}",
-                            i, e
+                            i,
+                            e
                         );
                         if serialization_failure.is_none() {
                             serialization_failure =
@@ -14043,18 +15562,21 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         // block at ~line 10393-10705). We only RECORD their presence + size
         // here; we do NOT re-checksum them in this commit (would re-read all
         // 285 MB warp_matrix files × 8 streams × 2 GB extra read cost).
-        for (i, suffix) in (0..n_streams_actual).flat_map(|s| {
-            [
-                ("warp_matrix.bin",                 "warp_matrix"),
-                ("forces_final.bin",                "forces_final"),
-                ("aromatic_centroids_final.bin",    "aromatic_centroids_final"),
-                ("adaptive_dt.bin",                 "adaptive_dt"),
-                ("bocpd.jsonl",                     "bocpd_log"),
-                ("protocol_state.json",             "protocol_state"),
-            ]
-            .into_iter()
-            .map(move |(suf, kind)| (s, suf, kind))
-        }).map(|(s, suf, _kind)| (s, format!("{}_stream{}_{}", stem, s, suf))) {
+        for (i, suffix) in (0..n_streams_actual)
+            .flat_map(|s| {
+                [
+                    ("warp_matrix.bin", "warp_matrix"),
+                    ("forces_final.bin", "forces_final"),
+                    ("aromatic_centroids_final.bin", "aromatic_centroids_final"),
+                    ("adaptive_dt.bin", "adaptive_dt"),
+                    ("bocpd.jsonl", "bocpd_log"),
+                    ("protocol_state.json", "protocol_state"),
+                ]
+                .into_iter()
+                .map(move |(suf, kind)| (s, suf, kind))
+            })
+            .map(|(s, suf, _kind)| (s, format!("{}_stream{}_{}", stem, s, suf)))
+        {
             let p = args.output.join(&suffix);
             let (size, present) = match p.metadata() {
                 Ok(m) => (m.len(), true),
@@ -14069,7 +15591,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 checksum_fnv1a_64_hex: None,
                 record_count: None,
                 present,
-                note: if present { None } else { Some("not_present_on_disk".to_string()) },
+                note: if present {
+                    None
+                } else {
+                    Some("not_present_on_disk".to_string())
+                },
             });
             if present {
                 emitted_evidence_files.push(p.display().to_string());
@@ -14079,10 +15605,12 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         // naming pattern (`stream0N_` vs `streamN_`).
         for i in 0..n_streams_actual {
             for (suf_fmt, _kind) in [
-                ("asc_vectors.bin",  "asc_vectors"),
+                ("asc_vectors.bin", "asc_vectors"),
                 ("noise_floor.json", "noise_floor"),
             ] {
-                let p = args.output.join(format!("{}_stream{:02}_{}", stem, i, suf_fmt));
+                let p = args
+                    .output
+                    .join(format!("{}_stream{:02}_{}", stem, i, suf_fmt));
                 let (size, present) = match p.metadata() {
                     Ok(m) => (m.len(), true),
                     Err(_) => (0, false),
@@ -14096,13 +15624,194 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                     checksum_fnv1a_64_hex: None,
                     record_count: None,
                     present,
-                    note: if present { None } else { Some("not_present_on_disk".to_string()) },
+                    note: if present {
+                        None
+                    } else {
+                        Some("not_present_on_disk".to_string())
+                    },
                 });
                 if present {
                     emitted_evidence_files.push(p.display().to_string());
                 }
             }
         }
+
+        // Production teacher bundles require every stream to emit the full
+        // MD-only evidence surface. Earlier versions reported "available"
+        // based on attempted emission; compute the status from the manifest
+        // records that will actually be written to disk.
+        let missing_by_kind = |kind: &str| -> Vec<u32> {
+            (0..n_streams_actual)
+                .filter_map(|s| {
+                    let present = artifacts
+                        .iter()
+                        .any(|a| a.kind == kind && a.stream_id == Some(s as u32) && a.present);
+                    if present {
+                        None
+                    } else {
+                        Some(s as u32)
+                    }
+                })
+                .collect()
+        };
+        let missing_by_suffix = |suffix: &str| -> Vec<u32> {
+            (0..n_streams_actual)
+                .filter_map(|s| {
+                    let present = artifacts.iter().any(|a| {
+                        a.kind == "rayon_scope_emit"
+                            && a.stream_id == Some(s as u32)
+                            && a.present
+                            && a.path.ends_with(suffix)
+                    });
+                    if present {
+                        None
+                    } else {
+                        Some(s as u32)
+                    }
+                })
+                .collect()
+        };
+
+        let missing_spikes = missing_by_kind("spikes");
+        let missing_signal_grid = missing_by_kind("signal_grid");
+        let missing_kcc = missing_by_kind("kcc_v2full");
+        let missing_warp_matrix = missing_by_suffix("warp_matrix.bin");
+        let missing_forces_final = missing_by_suffix("forces_final.bin");
+        let missing_aromatic_centroids = missing_by_suffix("aromatic_centroids_final.bin");
+        let missing_adaptive_dt = missing_by_suffix("adaptive_dt.bin");
+        let missing_bocpd = missing_by_suffix("bocpd.jsonl");
+        let missing_protocol_state = missing_by_suffix("protocol_state.json");
+        let missing_asc_vectors = missing_by_suffix("asc_vectors.bin");
+        let missing_noise_floor = missing_by_suffix("noise_floor.json");
+
+        let mut missing_required_artifacts: Vec<serde_json::Value> = Vec::new();
+        let mut missing_required_messages: Vec<String> = Vec::new();
+        let mut add_required_status = |artifact: &str, missing: &[u32]| {
+            if !missing.is_empty() {
+                missing_required_messages
+                    .push(format!("{} missing streams {:?}", artifact, missing));
+                missing_required_artifacts.push(serde_json::json!({
+                    "artifact": artifact,
+                    "expected_streams": n_streams_actual,
+                    "present_streams": n_streams_actual.saturating_sub(missing.len()),
+                    "missing_streams": missing,
+                }));
+            }
+        };
+        add_required_status("spikes", &missing_spikes);
+        add_required_status("signal_grid", &missing_signal_grid);
+        add_required_status("kcc_v2full", &missing_kcc);
+        add_required_status("warp_matrix", &missing_warp_matrix);
+        add_required_status("forces_final", &missing_forces_final);
+        add_required_status("aromatic_centroids_final", &missing_aromatic_centroids);
+        add_required_status("adaptive_dt", &missing_adaptive_dt);
+        add_required_status("bocpd_log", &missing_bocpd);
+        add_required_status("protocol_state", &missing_protocol_state);
+        add_required_status("asc_vectors", &missing_asc_vectors);
+        add_required_status("noise_floor", &missing_noise_floor);
+        if streams_serialized != n_streams_actual {
+            missing_required_messages.push(format!(
+                "stream closures serialized {}/{}",
+                streams_serialized, n_streams_actual
+            ));
+            missing_required_artifacts.push(serde_json::json!({
+                "artifact": "stream_result",
+                "expected_streams": n_streams_actual,
+                "present_streams": streams_serialized,
+                "missing_streams": "see stream closure errors in engine.log",
+            }));
+        }
+
+        if !missing_required_messages.is_empty() && serialization_failure.is_none() {
+            serialization_failure = Some(format!(
+                "required MD evidence incomplete: {}",
+                missing_required_messages.join("; ")
+            ));
+        }
+        if let Some(err) = serialization_failure.as_ref() {
+            if missing_required_messages.is_empty() {
+                missing_required_messages.push(format!("serialization failure: {}", err));
+            }
+        }
+
+        let required_artifacts_complete =
+            missing_required_artifacts.is_empty() && serialization_failure.is_none();
+        let validation_status_str = if required_artifacts_complete {
+            "accepted_required_artifacts_present"
+        } else {
+            "rejected_missing_required_artifacts"
+        };
+        let required_artifact_summary = serde_json::json!({
+            "expected_streams": n_streams_actual,
+            "spikes": {
+                "present_streams": n_streams_actual.saturating_sub(missing_spikes.len()),
+                "missing_streams": missing_spikes.clone(),
+            },
+            "signal_grid": {
+                "present_streams": n_streams_actual.saturating_sub(missing_signal_grid.len()),
+                "missing_streams": missing_signal_grid.clone(),
+            },
+            "kcc_v2full": {
+                "present_streams": n_streams_actual.saturating_sub(missing_kcc.len()),
+                "missing_streams": missing_kcc.clone(),
+            },
+            "warp_matrix": {
+                "present_streams": n_streams_actual.saturating_sub(missing_warp_matrix.len()),
+                "missing_streams": missing_warp_matrix.clone(),
+            },
+            "forces_final": {
+                "present_streams": n_streams_actual.saturating_sub(missing_forces_final.len()),
+                "missing_streams": missing_forces_final.clone(),
+            },
+            "aromatic_centroids_final": {
+                "present_streams": n_streams_actual.saturating_sub(missing_aromatic_centroids.len()),
+                "missing_streams": missing_aromatic_centroids.clone(),
+            },
+            "adaptive_dt": {
+                "present_streams": n_streams_actual.saturating_sub(missing_adaptive_dt.len()),
+                "missing_streams": missing_adaptive_dt.clone(),
+            },
+            "bocpd_log": {
+                "present_streams": n_streams_actual.saturating_sub(missing_bocpd.len()),
+                "missing_streams": missing_bocpd.clone(),
+            },
+            "protocol_state": {
+                "present_streams": n_streams_actual.saturating_sub(missing_protocol_state.len()),
+                "missing_streams": missing_protocol_state.clone(),
+            },
+            "asc_vectors": {
+                "present_streams": n_streams_actual.saturating_sub(missing_asc_vectors.len()),
+                "missing_streams": missing_asc_vectors.clone(),
+            },
+            "noise_floor": {
+                "present_streams": n_streams_actual.saturating_sub(missing_noise_floor.len()),
+                "missing_streams": missing_noise_floor.clone(),
+            },
+        });
+
+        let per_stream_field = |missing: &[u32], source: &str| -> serde_json::Value {
+            serde_json::json!({
+                "status": if missing.is_empty() { "available" } else { "missing_required" },
+                "source": source,
+                "expected_streams": n_streams_actual,
+                "present_streams": n_streams_actual.saturating_sub(missing.len()),
+                "missing_streams": missing,
+            })
+        };
+        let path_b_rank_stage = match args.site_ranker.as_str() {
+            "phase-manifold" => "phase_manifold_rerank",
+            "gtckl" => "gtckl_rerank",
+            "tokenized-v4" => "tokenized_v4_rerank",
+            "xgb-v3" => "xgb_v3_legacy_rerank",
+            other => other,
+        };
+        let path_b_rank_model = match args.site_ranker.as_str() {
+            "phase-manifold" => "phase_manifold_v1",
+            "gtckl" => "gtckl_existing_order",
+            "tokenized-v4" => "tokenized_v4_legacy",
+            "xgb-v3" => "xgboost_v3_legacy",
+            other => other,
+        };
 
         // ── md_evidence_manifest.json ─────────────────────────────────────
         let manifest_path = args.output.join("md_evidence_manifest.json");
@@ -14117,6 +15826,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "multi_differential":   args.multi_differential,
             "closed_loop_steering": args.closed_loop_steering,
             "asymmetric_steering":  args.asymmetric_steering,
+            "site_ranker":          args.site_ranker.as_str(),
             "use_xgb_ranker":       args.use_xgb_ranker,
             "replica_seed":         args.replica_seed,
             "spike_percentile":     args.spike_percentile,
@@ -14155,6 +15865,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "site_materialization_status":   "not_materialized",
             "post_md_aggregation_status":    "deferred",
             "path_b_required":    true,
+            "validation_status":  validation_status_str,
+            "required_artifacts_complete": required_artifacts_complete,
+            "required_artifact_summary": required_artifact_summary.clone(),
+            "missing_required_artifacts": missing_required_artifacts.clone(),
             "serialization_failure": serialization_failure,
         });
         match std::fs::File::create(&manifest_path) {
@@ -14163,7 +15877,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 if let Err(e) = serde_json::to_writer_pretty(&mut bw, &manifest) {
                     log::error!(
                         "  [MD-ONLY EVIDENCE] manifest serialize FAILED at {}: {}",
-                        manifest_path.display(), e
+                        manifest_path.display(),
+                        e
                     );
                 } else {
                     use std::io::Write as _;
@@ -14177,7 +15892,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             Err(e) => {
                 log::error!(
                     "  [MD-ONLY EVIDENCE] manifest CREATE FAILED at {}: {}",
-                    manifest_path.display(), e
+                    manifest_path.display(),
+                    e
                 );
             }
         }
@@ -14226,11 +15942,17 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             Ok(f) => {
                 let mut bw = std::io::BufWriter::new(f);
                 if let Err(e) = serde_json::to_writer_pretty(&mut bw, &gtm_json) {
-                    log::error!("  [MD-ONLY EVIDENCE] ghost_time_map serialize FAILED: {}", e);
+                    log::error!(
+                        "  [MD-ONLY EVIDENCE] ghost_time_map serialize FAILED: {}",
+                        e
+                    );
                 } else {
                     use std::io::Write as _;
                     let _ = bw.flush();
-                    log::info!("  [MD-ONLY EVIDENCE] ✓ ghost_time_map.json: {}", gtm_path.display());
+                    log::info!(
+                        "  [MD-ONLY EVIDENCE] ✓ ghost_time_map.json: {}",
+                        gtm_path.display()
+                    );
                 }
             }
             Err(e) => log::error!("  [MD-ONLY EVIDENCE] ghost_time_map CREATE FAILED: {}", e),
@@ -14258,10 +15980,18 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "target":           stem,
             "coordinate_frame": "prism_topology_native_no_recentering",
             "status":           gsm_status,
+            "teacher_md_requirement": "not_required",
+            "stage2_requirement": "not_required_for_current_spike_teacher_training",
+            "site_centroid_policy": {
+                "engine_ghost_site_centroids": "optional_diagnostic_only_in_md_only_mode",
+                "production_source": "omitted_from_current_spike_teacher_substrate",
+                "rationale": "Current teacher training consumes spike/signal/KCC/residue evidence. Site identity, AABB, and centroids are lossy materialization products and are not prerequisites for high-value spike teacher features."
+            },
             "entries":          serde_json::Value::Array(vec![]),
             "missing_entries": [{
                 "reason": "v2_monolithic_not_live_per_chunk_size_path_evidence_complete_fired_before_cold_hold",
-                "follow_up": "rerun with --m1-monolithic-discovery and bounded V2-live smoke to populate per-site centroids",
+                "impact": "non_blocking_for_current_spike_teacher_training",
+                "follow_up": "none_for_current_teacher_evidence_path; only enable site materialization for later site-ranking, docking, visualization, or DCC benchmark surfaces",
             }],
             "field_completeness": {
                 "stream_id":       "implicit_from_per_stream_artifacts_map_keys_in_md_evidence_manifest",
@@ -14276,13 +16006,17 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             Ok(f) => {
                 let mut bw = std::io::BufWriter::new(f);
                 if let Err(e) = serde_json::to_writer_pretty(&mut bw, &gsm_json) {
-                    log::error!("  [MD-ONLY EVIDENCE] ghost_site_map serialize FAILED: {}", e);
+                    log::error!(
+                        "  [MD-ONLY EVIDENCE] ghost_site_map serialize FAILED: {}",
+                        e
+                    );
                 } else {
                     use std::io::Write as _;
                     let _ = bw.flush();
                     log::info!(
                         "  [MD-ONLY EVIDENCE] ✓ ghost_site_map.json: {} (status={})",
-                        gsm_path.display(), gsm_status
+                        gsm_path.display(),
+                        gsm_status
                     );
                 }
             }
@@ -14297,26 +16031,33 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "schema_version": 1,
             "schema_kind":    "field_completeness_report",
             "run_id":         phase3_run_id,
+            "validation_status": validation_status_str,
+            "required_artifacts_complete": required_artifacts_complete,
+            "required_artifact_summary": required_artifact_summary.clone(),
+            "missing_required_artifacts": missing_required_artifacts.clone(),
             "fields": {
-                "spikes_per_stream":            { "status": "available", "source": "spikes.bin per stream" },
-                "signal_preservation_per_stream":{ "status": "available", "source": "signal_grid.bin per stream" },
-                "kcc_v2full_per_stream":        { "status": "available", "source": "kcc_v2full.bin per stream" },
-                "warp_matrix_per_stream":       { "status": "available", "source": "VRAM-Teardown emit" },
-                "forces_final_per_stream":      { "status": "available", "source": "VRAM-Teardown emit" },
-                "aromatic_centroids_per_stream":{ "status": "available", "source": "VRAM-Teardown emit" },
-                "adaptive_dt_per_stream":       { "status": "available", "source": "VRAM-Teardown emit" },
-                "asc_vectors_per_stream":       { "status": "available", "source": "rayon-scope emit" },
-                "noise_floor_per_stream":       { "status": "available", "source": "rayon-scope emit" },
-                "protocol_state_per_stream":    { "status": "available", "source": "rayon-scope emit" },
-                "bocpd_log_per_stream":         { "status": "available", "source": "rayon-scope emit" },
+                "spikes_per_stream":             per_stream_field(&missing_spikes, "spikes.bin per stream"),
+                "signal_preservation_per_stream":per_stream_field(&missing_signal_grid, "signal_grid.bin per stream"),
+                "kcc_v2full_per_stream":         per_stream_field(&missing_kcc, "kcc_v2full.bin per stream"),
+                "warp_matrix_per_stream":        per_stream_field(&missing_warp_matrix, "VRAM-Teardown emit"),
+                "forces_final_per_stream":       per_stream_field(&missing_forces_final, "VRAM-Teardown emit"),
+                "aromatic_centroids_per_stream": per_stream_field(&missing_aromatic_centroids, "VRAM-Teardown emit"),
+                "adaptive_dt_per_stream":        per_stream_field(&missing_adaptive_dt, "VRAM-Teardown emit"),
+                "asc_vectors_per_stream":        per_stream_field(&missing_asc_vectors, "rayon-scope emit"),
+                "noise_floor_per_stream":        per_stream_field(&missing_noise_floor, "rayon-scope emit"),
+                "protocol_state_per_stream":     per_stream_field(&missing_protocol_state, "rayon-scope emit"),
+                "bocpd_log_per_stream":          per_stream_field(&missing_bocpd, "rayon-scope emit"),
                 "merged_kcc":                   { "status": "deferred",  "source": "Path B: merge per-stream kcc_v2full.bin" },
                 "merged_signal_grid":           { "status": "deferred",  "source": "Path B: sum per-stream signal_grid.bin" },
                 "all_stream_spikes":            { "status": "deferred",  "source": "Path B: concat per-stream spikes.bin" },
-                "rt_clustering_sites":          { "status": "deferred",  "source": "Path B: GPU-HASH find_neighbors_union over all_stream_spikes" },
-                "ligsite_pockets":              { "status": "deferred",  "source": "Path B: deterministic on topology+all_stream_spikes" },
-                "cubical_ph_centroids":         { "status": "deferred",  "source": "Path B: density grid + 0-dim PH" },
-                "xgb_reranked_sites":           { "status": "deferred",  "source": "Path B: XGB v3 model on cluster output" },
-                "binding_sites_materialized":   { "status": "deferred",  "source": "Path B: post-rerank materialization" },
+                "spike_teacher_feature_pack":   { "status": "deferred_required", "source": "Path B: all_stream_spikes + signal_grid + kcc_v2full + asc_vectors + protocol_state + noise_floor" },
+                "rt_clustering_sites":          { "status": "out_of_scope_current_teacher_training",  "source": "site materialization surface, not spike teacher evidence" },
+                "ligsite_pockets":              { "status": "out_of_scope_current_teacher_training",  "source": "optional geometry QA, not spike teacher evidence" },
+                "cubical_ph_centroids":         { "status": "out_of_scope_current_teacher_training",  "source": "optional site centroid refinement, not spike teacher evidence" },
+                "engine_ghost_site_centroids":  { "status": "out_of_scope_current_teacher_training", "source": "V2-live ghost_site_map entries when available", "stage2_policy": "do not block MD evidence or spike teacher packaging on centroids" },
+                "stage2_site_support":          { "status": "out_of_scope_current_teacher_training", "source": "only needed for later site-ranking, docking, visualization, or DCC benchmark surfaces", "outputs": ["site_id", "centroid_xyz", "aabb", "residue_support"] },
+                "ranked_sites":                 { "status": "out_of_scope_current_teacher_training",  "source": format!("Path B: {} only applies after site materialization", path_b_rank_stage), "ranker": args.site_ranker.as_str(), "model": path_b_rank_model },
+                "binding_sites_materialized":   { "status": "out_of_scope_current_teacher_training",  "source": "site presentation surface, not spike teacher evidence" },
                 "v2_f2_sidecars":               { "status": "absent",    "reason": "v2_was_live=false in MD-only mode" },
                 "transform_dag":                { "status": "absent",    "reason": "v2_was_live=false in MD-only mode" },
             },
@@ -14325,7 +16066,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         if let Ok(f) = std::fs::File::create(&fcr_path) {
             let mut bw = std::io::BufWriter::new(f);
             if let Err(e) = serde_json::to_writer_pretty(&mut bw, &fcr) {
-                log::warn!("  [MD-ONLY EVIDENCE] field_completeness_report serialize: {}", e);
+                log::warn!(
+                    "  [MD-ONLY EVIDENCE] field_completeness_report serialize: {}",
+                    e
+                );
             } else {
                 use std::io::Write as _;
                 let _ = bw.flush();
@@ -14344,6 +16088,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "schema_version": 1,
             "schema_kind":    "post_md_required_inputs",
             "run_id":         phase3_run_id,
+            "validation_status": validation_status_str,
+            "required_artifacts_complete": required_artifacts_complete,
+            "missing_required_artifacts": missing_required_artifacts.clone(),
             "stages": [
                 { "stage": "per_stream_filter",
                   "inputs": ["spikes.bin", "asc_vectors.bin", "protocol_state.json"] },
@@ -14356,21 +16103,11 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 { "stage": "all_stream_spikes_concat",
                   "inputs": ["spikes.bin (each stream)"],
                   "policy": "concat_with_per_stream_offsets" },
-                { "stage": "rt_clustering",
-                  "inputs": ["all_stream_spikes (concat)", "topology.positions"],
-                  "backend": "gpu_hash_find_neighbors_union",
-                  "skipped_on_sm120": "fallback_to_ligsite" },
-                { "stage": "dynamic_ligsite",
-                  "inputs": ["topology.positions", "all_stream_spikes"],
-                  "deterministic": true },
-                { "stage": "cubical_ph_refinement",
-                  "inputs": ["all_stream_spikes (positions+intensity)", "topology bounds"],
-                  "deterministic": true },
-                { "stage": "xgb_rerank",
-                  "inputs": ["pre-rerank cluster sites", "kcc_per_residue", "topology"],
-                  "model": "xgboost_v3" },
-                { "stage": "binding_sites_materialize",
-                  "inputs": ["reranked sites", "topology", "kcc_per_residue"] }
+                { "stage": "spike_teacher_feature_pack",
+                  "inputs": ["all_stream_spikes", "merged_signal_grid", "merged_kcc", "asc_vectors.bin", "protocol_state.json", "noise_floor.json", "ghost_time_map.json"],
+                  "outputs": ["per-event spike features", "per-residue spike/KCC features", "per-stream temporal/protocol features"],
+                  "centroids_required": false,
+                  "site_materialization_required": false }
             ],
             "topology_input": topology_path.display().to_string(),
             "stem":           stem,
@@ -14379,7 +16116,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         if let Ok(f) = std::fs::File::create(&pri_path) {
             let mut bw = std::io::BufWriter::new(f);
             if let Err(e) = serde_json::to_writer_pretty(&mut bw, &pri) {
-                log::warn!("  [MD-ONLY EVIDENCE] post_md_required_inputs serialize: {}", e);
+                log::warn!(
+                    "  [MD-ONLY EVIDENCE] post_md_required_inputs serialize: {}",
+                    e
+                );
             } else {
                 use std::io::Write as _;
                 let _ = bw.flush();
@@ -14391,14 +16131,16 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         }
 
         // ── path_a_completion.json (MD-only honest emit) ──────────────────
-        let completion_status_str: &str = if serialization_failure.is_some() {
+        let completion_status_str: &str = if required_artifacts_complete {
+            "md_evidence_complete_postmd_deferred"
+        } else if !missing_required_artifacts.is_empty() {
+            "md_evidence_rejected_missing_required_artifacts"
+        } else if serialization_failure.is_some() {
             "md_evidence_partial_serialization_failure"
         } else {
-            "md_evidence_complete_postmd_deferred"
+            "md_evidence_rejected_unknown_required_artifact_failure"
         };
-        let completion_path = args
-            .output
-            .join(format!("{}_path_a_completion.json", stem));
+        let completion_path = args.output.join(format!("{}_path_a_completion.json", stem));
         let completion_json = serde_json::json!({
             "schema_version":              2,
             "schema_kind":                 "path_a_completion_md_only",
@@ -14413,7 +16155,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "legacy_post_md_skipped":      true,
             "site_materialization_status": "not_materialized",
             "binding_sites_status":        "not_materialized_md_only",
-            "validation_status":           "not_run",
+            "validation_status":           validation_status_str,
+            "required_artifacts_complete": required_artifacts_complete,
+            "required_artifact_summary":   required_artifact_summary.clone(),
+            "missing_required_artifacts":  missing_required_artifacts.clone(),
             "elapsed_wall_seconds":        sim_start.elapsed().as_secs_f64(),
             "emitted_evidence_files":      emitted_evidence_files,
             "missing_optional_fields":     [
@@ -14456,7 +16201,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 let mut bw = std::io::BufWriter::new(f);
                 if let Err(e) = serde_json::to_writer_pretty(&mut bw, &completion_json) {
                     log::error!(
-                        "  [MD-ONLY EVIDENCE] path_a_completion serialize FAILED: {}", e
+                        "  [MD-ONLY EVIDENCE] path_a_completion serialize FAILED: {}",
+                        e
                     );
                 } else {
                     use std::io::Write as _;
@@ -14470,7 +16216,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             }
             Err(e) => {
                 log::error!(
-                    "  [MD-ONLY EVIDENCE] path_a_completion CREATE FAILED: {}", e
+                    "  [MD-ONLY EVIDENCE] path_a_completion CREATE FAILED: {}",
+                    e
                 );
             }
         }
@@ -14483,6 +16230,13 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             total_spikes_md,
             sim_start.elapsed().as_secs_f64()
         );
+
+        if !required_artifacts_complete {
+            anyhow::bail!(
+                "md-only evidence rejected: {}",
+                missing_required_messages.join("; ")
+            );
+        }
 
         return Ok(());
     }
@@ -14653,15 +16407,26 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     let mut merged_signal: Option<prism_nhs::fused_engine::SignalPreservationData> = None;
     // Merged KCC data (best-stream-per-residue across all streams)
     let mut merged_kcc: Option<prism_nhs::fused_engine::KccData> = None;
+    let mut failed_streams: Vec<(usize, String, bool)> = Vec::new();
 
     for (i, result) in stream_results.into_iter().enumerate() {
         let (raw_spikes, stream_snapshots, sig_data, kcc_data) = match result {
             Ok((spikes, snaps, sig, kcc)) => (spikes, snaps, sig, kcc),
             Err(e) => {
-                log::error!("    Stream {} failed: {}", i, e);
+                let error_message = format!("{:#}", e);
+                let oom_like = is_cuda_oom_like_error(&error_message);
+                log::error!(
+                    "    Stream {} failed{}: {}",
+                    i,
+                    if oom_like { " (CUDA OOM-like)" } else { "" },
+                    error_message
+                );
                 per_stream_stats.push(serde_json::json!({
-                    "stream_id": i, "error": e.to_string(),
+                    "stream_id": i,
+                    "error": error_message,
+                    "oom_like": oom_like,
                 }));
+                failed_streams.push((i, error_message, oom_like));
                 per_stream_sites.push(Vec::new());
                 all_stream_snapshots.push(Vec::new());
                 stream_spike_offsets.push(all_stream_spikes.len());
@@ -14859,10 +16624,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         // cluster_engine availability. If the consensus stream creation
         // failed above, cluster_engine is None and we skip — LIGSITE in
         // the geometric path covers the empty-sites fallback.
-        let sites = if !filtered.is_empty()
-            && args.rt_clustering
-            && cluster_engine.is_some()
-        {
+        let sites = if !filtered.is_empty() && args.rt_clustering && cluster_engine.is_some() {
             let positions: Vec<f32> = filtered
                 .iter()
                 .flat_map(|s| {
@@ -14950,6 +16712,29 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         }));
         per_stream_sites.push(sites);
         all_stream_snapshots.push(stream_snapshots);
+    }
+
+    if !failed_streams.is_empty() {
+        let oom_count = failed_streams.iter().filter(|(_, _, oom)| *oom).count();
+        let summary = failed_streams
+            .iter()
+            .map(|(stream_id, error, oom_like)| {
+                format!(
+                    "stream {}{}: {}",
+                    stream_id,
+                    if *oom_like { " OOM-like" } else { "" },
+                    error
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+        bail!(
+            "{} of {} streams failed ({} OOM-like); refusing partial post-MD consensus. {}",
+            failed_streams.len(),
+            n_streams,
+            oom_count,
+            summary
+        );
     }
 
     // ── SPIKE DEBUG: verify phase_bits is non-zero ──
@@ -15203,7 +16988,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         }
     }
 
-    // ========== SNDC: Spike-Native Density Clustering (PRIMARY) ==========
+    // ========== SNDC: Spike-Native Density Clustering ==========
     // SNDC (OptiX RT clustering) — deprecated on SM120+ (RTX 5080).
     // OptiX fails with OPTIX_ERROR_PIPELINE_LINK_ERROR on every run;
     // LIGSITE + spike density + SDST gives identical results.
@@ -15211,18 +16996,25 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     if !all_stream_spikes.is_empty() && args.rt_clustering {
         log::warn!(
             "  SNDC (OptiX RT clustering) is deprecated on SM120+. \
-            Using LIGSITE + spike density overlay (identical results, ~2s faster)."
+            Using spike-native consensus / Path-B surface instead."
         );
     }
 
-    // Dynamic LIGSITE: Geometry proposes pockets, physics scores them.
-    // Runs unconditionally — geometry finds pockets independent of spike-cluster sites.
-    log::info!("  Running Dynamic LIGSITE pocket detection...");
-    recalculate_enclosure_volume(
-        &mut clustered_sites,
-        &all_stream_spikes,
-        &topology.positions,
-    )?;
+    // Dynamic LIGSITE is geometry QA only. The primary site surface is the
+    // spike-native Arrow/Path-B materializer so full per-spike tags survive.
+    if args.ligsite_geometry_qa || !args.path_b_primary_surface {
+        log::info!("  Running Dynamic LIGSITE pocket detection (geometry QA)...");
+        recalculate_enclosure_volume(
+            &mut clustered_sites,
+            &all_stream_spikes,
+            &topology.positions,
+        )?;
+    } else {
+        log::info!(
+            "  Dynamic LIGSITE skipped: Arrow/Path-B is primary site surface \
+             (use --ligsite-geometry-qa to run geometry QA)"
+        );
+    }
 
     // ========== Cubical PH: density-peak centroid refinement ==========
     // Build a spike density grid and run 0-dim persistent homology to find
@@ -15235,39 +17027,91 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
 
         let grid_n = grid_dims[0] * grid_dims[1] * grid_dims[2];
         if grid_n > 0 && grid_n < 8_000_000 {
-            // Gaussian splatting of spike density onto the grid
-            let mut density = vec![0.0f32; grid_n];
+            // Deterministic sparse Gaussian splatting of spike density onto the grid.
+            //
+            // The original implementation splatted every spike independently:
+            // O(n_spikes * kernel_volume). Fast-25k 1BTL can emit ~14M spikes;
+            // with a 15^3 Gaussian stencil that becomes tens of billions of CPU
+            // iterations after the GPU work is already done. Pre-aggregating
+            // spikes into their source voxel is exactly equivalent for spikes
+            // landing in the same grid cell and reduces the convolution axis from
+            // spike count to occupied-voxel count.
+            let ph_density_t0 = std::time::Instant::now();
+            let mut voxel_mass = vec![0.0f32; grid_n];
+            let mut occupied_voxels = Vec::new();
             let sigma = 2.0f32;
             let cutoff = (3.0 * sigma / grid_spacing) as i32 + 1;
             let inv_2sig2 = 1.0 / (2.0 * sigma * sigma);
-
             for spike in &all_stream_spikes {
                 let ix = ((spike.position[0] - grid_origin[0]) / grid_spacing) as i32;
                 let iy = ((spike.position[1] - grid_origin[1]) / grid_spacing) as i32;
                 let iz = ((spike.position[2] - grid_origin[2]) / grid_spacing) as i32;
-                let w = spike.intensity * spike.intensity; // intensity^2 weighting
+                if ix < 0 || iy < 0 || iz < 0 {
+                    continue;
+                }
+                let (ix, iy, iz) = (ix as usize, iy as usize, iz as usize);
+                if ix >= grid_dims[0] || iy >= grid_dims[1] || iz >= grid_dims[2] {
+                    continue;
+                }
+                let idx = (iz * grid_dims[1] + iy) * grid_dims[0] + ix;
+                if voxel_mass[idx] == 0.0 {
+                    occupied_voxels.push(idx);
+                }
+                voxel_mass[idx] += spike.intensity * spike.intensity;
+            }
 
-                for dz in -cutoff..=cutoff {
-                    for dy in -cutoff..=cutoff {
-                        for dx in -cutoff..=cutoff {
-                            let gx = ix + dx;
-                            let gy = iy + dy;
-                            let gz = iz + dz;
-                            if gx < 0 || gy < 0 || gz < 0 {
-                                continue;
-                            }
-                            let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
-                            if gx >= grid_dims[0] || gy >= grid_dims[1] || gz >= grid_dims[2] {
-                                continue;
-                            }
-                            let r2 =
-                                (dx * dx + dy * dy + dz * dz) as f32 * grid_spacing * grid_spacing;
-                            let val = w * (-r2 * inv_2sig2).exp();
-                            density[(gz * grid_dims[1] + gy) * grid_dims[0] + gx] += val;
-                        }
+            let mut kernel = Vec::new();
+            for dz in -cutoff..=cutoff {
+                for dy in -cutoff..=cutoff {
+                    for dx in -cutoff..=cutoff {
+                        let r2 = (dx * dx + dy * dy + dz * dz) as f32 * grid_spacing * grid_spacing;
+                        kernel.push((dx, dy, dz, (-r2 * inv_2sig2).exp()));
                     }
                 }
             }
+
+            let mut density = vec![0.0f32; grid_n];
+            const PH_SMOOTH_OCCUPIED_VOXEL_CAP: usize = 300_000;
+            if occupied_voxels.len() <= PH_SMOOTH_OCCUPIED_VOXEL_CAP {
+                let xy = grid_dims[0] * grid_dims[1];
+                for &idx in &occupied_voxels {
+                    let w = voxel_mass[idx];
+                    if w == 0.0 {
+                        continue;
+                    }
+                    let z = idx / xy;
+                    let rem = idx % xy;
+                    let y = rem / grid_dims[0];
+                    let x = rem % grid_dims[0];
+                    for &(dx, dy, dz, coeff) in &kernel {
+                        let gx = x as i32 + dx;
+                        let gy = y as i32 + dy;
+                        let gz = z as i32 + dz;
+                        if gx < 0 || gy < 0 || gz < 0 {
+                            continue;
+                        }
+                        let (gx, gy, gz) = (gx as usize, gy as usize, gz as usize);
+                        if gx >= grid_dims[0] || gy >= grid_dims[1] || gz >= grid_dims[2] {
+                            continue;
+                        }
+                        density[(gz * grid_dims[1] + gy) * grid_dims[0] + gx] += w * coeff;
+                    }
+                }
+            } else {
+                log::warn!(
+                    "  Cubical PH: {} occupied voxels exceeds smoothing cap {}; using unsmoothed deterministic voxel mass",
+                    occupied_voxels.len(),
+                    PH_SMOOTH_OCCUPIED_VOXEL_CAP
+                );
+                density = voxel_mass;
+            }
+            log::info!(
+                "  Cubical PH density: {} spikes -> {} occupied voxels, kernel={} offsets, {:.1}ms",
+                all_stream_spikes.len(),
+                occupied_voxels.len(),
+                kernel.len(),
+                ph_density_t0.elapsed().as_secs_f64() * 1000.0
+            );
 
             // Run cubical PH
             let ph_pockets = prism_nhs::cubical_ph::compute_cubical_ph_cpu(
@@ -20440,11 +22284,30 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             }
         }
 
-        // ── FINAL RERANKERS (applied last so they control output site order) ──
-        // Order: tokenized_v4 (legacy), then xgb_v3 (production). If both are
-        // set, xgb_v3 runs last and wins.
+        // ── Legacy reranker selectors ───────────────────────────────────────
+        // The production default is `--site-ranker phase-manifold`, applied
+        // after the Phase-3 manifold enrichment below. Tokenized/XGB are kept
+        // for reproducibility audits only and must be selected explicitly by
+        // `--site-ranker`.
 
-        if args.use_tokenized_ranker {
+        if args.use_tokenized_ranker && args.site_ranker != "tokenized-v4" {
+            log::warn!(
+                "--use-tokenized-ranker is deprecated as a final-ordering flag; \
+                 ignoring it because --site-ranker={} is active. Use \
+                 --site-ranker tokenized-v4 for legacy replay.",
+                args.site_ranker
+            );
+        }
+        if args.use_xgb_ranker && args.site_ranker != "xgb-v3" {
+            log::warn!(
+                "--use-xgb-ranker is deprecated and ignored unless \
+                 --site-ranker xgb-v3 is set. Active site_ranker={} keeps the \
+                 phase-manifold production path clean.",
+                args.site_ranker
+            );
+        }
+
+        if args.site_ranker == "tokenized-v4" {
             ms_sites_json.sort_by(|a, b| {
                 let sa = a
                     .get("tokenized_score")
@@ -20477,10 +22340,14 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             );
         }
 
-        if args.use_xgb_ranker {
+        if args.site_ranker == "xgb-v3" {
             match prism_nhs::xgb_ranker::apply_rerank(&mut ms_sites_json) {
                 Ok(n) => {
-                    log::info!("✓ FINAL RERANK: XGBoost v3 applied ({} sites)", n);
+                    log::warn!(
+                        "✓ LEGACY FINAL RERANK: XGBoost v3 applied ({} sites); \
+                         this path is deprecated for v004 teacher generation",
+                        n
+                    );
                     if let Some(top) = ms_sites_json.first() {
                         log::info!(
                             "  Top-1: id={} xgb_score={:.4} spike_count={}",
@@ -20824,6 +22691,287 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 }
             };
 
+            let phase_label_cls = |ts: i32| -> u8 {
+                let p1 = protocol.cold_hold_steps;
+                let p2 = p1 + protocol.ramp_steps;
+                let p3 = p2 + protocol.warm_hold_steps;
+                let p4 = p3 + protocol.ramp_down_steps;
+                if ts < p1 {
+                    0
+                } else if ts < p2 {
+                    1
+                } else if ts < p3 {
+                    2
+                } else if ts < p4 {
+                    3
+                } else {
+                    3
+                }
+            };
+
+            let centroid_from_spike_indices = |indices: &[usize]| -> Option<[f32; 3]> {
+                let mut acc = [0.0_f64; 3];
+                let mut weight_sum = 0.0_f64;
+                for &idx in indices {
+                    if let Some(s) = all_stream_spikes.get(idx) {
+                        let w = (s.intensity as f64).max(1.0e-9);
+                        acc[0] += s.position[0] as f64 * w;
+                        acc[1] += s.position[1] as f64 * w;
+                        acc[2] += s.position[2] as f64 * w;
+                        weight_sum += w;
+                    }
+                }
+                if weight_sum > 0.0 {
+                    Some([
+                        (acc[0] / weight_sum) as f32,
+                        (acc[1] / weight_sum) as f32,
+                        (acc[2] / weight_sum) as f32,
+                    ])
+                } else {
+                    None
+                }
+            };
+
+            let mut cold_phase_indices = Vec::new();
+            let mut ramp_phase_count = 0u64;
+            let mut hot_phase_indices = Vec::new();
+            let mut cooling_phase_count = 0u64;
+            let mut source_channels = std::collections::HashSet::<i32>::new();
+            let mut stream_channels = std::collections::HashSet::<usize>::new();
+            let mut intensity_values = Vec::with_capacity(site_ref.spike_indices.len());
+            let mut total_energy = 0.0_f64;
+            let mut desolv_num = 0.0_f64;
+            let mut desolv_den = 0.0_f64;
+            for &idx in &site_ref.spike_indices {
+                if let Some(s) = all_stream_spikes.get(idx) {
+                    match phase_label_cls(s.timestep) {
+                        0 => cold_phase_indices.push(idx),
+                        1 => ramp_phase_count += 1,
+                        2 => hot_phase_indices.push(idx),
+                        _ => cooling_phase_count += 1,
+                    }
+                    source_channels.insert(s.spike_source);
+                    for (sid, &start) in stream_spike_offsets.iter().enumerate() {
+                        let end = stream_spike_offsets
+                            .get(sid + 1)
+                            .copied()
+                            .unwrap_or(all_stream_spikes.len());
+                        if idx >= start && idx < end {
+                            stream_channels.insert(sid);
+                            break;
+                        }
+                    }
+                    let w = (s.intensity as f64).max(1.0e-9);
+                    total_energy += s.intensity as f64;
+                    desolv_num += (s.wd_change as f64).abs() * w;
+                    desolv_den += w;
+                    intensity_values.push(s.intensity);
+                }
+            }
+            let cold_phase_centroid = centroid_from_spike_indices(&cold_phase_indices);
+            let hot_phase_centroid = centroid_from_spike_indices(&hot_phase_indices);
+            let burst_motion_centroid = {
+                if intensity_values.is_empty() {
+                    None
+                } else {
+                    intensity_values
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let q_idx = ((intensity_values.len() - 1) as f64 * 0.90).round() as usize;
+                    let q90 = intensity_values[q_idx.min(intensity_values.len() - 1)];
+                    let burst_indices: Vec<usize> = site_ref
+                        .spike_indices
+                        .iter()
+                        .copied()
+                        .filter(|&idx| {
+                            all_stream_spikes
+                                .get(idx)
+                                .map(|s| s.intensity >= q90)
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    centroid_from_spike_indices(&burst_indices)
+                }
+            };
+            let validation_structural_centroid: Option<[f32; 3]> = {
+                let mut acc = [0.0_f64; 3];
+                let mut n = 0usize;
+                for lr in &site_ref.lining_residues {
+                    let topo_idx = (lr.resid - 1).max(0) as usize;
+                    if topo_idx < phase3_n_residues {
+                        let ca = phase3_ca_pos[topo_idx];
+                        acc[0] += ca[0] as f64;
+                        acc[1] += ca[1] as f64;
+                        acc[2] += ca[2] as f64;
+                        n += 1;
+                    }
+                }
+                if n > 0 {
+                    Some([
+                        (acc[0] / n as f64) as f32,
+                        (acc[1] / n as f64) as f32,
+                        (acc[2] / n as f64) as f32,
+                    ])
+                } else {
+                    None
+                }
+            };
+
+            let stream_consensus = stream_channels.len() as f64 / (n_streams as f64).max(1.0);
+            let cold_n = cold_phase_indices.len() as f64;
+            let hot_n = hot_phase_indices.len() as f64;
+            let ramp_n = ramp_phase_count as f64;
+            let phase_total = (cold_n + hot_n + ramp_n).max(1.0);
+            let phase_modulation =
+                (hot_n - cold_n).abs() / phase_total + 0.25 * (ramp_n / phase_total);
+            let desolvation_factor = if desolv_den > 0.0 {
+                desolv_num / desolv_den
+            } else {
+                0.0
+            };
+            let source_diversity = source_channels.len() as f64;
+            let burst_factor = site_json
+                .get("kcc")
+                .and_then(|k| {
+                    k.get("site_burst_motion")
+                        .or_else(|| k.get("burst_motion"))
+                        .and_then(|v| v.as_f64())
+                })
+                .unwrap_or(0.0);
+
+            let kcc_residue_score = |idx: usize| -> f64 {
+                let Some(kcc) = merged_kcc.as_ref() else {
+                    return 0.0;
+                };
+                if idx >= kcc.n_residues {
+                    return 0.0;
+                }
+                let lc = if kcc.lag_corr_peak[idx].is_finite() {
+                    kcc.lag_corr_peak[idx]
+                } else {
+                    0.0
+                };
+                let causality_frac = if kcc.residue_count[idx] > 0 {
+                    kcc.active_causal[idx] as f32 / kcc.residue_count[idx] as f32
+                } else {
+                    0.0
+                };
+                let bm = kcc.burst_motion[idx].min(3.0) / 3.0;
+                let me = kcc.motion_efficiency[idx].min(0.01) / 0.01;
+                let ds = kcc.direction_score[idx];
+                (0.3 * lc + 0.25 * causality_frac + 0.2 * bm + 0.15 * me + 0.1 * ds) as f64
+            };
+            let mut driver_scores = Vec::new();
+            if let Some(kcc) = site_json.get("kcc") {
+                if let Some(did) = kcc.get("driver_residue_id").and_then(|v| v.as_i64()) {
+                    if did >= 0 {
+                        driver_scores.push(kcc_residue_score(did as usize));
+                    }
+                }
+                if let Some(arr) = kcc.get("candidate_residue_ids").and_then(|v| v.as_array()) {
+                    for rid in arr.iter().take(12).filter_map(|v| v.as_i64()) {
+                        if rid >= 0 {
+                            driver_scores.push(kcc_residue_score(rid as usize));
+                        }
+                    }
+                }
+            }
+            if driver_scores.is_empty() {
+                for lr in site_ref.lining_residues.iter().take(12) {
+                    let topo_idx = (lr.resid - 1).max(0) as usize;
+                    driver_scores.push(kcc_residue_score(topo_idx));
+                }
+            }
+            let kcc_driver_factor = if driver_scores.is_empty() {
+                0.0
+            } else {
+                driver_scores.iter().sum::<f64>() / driver_scores.len() as f64
+            };
+
+            let available_view_count = [
+                Some(gvm),
+                lining_centroid,
+                driver_centroid,
+                lig_adj_centroid,
+                hot_phase_centroid,
+                cold_phase_centroid,
+                burst_motion_centroid,
+                validation_structural_centroid,
+            ]
+            .iter()
+            .filter(|v| v.is_some())
+            .count();
+            let manifold_completeness = available_view_count as f64 / 8.0;
+            let centroid_coherence = {
+                let centroids: Vec<[f32; 3]> = [
+                    Some(gvm),
+                    lining_centroid,
+                    driver_centroid,
+                    lig_adj_centroid,
+                    hot_phase_centroid,
+                    cold_phase_centroid,
+                    burst_motion_centroid,
+                    validation_structural_centroid,
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
+                if centroids.len() >= 2 {
+                    let mut center = [0.0_f64; 3];
+                    for c in &centroids {
+                        center[0] += c[0] as f64;
+                        center[1] += c[1] as f64;
+                        center[2] += c[2] as f64;
+                    }
+                    center[0] /= centroids.len() as f64;
+                    center[1] /= centroids.len() as f64;
+                    center[2] /= centroids.len() as f64;
+                    let dispersion = centroids
+                        .iter()
+                        .map(|c| {
+                            let dx = c[0] as f64 - center[0];
+                            let dy = c[1] as f64 - center[1];
+                            let dz = c[2] as f64 - center[2];
+                            (dx * dx + dy * dy + dz * dz).sqrt()
+                        })
+                        .sum::<f64>()
+                        / centroids.len() as f64;
+                    1.0 / (1.0 + dispersion)
+                } else {
+                    0.0
+                }
+            };
+            let residue_ids_for_penalty: Vec<i64> = site_json
+                .get("residue_ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+                .unwrap_or_default();
+            let terminal_like = residue_ids_for_penalty
+                .iter()
+                .min()
+                .map(|min_resid| *min_resid <= 7)
+                .unwrap_or(false);
+            let single_residue = residue_ids_for_penalty.len() <= 1;
+            let phase_manifold_penalty = (if terminal_like { -0.35 } else { 0.0 })
+                + (if single_residue { -0.25 } else { 0.0 });
+            site_json["phase_manifold_rank_features"] = serde_json::json!({
+                "total_energy": total_energy,
+                "n_spikes": site_ref.spike_indices.len(),
+                "stream_consensus": stream_consensus,
+                "phase_modulation": phase_modulation,
+                "kcc_driver_factor": kcc_driver_factor,
+                "desolvation_factor": desolvation_factor,
+                "burst_factor": burst_factor,
+                "source_diversity": source_diversity,
+                "manifold_completeness": manifold_completeness,
+                "centroid_coherence": centroid_coherence,
+                "cooling_phase_count": cooling_phase_count,
+                "terminal_like": terminal_like,
+                "single_residue": single_residue,
+                "penalty_total": phase_manifold_penalty,
+                "legacy_ranker_fields_used": false,
+                "ligand_truth_used": false,
+            });
+
             // ────────── multi-DCC argmin over populated views ──────────
             // (only computed if ground_truth.ligand_centroid is loadable;
             //  otherwise dcc_per_view is empty, satisfying G11g vacuously)
@@ -20873,10 +23021,10 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 "lining_residues":              lining_centroid,
                 "driver_residues":              driver_centroid,
                 "ligand_adjacent_subcluster":   lig_adj_centroid,
-                "hot_phase":                    serde_json::Value::Null,
-                "cold_phase":                   serde_json::Value::Null,
-                "validation_structural":        serde_json::Value::Null,
-                "burst_motion":                 serde_json::Value::Null,
+                "hot_phase":                    hot_phase_centroid,
+                "cold_phase":                   cold_phase_centroid,
+                "validation_structural":        validation_structural_centroid,
+                "burst_motion":                 burst_motion_centroid,
                 "dcc_per_view":                 dcc_per_view,
                 "best_dcc_view":                best_view,
                 "best_dcc_value":               best_dcc,
@@ -20997,23 +23145,6 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             let mut ccns_ramp = 0u64;
             let mut ccns_warm = 0u64;
             let mut ccns_cool = 0u64;
-            let phase_label_cls = |ts: i32| -> u8 {
-                let p1 = protocol.cold_hold_steps;
-                let p2 = p1 + protocol.ramp_steps;
-                let p3 = p2 + protocol.warm_hold_steps;
-                let p4 = p3 + protocol.ramp_down_steps;
-                if ts < p1 {
-                    0
-                } else if ts < p2 {
-                    1
-                } else if ts < p3 {
-                    2
-                } else if ts < p4 {
-                    3
-                } else {
-                    3
-                } // cold_return aggregates with cooling
-            };
             for &idx in &site_ref.spike_indices {
                 if let Some(s) = all_stream_spikes.get(idx) {
                     match phase_label_cls(s.timestep) {
@@ -21122,6 +23253,163 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             );
         }
 
+        if args.site_ranker == "phase-manifold" {
+            let feature_specs: [(&str, f64); 9] = [
+                ("total_energy", 0.16),
+                ("stream_consensus", 0.14),
+                ("phase_modulation", 0.13),
+                ("kcc_driver_factor", 0.16),
+                ("desolvation_factor", 0.12),
+                ("burst_factor", 0.11),
+                ("source_diversity", 0.07),
+                ("manifold_completeness", 0.07),
+                ("centroid_coherence", 0.04),
+            ];
+            let read_rank_feature = |site: &serde_json::Value, key: &str| -> f64 {
+                site.get("phase_manifold_rank_features")
+                    .and_then(|f| f.get(key))
+                    .and_then(|v| v.as_f64())
+                    .filter(|v| v.is_finite())
+                    .unwrap_or(0.0)
+            };
+            let n_sites = ms_sites_json.len();
+            let mut raw_scores = vec![0.0_f64; n_sites];
+            let mut component_maps: Vec<serde_json::Map<String, serde_json::Value>> =
+                (0..n_sites).map(|_| serde_json::Map::new()).collect();
+
+            for &(key, weight) in &feature_specs {
+                let values: Vec<f64> = ms_sites_json
+                    .iter()
+                    .map(|site| read_rank_feature(site, key))
+                    .collect();
+                let mean = if values.is_empty() {
+                    0.0
+                } else {
+                    values.iter().sum::<f64>() / values.len() as f64
+                };
+                let var = if values.is_empty() {
+                    0.0
+                } else {
+                    values
+                        .iter()
+                        .map(|v| {
+                            let d = *v - mean;
+                            d * d
+                        })
+                        .sum::<f64>()
+                        / values.len() as f64
+                };
+                let sd = var.sqrt();
+                for (i, raw) in values.iter().enumerate() {
+                    let z = if sd.is_finite() && sd > 1.0e-12 {
+                        (*raw - mean) / sd
+                    } else {
+                        0.0
+                    };
+                    let contribution = weight * z;
+                    raw_scores[i] += contribution;
+                    component_maps[i].insert(
+                        key.to_string(),
+                        serde_json::json!({
+                            "raw": *raw,
+                            "z": z,
+                            "weight": weight,
+                            "contribution": contribution,
+                        }),
+                    );
+                }
+            }
+
+            for (i, site) in ms_sites_json.iter_mut().enumerate() {
+                let features = site
+                    .get("phase_manifold_rank_features")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let penalty = features
+                    .get("penalty_total")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                let score = raw_scores[i] + penalty;
+                site["phase_manifold_score"] = serde_json::json!(score);
+                site["final_phase_manifold_score"] = serde_json::json!(score);
+                site["ranker_version"] = serde_json::json!("phase_manifold_v1");
+                site["phase_manifold_score_explanation"] = serde_json::json!({
+                    "components": component_maps[i].clone(),
+                    "penalties": {
+                        "terminal_like": features
+                            .get("terminal_like")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        "single_residue": features
+                            .get("single_residue")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        "penalty_total": penalty,
+                    },
+                    "legacy_ranker_fields_used": false,
+                    "ligand_truth_used": false,
+                    "normalization": "per-target zscore over emitted candidate sites",
+                });
+            }
+
+            ms_sites_json.sort_by(|a, b| {
+                let sa = a
+                    .get("final_phase_manifold_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(f64::NEG_INFINITY);
+                let sb = b
+                    .get("final_phase_manifold_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(f64::NEG_INFINITY);
+                let primary = sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal);
+                if primary != std::cmp::Ordering::Equal {
+                    return primary;
+                }
+                let ca = a.get("spike_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let cb = b.get("spike_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let secondary = cb.cmp(&ca);
+                if secondary != std::cmp::Ordering::Equal {
+                    return secondary;
+                }
+                let ia = a.get("id").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+                let ib = b.get("id").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+                ia.cmp(&ib)
+            });
+            for (rank, site) in ms_sites_json.iter_mut().enumerate() {
+                site["rank"] = serde_json::json!(rank + 1);
+                site["phase_manifold_rank"] = serde_json::json!(rank + 1);
+            }
+
+            log::info!(
+                "✓ FINAL RERANK: phase-manifold v1 applied after enrichment ({} sites)",
+                ms_sites_json.len()
+            );
+            for site in ms_sites_json.iter().take(3) {
+                log::info!(
+                    "  phase_rank={} id={} score={:.6} streams={:.3} phase_mod={:.3}",
+                    site.get("phase_manifold_rank")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0),
+                    site.get("id").and_then(|v| v.as_i64()).unwrap_or(-1),
+                    site.get("final_phase_manifold_score")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    site.get("phase_manifold_rank_features")
+                        .and_then(|f| f.get("stream_consensus"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    site.get("phase_manifold_rank_features")
+                        .and_then(|f| f.get("phase_modulation"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                );
+            }
+        } else if args.site_ranker == "gtckl" {
+            log::info!(
+                "FINAL RERANK: site_ranker=gtckl selected; preserving existing GTCKL/composite order"
+            );
+        }
+
         // ── Drain rescue controller history for the run manifest ──
         //
         // If the rescue controller was active, this pulls every
@@ -21170,6 +23458,13 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "n_streams": n_streams,
             "total_steps_per_stream": steps_per_stream,
             "simulation_time_sec": sim_elapsed.as_secs_f64(),
+            "base_uv_protocol": {
+                "scan_wavelengths_nm": protocol.scan_wavelengths.clone(),
+                "wavelength_dwell_steps": protocol.wavelength_dwell_steps,
+                "uv_burst_energy": protocol.uv_burst_energy,
+                "uv_burst_interval": protocol.uv_burst_interval,
+                "uv_burst_duration": protocol.uv_burst_duration,
+            },
             "consensus_threshold": consensus_threshold,
             "per_stream_stats": per_stream_stats,
             "binding_sites": clustered_sites.len(),
@@ -21990,6 +24285,16 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 _ => "UNK",
             }
         };
+        let mechanism_tag = |src: i32, atype: i32| -> &str {
+            match src {
+                1 => "UV_AROMATIC_PERTURBATION",
+                3 => "EFP_ELECTROSTATIC_FIELD",
+                4 => "LADD_ATOM_DEPARTURE",
+                5 => "COFIRE_COHERENCE",
+                _ if atype < 0 => "LIF_THERMAL_SHAPE",
+                _ => "LIF_LOCAL_INTENSITY",
+            }
+        };
         // Closure to determine CCNS phase from timestep using protocol parameters
         let phase_label = |ts: i32| -> &str {
             let p1 = protocol.cold_hold_steps;
@@ -22069,6 +24374,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                         "type": arom_type_name(atype),
                         "wavelength_nm": wl,
                         "spike_source": match src { 1 => "UV", 3 => "EFP", 4 => "LADD", 5 => "COFIRE", _ => "LIF" },
+                        "mechanism_tag": mechanism_tag(src, atype),
                         "aromatic_residue_id": arom_res,
                         "water_density": wd,
                         "vibrational_energy": ve,
@@ -22117,11 +24423,12 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // ══════════════════════════════════════════════════════════════════════
     //
     // Writes a single columnar `{prefix}.spike_events.arrow` file with the
-    // full 28-column per-spike schema (see spike_arrow_writer module doc):
+    // full 31-column per-spike schema (see spike_arrow_writer module doc):
     //   • provenance:    spike_id, replica_seed, stream_id, group_id,
     //                    chunk_idx, voxel_idx
     //   • physical:      timestep, frame_index, x/y/z, intensity,
-    //                    spike_source, aromatic_type, aromatic_residue_id,
+    //                    spike_source, mechanism_tag, aromatic_type,
+    //                    aromatic_residue_id,
     //                    phase_bits, n_residues, nearby_residues[8],
     //                    n_nearby_excited, vibrational_energy,
     //                    water_density, wd_change, wavelength_nm, ccns_phase
@@ -22585,7 +24892,9 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
         let stem_for_emit: &str = structure_name
             .strip_suffix(".topology")
             .unwrap_or(&structure_name);
-        let emit_path = args.output.join(format!("{}_path_a_completion.json", stem_for_emit));
+        let emit_path = args
+            .output
+            .join(format!("{}_path_a_completion.json", stem_for_emit));
 
         // Resolve mode label by precedence:
         //   wall_bounded > bounded > evidence_exit > default.
@@ -22608,8 +24917,8 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             .map(|v| v.clone())
             .unwrap_or_else(|_| vec![None; n_streams]);
         let streams_completed: usize = inst_vec.iter().filter(|s| s.is_some()).count();
-        let chunks_completed: i32 = path_a_t7_chunks_completed
-            .load(std::sync::atomic::Ordering::Relaxed);
+        let chunks_completed: i32 =
+            path_a_t7_chunks_completed.load(std::sync::atomic::Ordering::Relaxed);
 
         // Resolve exit reason: latched value if any stream broke; else
         // synthesize from activation status.

@@ -216,10 +216,14 @@ __device__ __forceinline__ void mixed_precision_force(
 // ============================================================================
 
 /**
- * @brief Warp-level reduction using cooperative groups
+ * @brief Warp-level reduction with a fixed lane-order shuffle tree
  */
 __device__ __forceinline__ float cg_warp_reduce_sum(cg::thread_block_tile<32> warp, float val) {
-    return cg::reduce(warp, val, cg::plus<float>());
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        val += warp.shfl_down(val, offset);
+    }
+    return val;
 }
 
 /**
@@ -241,7 +245,8 @@ __device__ float cg_block_reduce_sum(cg::thread_block block, float val, float* s
 
     // First warp reduces all warp results
     if (warp_id == 0) {
-        val = (lane < block.size() / 32) ? shared[lane] : 0.0f;
+        const int n_warps = (static_cast<int>(block.size()) + 31) / 32;
+        val = (lane < n_warps) ? shared[lane] : 0.0f;
         val = cg_warp_reduce_sum(warp, val);
     }
 

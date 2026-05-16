@@ -1,11 +1,10 @@
 //! GPU Spike Density Grid — SNDC Stage 2
 //!
 //! Converts sparse [`GpuSpikeEvent`] positions into a continuous 3D density field
-//! on GPU using Gaussian splatting with intensity² weighting.
+//! using deterministic Gaussian splatting with intensity² weighting.
 //!
-//! Two CUDA kernels:
-//! - `scatter_spike_density` — each spike contributes intensity² × exp(-r²/2σ²) to nearby voxels
-//! - `find_density_peaks` — 3×3×3 non-maximum suppression extracts local maxima
+//! Density accumulation is ordered on the host in f64, then uploaded as the
+//! canonical f32 grid for GPU 3×3×3 non-maximum suppression.
 //!
 //! The density peaks ARE the binding hotspots — analogous to FTMap consensus sites
 //! but derived from neuromorphic thermodynamic trapping events instead of probe docking.
@@ -82,9 +81,6 @@ impl SpikeDensityGrid {
         let module = context
             .load_module(ptx)
             .context("Failed to load spike_density PTX module")?;
-        let fn_scatter: CudaFunction = module
-            .load_function("scatter_spike_density")
-            .context("Failed to load scatter_spike_density kernel")?;
         let fn_find_peaks: CudaFunction = module
             .load_function("find_density_peaks")
             .context("Failed to load find_density_peaks kernel")?;
@@ -132,52 +128,64 @@ impl SpikeDensityGrid {
             spikes.len()
         );
 
-        // ── Allocate density grid (zeroed) ─────────────────────────────
-        let d_density: CudaSlice<f32> = stream.clone_htod(&vec![0.0f32; grid_size])?;
-
-        // ── Scatter spikes into density grid ───────────────────────────
+        // ── Deterministic density accumulation ─────────────────────────
+        //
+        // The previous GPU scatter used unordered f32 accumulation into voxels,
+        // making peak labels order-dependent under high spike density. Keep
+        // the same Gaussian support and x-major layout, but accumulate in a
+        // single fixed spike/voxel order with f64 precision before uploading
+        // the canonical f32 grid for GPU NMS.
+        let mut density_f64 = vec![0.0f64; grid_size];
         if !spikes.is_empty() {
-            let mut positions = Vec::with_capacity(spikes.len() * 3);
-            let mut intensities = Vec::with_capacity(spikes.len());
-            for s in spikes {
-                positions.push(s.position[0]);
-                positions.push(s.position[1]);
-                positions.push(s.position[2]);
-                intensities.push(s.intensity);
-            }
+            let inv_2sigma2 = 1.0f64 / (2.0f64 * sigma as f64 * sigma as f64);
+            let radius = (3.0f32 * sigma / spacing).ceil() as i32;
+            let dx_n = dims[0] as i32;
+            let dy_n = dims[1] as i32;
+            let dz_n = dims[2] as i32;
+            let origin64 = [origin[0] as f64, origin[1] as f64, origin[2] as f64];
+            let spacing64 = spacing as f64;
 
-            let d_positions: CudaSlice<f32> = stream.clone_htod(&positions)?;
-            let d_intensities: CudaSlice<f32> = stream.clone_htod(&intensities)?;
+            for spike in spikes {
+                let px = spike.position[0] as f64;
+                let py = spike.position[1] as f64;
+                let pz = spike.position[2] as f64;
+                let w = spike.intensity as f64 * spike.intensity as f64;
 
-            let n = spikes.len() as i32;
-            let dx = dims[0] as i32;
-            let dy = dims[1] as i32;
-            let dz = dims[2] as i32;
-            let blocks = ((spikes.len() + 255) / 256) as u32;
+                let cx = ((px - origin64[0]) / spacing64) as i32;
+                let cy = ((py - origin64[1]) / spacing64) as i32;
+                let cz = ((pz - origin64[2]) / spacing64) as i32;
 
-            unsafe {
-                stream
-                    .launch_builder(&fn_scatter)
-                    .arg(&d_positions)
-                    .arg(&d_intensities)
-                    .arg(&d_density)
-                    .arg(&n)
-                    .arg(&dx)
-                    .arg(&dy)
-                    .arg(&dz)
-                    .arg(&origin[0])
-                    .arg(&origin[1])
-                    .arg(&origin[2])
-                    .arg(&spacing)
-                    .arg(&sigma)
-                    .launch(LaunchConfig {
-                        grid_dim: (blocks, 1, 1),
-                        block_dim: (256, 1, 1),
-                        shared_mem_bytes: 0,
-                    })
-                    .context("Failed to launch scatter_spike_density")?;
+                for ox in -radius..=radius {
+                    let ix = cx + ox;
+                    if ix < 0 || ix >= dx_n {
+                        continue;
+                    }
+                    let fx = (ix as f64 * spacing64 + origin64[0]) - px;
+                    for oy in -radius..=radius {
+                        let iy = cy + oy;
+                        if iy < 0 || iy >= dy_n {
+                            continue;
+                        }
+                        let fy = (iy as f64 * spacing64 + origin64[1]) - py;
+                        for oz in -radius..=radius {
+                            let iz = cz + oz;
+                            if iz < 0 || iz >= dz_n {
+                                continue;
+                            }
+                            let fz = (iz as f64 * spacing64 + origin64[2]) - pz;
+                            let r2 = fx * fx + fy * fy + fz * fz;
+                            let val = w * (-r2 * inv_2sigma2).exp();
+                            let idx = (ix as usize) * (dims[1] as usize) * (dims[2] as usize)
+                                + (iy as usize) * (dims[2] as usize)
+                                + iz as usize;
+                            density_f64[idx] += val;
+                        }
+                    }
+                }
             }
         }
+        let density_host: Vec<f32> = density_f64.into_iter().map(|v| v as f32).collect();
+        let d_density: CudaSlice<f32> = stream.clone_htod(&density_host)?;
 
         // ── Find density peaks via 3D NMS ──────────────────────────────
         let d_peaks: CudaSlice<u32> = stream.clone_htod(&vec![0u32; grid_size])?;
@@ -220,7 +228,7 @@ impl SpikeDensityGrid {
             d_peaks,
             stream,
             _module: module,
-            h_density: None,
+            h_density: Some(density_host),
         })
     }
 

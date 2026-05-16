@@ -1,0 +1,43 @@
+[package]
+name = "prism-spike-shipper"
+version.workspace = true
+edition.workspace = true
+description = "Kernel inotify → validate → Parquet/zstd → R2 spike-exfil daemon"
+
+[[bin]]
+name = "prism-spike-shipper"
+path = "src/main.rs"
+
+[dependencies]
+anyhow    = { workspace = true }
+thiserror = { workspace = true }
+serde     = { workspace = true }
+serde_json = { workspace = true }
+clap      = { workspace = true }
+chrono    = { workspace = true }
+tokio     = { workspace = true }
+
+# Direct kernel inotify(7) interface — no Python wrapper, no polling
+inotify = "0.10"
+
+# Apache Arrow + Parquet (same version train as pyarrow 23.x → arrow-rs 58.x)
+arrow-array  = "58"
+arrow-schema = "58"
+arrow-ipc    = "58"
+parquet      = { version = "58", default-features = false, features = ["arrow", "zstd"] }
+
+# Structured logging
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender   = "0.2"
+
+# statvfs for disk-free check
+libc = "0.2"
+
+# ── Native S3 (replaces rclone subprocess entirely) ───────────────────────────
+# aws-sdk-s3 v1 shares hyper v1 with the workspace, so no version conflict.
+# Persistent HTTP/2 connection pool — no fork, no TLS re-handshake per call.
+aws-sdk-s3 = "1"
+
+# Zero-copy byte buffer; Bytes::clone() is an atomic refcount, not a memcpy.
+bytes = "1"

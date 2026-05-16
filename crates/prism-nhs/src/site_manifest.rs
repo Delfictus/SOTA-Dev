@@ -483,7 +483,6 @@ pub struct SiteManifest {
     // any one without the other three is a producer bug, but the schema
     // tolerates partial population (None means "the lattice backend did
     // not run" or "the consumer stripped this block").
-
     /// Provenance metadata for the GhostPhaseLattice4D run that produced
     /// this site. Fields mirror directive Part IV.1 (`ghost_phase_lattice`
     /// JSON block): backend identifier, configuration parameters, and

@@ -97,9 +97,7 @@ pub fn parse_backend_str(s: &str) -> Option<u8> {
         "optix" => Some(BACKEND_RT_OPTIX),
         "grid" => Some(BACKEND_GRID_DEBUG),
         "lbvh" => Some(BACKEND_LBVH),
-        "ghost-phase-lattice-4d" | "ghost-lattice" | "lattice-4d" => {
-            Some(BACKEND_GHOST_LATTICE_4D)
-        }
+        "ghost-phase-lattice-4d" | "ghost-lattice" | "lattice-4d" => Some(BACKEND_GHOST_LATTICE_4D),
         _ => None,
     }
 }

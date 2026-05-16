@@ -126,8 +126,8 @@ __device__ __forceinline__ float fast_rcp(float x) {
 #define CELL_SIZE_INV 0.1f          // 1.0 / CELL_SIZE
 #define MAX_CELLS_PER_DIM 32        // Max cells per dimension (32^3 = 32768 cells max)
 #define MAX_TOTAL_CELLS 32768       // MAX_CELLS_PER_DIM^3
-#define MAX_ATOMS_PER_CELL 128      // Max atoms that can fit in one cell
-#define NEIGHBOR_LIST_SIZE 256      // Max neighbors per atom (with buffer)
+#define MAX_ATOMS_PER_CELL 512      // Max atoms that can fit in one cell
+#define NEIGHBOR_LIST_SIZE 1024     // Full per-atom neighbor list (with buffer)
 #define NEIGHBOR_LIST_BUFFER 1.2f   // 20% buffer for list reuse between rebuilds
 
 // ============================================================================
@@ -1003,15 +1003,30 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     // 112.  Pass nullptr to disable PE accumulation.
     double* pe_components,
 
-    // M1.2.18.5 — Total External Work POINTER (Hamiltonian audit).
-    // Single f64 scalar in F2-pool VRAM.  apply_vibrational_transfer
-    // (UV velocity-kick path) atomicAdd-f64s ΔK = ½·m·(v_new² − v_old²)
-    // here; the captured pipeline emits a cuMemsetD8Async at the head
-    // of every replay window so each chunk starts with *d_external_work
-    // == 0.0.  The SFA stability fuse dereferences *adj.d_external_work
-    // (pointer at FFI offset 128) for the First-Law drift formula.
+    // M1.2.18.5 — Total External Work COMPONENTS (Hamiltonian audit).
+    // [n_atoms] f64. Zeroed by the host before launch. The fused integration
+    // phase writes per-atom clamp work directly to d_external_work[tid], the
+    // ordered UV phase writes per-neighbor kick work directly to
+    // d_external_work[neighbor], and a fixed-order reducer writes the scalar
+    // total to d_external_work[0] for the SFA stability fuse.
     // Pass nullptr to disable W_ext accumulation (legacy / non-V2).
-    double* d_external_work
+    double* d_external_work,
+
+    // Deterministic atom-owned bonded incidence lists. When present, the
+    // AMBER force phase uses per-atom gather reductions and direct writes
+    // instead of cross-block f32 atomicAdd into forces.
+    const int* atom_bond_list,
+    const int* atom_bond_count,
+    const int* atom_bond_position,
+    int max_bonds_per_atom,
+    const int* atom_angle_list,
+    const int* atom_angle_count,
+    const int* atom_angle_position,
+    int max_angles_per_atom,
+    const int* atom_dihedral_list,
+    const int* atom_dihedral_count,
+    const int* atom_dihedral_position,
+    int max_dihedrals_per_atom
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1037,208 +1052,343 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     // PHASE 1: AMBER FORCE COMPUTATION
     // ========================================================================
 
-    // Zero forces
-    if (tid < n_atoms) {
-        forces[tid] = make_float3(0.0f, 0.0f, 0.0f);
-    }
-    __syncthreads();
-
-    // Bond forces (distributed across threads) - use __ldg for cached reads
-    #pragma unroll 2
-    for (int b = tid; b < n_bonds; b += gridDim.x * blockDim.x) {
-        BondParam bond = bonds[b];
-        int bi = bond.i, bj = bond.j;
-        float3 fi = make_float3(0, 0, 0);
-        float3 fj = make_float3(0, 0, 0);
-
-        // Use __ldg for read-only position access (L2 cache hint)
-        float3 pi = positions[bi];
-        float3 pj = positions[bj];
-
-        compute_bond_force(pi, pj, bond.r0, bond.k, fi, fj,
-                           pe_components, bi, bj);
-
-        atomicAdd(&forces[bi].x, fi.x);
-        atomicAdd(&forces[bi].y, fi.y);
-        atomicAdd(&forces[bi].z, fi.z);
-        atomicAdd(&forces[bj].x, fj.x);
-        atomicAdd(&forces[bj].y, fj.y);
-        atomicAdd(&forces[bj].z, fj.z);
-    }
-
-    // Angle forces
-    #pragma unroll 2
-    for (int a = tid; a < n_angles; a += gridDim.x * blockDim.x) {
-        AngleParam angle = angles[a];
-        int ai = angle.i, aj = angle.j, ak = angle.k;
-        float3 fi = make_float3(0, 0, 0);
-        float3 fj = make_float3(0, 0, 0);
-        float3 fk = make_float3(0, 0, 0);
-
-        compute_angle_force(
-            positions[ai], positions[aj], positions[ak],
-            angle.theta0, angle.force_k,
-            fi, fj, fk,
-            pe_components, ai, aj, ak
-        );
-
-        atomicAdd(&forces[ai].x, fi.x);
-        atomicAdd(&forces[ai].y, fi.y);
-        atomicAdd(&forces[ai].z, fi.z);
-        atomicAdd(&forces[aj].x, fj.x);
-        atomicAdd(&forces[aj].y, fj.y);
-        atomicAdd(&forces[aj].z, fj.z);
-        atomicAdd(&forces[ak].x, fk.x);
-        atomicAdd(&forces[ak].y, fk.y);
-        atomicAdd(&forces[ak].z, fk.z);
-    }
-
-    // Dihedral forces
-    #pragma unroll 2
-    for (int d = tid; d < n_dihedrals; d += gridDim.x * blockDim.x) {
-        DihedralParam dih = dihedrals[d];
-        int di = dih.i, dj = dih.j, dk = dih.k, dl = dih.l;
-        float3 fi = make_float3(0, 0, 0);
-        float3 fj = make_float3(0, 0, 0);
-        float3 fk = make_float3(0, 0, 0);
-        float3 fl = make_float3(0, 0, 0);
-
-        compute_dihedral_force(
-            positions[di], positions[dj], positions[dk], positions[dl],
-            dih.periodicity, dih.phase, dih.force_k,
-            fi, fj, fk, fl,
-            pe_components, di, dj, dk, dl
-        );
-
-        atomicAdd(&forces[di].x, fi.x);
-        atomicAdd(&forces[di].y, fi.y);
-        atomicAdd(&forces[di].z, fi.z);
-        atomicAdd(&forces[dj].x, fj.x);
-        atomicAdd(&forces[dj].y, fj.y);
-        atomicAdd(&forces[dj].z, fj.z);
-        atomicAdd(&forces[dk].x, fk.x);
-        atomicAdd(&forces[dk].y, fk.y);
-        atomicAdd(&forces[dk].z, fk.z);
-        atomicAdd(&forces[dl].x, fl.x);
-        atomicAdd(&forces[dl].y, fl.y);
-        atomicAdd(&forces[dl].z, fl.z);
-    }
-
-    __syncthreads();
+    const bool deterministic_force_gather =
+        atom_bond_list != nullptr && atom_bond_count != nullptr && atom_bond_position != nullptr &&
+        atom_angle_list != nullptr && atom_angle_count != nullptr && atom_angle_position != nullptr &&
+        atom_dihedral_list != nullptr && atom_dihedral_count != nullptr && atom_dihedral_position != nullptr &&
+        use_neighbor_list && neighbor_list != nullptr && n_neighbors != nullptr;
 
     // ========================================================================
-    // NONBONDED FORCES - O(N) WITH NEIGHBOR LISTS OR O(N²) FALLBACK
+    // DETERMINISTIC AMBER FORCE COMPUTATION
     // ========================================================================
+    //
+    // Each atom owns its force row and gathers all bonded/nonbonded
+    // contributions in a fixed local order. This removes f32 force atomics and
+    // also removes the previous missing grid-wide synchronization between force
+    // accumulation and Velocity Verlet integration.
     float cutoff_sq = cutoff * cutoff;
 
-    if (tid < n_atoms) {
-        float3 my_pos = positions[tid];
-        float my_charge = charges[tid];
-        LJParam my_lj = lj_params[tid];
+    if (deterministic_force_gather) {
+        if (tid < n_atoms) {
+            float3 local_force = make_float3(0.0f, 0.0f, 0.0f);
+            double local_pe = 0.0;
 
-        // Accumulate forces locally to reduce atomicAdd contention
-        float3 my_force = make_float3(0, 0, 0);
+            const int bond_base = tid * max_bonds_per_atom;
+            const int nb = atom_bond_count[tid];
+            for (int ib = 0; ib < nb; ib++) {
+                const int bond_idx = atom_bond_list[bond_base + ib];
+                const int pos = atom_bond_position[bond_base + ib];
+                BondParam bond = bonds[bond_idx];
+                float3 fi = make_float3(0, 0, 0);
+                float3 fj = make_float3(0, 0, 0);
+                const float3 pi = positions[bond.i];
+                const float3 pj = positions[bond.j];
+                compute_bond_force(pi, pj, bond.r0, bond.k, fi, fj, nullptr, bond.i, bond.j);
+                const float3 mine = (pos == 0) ? fi : fj;
+                local_force.x += mine.x;
+                local_force.y += mine.y;
+                local_force.z += mine.z;
 
-        if (use_neighbor_list && neighbor_list != nullptr && n_neighbors != nullptr) {
-            // ================================================================
-            // O(N) PATH: Use precomputed neighbor lists (OPTIMIZED)
-            // ================================================================
-            // Optimizations:
-            // - __ldg() for L2 cached reads
-            // - #pragma unroll 4 for ILP
-            // - Prefetch neighbor indices
-            int my_n_neighbors = __ldg(&n_neighbors[tid]);
+                const float3 rij = make_float3(pj.x - pi.x, pj.y - pi.y, pj.z - pi.z);
+                const float r = sqrtf(rij.x * rij.x + rij.y * rij.y + rij.z * rij.z);
+                if (r >= 1e-8f) {
+                    const float dr = r - bond.r0;
+                    local_pe += (double)bond.k * (double)dr * (double)dr * 0.5;
+                }
+            }
+
+            const int angle_base = tid * max_angles_per_atom;
+            const int na = atom_angle_count[tid];
+            for (int ia = 0; ia < na; ia++) {
+                const int angle_idx = atom_angle_list[angle_base + ia];
+                const int pos = atom_angle_position[angle_base + ia];
+                AngleParam angle = angles[angle_idx];
+                float3 fi = make_float3(0, 0, 0);
+                float3 fj = make_float3(0, 0, 0);
+                float3 fk = make_float3(0, 0, 0);
+                const float3 pi = positions[angle.i];
+                const float3 pj = positions[angle.j];
+                const float3 pk = positions[angle.k];
+                compute_angle_force(pi, pj, pk, angle.theta0, angle.force_k,
+                                    fi, fj, fk, nullptr, angle.i, angle.j, angle.k);
+                const float3 mine = (pos == 0) ? fi : ((pos == 1) ? fj : fk);
+                local_force.x += mine.x;
+                local_force.y += mine.y;
+                local_force.z += mine.z;
+
+                const float3 rij = make_float3(pi.x - pj.x, pi.y - pj.y, pi.z - pj.z);
+                const float3 rkj = make_float3(pk.x - pj.x, pk.y - pj.y, pk.z - pj.z);
+                const float rij_len = sqrtf(rij.x * rij.x + rij.y * rij.y + rij.z * rij.z);
+                const float rkj_len = sqrtf(rkj.x * rkj.x + rkj.y * rkj.y + rkj.z * rkj.z);
+                if (rij_len >= 1e-8f && rkj_len >= 1e-8f) {
+                    float cos_theta = (rij.x * rkj.x + rij.y * rkj.y + rij.z * rkj.z) / (rij_len * rkj_len);
+                    cos_theta = fmaxf(-1.0f, fminf(1.0f, cos_theta));
+                    const float dtheta = acosf(cos_theta) - angle.theta0;
+                    local_pe += (double)angle.force_k * (double)dtheta * (double)dtheta * (1.0 / 3.0);
+                }
+            }
+
+            const int dihedral_base = tid * max_dihedrals_per_atom;
+            const int nd = atom_dihedral_count[tid];
+            for (int idh = 0; idh < nd; idh++) {
+                const int dih_idx = atom_dihedral_list[dihedral_base + idh];
+                const int pos = atom_dihedral_position[dihedral_base + idh];
+                DihedralParam dih = dihedrals[dih_idx];
+                float3 fi = make_float3(0, 0, 0);
+                float3 fj = make_float3(0, 0, 0);
+                float3 fk = make_float3(0, 0, 0);
+                float3 fl = make_float3(0, 0, 0);
+                const float3 pi = positions[dih.i];
+                const float3 pj = positions[dih.j];
+                const float3 pk = positions[dih.k];
+                const float3 pl = positions[dih.l];
+                compute_dihedral_force(pi, pj, pk, pl, dih.periodicity, dih.phase, dih.force_k,
+                                       fi, fj, fk, fl, nullptr, dih.i, dih.j, dih.k, dih.l);
+                const float3 mine = (pos == 0) ? fi : ((pos == 1) ? fj : ((pos == 2) ? fk : fl));
+                local_force.x += mine.x;
+                local_force.y += mine.y;
+                local_force.z += mine.z;
+
+                const float3 b1 = make_float3(pj.x - pi.x, pj.y - pi.y, pj.z - pi.z);
+                const float3 b2 = make_float3(pk.x - pj.x, pk.y - pj.y, pk.z - pj.z);
+                const float3 b3 = make_float3(pl.x - pk.x, pl.y - pk.y, pl.z - pk.z);
+                const float3 c1 = make_float3(
+                    b1.y * b2.z - b1.z * b2.y,
+                    b1.z * b2.x - b1.x * b2.z,
+                    b1.x * b2.y - b1.y * b2.x);
+                const float3 c2 = make_float3(
+                    b2.y * b3.z - b2.z * b3.y,
+                    b2.z * b3.x - b2.x * b3.z,
+                    b2.x * b3.y - b2.y * b3.x);
+                const float c1_len = sqrtf(c1.x * c1.x + c1.y * c1.y + c1.z * c1.z);
+                const float c2_len = sqrtf(c2.x * c2.x + c2.y * c2.y + c2.z * c2.z);
+                if (c1_len >= 1e-8f && c2_len >= 1e-8f) {
+                    float cos_phi = (c1.x * c2.x + c1.y * c2.y + c1.z * c2.z) / (c1_len * c2_len);
+                    cos_phi = fmaxf(-1.0f, fminf(1.0f, cos_phi));
+                    const float sign = c1.x * b3.x + c1.y * b3.y + c1.z * b3.z;
+                    float phi = acosf(cos_phi);
+                    if (sign < 0.0f) phi = -phi;
+                    local_pe += (double)dih.force_k *
+                                (1.0 + cos((double)dih.periodicity * (double)phi - (double)dih.phase)) *
+                                0.25;
+                }
+            }
+
+            float my_charge = charges[tid];
+            const int my_arom = d_atom_to_aromatic[tid];
+            if (my_arom >= 0 && d_is_excited[my_arom]) {
+                const float pop = d_electronic_population[my_arom];
+                float ratio_sqrt;
+                switch (d_aromatic_type[my_arom]) {
+                    case 0: ratio_sqrt = TRP_DIPOLE_RATIO_SQRT; break;
+                    case 1: ratio_sqrt = TYR_DIPOLE_RATIO_SQRT; break;
+                    case 2: ratio_sqrt = PHE_DIPOLE_RATIO_SQRT; break;
+                    default: ratio_sqrt = 1.0f;
+                }
+                const float scale = 1.0f + (ratio_sqrt - 1.0f) * pop;
+                my_charge = d_ground_state_charges[tid] * scale;
+            }
+
+            const float3 my_pos = positions[tid];
+            const LJParam my_lj = lj_params[tid];
+            const int my_n_neighbors = __ldg(&n_neighbors[tid]);
             const int* my_neighbors = &neighbor_list[tid * NEIGHBOR_LIST_SIZE];
-
-            // Process neighbors with unrolling for instruction-level parallelism
-            #pragma unroll 4
             for (int k = 0; k < my_n_neighbors; k++) {
-                int j = __ldg(&my_neighbors[k]);
-
-                // Use __ldg for cached position reads
-                float3 other_pos = positions[j];
-                float dx = my_pos.x - other_pos.x;
-                float dy = my_pos.y - other_pos.y;
-                float dz = my_pos.z - other_pos.z;
-                float r2 = dx * dx + dy * dy + dz * dz;
-
-                // Skip if outside cutoff (neighbor list has buffer)
+                const int j = __ldg(&my_neighbors[k]);
+                const float3 other_pos = positions[j];
+                const float dx = my_pos.x - other_pos.x;
+                const float dy = my_pos.y - other_pos.y;
+                const float dz = my_pos.z - other_pos.z;
+                const float r2 = dx * dx + dy * dy + dz * dz;
                 if (r2 >= cutoff_sq || r2 < 0.01f) continue;
 
-                // Load LJ params with cache hint
                 float other_charge = __ldg(&charges[j]);
-                LJParam other_lj = lj_params[j];
-
-                // M1.2.18-P2.3 — 1-4 pair lookup for ff14SB FUDGE
-                // scaling.  Walks the per-atom 1-4 list (avg ~4 entries
-                // per atom; effective lookup is single warp pass through
-                // the same L1-cached buffer the O(N²) path uses).
-                bool is_14 = false;
-                {
-                    const int s14 = pairs14_offsets[tid];
-                    const int e14 = pairs14_offsets[tid + 1];
-                    for (int p = s14; p < e14; p++) {
-                        if (pairs14_list[p] == j) { is_14 = true; break; }
+                const int other_arom = d_atom_to_aromatic[j];
+                if (other_arom >= 0 && d_is_excited[other_arom]) {
+                    const float pop = d_electronic_population[other_arom];
+                    float ratio_sqrt;
+                    switch (d_aromatic_type[other_arom]) {
+                        case 0: ratio_sqrt = TRP_DIPOLE_RATIO_SQRT; break;
+                        case 1: ratio_sqrt = TYR_DIPOLE_RATIO_SQRT; break;
+                        case 2: ratio_sqrt = PHE_DIPOLE_RATIO_SQRT; break;
+                        default: ratio_sqrt = 1.0f;
                     }
+                    const float scale = 1.0f + (ratio_sqrt - 1.0f) * pop;
+                    other_charge = d_ground_state_charges[j] * scale;
+                }
+
+                const LJParam other_lj = lj_params[j];
+                bool is_14 = false;
+                const int s14 = pairs14_offsets[tid];
+                const int e14 = pairs14_offsets[tid + 1];
+                for (int p = s14; p < e14; p++) {
+                    if (pairs14_list[p] == j) { is_14 = true; break; }
                 }
 
                 float3 fi = make_float3(0, 0, 0);
                 float3 fj = make_float3(0, 0, 0);
-
                 compute_nonbonded_force(
                     my_pos, other_pos,
                     my_charge, other_charge,
                     my_lj.sigma, my_lj.epsilon,
                     other_lj.sigma, other_lj.epsilon,
                     fi, fj, cutoff_sq,
-                    pe_components, tid, j,
+                    nullptr, tid, j,
                     is_14
                 );
+                local_force.x += fi.x;
+                local_force.y += fi.y;
+                local_force.z += fi.z;
 
-                my_force.x += fi.x;
-                my_force.y += fi.y;
-                my_force.z += fi.z;
-
-                // Newton's 3rd law
-                atomicAdd(&forces[j].x, fj.x);
-                atomicAdd(&forces[j].y, fj.y);
-                atomicAdd(&forces[j].z, fj.z);
+                const float inv_r = rsqrtf(r2);
+                const float sigma = 0.5f * (my_lj.sigma + other_lj.sigma);
+                const float epsilon = sqrtf(my_lj.epsilon * other_lj.epsilon);
+                const float sigma_r = sigma * inv_r;
+                const float sigma_r2 = sigma_r * sigma_r;
+                const float sigma_r6 = sigma_r2 * sigma_r2 * sigma_r2;
+                const float sigma_r12 = sigma_r6 * sigma_r6;
+                const float scale_lj = is_14 ? FUDGE_LJ : 1.0f;
+                const float scale_qq = is_14 ? FUDGE_QQ : 1.0f;
+                const double v_lj = 4.0 * (double)epsilon * ((double)sigma_r12 - (double)sigma_r6);
+                const double v_elec = (double)COULOMB_CONSTANT * (double)my_charge *
+                                      (double)other_charge * (double)inv_r;
+                local_pe += (scale_lj * v_lj + scale_qq * v_elec) * 0.5;
             }
-        } else {
-            // ════════════════════════════════════════════════════════
-            // RECT-3.6 / Amendment 3.5.2 — ALL-PAIRS PURGE
-            // ════════════════════════════════════════════════════════
-            //
-            // The O(N²) all-pairs fallback is excised per operator
-            // directive 2026-05-02.  Rationale (from the directive):
-            //
-            //   * Architectural Naivety — relic of legacy CPU MD
-            //     packages.  No physical/computational justification
-            //     on Blackwell sm_120.
-            //   * Register Tax — even if the branch is never taken,
-            //     the inner-loop locals were allocated by the
-            //     hardware scheduler for every thread, costing
-            //     ~4-6 registers/thread in the production O(N) path.
-            //     Critical for the G16 64-register sweet-spot.
-            //   * Neighbor-List Invariant — Mpro/MYC-MAX targets are
-            //     thousands of atoms; only the cell-list path hits
-            //     ≥92% SM saturation.  If a system is small enough
-            //     to "need" all-pairs, it belongs in a unit test, not
-            //     on an RTX 5080.
-            //
-            // Hardware Safety Valve: any attempt to launch this
-            // kernel with use_neighbor_list == 0 is a protocol
-            // violation.  PTX `trap` halts the SM immediately.
-            asm volatile("trap;");
+
+            forces[tid] = local_force;
+            if (pe_components != nullptr) {
+                pe_components[tid] = local_pe;
+            }
+        }
+    } else {
+        // Legacy atomic force path retained as a hard fallback for non-production
+        // harnesses that have not uploaded incidence lists.
+        //
+        // Production teacher generation must never reach this path: f32
+        // force atomics are order-dependent and were shown to leak into
+        // residue-level spike supervision. Trap instead of silently emitting
+        // nondeterministic trajectories if host-side incidence setup regresses.
+        asm volatile("trap;");
+        return;
+
+        if (tid < n_atoms) {
+            forces[tid] = make_float3(0.0f, 0.0f, 0.0f);
+        }
+        __syncthreads();
+
+        #pragma unroll 2
+        for (int b = tid; b < n_bonds; b += gridDim.x * blockDim.x) {
+            BondParam bond = bonds[b];
+            int bi = bond.i, bj = bond.j;
+            float3 fi = make_float3(0, 0, 0);
+            float3 fj = make_float3(0, 0, 0);
+            compute_bond_force(positions[bi], positions[bj], bond.r0, bond.k, fi, fj,
+                               pe_components, bi, bj);
+            atomicAdd(&forces[bi].x, fi.x);
+            atomicAdd(&forces[bi].y, fi.y);
+            atomicAdd(&forces[bi].z, fi.z);
+            atomicAdd(&forces[bj].x, fj.x);
+            atomicAdd(&forces[bj].y, fj.y);
+            atomicAdd(&forces[bj].z, fj.z);
         }
 
-        // Write accumulated local force once
-        atomicAdd(&forces[tid].x, my_force.x);
-        atomicAdd(&forces[tid].y, my_force.y);
-        atomicAdd(&forces[tid].z, my_force.z);
-    }
+        #pragma unroll 2
+        for (int a = tid; a < n_angles; a += gridDim.x * blockDim.x) {
+            AngleParam angle = angles[a];
+            float3 fi = make_float3(0, 0, 0);
+            float3 fj = make_float3(0, 0, 0);
+            float3 fk = make_float3(0, 0, 0);
+            compute_angle_force(positions[angle.i], positions[angle.j], positions[angle.k],
+                                angle.theta0, angle.force_k, fi, fj, fk,
+                                pe_components, angle.i, angle.j, angle.k);
+            atomicAdd(&forces[angle.i].x, fi.x);
+            atomicAdd(&forces[angle.i].y, fi.y);
+            atomicAdd(&forces[angle.i].z, fi.z);
+            atomicAdd(&forces[angle.j].x, fj.x);
+            atomicAdd(&forces[angle.j].y, fj.y);
+            atomicAdd(&forces[angle.j].z, fj.z);
+            atomicAdd(&forces[angle.k].x, fk.x);
+            atomicAdd(&forces[angle.k].y, fk.y);
+            atomicAdd(&forces[angle.k].z, fk.z);
+        }
 
-    __syncthreads();
+        #pragma unroll 2
+        for (int d = tid; d < n_dihedrals; d += gridDim.x * blockDim.x) {
+            DihedralParam dih = dihedrals[d];
+            float3 fi = make_float3(0, 0, 0);
+            float3 fj = make_float3(0, 0, 0);
+            float3 fk = make_float3(0, 0, 0);
+            float3 fl = make_float3(0, 0, 0);
+            compute_dihedral_force(positions[dih.i], positions[dih.j], positions[dih.k], positions[dih.l],
+                                   dih.periodicity, dih.phase, dih.force_k, fi, fj, fk, fl,
+                                   pe_components, dih.i, dih.j, dih.k, dih.l);
+            atomicAdd(&forces[dih.i].x, fi.x);
+            atomicAdd(&forces[dih.i].y, fi.y);
+            atomicAdd(&forces[dih.i].z, fi.z);
+            atomicAdd(&forces[dih.j].x, fj.x);
+            atomicAdd(&forces[dih.j].y, fj.y);
+            atomicAdd(&forces[dih.j].z, fj.z);
+            atomicAdd(&forces[dih.k].x, fk.x);
+            atomicAdd(&forces[dih.k].y, fk.y);
+            atomicAdd(&forces[dih.k].z, fk.z);
+            atomicAdd(&forces[dih.l].x, fl.x);
+            atomicAdd(&forces[dih.l].y, fl.y);
+            atomicAdd(&forces[dih.l].z, fl.z);
+        }
+
+        __syncthreads();
+
+        if (tid < n_atoms) {
+            float3 my_pos = positions[tid];
+            float my_charge = charges[tid];
+            LJParam my_lj = lj_params[tid];
+            float3 my_force = make_float3(0, 0, 0);
+
+            if (use_neighbor_list && neighbor_list != nullptr && n_neighbors != nullptr) {
+                int my_n_neighbors = __ldg(&n_neighbors[tid]);
+                const int* my_neighbors = &neighbor_list[tid * NEIGHBOR_LIST_SIZE];
+                #pragma unroll 4
+                for (int k = 0; k < my_n_neighbors; k++) {
+                    int j = __ldg(&my_neighbors[k]);
+                    float3 other_pos = positions[j];
+                    float dx = my_pos.x - other_pos.x;
+                    float dy = my_pos.y - other_pos.y;
+                    float dz = my_pos.z - other_pos.z;
+                    float r2 = dx * dx + dy * dy + dz * dz;
+                    if (r2 >= cutoff_sq || r2 < 0.01f) continue;
+
+                    float other_charge = __ldg(&charges[j]);
+                    LJParam other_lj = lj_params[j];
+                    bool is_14 = false;
+                    const int s14 = pairs14_offsets[tid];
+                    const int e14 = pairs14_offsets[tid + 1];
+                    for (int p = s14; p < e14; p++) {
+                        if (pairs14_list[p] == j) { is_14 = true; break; }
+                    }
+
+                    float3 fi = make_float3(0, 0, 0);
+                    float3 fj = make_float3(0, 0, 0);
+                    compute_nonbonded_force(my_pos, other_pos, my_charge, other_charge,
+                                            my_lj.sigma, my_lj.epsilon,
+                                            other_lj.sigma, other_lj.epsilon,
+                                            fi, fj, cutoff_sq, pe_components, tid, j, is_14);
+                    my_force.x += fi.x;
+                    my_force.y += fi.y;
+                    my_force.z += fi.z;
+                    atomicAdd(&forces[j].x, fj.x);
+                    atomicAdd(&forces[j].y, fj.y);
+                    atomicAdd(&forces[j].z, fj.z);
+                }
+            } else {
+                asm volatile("trap;");
+            }
+
+            atomicAdd(&forces[tid].x, my_force.x);
+            atomicAdd(&forces[tid].y, my_force.y);
+            atomicAdd(&forces[tid].z, my_force.z);
+        }
+        __syncthreads();
+    }
 
     // ========================================================================
     // PHASE 2: VELOCITY VERLET + LANGEVIN THERMOSTAT
@@ -1328,7 +1478,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             if (d_external_work != nullptr) {
                 const double work_loss_kcal_mol =
                     (work_loss_kcal_mol_amu_a2_ps2 * dt_d) / 418.4;
-                atomicAdd(d_external_work, -work_loss_kcal_mol);
+                d_external_work[tid] += -work_loss_kcal_mol;
             }
             clamped_force = f_new;
         }
@@ -1389,7 +1539,7 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                     // negative (scale < 1 ⇒ v_new² < v_old²); represents
                     // kinetic energy removed by the clamp safety valve.
                     const double delta_k_kcal_mol = delta_k_amu_a2_ps2 / 418.4;
-                    atomicAdd(d_external_work, delta_k_kcal_mol);
+                    d_external_work[tid] += delta_k_kcal_mol;
                 }
                 velocities[tid].x = v_new.x;
                 velocities[tid].y = v_new.y;
@@ -1908,62 +2058,64 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
     }
     __syncthreads();
 
-    // PHASE 6: UV BIAS PUMP-PROBE (TRUE EXCITED STATE DYNAMICS)
-    // ========================================================================
-    //
-    // This replaces the naive velocity kick with proper QM-based photophysics:
-    // 1. UV absorption → electronic excitation (charge redistribution)
-    // 2. Franck-Condon relaxation (50 fs)
-    // 3. Vibrational relaxation (2 ps) → energy transfer to neighbors
-    // 4. Electronic decay (ns timescale) → fluorescence/IC
-    //
-    // The key signal for cryptic detection is the EXCLUSION CHANGE:
-    // - Excited aromatic has larger dipole → more polar → less hydrophobic
-    // - This causes a DECREASE in exclusion → MORE water attracted
-    // - LIF neurons detect this transient dewetting/rewetting event
+    // PHASES 6/7 are intentionally stream-split by the host. UV pump-probe
+    // transfer mutates velocities for arbitrary neighbor atoms, so keeping it
+    // inside this multi-block kernel made block-local __syncthreads() masquerade
+    // as a grid barrier before the Velocity-Verlet second half-step. The host now
+    // launches nhs_uv_pump_probe_step, nhs_reduce_external_work_components, and
+    // nhs_velocity_second_half_step on the same stream immediately after this
+    // kernel, giving real kernel-boundary ordering without changing the physics.
+}
 
-    // Step 6a: Apply UV excitation to target aromatics
+extern "C" __global__ void nhs_uv_pump_probe_step(
+    ProtocolState* d_protocol,
+    float3* velocities,
+    const float* masses,
+    int* d_is_excited,
+    float* d_time_since_excitation,
+    float* d_electronic_population,
+    float* d_vibrational_energy,
+    float* d_franck_condon_progress,
+    const int* d_aromatic_type,
+    const float3* d_ring_normals,
+    const AromaticNeighbors* d_aromatic_neighbors,
+    int n_aromatics,
+    double* d_external_work
+) {
+    if (blockIdx.x != 0 || threadIdx.x != 0) return;
+    if (n_aromatics <= 0) return;
+
+    const int uv_burst_active = d_protocol->uv_burst_active;
+    const float uv_wavelength_nm = d_protocol->uv_wavelength_nm;
+    const float dt = d_protocol->dt;
+    const int timestep = (int)d_protocol->current_step;
+
 #ifdef DEBUG_UV_WAVELENGTH
-    if (blockIdx.x == 0 && threadIdx.x == 0) {
-        printf("[GPU] uv_wavelength_nm=%.2f uv_burst_active=%d n_aromatics=%d timestep=%d\n",
-               uv_wavelength_nm, uv_burst_active, n_aromatics, timestep);
-    }
+    printf("[GPU] uv_wavelength_nm=%.2f uv_burst_active=%d n_aromatics=%d timestep=%d\n",
+           uv_wavelength_nm, uv_burst_active, n_aromatics, timestep);
 #endif
-    if (uv_burst_active && n_aromatics > 0) {
-        // M1.2.26.RECOUPLE Part 1.1 — read operator override per replay.
-        // d_protocol->uv_burst_energy is set by the host on every chunk
-        // boundary (or once at engine init when --uv-burst-energy is set).
-        // Sentinel 0.0f means "use physics-derived hardcoded path".
-        const float uv_burst_energy_override = d_protocol->uv_burst_energy;
-        // Use first 14 threads of block 0 for excitation (one per aromatic max)
-        if (blockIdx.x == 0 && threadIdx.x < n_aromatics) {
-            int arom_idx = threadIdx.x;
 
-            // Only excite if not already excited (avoid double excitation)
+    if (uv_burst_active) {
+        const float uv_burst_energy_override = d_protocol->uv_burst_energy;
+        for (int arom_idx = 0; arom_idx < n_aromatics; arom_idx++) {
             if (d_is_excited[arom_idx] == 0) {
                 excite_aromatic_wavelength(
                     arom_idx,
                     d_aromatic_type[arom_idx],
-                    uv_wavelength_nm,  // Use wavelength-dependent σ(λ)
+                    uv_wavelength_nm,
                     d_is_excited,
                     d_time_since_excitation,
                     d_electronic_population,
                     d_vibrational_energy,
                     d_franck_condon_progress,
-                    uv_burst_energy_override  // M1.2.26.RECOUPLE Part 1.1
+                    uv_burst_energy_override
                 );
             }
         }
     }
 
-    __syncthreads();
-
-    // Step 6b: Update all excited state dynamics (every timestep)
-    // This handles Franck-Condon, vibrational relaxation, and electronic decay
-    if (blockIdx.x == 0 && threadIdx.x < n_aromatics) {
-        int arom_idx = threadIdx.x;
+    for (int arom_idx = 0; arom_idx < n_aromatics; arom_idx++) {
         float energy_to_transfer = 0.0f;
-
         update_excited_state_inline(
             arom_idx,
             d_aromatic_type[arom_idx],
@@ -1976,8 +2128,6 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
             &energy_to_transfer
         );
 
-        // Transfer vibrational energy to neighboring atoms
-        // This creates the thermal perturbation that propagates through the structure
         if (energy_to_transfer > 0.001f && d_aromatic_neighbors != nullptr) {
             AromaticNeighbors neighbors = d_aromatic_neighbors[arom_idx];
             apply_vibrational_transfer(
@@ -1985,37 +2135,61 @@ extern "C" __global__ void __launch_bounds__(256, 4) nhs_amber_fused_step(
                 energy_to_transfer,
                 d_ring_normals[arom_idx],
                 velocities,
-                masses,  // Pass masses for proper velocity conversion
+                masses,
                 neighbors.atom_indices,
                 neighbors.n_neighbors,
-                timestep * n_aromatics + arom_idx,  // seed for RNG
-                d_aromatic_type[arom_idx],          // ChromophoreType for debug
-                uv_wavelength_nm,                   // Wavelength for debug
-                // M1.2.18.5 — d_external_work accumulator.  Wired
-                // through as the 70th kernel parameter; the captured
-                // pipeline pre-capture sets adj.d_external_work
-                // (offset 128) = this same address, then emits a
-                // cuMemsetD8Async at the head of every replay so each
-                // chunk starts with *d_external_work == 0.0.
-                // apply_vibrational_transfer atomicAdd-f64s
-                // ΔK = ½·m·(v_new² − v_old²) per kicked neighbor.
+                timestep * n_aromatics + arom_idx,
+                d_aromatic_type[arom_idx],
+                uv_wavelength_nm,
                 d_external_work
             );
         }
     }
+}
 
+extern "C" __global__ void nhs_reduce_external_work_components(
+    double* d_external_work,
+    int n_atoms
+) {
+    __shared__ double partial[256];
+    const int lane = threadIdx.x;
+    double sum = 0.0;
+
+    if (d_external_work != nullptr) {
+        for (int i = lane; i < n_atoms; i += blockDim.x) {
+            sum += d_external_work[i];
+        }
+    }
+    partial[lane] = sum;
     __syncthreads();
 
-    // ========================================================================
-    // PHASE 7: SECOND HALF-STEP VELOCITY UPDATE (Velocity Verlet completion)
-    // ========================================================================
-
-    if (tid < n_atoms) {
-        float inv_mass = 1.0f / masses[tid];
-        velocities[tid].x += 0.5f * dt * forces[tid].x * inv_mass;
-        velocities[tid].y += 0.5f * dt * forces[tid].y * inv_mass;
-        velocities[tid].z += 0.5f * dt * forces[tid].z * inv_mass;
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (lane < stride) {
+            partial[lane] += partial[lane + stride];
+        }
+        __syncthreads();
     }
+
+    if (lane == 0 && d_external_work != nullptr) {
+        d_external_work[0] = partial[0];
+    }
+}
+
+extern "C" __global__ void nhs_velocity_second_half_step(
+    float3* velocities,
+    const float3* forces,
+    const float* masses,
+    int n_atoms,
+    const ProtocolState* d_protocol
+) {
+    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_atoms) return;
+
+    const float dt = d_protocol->dt;
+    const float inv_mass = 1.0f / masses[tid];
+    velocities[tid].x += 0.5f * dt * forces[tid].x * inv_mass;
+    velocities[tid].y += 0.5f * dt * forces[tid].y * inv_mass;
+    velocities[tid].z += 0.5f * dt * forces[tid].z * inv_mass;
 }
 
 // ============================================================================
@@ -2399,7 +2573,7 @@ extern "C" __global__ void build_neighbor_list(
                 // Check all atoms in this cell
                 for (int k = 0; k < n_in_cell; k++) {
                     int j = cell_list[neighbor_cell * MAX_ATOMS_PER_CELL + k];
-                    if (j <= tid) continue;  // Only count pairs once (i < j)
+                    if (j == tid) continue;
 
                     // Distance check
                     float dx_ij = positions[j].x - my_pos.x;
@@ -2428,6 +2602,18 @@ extern "C" __global__ void build_neighbor_list(
                 }
             }
         }
+    }
+
+    // Canonicalize per-atom neighbor order. Cell-list insertion uses atomics,
+    // so slot order is not a valid deterministic summation order.
+    for (int i = 1; i < neighbor_count; i++) {
+        int key = my_neighbors[i];
+        int p = i - 1;
+        while (p >= 0 && my_neighbors[p] > key) {
+            my_neighbors[p + 1] = my_neighbors[p];
+            p--;
+        }
+        my_neighbors[p + 1] = key;
     }
 
     n_neighbors[tid] = neighbor_count;
@@ -2549,16 +2735,14 @@ extern "C" __global__ void compute_nonbonded_neighborlist(
         my_force.y -= total_force * dy;
         my_force.z -= total_force * dz;
 
-        // Apply Newton's 3rd law to other atom
-        atomicAdd(&forces[j].x, total_force * dx);
-        atomicAdd(&forces[j].y, total_force * dy);
-        atomicAdd(&forces[j].z, total_force * dz);
+        // The production neighbor list is full and sorted per atom, so the
+        // partner atom computes its own equal/opposite contribution in its own
+        // thread. Cross-atom atomicAdd is intentionally avoided here.
     }
 
-    // Write my accumulated force
-    atomicAdd(&forces[tid].x, my_force.x);
-    atomicAdd(&forces[tid].y, my_force.y);
-    atomicAdd(&forces[tid].z, my_force.z);
+    forces[tid].x += my_force.x;
+    forces[tid].y += my_force.y;
+    forces[tid].z += my_force.z;
 }
 
 // ============================================================================
@@ -3663,28 +3847,9 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
             primary_residue_id, primary_residue_count,
             entry, residue_ids, n_atoms, residue_step_causal);
 
-        // Shared memory stencil: 26 Moore neighbors with distance weighting
-        float coupling_deposit = 1.0f;
-        int hx = lx + 1;  // offset +1 for halo border
-        int hy = ly + 1;
-        int hz = lz + 1;
-
-        for (int dz = -1; dz <= 1; dz++)
-        for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++) {
-            if (dx == 0 && dy == 0 && dz == 0) continue;
-            int nhx = hx + dx;
-            int nhy = hy + dy;
-            int nhz = hz + dz;
-            int halo_idx = nhz * HALO_X * HALO_Y + nhy * HALO_X + nhx;
-
-            int manhattan = abs(dx) + abs(dy) + abs(dz);
-            float weight = (manhattan == 1) ? 1.0f :
-                           (manhattan == 2) ? 0.7f : 0.5f;
-
-            // Shared memory atomic (~5 cycles vs ~100 for global)
-            atomicAdd(&s_coupling_tile[halo_idx], coupling_deposit * weight);
-        }
+        // Coupling emission is phase-split into
+        // nhs_build_coupling_from_spike_grid. That kernel writes one voxel per
+        // thread in fixed neighbor order, avoiding f32 atomic order drift.
 
         // Spike event emission
         int _arom_type = -1, _arom_res = -1;
@@ -3715,28 +3880,10 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
     }
 
     // ====================================================================
-    // FLUSH SHARED MEMORY HALO TO GLOBAL COUPLING BUFFER
+    // COUPLING FLUSH
     // ====================================================================
     __syncthreads();  // Ensure all stencil writes are visible
-
-    for (int i = threadIdx.x; i < HALO_SIZE; i += blockDim.x) {
-        float val = s_coupling_tile[i];
-        if (val == 0.0f) continue;
-
-        int fhz = i / (HALO_X * HALO_Y);
-        int fhy = (i / HALO_X) % HALO_Y;
-        int fhx = i % HALO_X;
-
-        int gx = tile_bx * TILE_X + fhx - 1;
-        int gy = tile_by * TILE_Y + fhy - 1;
-        int gz = tile_bz * TILE_Z + fhz - 1;
-
-        if (gx < 0 || gx >= grid_dim || gy < 0 || gy >= grid_dim ||
-            gz < 0 || gz >= grid_dim) continue;
-
-        int gv = gz * grid_dim * grid_dim + gy * grid_dim + gx;
-        atomicAdd(&coupling_write[gv], val);
-    }
+    // No global f32 atomic writes here. See nhs_build_coupling_from_spike_grid.
 
     // ====================================================================
     // PHASE 3: EFP (neuron 0 only — same as original)
@@ -3806,6 +3953,56 @@ extern "C" __global__ __launch_bounds__(128, 8) void nhs_voxel_step_multi_lif(
         }
         efp_potential_prev[v] = phi;
     }
+}
+
+// Deterministic RAF coupling builder.
+//
+// The previous multi-LIF path deposited per-spike neighbor weights through
+// shared/global f32 atomicAdd. That made the next-step coupling field depend
+// on warp/block scheduling. This phase-split kernel assigns exactly one writer
+// to each destination voxel and scans its 26 source neighbors in fixed
+// lexicographic order. New RAF spikes are identified by spike_grid ==
+// REFRACTORY_STEPS; older refractory cells were decremented before the current
+// multi-LIF spike decision, so they are not re-emitted.
+extern "C" __global__ void nhs_build_coupling_from_spike_grid(
+    const int* __restrict__ spike_grid,
+    float* __restrict__ coupling_a,
+    float* __restrict__ coupling_b,
+    int grid_dim,
+    const ProtocolState* __restrict__ d_protocol
+) {
+    int v = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_voxels = grid_dim * grid_dim * grid_dim;
+    if (v >= total_voxels) return;
+
+    int z = v / (grid_dim * grid_dim);
+    int y = (v / grid_dim) % grid_dim;
+    int x = v % grid_dim;
+
+    float coupling = 0.0f;
+    for (int dz = -1; dz <= 1; dz++) {
+        int sz = z + dz;
+        if (sz < 0 || sz >= grid_dim) continue;
+        for (int dy = -1; dy <= 1; dy++) {
+            int sy = y + dy;
+            if (sy < 0 || sy >= grid_dim) continue;
+            for (int dx = -1; dx <= 1; dx++) {
+                int sx = x + dx;
+                if (sx < 0 || sx >= grid_dim) continue;
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+
+                int src = sz * grid_dim * grid_dim + sy * grid_dim + sx;
+                if (spike_grid[src] != REFRACTORY_STEPS) continue;
+
+                int manhattan = abs(dx) + abs(dy) + abs(dz);
+                coupling += (manhattan == 1) ? 1.0f :
+                            (manhattan == 2) ? 0.7f : 0.5f;
+            }
+        }
+    }
+
+    float* coupling_write = (d_protocol->coupling_phase == 0) ? coupling_b : coupling_a;
+    coupling_write[v] = coupling;
 }
 
 // Kernel to initialize multi-neuron RAF state
@@ -4734,7 +4931,7 @@ extern "C" __global__ void nma_perturbation_kernel(
     const float* __restrict__ nma_displacements,
     const float* __restrict__ nma_force_scales,
     const int* __restrict__ ca_indices,
-    float* __restrict__ nma_work,
+    float* __restrict__ nma_work_terms,
     int n_residues,
     int active_mode,
     float amplitude,
@@ -4762,13 +4959,19 @@ extern "C" __global__ void nma_perturbation_kernel(
     }
 
     int f_offset = atom_idx * 3;
-    atomicAdd(&forces[f_offset + 0], fx);
-    atomicAdd(&forces[f_offset + 1], fy);
-    atomicAdd(&forces[f_offset + 2], fz);
+    // ca_indices is one C-alpha per residue, so this kernel has a unique
+    // writer for each force row. Direct adds avoid f32 atomic order drift.
+    forces[f_offset + 0] += fx;
+    forces[f_offset + 1] += fy;
+    forces[f_offset + 2] += fz;
 
     float vx = velocities[f_offset + 0];
     float vy = velocities[f_offset + 1];
     float vz = velocities[f_offset + 2];
     float work = (fx * vx + fy * vy + fz * vz) * dt;
-    atomicAdd(&nma_work[active_mode], work);
+    if (nma_work_terms != nullptr) {
+        // Unique writer per (mode, residue) slot. The per-mode total can be
+        // reduced later in fixed residue order without cross-thread atomics.
+        nma_work_terms[active_mode * n_residues + rid] += work;
+    }
 }

@@ -228,10 +228,26 @@ fn materialize_one(
             [0.0; 3]
         };
 
-        let mean_kl = if kl_count > 0 { (kl_sum / kl_count as f64) as f32 } else { f32::NAN };
-        let mean_tf0 = if tf0_count > 0 { (tf0_sum / tf0_count as f64) as f32 } else { f32::NAN };
-        let mean_tf1 = if tf1_count > 0 { (tf1_sum / tf1_count as f64) as f32 } else { f32::NAN };
-        let mean_wd = if wd_count > 0 { (wd_sum / wd_count as f64) as f32 } else { f32::NAN };
+        let mean_kl = if kl_count > 0 {
+            (kl_sum / kl_count as f64) as f32
+        } else {
+            f32::NAN
+        };
+        let mean_tf0 = if tf0_count > 0 {
+            (tf0_sum / tf0_count as f64) as f32
+        } else {
+            f32::NAN
+        };
+        let mean_tf1 = if tf1_count > 0 {
+            (tf1_sum / tf1_count as f64) as f32
+        } else {
+            f32::NAN
+        };
+        let mean_wd = if wd_count > 0 {
+            (wd_sum / wd_count as f64) as f32
+        } else {
+            f32::NAN
+        };
 
         let mut driver_residues: Vec<u32> = local_drivers.into_iter().collect();
         driver_residues.sort_unstable();
@@ -486,14 +502,25 @@ mod tests {
             !a_y_overlap_b,
             "Dumbbell-split test failed: components must have disjoint Y-spans \
              but got A=[{:?}..{:?}] B=[{:?}..{:?}]",
-            a.component_aabb_min[1], a.component_aabb_max[1],
-            b.component_aabb_min[1], b.component_aabb_max[1]
+            a.component_aabb_min[1],
+            a.component_aabb_max[1],
+            b.component_aabb_min[1],
+            b.component_aabb_max[1]
         );
     }
 
     #[test]
     fn unavailable_neutral_when_no_thermodynamic_data() {
-        let nodes = vec![synth_node(0, 100, 0.0, 0.0, 0.0, PHASE_COLD_HOLD, f32::NAN, 0)];
+        let nodes = vec![synth_node(
+            0,
+            100,
+            0.0,
+            0.0,
+            0.0,
+            PHASE_COLD_HOLD,
+            f32::NAN,
+            0,
+        )];
         let outcome = GhostPhaseLatticeOutcome {
             components: vec![GhostPhaseLatticeComponent {
                 node_indices: vec![0],

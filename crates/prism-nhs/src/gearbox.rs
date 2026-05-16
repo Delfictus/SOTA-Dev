@@ -276,11 +276,11 @@ pub mod ffi {
         // pointer: kept `*const c_void` to match captured_pipeline.rs (the
         // C++ producer takes `void*` and the Rust caller casts on the way in).
         pub fn prism_gearbox_populate_switch_bodies_ffi(
-            body_subgraphs: *mut cudarc::driver::sys::CUgraph,  // [4]
+            body_subgraphs: *mut cudarc::driver::sys::CUgraph, // [4]
             adj: *const InterferometricAdjudicatorFfi,
             d_velocities: *mut f32,
             n_floats: u32,
-            cruise: *const std::ffi::c_void,                    // ChronometricStateTensor*
+            cruise: *const std::ffi::c_void, // ChronometricStateTensor*
             d_current_temp: *const f32,
             d_dt: *const f32,
             target_temp_K: f32,

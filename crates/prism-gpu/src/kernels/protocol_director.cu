@@ -125,8 +125,11 @@ extern "C" __global__ void protocol_director(ProtocolState* __restrict__ state) 
         int burst_cycle = s % state->uv_burst_interval;
         state->uv_burst_active = (burst_cycle < state->uv_burst_duration) ? 1 : 0;
 
-        if (state->n_wavelengths > 0 && state->wavelength_dwell_steps > 0) {
-            int wl_idx = (s / state->wavelength_dwell_steps) % state->n_wavelengths;
+        int nwl = state->n_wavelengths;
+        if (nwl > 8) nwl = 8;
+        if (nwl < 0) nwl = 0;
+        if (nwl > 0 && state->wavelength_dwell_steps > 0) {
+            int wl_idx = (s / state->wavelength_dwell_steps) % nwl;
             state->uv_wavelength_nm = state->scan_wavelengths[wl_idx];
             state->uv_target_idx = wl_idx;
         }
@@ -279,8 +282,11 @@ extern "C" __global__ void protocol_director_graph(
     if (state->uv_burst_interval > 0) {
         int burst_cycle = s % state->uv_burst_interval;
         state->uv_burst_active = (burst_cycle < state->uv_burst_duration) ? 1 : 0;
-        if (state->n_wavelengths > 0 && state->wavelength_dwell_steps > 0) {
-            int wl_idx = (s / state->wavelength_dwell_steps) % state->n_wavelengths;
+        int nwl = state->n_wavelengths;
+        if (nwl > 8) nwl = 8;
+        if (nwl < 0) nwl = 0;
+        if (nwl > 0 && state->wavelength_dwell_steps > 0) {
+            int wl_idx = (s / state->wavelength_dwell_steps) % nwl;
             state->uv_wavelength_nm = state->scan_wavelengths[wl_idx];
             state->uv_target_idx = wl_idx;
         }
@@ -333,6 +339,7 @@ extern "C" __global__ void init_protocol_state(
     int uv_burst_interval,
     int uv_burst_duration,
     float wl0, float wl1, float wl2, float wl3,
+    float wl4, float wl5, float wl6, float wl7,
     int n_wavelengths,
     int wavelength_dwell_steps,
     float dt,
@@ -372,7 +379,11 @@ extern "C" __global__ void init_protocol_state(
     state->scan_wavelengths[1] = wl1;
     state->scan_wavelengths[2] = wl2;
     state->scan_wavelengths[3] = wl3;
-    state->n_wavelengths = n_wavelengths;
+    state->scan_wavelengths[4] = wl4;
+    state->scan_wavelengths[5] = wl5;
+    state->scan_wavelengths[6] = wl6;
+    state->scan_wavelengths[7] = wl7;
+    state->n_wavelengths = n_wavelengths > 8 ? 8 : (n_wavelengths < 0 ? 0 : n_wavelengths);
     state->wavelength_dwell_steps = wavelength_dwell_steps;
 
     state->dt = dt;

@@ -275,19 +275,19 @@ pub const GHOST_RECORD_BYTES: usize = 4096;
 pub const GHOST_FRAME_SCHEMA_V1_LEGACY: u32 = 0;
 pub const GHOST_FRAME_SCHEMA_V2: u32 = 2;
 
-pub const GHOST_V2_OFFSET_SCHEMA_VERSION:    usize = 128;
-pub const GHOST_V2_OFFSET_OBSERVATION_PASS:  usize = 132;
-pub const GHOST_V2_OFFSET_DISCOVERY_PASS:    usize = 133;
+pub const GHOST_V2_OFFSET_SCHEMA_VERSION: usize = 128;
+pub const GHOST_V2_OFFSET_OBSERVATION_PASS: usize = 132;
+pub const GHOST_V2_OFFSET_DISCOVERY_PASS: usize = 133;
 pub const GHOST_V2_OFFSET_PERTURBATION_CHAN: usize = 134;
-pub const GHOST_V2_OFFSET_UV_WAVELENGTH_NM:  usize = 136;
+pub const GHOST_V2_OFFSET_UV_WAVELENGTH_NM: usize = 136;
 pub const GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS: usize = 138;
-pub const GHOST_V2_OFFSET_GEAR_ID:           usize = 140;
-pub const GHOST_V2_OFFSET_DT_FS:             usize = 144;
-pub const GHOST_V2_OFFSET_STEP_IDX:          usize = 152;
-pub const GHOST_V2_OFFSET_AABB_MIN:          usize = 160;
-pub const GHOST_V2_OFFSET_AABB_MAX:          usize = 172;
-pub const GHOST_V2_OFFSET_CENTROID:          usize = 184;
-pub const GHOST_V2_OFFSET_V2_RESERVED:       usize = 196;
+pub const GHOST_V2_OFFSET_GEAR_ID: usize = 140;
+pub const GHOST_V2_OFFSET_DT_FS: usize = 144;
+pub const GHOST_V2_OFFSET_STEP_IDX: usize = 152;
+pub const GHOST_V2_OFFSET_AABB_MIN: usize = 160;
+pub const GHOST_V2_OFFSET_AABB_MAX: usize = 172;
+pub const GHOST_V2_OFFSET_CENTROID: usize = 184;
+pub const GHOST_V2_OFFSET_V2_RESERVED: usize = 196;
 
 /// **GHOST_NATIVE_SPATIAL_MAPPING_WIRE — field_completeness_flags bits.**
 ///
@@ -304,29 +304,29 @@ pub const GHOST_V2_OFFSET_V2_RESERVED:       usize = 196;
 /// phase-manifold complete centroid; richer views (spike_density,
 /// kcc_driver, phasor_coherent, thermo_weighted, ghost_zstr_event_weighted)
 /// are computed offline by the SiteManifest materializer.
-pub const GHOST_FCF_BIT_KL_FINITE:             u16 = 0x0001;
-pub const GHOST_FCF_BIT_GEAR_ID_NONZERO:       u16 = 0x0002;
-pub const GHOST_FCF_BIT_DT_FS_POSITIVE:        u16 = 0x0004;
-pub const GHOST_FCF_BIT_THERMO_NOT_TAINTED:    u16 = 0x0008;
+pub const GHOST_FCF_BIT_KL_FINITE: u16 = 0x0001;
+pub const GHOST_FCF_BIT_GEAR_ID_NONZERO: u16 = 0x0002;
+pub const GHOST_FCF_BIT_DT_FS_POSITIVE: u16 = 0x0004;
+pub const GHOST_FCF_BIT_THERMO_NOT_TAINTED: u16 = 0x0008;
 pub const GHOST_FCF_BIT_SPATIAL_NATIVE_AABB_MIDPOINT: u16 = 0x0010;
 
 // The v2 region MUST end at or before _slack (offset 256).
 const _: () = {
-    assert!(GHOST_V2_OFFSET_SCHEMA_VERSION    >= 128);
-    assert!(GHOST_V2_OFFSET_OBSERVATION_PASS  == 132);
-    assert!(GHOST_V2_OFFSET_DISCOVERY_PASS    == 133);
+    assert!(GHOST_V2_OFFSET_SCHEMA_VERSION >= 128);
+    assert!(GHOST_V2_OFFSET_OBSERVATION_PASS == 132);
+    assert!(GHOST_V2_OFFSET_DISCOVERY_PASS == 133);
     assert!(GHOST_V2_OFFSET_PERTURBATION_CHAN == 134);
-    assert!(GHOST_V2_OFFSET_UV_WAVELENGTH_NM  == 136);
-    assert!(GHOST_V2_OFFSET_GEAR_ID           == 140);
-    assert!(GHOST_V2_OFFSET_DT_FS             == 144);
-    assert!(GHOST_V2_OFFSET_STEP_IDX          == 152);
-    assert!(GHOST_V2_OFFSET_STEP_IDX % 8       == 0); // 8-aligned for STG.E.64
-    assert!(GHOST_V2_OFFSET_AABB_MIN          == 160);
-    assert!(GHOST_V2_OFFSET_AABB_MAX          == 172);
-    assert!(GHOST_V2_OFFSET_CENTROID          == 184);
-    assert!(GHOST_V2_OFFSET_V2_RESERVED       == 196);
+    assert!(GHOST_V2_OFFSET_UV_WAVELENGTH_NM == 136);
+    assert!(GHOST_V2_OFFSET_GEAR_ID == 140);
+    assert!(GHOST_V2_OFFSET_DT_FS == 144);
+    assert!(GHOST_V2_OFFSET_STEP_IDX == 152);
+    assert!(GHOST_V2_OFFSET_STEP_IDX % 8 == 0); // 8-aligned for STG.E.64
+    assert!(GHOST_V2_OFFSET_AABB_MIN == 160);
+    assert!(GHOST_V2_OFFSET_AABB_MAX == 172);
+    assert!(GHOST_V2_OFFSET_CENTROID == 184);
+    assert!(GHOST_V2_OFFSET_V2_RESERVED == 196);
     // v2 fields end at: 196 + 60 = 256 — must equal _slack offset.
-    assert!(GHOST_V2_OFFSET_V2_RESERVED + 60   == 256);
+    assert!(GHOST_V2_OFFSET_V2_RESERVED + 60 == 256);
     // Reserved-payload region begins at 128 and ends just before _slack at 256.
     assert!(GHOST_V2_OFFSET_SCHEMA_VERSION + 128 == 256);
 
@@ -336,19 +336,19 @@ const _: () = {
     // CUDA_ERROR_MISALIGNED_ADDRESS on misaligned destinations). Prior
     // step_idx misalignment at offset 148 was the M1.2.24 root cause.
     // This block is regression protection.
-    assert!(GHOST_V2_OFFSET_SCHEMA_VERSION       % 4 == 0); // u32
-    assert!(GHOST_V2_OFFSET_OBSERVATION_PASS     % 1 == 0); // u8
-    assert!(GHOST_V2_OFFSET_DISCOVERY_PASS       % 1 == 0); // u8
-    assert!(GHOST_V2_OFFSET_PERTURBATION_CHAN    % 1 == 0); // u8
-    assert!(GHOST_V2_OFFSET_UV_WAVELENGTH_NM     % 2 == 0); // u16
+    assert!(GHOST_V2_OFFSET_SCHEMA_VERSION % 4 == 0); // u32
+    assert!(GHOST_V2_OFFSET_OBSERVATION_PASS % 1 == 0); // u8
+    assert!(GHOST_V2_OFFSET_DISCOVERY_PASS % 1 == 0); // u8
+    assert!(GHOST_V2_OFFSET_PERTURBATION_CHAN % 1 == 0); // u8
+    assert!(GHOST_V2_OFFSET_UV_WAVELENGTH_NM % 2 == 0); // u16
     assert!(GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS % 2 == 0); // u16
-    assert!(GHOST_V2_OFFSET_GEAR_ID              % 4 == 0); // u32
-    assert!(GHOST_V2_OFFSET_DT_FS                % 4 == 0); // f32
-    assert!(GHOST_V2_OFFSET_STEP_IDX             % 8 == 0); // u64 ← M1.2.24 fix
-    assert!(GHOST_V2_OFFSET_AABB_MIN             % 4 == 0); // f32[3] component-wise
-    assert!(GHOST_V2_OFFSET_AABB_MAX             % 4 == 0); // f32[3]
-    assert!(GHOST_V2_OFFSET_CENTROID             % 4 == 0); // f32[3]
-    assert!(GHOST_V2_OFFSET_V2_RESERVED          % 4 == 0); // u32 array
+    assert!(GHOST_V2_OFFSET_GEAR_ID % 4 == 0); // u32
+    assert!(GHOST_V2_OFFSET_DT_FS % 4 == 0); // f32
+    assert!(GHOST_V2_OFFSET_STEP_IDX % 8 == 0); // u64 ← M1.2.24 fix
+    assert!(GHOST_V2_OFFSET_AABB_MIN % 4 == 0); // f32[3] component-wise
+    assert!(GHOST_V2_OFFSET_AABB_MAX % 4 == 0); // f32[3]
+    assert!(GHOST_V2_OFFSET_CENTROID % 4 == 0); // f32[3]
+    assert!(GHOST_V2_OFFSET_V2_RESERVED % 4 == 0); // u32 array
 };
 
 /// UV wavelength bit-code → wavelength_nm. Cited mapping authoritative source:

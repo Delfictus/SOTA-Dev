@@ -23,6 +23,7 @@ gpu = ["cudarc"]
 # diagnostic surface excludable from production builds without
 # touching source.
 diagnostic = []
+ensemble = []
 # T5/T6 Production Splice — strictly opt-in (operator directive
 # 2026-04-29). Routes the per-chunk MD path in `nhs_rt_full.rs`
 # through `prism_nhs::captured_pipeline::CapturedAdjudicationPipeline`
@@ -56,6 +57,7 @@ thiserror = "1.0"
 log = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = { workspace = true }
 # ZSTR O_DIRECT consumer: pwrite(2), fdatasync(2), O_DIRECT flag
 libc = "0.2"
 # Wave 0 / #69 — io_uring SQE zero-copy NVMe sink for the ZSTR Reaper.
@@ -100,10 +102,11 @@ ndarray = "0.16"
 # to produce columnar per-target Arrow IPC files with full per-spike tagging
 # (28 columns including phase_bits, nearby_residues, group_id, chunk_idx,
 # voxel_idx, wd_change, plus background spike stratification).
-arrow = "53"
-arrow-ipc = "53"
-arrow-array = "53"
-arrow-schema = "53"
+arrow = "58"
+arrow-ipc = "58"
+arrow-array = "58"
+arrow-schema = "58"
+parquet = { version = "58", default-features = false, features = ["arrow", "zstd"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
@@ -216,6 +219,14 @@ path = "src/bin/prism_ghost_evidence_scan.rs"
 name = "nhs_rt_full"
 path = "src/bin/nhs_rt_full.rs"
 required-features = ["gpu"]
+
+[[bin]]
+name = "prism-v004-ensemble"
+path = "src/bin/prism_v004_ensemble.rs"
+
+[[bin]]
+name = "prism-noise-floor"
+path = "src/bin/prism_noise_floor.rs"
 
 [[bin]]
 name = "pharmacophore_gpu"

@@ -5,7 +5,7 @@
 // Included by protocol_director.cu AND nhs_amber_fused.cu.
 // Rust side must match with #[repr(C)] — see protocol_state.rs.
 //
-// Layout: 148 bytes, all fields naturally 4-byte aligned.
+// Layout: 716 bytes, all fields naturally 4-byte aligned.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #ifndef PROTOCOL_STATE_CUH
@@ -37,8 +37,8 @@ struct ProtocolState {
     int uv_target_idx;               // current aromatic target index (written by Director)
 
     // ── Wavelength scan table ──
-    float scan_wavelengths[4];       // up to 4 wavelengths (TRP/TYR/PHE/HIS)
-    int n_wavelengths;               // number of active wavelengths (1-4)
+    float scan_wavelengths[8];       // up to 8 wavelengths (keeps HIS/BNZ channels)
+    int n_wavelengths;               // number of active wavelengths (1-8)
     int wavelength_dwell_steps;      // steps per wavelength before hopping
 
     // ── Langevin parameters ──
@@ -162,9 +162,9 @@ struct ProtocolState {
 };
 
 // Struct size:
-//   148 (Gates 0-2) + 16 (legacy ASC hooks) + 4 (phase) = 168
-//   + 4 (steering_focus_count) + 512 (steering_focus_residues[64]) = 684
+//   164 (Gates 0-2 + expanded scan table) + 16 (legacy ASC hooks) + 4 (phase) = 184
+//   + 4 (steering_focus_count) + 512 (steering_focus_residues[64]) = 700
 //   + 4 (focus_match_count) + 4 (processed_spike_count)
-//   + 4 (last_seen_focus_id) + 4 (last_seen_spike_residue) = 700 bytes
+//   + 4 (last_seen_focus_id) + 4 (last_seen_spike_residue) = 716 bytes
 
 #endif // PROTOCOL_STATE_CUH

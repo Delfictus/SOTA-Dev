@@ -1424,10 +1424,7 @@ mod tests {
         // M1.2.20.C-G / T24 — adjudication_reason_flags (replaces lqi_flags).
         // M1.2.26.RECOUPLE — KL-native μ/σ at 148/152;
         // adjudication_reason_flags relocated to 156; _reserved tail at 160.
-        assert_eq!(
-            offset_of!(InterferometricAdjudicatorFfi, total_kl_mu),
-            148
-        );
+        assert_eq!(offset_of!(InterferometricAdjudicatorFfi, total_kl_mu), 148);
         assert_eq!(
             offset_of!(InterferometricAdjudicatorFfi, total_kl_sigma),
             152

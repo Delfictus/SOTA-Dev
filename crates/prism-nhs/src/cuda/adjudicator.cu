@@ -543,7 +543,7 @@ __global__ void prism_interferometric_adjudicator_probe_kernel(uint32_t* out) {
 // ════════════════════════════════════════════════════════════════════
 
 /// Per-atom outward-repulsion kernel. Reads the relaxed manifold's
-/// AABB, computes the centroid X_c, and atomicAdds an outward force
+/// AABB, computes the centroid X_c, and adds an outward force
 /// F_i = α · Δ_AB · (x_i − X_c) into the existing fused_engine
 /// d_forces buffer. Anti-Greenfield § 2.1 surgical extension.
 ///
@@ -552,7 +552,7 @@ __global__ void prism_interferometric_adjudicator_probe_kernel(uint32_t* out) {
 /// pool's UINT64_MAX release threshold guarantees that.
 ///
 /// Branchless cluster-membership: `d_atom_in_cluster[i]` is `0` or `1`;
-/// the atomicAdds are gated by an integer multiply against that mask
+/// the updates are gated by an integer multiply against that mask
 /// rather than an early-return branch, eliminating warp divergence
 /// when a warp straddles the cluster boundary.
 __global__ void prism_asc_apply_kernel(
@@ -597,9 +597,9 @@ __global__ void prism_asc_apply_kernel(
     const float mask  = static_cast<float>(d_atom_in_cluster[i]);
     const float scale = steering_gain_alpha * adj->current_divergence * mask;
 
-    atomicAdd(&d_forces[i * 3 + 0], scale * dx);
-    atomicAdd(&d_forces[i * 3 + 1], scale * dy);
-    atomicAdd(&d_forces[i * 3 + 2], scale * dz);
+    d_forces[i * 3 + 0] += scale * dx;
+    d_forces[i * 3 + 1] += scale * dy;
+    d_forces[i * 3 + 2] += scale * dz;
 
     // ── M1.2.18-P3.2 — ASC steering potential accumulation ──
     //
@@ -615,7 +615,7 @@ __global__ void prism_asc_apply_kernel(
     if (pe_components != nullptr) {
         const float r2 = dx * dx + dy * dy + dz * dz;
         const double v_asc = -0.5 * (double)scale * (double)r2;
-        atomicAdd(pe_components + i, v_asc);
+        pe_components[i] += v_asc;
     }
 }
 

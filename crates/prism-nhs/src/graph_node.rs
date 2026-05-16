@@ -370,11 +370,8 @@ pub unsafe fn create_while_handle(
     default_value: u32,
 ) -> Result<u64, SpliceError> {
     let mut handle: u64 = 0;
-    let rc = prism_graph_create_while_handle_ffi(
-        parent_graph,
-        default_value,
-        &mut handle as *mut _,
-    );
+    let rc =
+        prism_graph_create_while_handle_ffi(parent_graph, default_value, &mut handle as *mut _);
     if rc != 0 {
         return Err(SpliceError::Cuda(rc));
     }

@@ -1129,8 +1129,8 @@ impl PersistentNhsEngine {
             module,
             stream,
             engine: None,
-            rt_engine: None,   // Lazy initialized on first use
-            gpu_cluster: None, // Lazy initialized on first cluster_spikes call
+            rt_engine: None,     // Lazy initialized on first use
+            gpu_cluster: None,   // Lazy initialized on first cluster_spikes call
             ghost_lattice: None, // Lazy initialized on first cluster_ghost_phase_lattice call
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
@@ -1163,7 +1163,7 @@ impl PersistentNhsEngine {
             stream,
             engine: None,
             rt_engine: None,
-            gpu_cluster: None, // Lazy initialized on first cluster_spikes call
+            gpu_cluster: None,   // Lazy initialized on first cluster_spikes call
             ghost_lattice: None, // Lazy initialized on first cluster_ghost_phase_lattice call
             max_atoms: config.max_atoms,
             grid_dim: config.grid_dim,
@@ -1498,8 +1498,8 @@ impl PersistentNhsEngine {
             .unwrap_or(0)
     }
 
-    /// **B.3** raw device pointer to `d_protocol->dt` (offset 84 within
-    /// the GPU-resident ProtocolState).  Forwarder.
+    /// **B.3** raw device pointer to `d_protocol->dt` within the
+    /// GPU-resident ProtocolState.  Forwarder.
     pub fn d_protocol_dt_dev_ptr(&self) -> u64 {
         self.engine
             .as_ref()
@@ -2731,19 +2731,19 @@ impl PersistentNhsEngine {
         let t = std::time::Instant::now();
 
         if self.ghost_lattice.is_none() {
-            self.ghost_lattice = Some(
-                crate::ghost_phase_lattice::GhostPhaseLattice4D::new(
-                    self.context.clone(),
-                    self.stream.clone(),
-                    config,
-                ),
-            );
+            self.ghost_lattice = Some(crate::ghost_phase_lattice::GhostPhaseLattice4D::new(
+                self.context.clone(),
+                self.stream.clone(),
+                config,
+            ));
         }
         let backend = self
             .ghost_lattice
             .as_mut()
             .expect("lattice backend just initialised");
-        let outcome = backend.cluster(nodes).context("ghost-phase-lattice cluster")?;
+        let outcome = backend
+            .cluster(nodes)
+            .context("ghost-phase-lattice cluster")?;
         log::info!(
             "POST_MD_CLUSTER_DONE backend=ghost_phase_lattice_4d components={} \
              pairs={} edges={} elapsed_ms={}",
@@ -4027,7 +4027,9 @@ impl BatchProcessor {
                 uv_burst_energy: 30.0,
                 uv_burst_interval: 500,
                 uv_burst_duration: 50,
-                scan_wavelengths: vec![280.0, 274.0, 258.0], // TRP, TYR, PHE
+                // Keep batch processing aligned with the production
+                // ProtocolState surface: TRP, TYR, PHE, BNZ/HIS shoulder, HIS.
+                scan_wavelengths: crate::fused_engine::PRODUCTION_UV_SCAN_WAVELENGTHS.to_vec(),
                 wavelength_dwell_steps: 500,
                 ramp_down_steps: 0,
                 cold_return_steps: 0,

@@ -288,7 +288,7 @@ fn run_batch(
             uv_burst_energy: 30.0,
             uv_burst_interval: 500,
             uv_burst_duration: 50,
-            scan_wavelengths: vec![280.0, 274.0, 258.0], // TRP, TYR, PHE
+            scan_wavelengths: prism_nhs::fused_engine::PRODUCTION_UV_SCAN_WAVELENGTHS.to_vec(),
             wavelength_dwell_steps: 500,
             // RT fields use defaults from standard()
             ..CryoUvProtocol::standard()

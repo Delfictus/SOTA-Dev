@@ -5,9 +5,10 @@
 // M1.2.20.C-C / T19 — F64 Calibration Epoch refactor.  Pre-Phase-3 this
 // kernel triplet wrote samples into a 500-element f32 buffer and reduced
 // after PRISM_DYNT7_N_MIN with f32 math.  Operator's "Native Statistical
-// Grounding" mandate (2026-05-02) replaces that with two f64 atomic
-// accumulators (sum_kl, sum_sq_kl) plus a u32 count, computed on the
-// fly during the 100-frame cold-hold burn-in.  At count == N_MIN a
+// Grounding" mandate (2026-05-02) replaces that with two f64
+// accumulators (sum_kl, sum_sq_kl) plus a u32 count, computed in a
+// single-thread fixed order during the 100-frame cold-hold burn-in.
+// At count == N_MIN a
 // single-thread reduce kernel computes:
 //
 //   μ        = sum_kl    / N
@@ -35,9 +36,9 @@
 // first kernel launch sees count = 0.
 
 struct __align__(8) CalibrationStateF64 {
-    double   sum_kl;       // 0..8    atomicAdd_f64 target
-    double   sum_sq_kl;    // 8..16   atomicAdd_f64 target
-    uint32_t count;        // 16..20  atomicAdd target — frozen at N_MIN
+    double   sum_kl;       // 0..8    ordered f64 accumulator
+    double   sum_sq_kl;    // 8..16   ordered f64 accumulator
+    uint32_t count;        // 16..20  sample count — frozen at N_MIN
     uint32_t applied;      // 20..24  set to 1 by reduce kernel; gates re-apply
 };
 
@@ -47,7 +48,7 @@ static_assert(sizeof(CalibrationStateF64) == 24, "CalibrationStateF64 must be 24
 //
 // Single-thread launch.  Reads adj.current_divergence (the captured-graph
 // per-frame KL-divergence scalar set by the Adjudicator step kernel),
-// atomicAdds it into sum_kl + (kl² into sum_sq_kl), increments count.
+// accumulates it into sum_kl + (kl² into sum_sq_kl), increments count.
 // Frozen once count >= N_MIN — subsequent launches no-op.
 
 extern "C"
@@ -67,13 +68,11 @@ __global__ void prism_dynamic_t7_capture_kernel(
     // the f64 precision for the calibration accumulator").
     const double kl = static_cast<double>(adj->current_divergence);
 
-    // Three independent atomic accumulators.  sm_120 native f64
-    // atomicAdd; the captured-graph dependency edge from the Adjudicator
-    // (which writes current_divergence) into THIS kernel guarantees
-    // L2-visibility of the kl input.
-    atomicAdd(&state->sum_kl,    kl);
-    atomicAdd(&state->sum_sq_kl, kl * kl);
-    atomicAdd(&state->count,     1u);
+    // Single-thread launch, so direct ordered accumulation is both
+    // deterministic and equivalent to the former atomics.
+    state->sum_kl    += kl;
+    state->sum_sq_kl += kl * kl;
+    state->count      = n_now + 1u;
     __threadfence();
 }
 
@@ -87,7 +86,7 @@ __global__ void prism_dynamic_t7_capture_kernel(
 
 extern "C"
 __global__ void prism_dynamic_t7_reduce_kernel(
-    const CalibrationStateF64* __restrict__ state,
+    CalibrationStateF64* __restrict__ state,
     InterferometricAdjudicatorFfi* __restrict__ adj
 ) {
     if (threadIdx.x != 0 || blockIdx.x != 0) return;
@@ -95,12 +94,8 @@ __global__ void prism_dynamic_t7_reduce_kernel(
     const uint32_t n        = state->count;
     if (n < PRISM_DYNT7_N_MIN) return;
 
-    // Idempotency interlock.  We can't set `applied` from this const
-    // pointer; in practice, `state` is non-const-aliased on the host
-    // side (the F2-pool buffer is mutable), but the kernel takes a
-    // const pointer for safety — re-firing this kernel is a no-op
-    // because the FFI fields are written deterministically from the
-    // accumulators.
+    // Idempotency interlock. Re-firing this kernel is a no-op because
+    // the FFI fields are written deterministically from the accumulators.
     const uint32_t already = state->applied;
     if (already != 0u) return;
 
@@ -116,15 +111,14 @@ __global__ void prism_dynamic_t7_reduce_kernel(
     if (!(var > 0.0)) {
         // Bit-31 of adjudication_reason_flags = LQI_T7_VARIANCE_ZERO
         // (Lineage Protection — operator §1, retained from M1.2.20.C-C).
-        atomicOr(&adj->adjudication_reason_flags, 0x80000000u);
+        adj->adjudication_reason_flags |= 0x80000000u;
         __threadfence();
         // Still write a sane fallback so subsequent captured-graph
         // replays don't read uninitialised noise_floor values.
         adj->noise_floor_mu[0]    = static_cast<float>(mu);
         adj->noise_floor_sigma[0] = 1.0e-3f;  // bootstrap σ
         // Mark applied so we don't re-enter.
-        atomicOr(reinterpret_cast<uint32_t*>(
-            const_cast<uint32_t*>(&state->applied)), 1u);
+        state->applied = 1u;
         return;
     }
 
@@ -133,10 +127,7 @@ __global__ void prism_dynamic_t7_reduce_kernel(
     adj->noise_floor_sigma[0] = static_cast<float>(sigma);
     __threadfence();
 
-    // Set applied=1 idempotently.  Cast through const for the
-    // captured-graph buffer.
-    atomicOr(reinterpret_cast<uint32_t*>(
-        const_cast<uint32_t*>(&state->applied)), 1u);
+    state->applied = 1u;
 }
 
 // ─── Host launcher: enqueues both kernels in order ───────────────────────
@@ -162,7 +153,7 @@ int prism_dynamic_t7_launch(
     CalibrationStateF64* state_ptr =
         static_cast<CalibrationStateF64*>(state_dev);
 
-    // Capture: atomicAdd into f64 accumulators.
+    // Capture: ordered f64 accumulation in a single-thread kernel.
     prism_dynamic_t7_capture_kernel<<<1, 1, 0, s>>>(adj_ptr, state_ptr);
 
     // Reduce + Apply: gated on count >= N_MIN, idempotent via `applied`.

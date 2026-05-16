@@ -1,66 +1,16 @@
 // SNDC Stage 2: Spike Density Grid CUDA Kernels
 //
-// Gaussian splatting of spike events into a continuous 3D density field
-// with intensity² weighting, plus 3D non-maximum suppression for peak finding.
+// 3D non-maximum suppression for deterministic spike-density peak finding.
 //
-// Kernels:
-//   scatter_spike_density — splat each spike into nearby voxels
-//   find_density_peaks    — 3×3×3 NMS to extract local maxima
+// Density splatting is performed in ordered f64 on the Rust side before the
+// canonical f32 grid is uploaded. This file intentionally keeps only the GPU
+// NMS kernel, which has no cross-thread floating-point accumulation.
 
 #include <stdint.h>
 
 extern "C" {
 
-// Kernel 1: Scatter spikes into density grid with Gaussian splatting
-// Each spike contributes intensity² × exp(-r²/2σ²) to nearby voxels
-// σ = 2.0Å → 99% energy within 6Å radius → ~6³ = 216 voxels per spike
-// With 40K spikes: 40K × 216 = 8.6M atomicAdd operations
-// On RTX 5080: ~0.1ms (trivially fast)
-__global__ void scatter_spike_density(
-    const float* __restrict__ spike_positions,  // [N, 3]
-    const float* __restrict__ spike_intensities, // [N]
-    float* __restrict__ density_grid,            // [Dx, Dy, Dz]
-    int N, int Dx, int Dy, int Dz,
-    float origin_x, float origin_y, float origin_z,
-    float spacing, float sigma
-) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= N) return;
-
-    float px = spike_positions[tid * 3 + 0];
-    float py = spike_positions[tid * 3 + 1];
-    float pz = spike_positions[tid * 3 + 2];
-    float w = spike_intensities[tid];
-    w = w * w;  // intensity²
-
-    float inv_2sigma2 = 1.0f / (2.0f * sigma * sigma);
-    int radius = (int)ceilf(3.0f * sigma / spacing);  // 3σ cutoff
-
-    int cx = (int)((px - origin_x) / spacing);
-    int cy = (int)((py - origin_y) / spacing);
-    int cz = (int)((pz - origin_z) / spacing);
-
-    for (int dx = -radius; dx <= radius; dx++) {
-        int ix = cx + dx;
-        if (ix < 0 || ix >= Dx) continue;
-        float fx = (ix * spacing + origin_x) - px;
-        for (int dy = -radius; dy <= radius; dy++) {
-            int iy = cy + dy;
-            if (iy < 0 || iy >= Dy) continue;
-            float fy = (iy * spacing + origin_y) - py;
-            for (int dz = -radius; dz <= radius; dz++) {
-                int iz = cz + dz;
-                if (iz < 0 || iz >= Dz) continue;
-                float fz = (iz * spacing + origin_z) - pz;
-                float r2 = fx*fx + fy*fy + fz*fz;
-                float val = w * expf(-r2 * inv_2sigma2);
-                atomicAdd(&density_grid[ix * Dy * Dz + iy * Dz + iz], val);
-            }
-        }
-    }
-}
-
-// Kernel 2: 3D non-maximum suppression to find density peaks
+// 3D non-maximum suppression to find density peaks
 // A voxel is a peak if it's the maximum in its 3×3×3 neighborhood
 // These peaks seed the hierarchical clustering in Stage 3
 __global__ void find_density_peaks(

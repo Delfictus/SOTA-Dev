@@ -244,8 +244,7 @@ impl PathAHeartbeat {
         }
         self.last_chunk_seen[sid].store(chunk, Ordering::Relaxed);
         self.last_step_seen[sid].store(step, Ordering::Relaxed);
-        self.last_progress_ts_unix[sid]
-            .store(unix_now_secs(), Ordering::Relaxed);
+        self.last_progress_ts_unix[sid].store(unix_now_secs(), Ordering::Relaxed);
         self.current_phase[sid].store(phase, Ordering::Relaxed);
     }
 
@@ -278,9 +277,7 @@ impl PathAHeartbeat {
         for sid in 0..self.n_streams {
             last_chunk.push(self.last_chunk_seen[sid].load(Ordering::Relaxed));
             last_step.push(self.last_step_seen[sid].load(Ordering::Relaxed));
-            last_ts.push(
-                self.last_progress_ts_unix[sid].load(Ordering::Relaxed),
-            );
+            last_ts.push(self.last_progress_ts_unix[sid].load(Ordering::Relaxed));
             phase.push(self.current_phase[sid].load(Ordering::Relaxed));
             v2.push(self.v2_live[sid].load(Ordering::Relaxed));
             ev.push(self.evidence_ready[sid].load(Ordering::Relaxed));
@@ -677,26 +674,22 @@ pub fn emit_minimal_completion_json(
     elapsed_wall_seconds: f64,
     branch_traces: Option<&[Option<PrismBranchTrace>]>,
 ) {
-    let now_iso = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
+    let now_iso = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
     // Map exit_reason → completion_status. Per directive §6 Commit 12 +
     // operator's hard MVP discipline, "full_complete" is intentionally
     // unreachable from any partial/bounded path here.
     let completion_status = match exit_reason {
-        "path_a_max_wall_seconds"
-        | "n_chunks_cap"
-        | "mid_chunk_stall_watchdog"
-        | "sigint" => "evidence_emitted_partial_bounded",
+        "path_a_max_wall_seconds" | "n_chunks_cap" | "mid_chunk_stall_watchdog" | "sigint" => {
+            "evidence_emitted_partial_bounded"
+        }
         "evidence_complete" => "bounded_path_a_evidence_exit",
         "natural_completion" => "evidence_emitted_natural",
         "not_triggered" => "not_triggered",
         _ => "evidence_emitted_unknown",
     };
 
-    let streams_completed: usize =
-        snap.v2_live_by_stream.iter().filter(|b| **b).count();
+    let streams_completed: usize = snap.v2_live_by_stream.iter().filter(|b| **b).count();
     let max_chunk_completed = snap
         .last_chunk_by_stream
         .iter()
@@ -860,15 +853,31 @@ mod tests {
             (PHASE_DONE, "done", false),
             (PHASE_CHUNK_BODY_ENTER, "chunk_body_enter", false),
             (PHASE_CHUNK_BODY_V2_BUILD, "chunk_body_v2_build", false),
-            (PHASE_CHUNK_BODY_GRAPH_LAUNCH, "chunk_body_graph_launch", false),
-            (PHASE_CHUNK_BODY_POST_LAUNCH_SYNC, "chunk_body_post_launch_sync", false),
+            (
+                PHASE_CHUNK_BODY_GRAPH_LAUNCH,
+                "chunk_body_graph_launch",
+                false,
+            ),
+            (
+                PHASE_CHUNK_BODY_POST_LAUNCH_SYNC,
+                "chunk_body_post_launch_sync",
+                false,
+            ),
             (PHASE_TEARDOWN_ENTER, "teardown_enter", true),
             (PHASE_TEARDOWN_VRAM_AUDIT, "teardown_vram_audit", true),
             (PHASE_TEARDOWN_ENGINE_SYNC, "teardown_engine_sync", true),
-            (PHASE_TEARDOWN_V2_WRITER_JOIN, "teardown_v2_writer_join", true),
+            (
+                PHASE_TEARDOWN_V2_WRITER_JOIN,
+                "teardown_v2_writer_join",
+                true,
+            ),
             (PHASE_TEARDOWN_DOWNLOAD_SIG, "teardown_download_sig", true),
             (PHASE_TEARDOWN_DOWNLOAD_KCC, "teardown_download_kcc", true),
-            (PHASE_TEARDOWN_CLOSURE_RETURN, "teardown_closure_return", true),
+            (
+                PHASE_TEARDOWN_CLOSURE_RETURN,
+                "teardown_closure_return",
+                true,
+            ),
         ];
         for (code, expected_label, is_teardown) in cases {
             assert_eq!(phase_label(code), expected_label, "label for code {}", code);

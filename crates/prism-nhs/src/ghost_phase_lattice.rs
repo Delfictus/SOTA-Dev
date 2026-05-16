@@ -384,7 +384,11 @@ pub fn project_ghost_v2_record(
     let tf0 = f32::from_le_bytes(record[116..120].try_into().ok()?);
     let tf1 = f32::from_le_bytes(record[120..124].try_into().ok()?);
     let class_tainted = (telemetry_flags & GHOST_TELEMETRY_CLASS_TAINTED) != 0;
-    n.thermo_flux = if class_tainted { [f32::NAN, f32::NAN] } else { [tf0, tf1] };
+    n.thermo_flux = if class_tainted {
+        [f32::NAN, f32::NAN]
+    } else {
+        [tf0, tf1]
+    };
     n.water_density = f32::NAN; // populated downstream from the prism-therm
                                 // sidecar; v2 records don't carry it.
 
@@ -406,7 +410,11 @@ pub fn project_ghost_v2_record(
             .try_into()
             .ok()?,
     );
-    n.gear_id = if gear_id == 0 { NODE_GEAR_ID_NONE } else { gear_id };
+    n.gear_id = if gear_id == 0 {
+        NODE_GEAR_ID_NONE
+    } else {
+        gear_id
+    };
 
     let perturbation = record[GHOST_V2_OFFSET_PERTURBATION_CHAN];
     let _ = perturbation;
@@ -729,12 +737,18 @@ impl GhostPhaseLattice4D {
                 .alloc::<i32>(nodes.len())
                 .context("alloc parent")?
         };
-        let mut d_edge_score_sum: CudaSlice<u64> =
-            self.stream.memcpy_stod(&[0u64; 1]).context("alloc score sum")?;
-        let mut d_edge_count: CudaSlice<u64> =
-            self.stream.memcpy_stod(&[0u64; 1]).context("alloc edge count")?;
-        let mut d_pair_count: CudaSlice<u64> =
-            self.stream.memcpy_stod(&[0u64; 1]).context("alloc pair count")?;
+        let mut d_edge_score_sum: CudaSlice<u64> = self
+            .stream
+            .memcpy_stod(&[0u64; 1])
+            .context("alloc score sum")?;
+        let mut d_edge_count: CudaSlice<u64> = self
+            .stream
+            .memcpy_stod(&[0u64; 1])
+            .context("alloc edge count")?;
+        let mut d_pair_count: CudaSlice<u64> = self
+            .stream
+            .memcpy_stod(&[0u64; 1])
+            .context("alloc pair count")?;
         let mut d_phase_legal: CudaSlice<u64> = self
             .stream
             .memcpy_stod(&[0u64; 1])
@@ -819,10 +833,7 @@ impl GhostPhaseLattice4D {
 
         self.stream.synchronize().context("sync lattice kernels")?;
         let kernel_ms = t_kernel.elapsed().as_secs_f64() * 1000.0;
-        log::info!(
-            "  [GHOST-LATTICE-4D] kernel: {:.2} ms",
-            kernel_ms
-        );
+        log::info!("  [GHOST-LATTICE-4D] kernel: {:.2} ms", kernel_ms);
 
         // ── Step 4. Download parent + edge telemetry ────────────────
         let t_dl = std::time::Instant::now();
@@ -852,8 +863,7 @@ impl GhostPhaseLattice4D {
 
         // ── Step 5. Component extraction (root → indices map) ───────
         let t_extract = std::time::Instant::now();
-        let mut roots: std::collections::HashMap<i32, Vec<u32>> =
-            std::collections::HashMap::new();
+        let mut roots: std::collections::HashMap<i32, Vec<u32>> = std::collections::HashMap::new();
         for (i, &p) in parent_host.iter().enumerate() {
             // The path-compress kernel is supposed to land every node on its
             // canonical root; defend against a partial compression by
@@ -911,7 +921,10 @@ impl GhostPhaseLattice4D {
         log::info!(
             "  [GHOST-LATTICE-4D] components: {} (largest={}) | extract {} ms",
             components.len(),
-            components.first().map(|c| c.node_indices.len()).unwrap_or(0),
+            components
+                .first()
+                .map(|c| c.node_indices.len())
+                .unwrap_or(0),
             t_extract.elapsed().as_millis()
         );
 
@@ -993,11 +1006,8 @@ impl GhostPhaseLattice4D {
             // kernel iterates.
             let phase = (n.protocol_phase & 0b11) as u64;
             let bucket = (n.step_bucket & 0xFFFF) as u64;
-            let composite = (phase << 62)
-                | (bucket << 46)
-                | (kx << 30)
-                | (ky << 14)
-                | (kz & 0x3FFF);
+            let composite =
+                (phase << 62) | (bucket << 46) | (kx << 30) | (ky << 14) | (kz & 0x3FFF);
             keys.push((composite, i as u32));
         }
         keys.sort_by_key(|&(k, _)| k);
@@ -1166,8 +1176,7 @@ pub fn load_ghost_v2_payloads_from_dir(
         let stream_id: u16 = mid.split('_').next().unwrap_or("0").parse().unwrap_or(0);
 
         let path = entry.path();
-        let bytes = std::fs::read(&path)
-            .with_context(|| format!("read({})", path.display()))?;
+        let bytes = std::fs::read(&path).with_context(|| format!("read({})", path.display()))?;
         if bytes.len() <= 4096 {
             log::warn!(
                 "  [GHOST-LATTICE-4D] {} too small ({} B) — skipping",
@@ -1184,7 +1193,8 @@ pub fn load_ghost_v2_payloads_from_dir(
         let n_actual = n_frames.min(n_in_payload);
         let actual_payload = &payload[..n_actual * GHOST_RECORD_BYTES];
 
-        let projected = project_ghost_v2_payload(actual_payload, stream_id, schedule, step_bucket_size);
+        let projected =
+            project_ghost_v2_payload(actual_payload, stream_id, schedule, step_bucket_size);
         total_records_seen += n_actual;
         total_v2_projected += projected.len();
         log::info!(
@@ -1259,14 +1269,12 @@ mod tests {
         r[128..132].copy_from_slice(&GHOST_FRAME_SCHEMA_V2.to_le_bytes());
         r[GHOST_V2_OFFSET_GEAR_ID..GHOST_V2_OFFSET_GEAR_ID + 4]
             .copy_from_slice(&0u32.to_le_bytes());
-        r[GHOST_V2_OFFSET_DT_FS..GHOST_V2_OFFSET_DT_FS + 4]
-            .copy_from_slice(&2.0f32.to_le_bytes());
+        r[GHOST_V2_OFFSET_DT_FS..GHOST_V2_OFFSET_DT_FS + 4].copy_from_slice(&2.0f32.to_le_bytes());
         r[GHOST_V2_OFFSET_STEP_IDX..GHOST_V2_OFFSET_STEP_IDX + 8]
             .copy_from_slice(&step_idx.to_le_bytes());
         // Spatial native bit + AABB
         let fcf = GHOST_FCF_BIT_SPATIAL_NATIVE_AABB_MIDPOINT;
-        r[GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS
-            ..GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS + 2]
+        r[GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS..GHOST_V2_OFFSET_FIELD_COMPLETENESS_FLAGS + 2]
             .copy_from_slice(&fcf.to_le_bytes());
         for (i, v) in [x - 0.5, y - 0.5, z - 0.5].iter().enumerate() {
             let off = GHOST_V2_OFFSET_AABB_MIN + i * 4;
