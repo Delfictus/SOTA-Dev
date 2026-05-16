@@ -229,6 +229,10 @@ name = "prism-teacher-tags"
 path = "src/bin/prism_teacher_tags.rs"
 
 [[bin]]
+name = "prism-teacher-finalize"
+path = "src/bin/prism_teacher_finalize.rs"
+
+[[bin]]
 name = "prism-noise-floor"
 path = "src/bin/prism_noise_floor.rs"
 

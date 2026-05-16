@@ -45,6 +45,43 @@ const RESIDUE_COLUMNS: &[&str] = &[
 
 const TARGET_GROUPS: &[(&str, &[&str])] = &[
     (
+        "teacher_spike",
+        &[
+            "teacher_spike_hits",
+            "teacher_total_intensity",
+            "teacher_mean_intensity",
+            "teacher_max_intensity",
+            "teacher_aromatic_hits",
+        ],
+    ),
+    (
+        "teacher_protocol",
+        &[
+            "teacher_uv_fraction",
+            "teacher_lif_fraction",
+            "teacher_source_diversity",
+            "teacher_source_entropy",
+            "teacher_wavelength_diversity",
+            "teacher_wavelength_entropy",
+            "teacher_uv_lif_concordance",
+            "teacher_mechanism_uv_aromatic_fraction",
+            "teacher_mechanism_lif_thermal_shape_fraction",
+            "teacher_mechanism_lif_local_intensity_fraction",
+            "teacher_mechanism_efp_fraction",
+            "teacher_mechanism_ladd_fraction",
+            "teacher_mechanism_cofire_fraction",
+            "teacher_mechanism_other_fraction",
+            "teacher_mean_abs_wd_change",
+            "teacher_mean_water_density",
+            "teacher_mean_vibrational_energy",
+            "teacher_mean_nearby_excited",
+            "teacher_signal_voxel_hits",
+            "teacher_signal_primary_count",
+            "teacher_signal_coupled_count",
+            "teacher_signal_coupled_fraction",
+        ],
+    ),
+    (
         "kcc",
         &[
             "kcc_score",
@@ -55,6 +92,8 @@ const TARGET_GROUPS: &[(&str, &[&str])] = &[
             "lag_corr_peak",
             "local_cov",
             "motion_efficiency",
+            "phase_shift",
+            "kcc_selected_stream",
             "sum_motion",
             "total_steps",
             "net_dx_norm",
@@ -154,6 +193,7 @@ const TARGET_GROUPS: &[(&str, &[&str])] = &[
             "n_sites_as_burst_motion",
             "is_validation_contact",
             "n_sites_as_validation_contact",
+            "cryptic_likelihood_proxy",
         ],
     ),
     (
