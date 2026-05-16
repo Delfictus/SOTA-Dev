@@ -215,7 +215,13 @@ const TARGET_GROUPS: &[(&str, &[&str])] = &[
 #[command(about = "Native Rust v004 ensemble aggregate assembler")]
 struct Args {
     #[arg(long)]
-    manifest: PathBuf,
+    manifest: Option<PathBuf>,
+    #[arg(long = "feature-parquet")]
+    feature_parquets: Vec<PathBuf>,
+    #[arg(long, default_value = "teacher_stage_b")]
+    target_id: String,
+    #[arg(long, default_value_t = 42)]
+    base_seed: u64,
     #[arg(long)]
     output_dir: PathBuf,
     #[arg(long, default_value_t = 3.5)]
@@ -303,40 +309,75 @@ struct ReplicaParquetSummary {
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
-    let manifest_dir = args
-        .manifest
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let manifest = EnsembleManifest::from_path(&args.manifest)?;
-    if manifest.replicas.len() < 2 {
-        bail!("v004 ensemble assembly requires at least two replicas");
+    if args.manifest.is_none() && args.feature_parquets.is_empty() {
+        bail!("provide either --manifest <ensemble_manifest.json> or at least two --feature-parquet paths");
     }
-    let raw_manifest: Value = serde_json::from_slice(
-        &std::fs::read(&args.manifest)
-            .with_context(|| format!("read {}", args.manifest.display()))?,
-    )?;
 
-    let mut replicas = Vec::with_capacity(manifest.replicas.len());
-    for replica in &manifest.replicas {
-        let parquet = find_replica_parquet(&manifest_dir, replica, &raw_manifest)?;
-        let values = read_feature_parquet(&parquet, args.parquet_batch_size)
-            .with_context(|| format!("read feature parquet for replica {}", replica.replica_id))?;
-        if values.is_empty() {
-            bail!(
-                "{} contains no v004 target feature columns",
-                parquet.display()
-            );
+    let (target_id, replicas, fallback_n_residues) = if !args.feature_parquets.is_empty() {
+        if args.feature_parquets.len() < 2 {
+            bail!("direct v004 ensemble assembly requires at least two --feature-parquet inputs");
         }
-        replicas.push(ReplicaFeatures {
-            replica_id: replica.replica_id,
-            run_seed: replica.run_seed,
-            parquet_path: parquet,
-            values,
-        });
-    }
+        let mut replicas = Vec::with_capacity(args.feature_parquets.len());
+        for (idx, parquet) in args.feature_parquets.iter().enumerate() {
+            let values = read_feature_parquet(parquet, args.parquet_batch_size)
+                .with_context(|| format!("read feature parquet {}", parquet.display()))?;
+            if values.is_empty() {
+                bail!(
+                    "{} contains no v004 target feature columns",
+                    parquet.display()
+                );
+            }
+            replicas.push(ReplicaFeatures {
+                replica_id: idx as u32,
+                run_seed: args.base_seed + idx as u64,
+                parquet_path: parquet.clone(),
+                values,
+            });
+        }
+        (args.target_id.clone(), replicas, 0usize)
+    } else {
+        let manifest_path = args.manifest.as_ref().expect("checked above");
+        let manifest_dir = manifest_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let manifest = EnsembleManifest::from_path(manifest_path)?;
+        if manifest.replicas.len() < 2 {
+            bail!("v004 ensemble assembly requires at least two replicas");
+        }
+        let raw_manifest: Value = serde_json::from_slice(
+            &std::fs::read(manifest_path)
+                .with_context(|| format!("read {}", manifest_path.display()))?,
+        )?;
 
-    let residue_axis = residue_axis(&manifest, &replicas);
+        let mut replicas = Vec::with_capacity(manifest.replicas.len());
+        for replica in &manifest.replicas {
+            let parquet = find_replica_parquet(&manifest_dir, replica, &raw_manifest)?;
+            let values =
+                read_feature_parquet(&parquet, args.parquet_batch_size).with_context(|| {
+                    format!("read feature parquet for replica {}", replica.replica_id)
+                })?;
+            if values.is_empty() {
+                bail!(
+                    "{} contains no v004 target feature columns",
+                    parquet.display()
+                );
+            }
+            replicas.push(ReplicaFeatures {
+                replica_id: replica.replica_id,
+                run_seed: replica.run_seed,
+                parquet_path: parquet,
+                values,
+            });
+        }
+        (
+            manifest.target.pdb_id.clone(),
+            replicas,
+            manifest.target.n_residues,
+        )
+    };
+
+    let residue_axis = residue_axis(&replicas, fallback_n_residues);
     let rows = aggregate_rows(&residue_axis, &replicas, args.mad_threshold);
     if rows.is_empty() {
         bail!("no aggregate rows produced; check per-replica feature parquet columns");
@@ -348,7 +389,7 @@ fn main() -> Result<()> {
     let rhat_path = args.output_dir.join("convergence_rhat.parquet");
     write_aggregate_parquet(&rows, &agg_path)?;
     write_rhat_parquet(&rows, &rhat_path)?;
-    let consensus = build_consensus(&manifest, &replicas, &rows, &agg_path, args.mad_threshold)?;
+    let consensus = build_consensus(&target_id, &replicas, &rows, &agg_path, args.mad_threshold)?;
     let consensus_path = args.output_dir.join("ensemble_consensus.json");
     std::fs::write(&consensus_path, serde_json::to_vec_pretty(&consensus)?)?;
 
@@ -540,7 +581,7 @@ fn target_feature_names() -> BTreeSet<&'static str> {
         .collect()
 }
 
-fn residue_axis(manifest: &EnsembleManifest, replicas: &[ReplicaFeatures]) -> Vec<i32> {
+fn residue_axis(replicas: &[ReplicaFeatures], fallback_n_residues: usize) -> Vec<i32> {
     let observed = replicas
         .iter()
         .flat_map(|r| r.values.values())
@@ -551,8 +592,8 @@ fn residue_axis(manifest: &EnsembleManifest, replicas: &[ReplicaFeatures]) -> Ve
     if !observed.is_empty() {
         return observed;
     }
-    if manifest.target.n_residues > 0 {
-        return (0..manifest.target.n_residues).map(|i| i as i32).collect();
+    if fallback_n_residues > 0 {
+        return (0..fallback_n_residues).map(|i| i as i32).collect();
     }
     Vec::new()
 }
@@ -835,7 +876,7 @@ fn write_parquet_batch(schema: Arc<Schema>, batch: RecordBatch, path: &Path) -> 
 }
 
 fn build_consensus<'a>(
-    manifest: &'a EnsembleManifest,
+    target_id: &'a str,
     replicas: &[ReplicaFeatures],
     rows: &[AggregateRow],
     agg_path: &Path,
@@ -856,7 +897,7 @@ fn build_consensus<'a>(
     Ok(Consensus {
         computed_at: Utc::now().to_rfc3339(),
         computed_by: "prism-v004-ensemble",
-        target_id: &manifest.target.pdb_id,
+        target_id,
         n_replicas: replicas.len(),
         n_residues: rows
             .iter()

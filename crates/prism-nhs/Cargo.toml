@@ -225,6 +225,10 @@ name = "prism-v004-ensemble"
 path = "src/bin/prism_v004_ensemble.rs"
 
 [[bin]]
+name = "prism-teacher-tags"
+path = "src/bin/prism_teacher_tags.rs"
+
+[[bin]]
 name = "prism-noise-floor"
 path = "src/bin/prism_noise_floor.rs"
 

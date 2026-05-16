@@ -231,6 +231,15 @@ impl FrameAudit {
 /// Output artifact paths and hashes for one replica.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct ReplicaOutputs {
+    /// Stage-B/v5 residue feature Parquet path for teacher aggregation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_parquet_relative: Option<String>,
+    /// Stage-B/v5 residue feature Parquet SHA-256.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_parquet_sha256: Option<String>,
+    /// Stage-B/v5 residue feature Parquet byte size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_parquet_bytes: Option<u64>,
     /// Spike Arrow path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trajectory_arrow_relative: Option<String>,
