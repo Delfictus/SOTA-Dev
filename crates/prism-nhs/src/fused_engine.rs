@@ -70,6 +70,11 @@ fn tier8_director_diag_verbose_enabled() -> bool {
 }
 
 #[cfg(feature = "gpu")]
+fn is_deferred_teardown_status(rc: sys::CUresult) -> bool {
+    matches!(rc, sys::CUresult::CUDA_ERROR_INVALID_VALUE)
+}
+
+#[cfg(feature = "gpu")]
 macro_rules! tier8_director_diag_verbose {
     ($($arg:tt)*) => {
         if tier8_director_diag_verbose_enabled() {
@@ -8832,21 +8837,53 @@ impl NhsAmberFusedEngine {
     fn synchronize_stream_raw(&self, label: &str) -> Result<()> {
         let rc_ctx = unsafe { sys::cuCtxSetCurrent(self.stream.context().cu_ctx()) };
         if !matches!(rc_ctx, sys::CUresult::CUDA_SUCCESS) {
+            let (name, text) = tier8_director_driver_error_text(rc_ctx);
             bail!(
-                "{} cuCtxSetCurrent failed: CUDA driver rc={}",
+                "{} cuCtxSetCurrent failed: CUDA driver rc={} {} ({})",
                 label,
-                rc_ctx as i32
+                rc_ctx as i32,
+                name,
+                text
             );
         }
         let rc_sync = unsafe { sys::cuStreamSynchronize(self.stream.cu_stream()) };
-        if !matches!(rc_sync, sys::CUresult::CUDA_SUCCESS) {
+        if matches!(rc_sync, sys::CUresult::CUDA_SUCCESS) {
+            return Ok(());
+        }
+
+        let (name, text) = tier8_director_driver_error_text(rc_sync);
+        if is_deferred_teardown_status(rc_sync) {
+            let rc_second = unsafe { sys::cuStreamSynchronize(self.stream.cu_stream()) };
+            if matches!(rc_second, sys::CUresult::CUDA_SUCCESS) {
+                log::warn!(
+                    "{} drained deferred CUDA teardown status on first synchronize: rc={} {} ({}); second synchronize clean",
+                    label,
+                    rc_sync as i32,
+                    name,
+                    text
+                );
+                return Ok(());
+            }
+            let (second_name, second_text) = tier8_director_driver_error_text(rc_second);
             bail!(
-                "{} cuStreamSynchronize failed: CUDA driver rc={}",
+                "{} cuStreamSynchronize failed after deferred-status drain: first rc={} {} ({}), second rc={} {} ({})",
                 label,
-                rc_sync as i32
+                rc_sync as i32,
+                name,
+                text,
+                rc_second as i32,
+                second_name,
+                second_text
             );
         }
-        Ok(())
+
+        bail!(
+            "{} cuStreamSynchronize failed: CUDA driver rc={} {} ({})",
+            label,
+            rc_sync as i32,
+            name,
+            text
+        );
     }
 
     /// Run KCC final descriptors computation and download per-residue results.

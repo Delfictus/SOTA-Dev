@@ -1269,6 +1269,49 @@ mod tests {
         }
     }
 
+    fn args() -> Args {
+        Args {
+            aggregates: PathBuf::from("unused.parquet"),
+            consensus: None,
+            output_dir: PathBuf::from("unused"),
+            strict_rhat: 2.0,
+            soft_rhat: 5.0,
+            min_replicas: 3,
+            max_outlier_features: 1,
+            min_phase_score: 0.55,
+            core_support_fraction: 0.60,
+            fringe_support_fraction: 0.35,
+            parquet_batch_size: 4096,
+        }
+    }
+
+    fn stable_row(mean: f64) -> AggregateRow {
+        AggregateRow {
+            mean,
+            std: 0.01,
+            rhat: 1.05,
+            ess: 5.0,
+            is_bimodal: false,
+            n_replicas_used: 5,
+            n_outliers: 0,
+        }
+    }
+
+    fn stable_features() -> HashMap<String, AggregateRow> {
+        let mut features = HashMap::new();
+        for name in CRITICAL_FEATURES {
+            features.insert((*name).to_string(), stable_row(0.7));
+        }
+        features.insert("teacher_spike_hits".to_string(), stable_row(100.0));
+        features.insert("teacher_lif_fraction".to_string(), stable_row(0.8));
+        features.insert("teacher_uv_fraction".to_string(), stable_row(0.1));
+        features.insert(
+            "teacher_mechanism_lif_thermal_shape_fraction".to_string(),
+            stable_row(0.9),
+        );
+        features
+    }
+
     #[test]
     fn severe_outlier_core_feature_masks_repeated_or_high_rhat_instability() {
         assert!(!severe_outlier(
@@ -1310,5 +1353,56 @@ mod tests {
             &aggregate(2, 1.05, true),
             2.0
         ));
+    }
+
+    #[test]
+    fn finalize_residue_keeps_raw_single_replica_outlier_as_confidence_signal() {
+        let args = args();
+        let mut features = stable_features();
+        features
+            .get_mut("teacher_wavelength_entropy")
+            .unwrap()
+            .n_outliers = 1;
+        let row = finalize_residue(42, &features, &args);
+        assert!(row.train_mask);
+        assert!(!row.outlier_mask);
+        assert_eq!(row.n_outlier_important, 1);
+        assert_eq!(row.n_severe_outlier_important, 0);
+        assert!(row.label_confidence < 1.0);
+    }
+
+    #[test]
+    fn finalize_residue_masks_repeated_core_instability_but_keeps_uncertainty_target() {
+        let args = args();
+        let mut features = stable_features();
+        features.get_mut("teacher_spike_hits").unwrap().n_outliers = 2;
+        features
+            .get_mut("teacher_signal_coupled_fraction")
+            .unwrap()
+            .n_outliers = 2;
+        let row = finalize_residue(42, &features, &args);
+        assert!(!row.train_mask);
+        assert!(row.outlier_mask);
+        assert!(row.uncertainty_mask);
+        assert_eq!(row.n_severe_outlier_important, 2);
+        assert_eq!(row.student_weight, 0.0);
+        assert!(row.uncertainty_target > 0.0);
+    }
+
+    #[test]
+    fn finalize_residue_global_bimodality_blocks_hard_supervision() {
+        let args = args();
+        let mut features = stable_features();
+        features.insert(
+            "noncritical_diagnostic".to_string(),
+            AggregateRow {
+                is_bimodal: true,
+                ..stable_row(0.5)
+            },
+        );
+        let row = finalize_residue(42, &features, &args);
+        assert!(!row.train_mask);
+        assert!(row.bimodal_mask);
+        assert!(row.uncertainty_mask);
     }
 }

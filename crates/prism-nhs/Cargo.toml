@@ -233,6 +233,10 @@ name = "prism-teacher-finalize"
 path = "src/bin/prism_teacher_finalize.rs"
 
 [[bin]]
+name = "prism-teacher-pipeline"
+path = "src/bin/prism_teacher_pipeline.rs"
+
+[[bin]]
 name = "prism-noise-floor"
 path = "src/bin/prism_noise_floor.rs"
 
