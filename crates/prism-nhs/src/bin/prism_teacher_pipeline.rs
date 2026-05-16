@@ -7,8 +7,10 @@
 //! manifest beside the final teacher/student bundles.
 
 use anyhow::{bail, Context, Result};
+use arrow_array::{Array, BooleanArray, Float64Array, RecordBatch};
 use chrono::Utc;
 use clap::Parser;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -71,6 +73,13 @@ struct Args {
 
     #[arg(long, default_value_t = false)]
     allow_partial_stage_b: bool,
+
+    /// R2 key prefix for the archive manifest. Defaults to a unique teacher-consensus prefix.
+    #[arg(long)]
+    archive_prefix: Option<String>,
+
+    #[arg(long, default_value_t = 4096)]
+    parquet_batch_size: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -95,6 +104,7 @@ struct PipelineManifest {
     schema_version: &'static str,
     computed_at: String,
     computed_by: &'static str,
+    archive_prefix: String,
     target_id: String,
     n_replicas: usize,
     base_seed: u64,
@@ -102,12 +112,14 @@ struct PipelineManifest {
     commands: Vec<CommandRecord>,
     outputs: BTreeMap<&'static str, ArtifactSummary>,
     acceptance: AcceptanceSummary,
+    student_bundle_audit: StudentBundleAudit,
 }
 
 #[derive(Debug, Serialize)]
 struct ArtifactSummary {
     path: String,
     sha256: String,
+    size_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -121,11 +133,91 @@ struct AcceptanceSummary {
     observed_trainable_fraction: f64,
 }
 
+#[derive(Debug, Serialize)]
+struct StudentBundleAudit {
+    row_count: u64,
+    trainable_rows: u64,
+    non_trainable_rows: u64,
+    bimodal_masked_rows: u64,
+    outlier_masked_rows: u64,
+    hard_negative_rows: u64,
+    invalid_trainable_mask_rows: u64,
+    finite_label_failures: u64,
+    required_columns_checked: Vec<&'static str>,
+    finite_columns_checked: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct ArchiveManifest {
+    schema_kind: &'static str,
+    schema_version: &'static str,
+    computed_at: String,
+    computed_by: &'static str,
+    archive_profile: &'static str,
+    bucket: &'static str,
+    r2_prefix: String,
+    target_id: String,
+    n_replicas: usize,
+    base_seed: u64,
+    objects: Vec<ArchiveObject>,
+}
+
+#[derive(Debug, Serialize)]
+struct ArchiveObject {
+    kind: String,
+    relative_path: String,
+    object_key: String,
+    local_path: String,
+    sha256: String,
+    size_bytes: u64,
+}
+
+const STUDENT_REQUIRED_COLUMNS: &[&str] = &[
+    "residue_id",
+    "y_cryptic",
+    "y_phase_score",
+    "y_spike_log1p",
+    "y_uv_fraction",
+    "y_lif_fraction",
+    "y_signal_coupled_fraction",
+    "y_active_causal_steps",
+    "y_burst_motion",
+    "y_direction_score",
+    "y_motion_efficiency",
+    "dominant_mechanism_tag",
+    "dominant_mechanism_fraction",
+    "label_confidence",
+    "student_weight",
+    "uncertainty_target",
+    "train_mask",
+    "bimodal_mask",
+    "outlier_mask",
+    "hard_negative_mask",
+];
+
+const STUDENT_FINITE_COLUMNS: &[&str] = &[
+    "y_cryptic",
+    "y_phase_score",
+    "y_spike_log1p",
+    "y_uv_fraction",
+    "y_lif_fraction",
+    "y_signal_coupled_fraction",
+    "y_active_causal_steps",
+    "y_burst_motion",
+    "y_direction_score",
+    "y_motion_efficiency",
+    "dominant_mechanism_fraction",
+    "label_confidence",
+    "student_weight",
+    "uncertainty_target",
+];
+
 fn main() -> Result<()> {
     let args = Args::parse();
     validate_args(&args)?;
     std::fs::create_dir_all(&args.output_dir)
         .with_context(|| format!("create {}", args.output_dir.display()))?;
+    let computed_at = Utc::now().to_rfc3339();
 
     let tools = ToolPaths::discover()?;
     let mut commands = Vec::new();
@@ -255,20 +347,30 @@ fn main() -> Result<()> {
         ("teacher_finalize_summary", summary_path),
     ] {
         validate_existing_file(&path)?;
-        outputs.insert(
-            kind,
-            ArtifactSummary {
-                sha256: sha256_file(&path)?,
-                path: path.to_string_lossy().into_owned(),
-            },
-        );
+        outputs.insert(kind, artifact_summary(&path)?);
     }
+
+    let student_bundle_path = outputs
+        .get("student_label_bundle")
+        .map(|s| PathBuf::from(&s.path))
+        .context("student_label_bundle output missing")?;
+    let student_bundle_audit =
+        validate_student_bundle(&student_bundle_path, args.parquet_batch_size)?;
+    let archive_prefix = args.archive_prefix.clone().unwrap_or_else(|| {
+        default_archive_prefix(
+            &args.target_id,
+            stage_b_inputs.len(),
+            args.base_seed,
+            &computed_at,
+        )
+    });
 
     let manifest = PipelineManifest {
         schema_kind: "prism_twin_teacher_pipeline",
         schema_version: "1.0.0",
-        computed_at: Utc::now().to_rfc3339(),
+        computed_at: computed_at.clone(),
         computed_by: "prism-teacher-pipeline",
+        archive_prefix: archive_prefix.clone(),
         target_id: args.target_id,
         n_replicas: stage_b_inputs.len(),
         base_seed: args.base_seed,
@@ -276,6 +378,7 @@ fn main() -> Result<()> {
         commands,
         outputs,
         acceptance,
+        student_bundle_audit,
     };
     let pipeline_manifest_path = args
         .output_dir
@@ -285,14 +388,22 @@ fn main() -> Result<()> {
         serde_json::to_vec_pretty(&manifest)?,
     )
     .with_context(|| format!("write {}", pipeline_manifest_path.display()))?;
+    let archive_manifest_path = write_archive_manifest(
+        &args.output_dir,
+        &archive_prefix,
+        &manifest,
+        &pipeline_manifest_path,
+    )?;
 
     println!("wrote: {}", pipeline_manifest_path.display());
+    println!("wrote: {}", archive_manifest_path.display());
     println!(
-        "accepted: residues={} trainable={} uncertain={} trainable_fraction={:.3}",
+        "accepted: residues={} trainable={} uncertain={} trainable_fraction={:.3} archive_prefix={}",
         manifest.acceptance.n_residues,
         manifest.acceptance.n_trainable,
         manifest.acceptance.n_uncertain,
-        manifest.acceptance.observed_trainable_fraction
+        manifest.acceptance.observed_trainable_fraction,
+        manifest.archive_prefix
     );
     Ok(())
 }
@@ -444,6 +555,17 @@ fn validate_existing_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn artifact_summary(path: &Path) -> Result<ArtifactSummary> {
+    let meta = path
+        .metadata()
+        .with_context(|| format!("stat {}", path.display()))?;
+    Ok(ArtifactSummary {
+        path: path.to_string_lossy().into_owned(),
+        sha256: sha256_file(path)?,
+        size_bytes: meta.len(),
+    })
+}
+
 fn read_acceptance(path: &Path, min_trainable_fraction: f64) -> Result<AcceptanceSummary> {
     let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let value: Value =
@@ -477,6 +599,260 @@ fn read_acceptance(path: &Path, min_trainable_fraction: f64) -> Result<Acceptanc
         min_trainable_fraction,
         observed_trainable_fraction,
     })
+}
+
+fn validate_student_bundle(path: &Path, batch_size: usize) -> Result<StudentBundleAudit> {
+    let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .with_context(|| format!("open parquet reader {}", path.display()))?
+        .with_batch_size(batch_size);
+    let mut reader = builder.build()?;
+    let mut audit = StudentBundleAudit {
+        row_count: 0,
+        trainable_rows: 0,
+        non_trainable_rows: 0,
+        bimodal_masked_rows: 0,
+        outlier_masked_rows: 0,
+        hard_negative_rows: 0,
+        invalid_trainable_mask_rows: 0,
+        finite_label_failures: 0,
+        required_columns_checked: STUDENT_REQUIRED_COLUMNS.to_vec(),
+        finite_columns_checked: STUDENT_FINITE_COLUMNS.to_vec(),
+    };
+    let mut checked_schema = false;
+
+    while let Some(batch) = reader.next().transpose()? {
+        if !checked_schema {
+            validate_student_schema(&batch)
+                .with_context(|| format!("validate schema {}", path.display()))?;
+            checked_schema = true;
+        }
+        audit_student_batch(&batch, &mut audit)
+            .with_context(|| format!("audit student bundle {}", path.display()))?;
+    }
+
+    if audit.row_count == 0 {
+        bail!("{} contains no student label rows", path.display());
+    }
+    if audit.trainable_rows == 0 {
+        bail!("{} contains no trainable student labels", path.display());
+    }
+    if audit.invalid_trainable_mask_rows > 0 {
+        bail!(
+            "{} has {} trainable rows masked by bimodal/outlier flags",
+            path.display(),
+            audit.invalid_trainable_mask_rows
+        );
+    }
+    if audit.finite_label_failures > 0 {
+        bail!(
+            "{} has {} null/non-finite numeric label values",
+            path.display(),
+            audit.finite_label_failures
+        );
+    }
+    Ok(audit)
+}
+
+fn validate_student_schema(batch: &RecordBatch) -> Result<()> {
+    let schema = batch.schema();
+    for name in STUDENT_REQUIRED_COLUMNS {
+        schema
+            .index_of(name)
+            .with_context(|| format!("student bundle missing required column {name}"))?;
+    }
+    Ok(())
+}
+
+fn audit_student_batch(batch: &RecordBatch, audit: &mut StudentBundleAudit) -> Result<()> {
+    let train = bool_column(batch, "train_mask")?;
+    let bimodal = bool_column(batch, "bimodal_mask")?;
+    let outlier = bool_column(batch, "outlier_mask")?;
+    let hard_negative = bool_column(batch, "hard_negative_mask")?;
+    let finite_columns = STUDENT_FINITE_COLUMNS
+        .iter()
+        .map(|name| float64_column(batch, name).map(|array| (*name, array)))
+        .collect::<Result<Vec<_>>>()?;
+
+    for row in 0..batch.num_rows() {
+        let train_mask = bool_value(train, row, "train_mask")?;
+        let bimodal_mask = bool_value(bimodal, row, "bimodal_mask")?;
+        let outlier_mask = bool_value(outlier, row, "outlier_mask")?;
+        let hard_negative_mask = bool_value(hard_negative, row, "hard_negative_mask")?;
+        audit.row_count += 1;
+        if train_mask {
+            audit.trainable_rows += 1;
+        } else {
+            audit.non_trainable_rows += 1;
+        }
+        if bimodal_mask {
+            audit.bimodal_masked_rows += 1;
+        }
+        if outlier_mask {
+            audit.outlier_masked_rows += 1;
+        }
+        if hard_negative_mask {
+            audit.hard_negative_rows += 1;
+        }
+        if train_mask && (bimodal_mask || outlier_mask) {
+            audit.invalid_trainable_mask_rows += 1;
+        }
+        for (name, array) in &finite_columns {
+            if float64_value(array, row, name).is_err() {
+                audit.finite_label_failures += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn bool_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a BooleanArray> {
+    let idx = batch
+        .schema()
+        .index_of(name)
+        .with_context(|| format!("missing boolean column {name}"))?;
+    batch
+        .column(idx)
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .with_context(|| format!("{name} is not a Boolean column"))
+}
+
+fn float64_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float64Array> {
+    let idx = batch
+        .schema()
+        .index_of(name)
+        .with_context(|| format!("missing Float64 column {name}"))?;
+    batch
+        .column(idx)
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .with_context(|| format!("{name} is not a Float64 column"))
+}
+
+fn bool_value(array: &BooleanArray, row: usize, name: &str) -> Result<bool> {
+    if array.is_null(row) {
+        bail!("{name} has null at row {row}");
+    }
+    Ok(array.value(row))
+}
+
+fn float64_value(array: &Float64Array, row: usize, name: &str) -> Result<f64> {
+    if array.is_null(row) {
+        bail!("{name} has null at row {row}");
+    }
+    let value = array.value(row);
+    if !value.is_finite() {
+        bail!("{name} has non-finite value at row {row}");
+    }
+    Ok(value)
+}
+
+fn write_archive_manifest(
+    output_dir: &Path,
+    archive_prefix: &str,
+    manifest: &PipelineManifest,
+    pipeline_manifest_path: &Path,
+) -> Result<PathBuf> {
+    let mut objects = Vec::new();
+    for (kind, summary) in &manifest.outputs {
+        let path = PathBuf::from(&summary.path);
+        objects.push(archive_object(output_dir, archive_prefix, kind, &path)?);
+    }
+    objects.push(archive_object(
+        output_dir,
+        archive_prefix,
+        "teacher_consensus_pipeline_manifest",
+        pipeline_manifest_path,
+    )?);
+
+    let archive = ArchiveManifest {
+        schema_kind: "prism_twin_teacher_archive_manifest",
+        schema_version: "1.0.0",
+        computed_at: manifest.computed_at.clone(),
+        computed_by: "prism-teacher-pipeline",
+        archive_profile: "prism_twin_teacher_v1",
+        bucket: "prism-archive",
+        r2_prefix: archive_prefix.to_string(),
+        target_id: manifest.target_id.clone(),
+        n_replicas: manifest.n_replicas,
+        base_seed: manifest.base_seed,
+        objects,
+    };
+    let path = output_dir.join("teacher_archive_manifest.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&archive)?)
+        .with_context(|| format!("write {}", path.display()))?;
+    Ok(path)
+}
+
+fn archive_object(
+    output_dir: &Path,
+    archive_prefix: &str,
+    kind: &str,
+    path: &Path,
+) -> Result<ArchiveObject> {
+    validate_existing_file(path)?;
+    let relative_path = relative_output_path(output_dir, path);
+    Ok(ArchiveObject {
+        kind: kind.to_string(),
+        object_key: format!("{}/{}", archive_prefix.trim_matches('/'), relative_path),
+        relative_path,
+        local_path: path.to_string_lossy().into_owned(),
+        sha256: sha256_file(path)?,
+        size_bytes: path.metadata()?.len(),
+    })
+}
+
+fn relative_output_path(output_dir: &Path, path: &Path) -> String {
+    let rel = path.strip_prefix(output_dir).unwrap_or_else(|_| {
+        path.file_name()
+            .map(Path::new)
+            .unwrap_or_else(|| Path::new("artifact"))
+    });
+    path_to_key(rel)
+}
+
+fn path_to_key(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn default_archive_prefix(
+    target_id: &str,
+    n_replicas: usize,
+    base_seed: u64,
+    computed_at: &str,
+) -> String {
+    let stamp = computed_at
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .take(14)
+        .collect::<String>();
+    format!(
+        "teacher-consensus/{}/replicas-{}/seed-{}/{}",
+        sanitize_key_component(target_id),
+        n_replicas,
+        base_seed,
+        stamp
+    )
+}
+
+fn sanitize_key_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        "unknown".to_string()
+    } else {
+        out
+    }
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
@@ -530,5 +906,76 @@ mod tests {
         .unwrap();
         assert!(read_acceptance(&path, 0.05).is_err());
         assert_eq!(read_acceptance(&path, 0.04).unwrap().n_trainable, 4);
+    }
+
+    #[test]
+    fn archive_prefix_is_r2_key_safe_and_unique_to_run_shape() {
+        let prefix = default_archive_prefix(
+            "Mpro monomer/prism twin",
+            5,
+            42,
+            "2026-05-16T22:19:31.123456Z",
+        );
+        assert_eq!(
+            prefix,
+            "teacher-consensus/Mpro_monomer_prism_twin/replicas-5/seed-42/20260516221931"
+        );
+    }
+
+    #[test]
+    fn trainable_mask_rejects_outlier_or_bimodal_rows() {
+        let mut columns: Vec<(&str, arrow_array::ArrayRef)> = Vec::new();
+        columns.push((
+            "residue_id",
+            std::sync::Arc::new(arrow_array::Int32Array::from(vec![101, 102]))
+                as arrow_array::ArrayRef,
+        ));
+        for name in STUDENT_FINITE_COLUMNS {
+            columns.push((
+                name,
+                std::sync::Arc::new(Float64Array::from(vec![1.0, 0.5])) as arrow_array::ArrayRef,
+            ));
+        }
+        columns.push((
+            "dominant_mechanism_tag",
+            std::sync::Arc::new(arrow_array::StringArray::from(vec![
+                "UV_AROMATIC_PERTURBATION",
+                "LIF_THERMAL_SHAPE",
+            ])) as arrow_array::ArrayRef,
+        ));
+        columns.push((
+            "train_mask",
+            std::sync::Arc::new(BooleanArray::from(vec![true, true])) as arrow_array::ArrayRef,
+        ));
+        columns.push((
+            "bimodal_mask",
+            std::sync::Arc::new(BooleanArray::from(vec![false, true])) as arrow_array::ArrayRef,
+        ));
+        columns.push((
+            "outlier_mask",
+            std::sync::Arc::new(BooleanArray::from(vec![false, false])) as arrow_array::ArrayRef,
+        ));
+        columns.push((
+            "hard_negative_mask",
+            std::sync::Arc::new(BooleanArray::from(vec![false, false])) as arrow_array::ArrayRef,
+        ));
+        let batch = RecordBatch::try_from_iter(columns).unwrap();
+        validate_student_schema(&batch).unwrap();
+        let mut audit = StudentBundleAudit {
+            row_count: 0,
+            trainable_rows: 0,
+            non_trainable_rows: 0,
+            bimodal_masked_rows: 0,
+            outlier_masked_rows: 0,
+            hard_negative_rows: 0,
+            invalid_trainable_mask_rows: 0,
+            finite_label_failures: 0,
+            required_columns_checked: STUDENT_REQUIRED_COLUMNS.to_vec(),
+            finite_columns_checked: STUDENT_FINITE_COLUMNS.to_vec(),
+        };
+        audit_student_batch(&batch, &mut audit).unwrap();
+        assert_eq!(audit.row_count, 2);
+        assert_eq!(audit.trainable_rows, 2);
+        assert_eq!(audit.invalid_trainable_mask_rows, 1);
     }
 }

@@ -237,6 +237,10 @@ name = "prism-teacher-pipeline"
 path = "src/bin/prism_teacher_pipeline.rs"
 
 [[bin]]
+name = "prism-teacher-archive"
+path = "src/bin/prism_teacher_archive.rs"
+
+[[bin]]
 name = "prism-noise-floor"
 path = "src/bin/prism_noise_floor.rs"
 
