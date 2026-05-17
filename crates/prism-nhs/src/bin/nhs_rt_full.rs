@@ -8029,6 +8029,7 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                                     "    [PATH-A EVIDENCE-EXIT stream {}] evidence_complete signaled at chunk_idx={}; breaking integration loop",
                                     i, chunk_idx
                                 );
+                                path_a_watchdog_state_local.disarm_wall_cap();
                                 if let Ok(mut r) = path_a_exit_reason_local.lock() {
                                     if r.is_empty() {
                                         *r = "evidence_complete".to_string();

@@ -311,6 +311,7 @@ pub struct HeartbeatSnapshot {
 /// Shared cancel/stall state. First-writer-wins on `exit_reason`.
 pub struct WatchdogState {
     pub cancel_requested: AtomicBool,
+    pub wall_cap_disarmed: AtomicBool,
     pub stall_detected: AtomicBool,
     pub stalled_stream_id: AtomicI32, // -1 if none
     pub exit_reason: Mutex<String>,
@@ -320,6 +321,7 @@ impl WatchdogState {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             cancel_requested: AtomicBool::new(false),
+            wall_cap_disarmed: AtomicBool::new(false),
             stall_detected: AtomicBool::new(false),
             stalled_stream_id: AtomicI32::new(-1),
             exit_reason: Mutex::new(String::new()),
@@ -338,6 +340,17 @@ impl WatchdogState {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancel_requested.load(Ordering::Acquire)
+    }
+
+    /// Disable wall-cap cancellation once the engine has reached the
+    /// evidence-complete handoff. Teardown/materialization can legitimately
+    /// exceed the integration cap while writing lossless evidence files.
+    pub fn disarm_wall_cap(&self) {
+        self.wall_cap_disarmed.store(true, Ordering::Release);
+    }
+
+    pub fn is_wall_cap_disarmed(&self) -> bool {
+        self.wall_cap_disarmed.load(Ordering::Acquire)
     }
 
     pub fn current_exit_reason(&self) -> String {
@@ -423,7 +436,7 @@ pub fn spawn_watchdog(
                 // 2) Wall-cap check (in addition to the chunk-loop check
                 //    in nhs_rt_full.rs — this catches stalls where no
                 //    stream reaches the next chunk boundary).
-                if !state.is_cancelled() {
+                if !state.is_cancelled() && !state.is_wall_cap_disarmed() {
                     if let Some(cap) = max_wall_seconds {
                         if run_start.elapsed().as_secs() >= cap {
                             log::error!(
@@ -839,6 +852,16 @@ mod tests {
         s.request_cancel("second");
         assert_eq!(s.current_exit_reason(), "first");
         assert!(s.is_cancelled());
+    }
+
+    #[test]
+    fn watchdog_state_disarms_wall_cap_without_cancel() {
+        let s = WatchdogState::new();
+        assert!(!s.is_wall_cap_disarmed());
+        assert!(!s.is_cancelled());
+        s.disarm_wall_cap();
+        assert!(s.is_wall_cap_disarmed());
+        assert!(!s.is_cancelled());
     }
 
     #[test]

@@ -4403,9 +4403,12 @@ extern "C" __global__ void kcc_compute_rich_descriptors(
 // At ~1 TFLOP on RTX 5080: <1ms per pocket
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Maximum spikes per pocket to fit in shared memory
-// RTX 5080: 128KB shared mem per SM, SpikeKDE = 16 bytes, 128K/16 = 8192 max
-#define KDE_MAX_SPIKES_SHARED 4096
+// Tile spikes through shared memory instead of caching the full pocket.
+// RunPod RTX 5090 nodes currently expose a 48 KiB default per-block shared
+// memory limit to the JIT. A 4096-entry SpikeKDE cache requires 64 KiB and
+// causes CUDA_ERROR_INVALID_PTX at module load. A 2048-entry tile keeps the
+// kernel under the portable 48 KiB limit while preserving every spike exactly.
+#define KDE_TILE_SPIKES_SHARED 2048
 #define KDE_GRID_DIM 11          // 11³ = 1331 grid points
 #define KDE_GRID_TOTAL (KDE_GRID_DIM * KDE_GRID_DIM * KDE_GRID_DIM)
 
@@ -4457,33 +4460,20 @@ extern "C" __global__ void kde_density_peak(
     float        bandwidth,
     float*       peak_out                   // [px, py, pz, density]
 ) {
-    // Shared memory for spike cache
-    __shared__ SpikeKDE s_spikes[KDE_MAX_SPIKES_SHARED];
-    __shared__ float s_best_density;
-    __shared__ float s_best_pos[3];
+    // Shared memory for tiled spike cache and deterministic per-thread maxima.
+    __shared__ SpikeKDE s_spikes[KDE_TILE_SPIKES_SHARED];
+    __shared__ float s_thread_density[256];
+    __shared__ float s_thread_x[256];
+    __shared__ float s_thread_y[256];
+    __shared__ float s_thread_z[256];
+    __shared__ int s_thread_gid[256];
 
     int tid = threadIdx.x;
-    int gid = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Initialize shared best
-    if (tid == 0) {
-        s_best_density = 0.0f;
-        s_best_pos[0] = centroid_in[0];
-        s_best_pos[1] = centroid_in[1];
-        s_best_pos[2] = centroid_in[2];
-    }
-
-    // Load spikes into shared memory (collaborative)
-    int spikes_to_load = min(n_spikes, KDE_MAX_SPIKES_SHARED);
-    for (int i = tid; i < spikes_to_load; i += blockDim.x) {
-        s_spikes[i].x = spike_x[i];
-        s_spikes[i].y = spike_y[i];
-        s_spikes[i].z = spike_z[i];
-        // Burial weight: n_residues², minimum 1.0
-        float nr = fmaxf((float)spike_n_res[i], 1.0f);
-        s_spikes[i].weight = nr * nr;
-    }
-    __syncthreads();
+    // Host launch still uses ceil(1331/256) blocks. Keep the ABI intact but
+    // let block 0 compute the whole deterministic reduction so peak_out is not
+    // a cross-block last-writer race.
+    if (blockIdx.x != 0) return;
 
     float cx = centroid_in[0];
     float cy = centroid_in[1];
@@ -4491,49 +4481,92 @@ extern "C" __global__ void kde_density_peak(
     float grid_step = 2.0f * search_radius / (float)(KDE_GRID_DIM - 1);
     float inv_2bw2 = 1.0f / (2.0f * bandwidth * bandwidth);
 
-    // Each thread evaluates one grid point
-    if (gid < KDE_GRID_TOTAL) {
+    float local_best_density = 0.0f;
+    float local_best_x = cx;
+    float local_best_y = cy;
+    float local_best_z = cz;
+    int local_best_gid = KDE_GRID_TOTAL + 1;
+
+    // Evaluate the complete 11^3 grid. All threads participate in each shared
+    // spike tile load, so every __syncthreads() is reached by the full block.
+    for (int base_gid = 0; base_gid < KDE_GRID_TOTAL; base_gid += blockDim.x) {
+        int gid = base_gid + tid;
+        bool active_grid_point = gid < KDE_GRID_TOTAL;
+        float px = cx;
+        float py = cy;
+        float pz = cz;
+        float density = 0.0f;
+
+        if (active_grid_point) {
         int iz = gid / (KDE_GRID_DIM * KDE_GRID_DIM);
         int iy = (gid / KDE_GRID_DIM) % KDE_GRID_DIM;
         int ix = gid % KDE_GRID_DIM;
 
-        float px = cx - search_radius + ix * grid_step;
-        float py = cy - search_radius + iy * grid_step;
-        float pz = cz - search_radius + iz * grid_step;
-
-        float density = kde_evaluate(px, py, pz, s_spikes, spikes_to_load, inv_2bw2);
-
-        // Warp-level reduction to find maximum within each warp
-        // Then atomic update to shared best
-        // Use atomicMax on int representation of float (positive floats preserve order)
-        unsigned int density_bits = __float_as_uint(density);
-
-        // AtomicMax for the density, then set position if we won
-        // Simple approach: atomic compare-and-swap
-        if (density > 0.0f) {
-            // Thread-safe update: only one thread per block can update
-            // Use a simple lock-free approach
-            atomicMax((unsigned int*)&s_best_density, density_bits);
+            px = cx - search_radius + ix * grid_step;
+            py = cy - search_radius + iy * grid_step;
+            pz = cz - search_radius + iz * grid_step;
         }
 
-        __syncthreads();
+        for (int chunk = 0; chunk < n_spikes; chunk += KDE_TILE_SPIKES_SHARED) {
+            int tile_count = min(n_spikes - chunk, KDE_TILE_SPIKES_SHARED);
+            for (int i = tid; i < tile_count; i += blockDim.x) {
+                int src = chunk + i;
+                s_spikes[i].x = spike_x[src];
+                s_spikes[i].y = spike_y[src];
+                s_spikes[i].z = spike_z[src];
+                // Burial weight: n_residues², minimum 1.0
+                float nr = fmaxf((float)spike_n_res[src], 1.0f);
+                s_spikes[i].weight = nr * nr;
+            }
+            __syncthreads();
 
-        // Check if this thread has the best density
-        if (__float_as_uint(density) == __float_as_uint(s_best_density) && density > 0.0f) {
-            s_best_pos[0] = px;
-            s_best_pos[1] = py;
-            s_best_pos[2] = pz;
+            if (active_grid_point) {
+                density += kde_evaluate(px, py, pz, s_spikes, tile_count, inv_2bw2);
+            }
+            __syncthreads();
+        }
+
+        if (active_grid_point &&
+            (density > local_best_density ||
+             (density == local_best_density && gid < local_best_gid))) {
+            local_best_density = density;
+            local_best_x = px;
+            local_best_y = py;
+            local_best_z = pz;
+            local_best_gid = gid;
         }
     }
 
+    s_thread_density[tid] = local_best_density;
+    s_thread_x[tid] = local_best_x;
+    s_thread_y[tid] = local_best_y;
+    s_thread_z[tid] = local_best_z;
+    s_thread_gid[tid] = local_best_gid;
     __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            int other = tid + stride;
+            float od = s_thread_density[other];
+            int og = s_thread_gid[other];
+            if (od > s_thread_density[tid] ||
+                (od == s_thread_density[tid] && og < s_thread_gid[tid])) {
+                s_thread_density[tid] = od;
+                s_thread_x[tid] = s_thread_x[other];
+                s_thread_y[tid] = s_thread_y[other];
+                s_thread_z[tid] = s_thread_z[other];
+                s_thread_gid[tid] = og;
+            }
+        }
+        __syncthreads();
+    }
 
     // Thread 0 writes the final result: 70% peak + 30% centroid
     if (tid == 0) {
-        peak_out[0] = 0.7f * s_best_pos[0] + 0.3f * cx;
-        peak_out[1] = 0.7f * s_best_pos[1] + 0.3f * cy;
-        peak_out[2] = 0.7f * s_best_pos[2] + 0.3f * cz;
-        peak_out[3] = s_best_density;
+        peak_out[0] = 0.7f * s_thread_x[0] + 0.3f * cx;
+        peak_out[1] = 0.7f * s_thread_y[0] + 0.3f * cy;
+        peak_out[2] = 0.7f * s_thread_z[0] + 0.3f * cz;
+        peak_out[3] = s_thread_density[0];
     }
 }
 
