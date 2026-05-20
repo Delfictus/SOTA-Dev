@@ -253,6 +253,12 @@ required-features = ["gpu"]
 name = "ccns-analyze"
 path = "src/bin/ccns_analyze.rs"
 
+# PRISM-4D → DSTW Air-Gap bridge: WT prime-run physics exporter.
+# Pure post-processor over engine outputs; no GPU runtime dependency.
+[[bin]]
+name = "dstw-export-wt"
+path = "src/bin/dstw_export_wt.rs"
+
 [[bin]]
 name = "m1_v3_synthetic"
 path = "src/bin/m1_v3_synthetic.rs"
