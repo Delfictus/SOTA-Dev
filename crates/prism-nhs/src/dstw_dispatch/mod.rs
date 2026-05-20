@@ -39,12 +39,17 @@
 //!     sampling, currently OFF by default) is seeded from
 //!     `blake3(canonical_json(request))`.  No global RNG.
 
+pub mod cuda;
 pub mod handshake;
 pub mod projection;
 pub mod sidechain_tables;
 
 mod dispatcher;
 
+pub use cuda::{
+    propagate_cpu_reference, row_sums_cpu_reference, Backend, CudaPropagationKernel,
+    PropagationShape, CH_ACTIVE, CH_ENSEMBLE, CH_LOCK, N_CHANNELS,
+};
 pub use dispatcher::{dispatch_variant_batch, DispatchError, VariantDispatchConfig};
 pub use handshake::{
     PRISMExecutionAcquisition, PRISMExecutionRequest, PRISMExecutionResponse,

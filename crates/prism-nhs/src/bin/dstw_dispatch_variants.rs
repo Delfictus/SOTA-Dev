@@ -348,6 +348,142 @@ mod tests {
         assert!(err.to_string().contains("forbidden scalar"));
     }
 
+    // ---------- CUDA shape-sweep tests (routed through binary scope) ----------
+    //
+    // The lib test target has unrelated pre-existing compile failures in
+    // spike_to_cluster_4d, so the CUDA reference + shape-sweep tests for
+    // dstw_dispatch::cuda are mirrored here so `cargo test --bin
+    // dstw-dispatch-variants` exercises them.  They are READ-ONLY mirrors
+    // of the assertions in src/dstw_dispatch/cuda.rs::tests; if those
+    // tests change, update both.
+
+    use prism_nhs::dstw_dispatch::cuda::{
+        propagate_cpu_reference, row_sums_cpu_reference, Backend,
+        CudaPropagationKernel, PropagationShape, CH_ACTIVE, N_CHANNELS,
+    };
+
+    fn synth_k_for_cuda(n: usize) -> Vec<f32> {
+        let mut k = vec![0.0f32; N_CHANNELS * n * n];
+        for c in 0..N_CHANNELS {
+            for i in 0..n {
+                let entry = 1.0 + 0.01 * ((c * n + i) as f32);
+                for j in 0..n {
+                    k[(c * n + i) * n + j] = entry;
+                }
+            }
+        }
+        k
+    }
+
+    fn expected_row_sum_cuda(n: usize, channel: usize, i: usize) -> f32 {
+        let entry = 1.0 + 0.01 * ((channel * n + i) as f32);
+        n as f32 * entry
+    }
+
+    #[test]
+    fn cuda_ref_shape_sweep_residue_counts() {
+        for &n in &[32usize, 64, 128, 256, 352, 512] {
+            let shape = PropagationShape { n_residues: n, n_variants: 4 };
+            let k = synth_k_for_cuda(n);
+            let residue_id = vec![0, 1, (n / 2) as i32, (n - 1) as i32];
+            let pert = vec![1.0, -1.0, 2.0, 0.5];
+            let mut delta_p = vec![0.0f32; shape.delta_p_len()];
+            propagate_cpu_reference(shape, &k, &residue_id, &pert, &mut delta_p).unwrap();
+            for c in 0..N_CHANNELS {
+                for (b, &i) in residue_id.iter().enumerate() {
+                    let expected = pert[b] * expected_row_sum_cuda(n, c, i as usize);
+                    let got = delta_p[c * shape.n_variants + b];
+                    assert!(
+                        (got - expected).abs() / expected.abs().max(1.0) < 1e-4,
+                        "n_residues={n} c={c} b={b}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cuda_ref_shape_sweep_variant_counts() {
+        for &nv in &[1usize, 5, 25, 100] {
+            let n = 128usize;
+            let shape = PropagationShape { n_residues: n, n_variants: nv };
+            let k = synth_k_for_cuda(n);
+            let residue_id: Vec<i32> = (0..nv).map(|b| (b % n) as i32).collect();
+            let pert: Vec<f32> = (0..nv).map(|b| (b as f32) * 0.01).collect();
+            let mut delta_p = vec![0.0f32; shape.delta_p_len()];
+            propagate_cpu_reference(shape, &k, &residue_id, &pert, &mut delta_p).unwrap();
+            for c in 0..N_CHANNELS {
+                for b in 0..nv {
+                    let i = residue_id[b] as usize;
+                    let expected = pert[b] * expected_row_sum_cuda(n, c, i);
+                    let got = delta_p[c * nv + b];
+                    assert!(
+                        (got - expected).abs() / expected.abs().max(1.0) < 1e-4,
+                        "nv={nv} c={c} b={b}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cuda_ref_out_of_range_residue_yields_zero() {
+        let n = 64usize;
+        let shape = PropagationShape { n_residues: n, n_variants: 3 };
+        let k = synth_k_for_cuda(n);
+        let residue_id = vec![0, -1, 999];
+        let pert = vec![1.0, 1.0, 1.0];
+        let mut delta_p = vec![0.0f32; shape.delta_p_len()];
+        propagate_cpu_reference(shape, &k, &residue_id, &pert, &mut delta_p).unwrap();
+        for c in 0..N_CHANNELS {
+            assert!(delta_p[c * 3 + 0].abs() > 0.0);
+            assert_eq!(delta_p[c * 3 + 1], 0.0);
+            assert_eq!(delta_p[c * 3 + 2], 0.0);
+        }
+    }
+
+    #[test]
+    fn cuda_ref_row_sums_match_propagation_at_unit_pert() {
+        let n = 96usize;
+        let nv = 7usize;
+        let shape = PropagationShape { n_residues: n, n_variants: nv };
+        let k = synth_k_for_cuda(n);
+        let residue_id: Vec<i32> = (0..nv).map(|b| ((b * 13) % n) as i32).collect();
+        let pert = vec![1.0; nv];
+        let mut deltas = vec![0.0f32; shape.delta_p_len()];
+        let mut rows = vec![0.0f32; N_CHANNELS * nv];
+        propagate_cpu_reference(shape, &k, &residue_id, &pert, &mut deltas).unwrap();
+        row_sums_cpu_reference(shape, &k, &residue_id, &mut rows).unwrap();
+        for c in 0..N_CHANNELS {
+            for b in 0..nv {
+                assert!((deltas[c * nv + b] - rows[c * nv + b]).abs() < 1e-4);
+            }
+        }
+    }
+
+    #[test]
+    fn cuda_dispatcher_returns_cpu_fallback_in_draft() {
+        let kernel = CudaPropagationKernel::new().unwrap();
+        let n = 32;
+        let nv = 2;
+        let shape = PropagationShape { n_residues: n, n_variants: nv };
+        let k = synth_k_for_cuda(n);
+        let residue_id = vec![0, 5];
+        let pert = vec![1.0, 1.0];
+        let mut delta_p = vec![0.0f32; shape.delta_p_len()];
+        let backend = kernel.dispatch(shape, &k, &residue_id, &pert, &mut delta_p).unwrap();
+        assert_eq!(backend, Backend::CpuFallback);
+        // Verify channel index constant is wired through.
+        assert_eq!(CH_ACTIVE, 0);
+    }
+
+    #[test]
+    fn cuda_shape_validation_rejects_oversize_residue_count() {
+        let shape = PropagationShape { n_residues: 2048, n_variants: 4 };
+        let err = shape.validate().unwrap_err();
+        assert!(err.contains("MAX_RESIDUES_PER_BLOCK"));
+    }
+
     #[test]
     fn unknown_residue_aa_short_circuits() {
         let req = synth_request(vec![("X17A", 17, "X", "A")]);

@@ -132,6 +132,19 @@ fn main() {
         &target_ptx_dir.join("transfer_entropy.ptx"),
     );
 
+    // Compile DSTW Option A propagation kernel (per-pair K_active / K_lock /
+    // K_ensemble row reduction + epistemic sigma assembly).  CPU reference
+    // is in `crates/prism-nhs/src/dstw_dispatch/projection.rs`; this PTX is
+    // loaded by `crates/prism-nhs/src/dstw_dispatch/cuda.rs` when the
+    // dispatcher is invoked with --backend cuda (CPU is the default until
+    // operator authorises the GPU dispatch path).
+    compile_kernel(
+        &nvcc,
+        "src/kernels/dstw_propagation.cu",
+        &ptx_dir.join("dstw_propagation.ptx"),
+        &target_ptx_dir.join("dstw_propagation.ptx"),
+    );
+
     // Compile Ensemble Exchange kernel (CMA-ES replica management)
     compile_kernel(
         &nvcc,
