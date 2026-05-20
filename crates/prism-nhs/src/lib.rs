@@ -151,6 +151,12 @@ pub mod causome;
 /// [`diagnostic`] module docs for the full deprecation rationale.
 #[cfg(feature = "diagnostic")]
 pub mod diagnostic;
+/// PRISM-4D → DSTW Air-Gap dispatcher.  Implements Option A: rigid-backbone
+/// Δq / ΔV projection of variant perturbations onto the WT thermodynamic
+/// tensors, emitting the vectorial [delta_P_active, delta_P_lock,
+/// delta_P_ensemble] DSTW expects in its BALD loop.  Spec:
+/// `crates/prism-nhs/spec/option_a_variant_dispatcher.md`.
+pub mod dstw_dispatch;
 /// Ensemble teacher manifest contracts and validation gates for the
 /// v004 distillation pipeline.
 pub mod ensemble;

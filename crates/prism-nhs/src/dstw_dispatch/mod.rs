@@ -1,0 +1,57 @@
+//! Option A — Thermodynamic Frustration Projection Dispatcher.
+//!
+//! Implements the dispatcher specified in
+//! `crates/prism-nhs/spec/option_a_variant_dispatcher.md` (operator-authorised
+//! 2026-05-20).  Reads a `PRISMExecutionRequest`, runs rigid-backbone Δq / ΔV
+//! projections of each variant against the WT thermodynamic tensors, and
+//! emits a `PRISMExecutionResponse` carrying the vectorial
+//! `[delta_P_active, delta_P_lock, delta_P_ensemble]` per variant plus
+//! epistemic uncertainty sigmas.
+//!
+//! This is the CPU reference implementation.  CUDA kernels for the
+//! propagation matrices `K_active`, `K_lock`, `K_ensemble` are deferred
+//! to a future gate; the CPU path is correctness-anchored and
+//! deterministic-by-construction so DSTW's BALD acquisition can close the
+//! loop end-to-end without GPU dependency.
+//!
+//! Hard invariants:
+//!
+//!   * **Vectorial-only inputs.**  `requested_channels` must equal
+//!     `{delta_P_active, delta_P_lock, delta_P_ensemble}`.  Scalar
+//!     Wasserstein / variant-divergence inputs are refused at schema
+//!     validation time.
+//!
+//!   * **No NaN / Inf escape.**  Every delta and sigma is checked for
+//!     finiteness before being placed into a `VariantExecutionResponse`.
+//!     Non-finite values short-circuit to a `DispatchError::NonFinite`.
+//!
+//!   * **Strict sigma inflation on non-convergence.**  Operator directive:
+//!     "the epistemic uncertainty budget (σ_epistemic) must strictly
+//!     inflate for any variant point that fails convergence during the
+//!     ΔV substitution, ensuring downstream EiV down-weighting."  We
+//!     enforce this by multiplying every channel's sigma by
+//!     `config.nonconverged_sigma_penalty` (default 4.0) whenever the
+//!     variant's `converged` flag is false.  The penalty is asserted
+//!     `> 1.0` at config construction time so the inflation cannot be
+//!     accidentally configured into a contraction.
+//!
+//!   * **Determinism.**  All RNG (used only for posterior-noise
+//!     sampling, currently OFF by default) is seeded from
+//!     `blake3(canonical_json(request))`.  No global RNG.
+
+pub mod handshake;
+pub mod projection;
+pub mod sidechain_tables;
+
+mod dispatcher;
+
+pub use dispatcher::{dispatch_variant_batch, DispatchError, VariantDispatchConfig};
+pub use handshake::{
+    PRISMExecutionAcquisition, PRISMExecutionRequest, PRISMExecutionResponse,
+    VariantExecutionRequest, VariantExecutionResponse, REQUIRED_DELTA_CHANNELS,
+    RESPONSE_SCHEMA_TAG,
+};
+pub use projection::{
+    project_variant, EpistemicSigmas, ProjectedDeltas, VariantPoint, WTTensorPack,
+};
+pub use sidechain_tables::{AminoAcid, SidechainDescriptor};

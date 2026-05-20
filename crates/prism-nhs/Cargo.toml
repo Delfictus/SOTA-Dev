@@ -58,6 +58,9 @@ log = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = { workspace = true }
+# DSTW Option A dispatcher: blake3 hashes for the round-link chain on
+# PRISMExecutionRequest / PRISMExecutionResponse payloads.
+blake3 = "1.5"
 # ZSTR O_DIRECT consumer: pwrite(2), fdatasync(2), O_DIRECT flag
 libc = "0.2"
 # Wave 0 / #69 — io_uring SQE zero-copy NVMe sink for the ZSTR Reaper.
@@ -258,6 +261,13 @@ path = "src/bin/ccns_analyze.rs"
 [[bin]]
 name = "dstw-export-wt"
 path = "src/bin/dstw_export_wt.rs"
+
+# PRISM-4D Option A variant dispatcher.  Reads a DSTW BALD request,
+# projects rigid-backbone Δq/ΔV through the WT thermodynamic tensors,
+# emits the PRISMExecutionResponse.  CPU reference; no GPU runtime.
+[[bin]]
+name = "dstw-dispatch-variants"
+path = "src/bin/dstw_dispatch_variants.rs"
 
 [[bin]]
 name = "m1_v3_synthetic"
