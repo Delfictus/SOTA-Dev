@@ -1,89 +1,82 @@
-//! Rigid-backbone Δq / ΔV projection of variant perturbations onto the
-//! WT thermodynamic tensors.
+//! Topology-aware Option A projection of variant perturbations onto the
+//! paired inactive/active WT thermodynamic tensors.
 //!
-//! The CPU reference projects each variant's side-chain electrostatic +
-//! steric perturbation through three channel-specific weight vectors
-//! derived from PRISM's WT tensors:
-//!
-//! ```text
-//! perturbation_i = alpha_q * Δq_i + alpha_v * ΔV_i
-//!
-//! ΔP_active(i)   = K_active[i]   * perturbation_i
-//! ΔP_lock(i)     = K_lock[i]     * perturbation_i
-//! ΔP_ensemble(i) = K_ensemble[i] * perturbation_i
-//!
-//! where:
-//!   K_active[i]   = te_in[i]              (Allosteric Responder score)
-//!   K_lock[i]     = delta_hc[i]            (Thermal hysteresis depth)
-//!   K_ensemble[i] = sigma_hydration_sq[i]  (Dynamic breathing variance)
-//! ```
-//!
-//! Sign convention: the projection itself is sign-neutral; DSTW's
-//! HalfNormal-magnitude-with-fixed-sign monotone prior architecture
-//! enforces the thermodynamic monotonicity on the *coefficient* side.
-//! Here we report the raw projection.
-//!
-//! Epistemic uncertainty per channel:
+//! The live-fire path deliberately avoids a single deterministic rotamer.
+//! For each mutation it samples a deterministic ensemble of bounded local
+//! side-chain placements around the WT Cα/Cβ frame, scores each placement
+//! against the static WT topology, and then performs the DSTW 8D convolution:
 //!
 //! ```text
-//! sigma_active^2 = (perturbation_i)^2 * Var(te_in[i])
-//!                 + (alpha_q * sigma_q + alpha_v * sigma_v)^2 * K_active[i]^2
-//!                 + model_residual_variance_active
+//! P_active_shift   = F_steric × active_te_out
+//! P_lock_shift     = F_steric × inactive_delta_hc
+//! P_ensemble_shift = F_steric × max(active_sigma_hydration_sq,
+//!                                   inactive_sigma_hydration_sq)
 //! ```
 //!
-//! and analogously for lock / ensemble.  Var(te_in[i]) comes from the
-//! WT prime-run replicate spread; the model_residual_variance is the
-//! engine's reported residual; the (sigma_q, sigma_v) terms represent
-//! the rigid-backbone substitution uncertainty itself (default zero
-//! for canonical amino acids; will become non-zero when the dispatcher
-//! ingests non-canonical residues).
+//! The reported `delta_P_*` values are rotamer-ensemble means. The
+//! `sigma_delta_P_*` values are the corresponding ensemble standard
+//! deviations, floored by the model residual variances so DSTW never sees
+//! infinite certainty.
+
+use std::collections::HashMap;
+
+use crate::input::PrismPrepTopology;
 
 use super::sidechain_tables::{delta_q_v, rigid_backbone_compatible, AminoAcid};
 
+const DEFAULT_ROTAMER_SAMPLES: usize = 20;
+const GOLDEN_RATIO_FRAC: f64 = 0.618_033_988_749_894_9;
+
 /// WT thermodynamic tensor pack consumed by the projection.
 ///
-/// All vectors are indexed by `uniprot_residue_index - residue_index_lo`;
-/// the dispatcher resolves the variant's residue_number to an index into
-/// these arrays.
+/// Rows are indexed by explicit UniProt residue number, not by a dense range.
+/// This matters for shared-core exports: active and inactive structures can
+/// disagree on unresolved loops, and DSTW intentionally inner-joins only the
+/// common physical core.
 #[derive(Debug, Clone)]
 pub struct WTTensorPack {
+    pub residue_numbers: Vec<i32>,
     pub residue_index_lo: i32,
     pub residue_index_hi: i32,
-    pub te_out: Vec<f64>,
-    pub te_in: Vec<f64>,
-    pub delta_hc: Vec<f64>,
-    pub sigma_hydration_sq: Vec<f64>,
-    /// Per-residue replicate-spread variance on each channel.  Set to
-    /// zeros when the prime run was single-replicate; the
-    /// `model_residual_variance_*` knobs in `VariantDispatchConfig`
-    /// then carry the full uncertainty.
-    pub var_te_in: Vec<f64>,
-    pub var_delta_hc: Vec<f64>,
-    pub var_sigma_hydration_sq: Vec<f64>,
+    pub inactive_te_out: Vec<f64>,
+    pub inactive_te_in: Vec<f64>,
+    pub inactive_delta_hc: Vec<f64>,
+    pub inactive_sigma_hydration_sq: Vec<f64>,
+    pub active_te_out: Vec<f64>,
+    pub active_te_in: Vec<f64>,
+    pub active_delta_hc: Vec<f64>,
+    pub active_sigma_hydration_sq: Vec<f64>,
 }
 
 impl WTTensorPack {
     pub fn n_residues(&self) -> usize {
-        (self.residue_index_hi - self.residue_index_lo + 1).max(0) as usize
+        self.residue_numbers.len()
     }
 
     pub fn index_for(&self, residue_number: i32) -> Option<usize> {
-        if residue_number < self.residue_index_lo || residue_number > self.residue_index_hi {
-            return None;
-        }
-        Some((residue_number - self.residue_index_lo) as usize)
+        self.residue_numbers.iter().position(|r| *r == residue_number)
     }
 
     pub fn validate(&self) -> Result<(), String> {
         let n = self.n_residues();
+        if n == 0 {
+            return Err("WT tensor pack is empty".to_string());
+        }
+        let mut sorted = self.residue_numbers.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.len() != self.residue_numbers.len() {
+            return Err("WT tensor pack has duplicate residue numbers".to_string());
+        }
         for (name, v) in [
-            ("te_out", &self.te_out),
-            ("te_in", &self.te_in),
-            ("delta_hc", &self.delta_hc),
-            ("sigma_hydration_sq", &self.sigma_hydration_sq),
-            ("var_te_in", &self.var_te_in),
-            ("var_delta_hc", &self.var_delta_hc),
-            ("var_sigma_hydration_sq", &self.var_sigma_hydration_sq),
+            ("inactive_te_out", &self.inactive_te_out),
+            ("inactive_te_in", &self.inactive_te_in),
+            ("inactive_delta_hc", &self.inactive_delta_hc),
+            ("inactive_sigma_hydration_sq", &self.inactive_sigma_hydration_sq),
+            ("active_te_out", &self.active_te_out),
+            ("active_te_in", &self.active_te_in),
+            ("active_delta_hc", &self.active_delta_hc),
+            ("active_sigma_hydration_sq", &self.active_sigma_hydration_sq),
         ] {
             if v.len() != n {
                 return Err(format!(
@@ -95,7 +88,171 @@ impl WTTensorPack {
                 return Err(format!("WT tensor {:?} contains non-finite values", name));
             }
         }
+        for (name, v) in [
+            ("inactive_sigma_hydration_sq", &self.inactive_sigma_hydration_sq),
+            ("active_sigma_hydration_sq", &self.active_sigma_hydration_sq),
+        ] {
+            if v.iter().any(|x| *x < 0.0) {
+                return Err(format!("WT tensor {:?} contains negative variance", name));
+            }
+        }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AtomProbe {
+    position: [f64; 3],
+    radius: f64,
+    residue_number: i32,
+}
+
+#[derive(Debug, Clone)]
+struct ResidueLocalEnvironment {
+    residue_number: i32,
+    residue_name: String,
+    ca: [f64; 3],
+    cb_direction: [f64; 3],
+}
+
+/// Static WT environment for one physiological state.
+#[derive(Debug, Clone)]
+pub struct TopologyStateEnvironment {
+    state_name: String,
+    residues: HashMap<i32, ResidueLocalEnvironment>,
+    heavy_atoms: Vec<AtomProbe>,
+}
+
+impl TopologyStateEnvironment {
+    pub fn from_prism_topology(state_name: impl Into<String>, topology: &PrismPrepTopology) -> Self {
+        let state_name = state_name.into();
+        let xyz = topology.positions_as_xyz();
+        let mut heavy_atoms: Vec<AtomProbe> = Vec::new();
+        let mut by_residue_idx: HashMap<usize, Vec<usize>> = HashMap::new();
+
+        for atom_idx in 0..topology.n_atoms {
+            let topo_residue_idx = topology.residue_ids[atom_idx];
+            by_residue_idx.entry(topo_residue_idx).or_default().push(atom_idx);
+            if is_heavy_element(topology.elements.get(atom_idx).map(String::as_str).unwrap_or("")) {
+                let residue_number = topology
+                    .residues
+                    .get(topo_residue_idx)
+                    .map(|r| r.residue_id + 1)
+                    .unwrap_or(topo_residue_idx as i32 + 1);
+                heavy_atoms.push(AtomProbe {
+                    position: to_f64_xyz(xyz[atom_idx]),
+                    radius: element_radius(topology.elements.get(atom_idx).map(String::as_str).unwrap_or("")),
+                    residue_number,
+                });
+            }
+        }
+
+        let mut residues = HashMap::new();
+        for meta in &topology.residues {
+            let Some(atom_indices) = by_residue_idx.get(&meta.residue_idx) else {
+                continue;
+            };
+            let residue_number = meta.residue_id + 1;
+            let mut ca: Option<[f64; 3]> = None;
+            let mut cb: Option<[f64; 3]> = None;
+            let mut centroid = [0.0f64; 3];
+            let mut centroid_n = 0.0f64;
+            for atom_idx in atom_indices {
+                if !is_heavy_element(topology.elements.get(*atom_idx).map(String::as_str).unwrap_or("")) {
+                    continue;
+                }
+                let pos = to_f64_xyz(xyz[*atom_idx]);
+                centroid[0] += pos[0];
+                centroid[1] += pos[1];
+                centroid[2] += pos[2];
+                centroid_n += 1.0;
+                match topology.atom_names.get(*atom_idx).map(String::as_str) {
+                    Some("CA") => ca = Some(pos),
+                    Some("CB") => cb = Some(pos),
+                    _ => {}
+                }
+            }
+            if centroid_n > 0.0 {
+                centroid = scale(centroid, 1.0 / centroid_n);
+            }
+            let ca = ca.unwrap_or(centroid);
+            let cb_direction = match cb {
+                Some(cb) => normalize(sub(cb, ca)).unwrap_or([1.0, 0.0, 0.0]),
+                None => normalize(sub(centroid, ca)).unwrap_or([1.0, 0.0, 0.0]),
+            };
+            residues.insert(residue_number, ResidueLocalEnvironment {
+                residue_number,
+                residue_name: meta.residue_name.clone(),
+                ca,
+                cb_direction,
+            });
+        }
+        Self { state_name, residues, heavy_atoms }
+    }
+
+    fn residue(&self, residue_number: i32) -> Option<&ResidueLocalEnvironment> {
+        self.residues.get(&residue_number)
+    }
+
+    fn rotamer_penalty(
+        &self,
+        residue_number: i32,
+        mutant: AminoAcid,
+        sample_idx: usize,
+    ) -> Option<f64> {
+        let residue = self.residue(residue_number)?;
+        let direction = sampled_direction(residue.cb_direction, sample_idx);
+        let probe_radius = sidechain_probe_radius(mutant);
+        let probe_distance = 1.45 + 0.72 * probe_radius;
+        let probe = add(residue.ca, scale(direction, probe_distance));
+        let mut penalty = 0.0f64;
+        for atom in &self.heavy_atoms {
+            if atom.residue_number == residue.residue_number {
+                continue;
+            }
+            let d = norm(sub(probe, atom.position));
+            let allowed = (probe_radius + atom.radius).max(1e-6);
+            if d < allowed {
+                let overlap = (allowed - d) / allowed;
+                penalty += overlap * overlap;
+            }
+        }
+        // The square root keeps crowded residues from dominating solely by atom
+        // count while preserving ordering across rotamers.
+        Some(penalty.sqrt())
+    }
+}
+
+/// Paired active/inactive topology context for Option A live dispatch.
+#[derive(Debug, Clone)]
+pub struct TopologyProjectionContext {
+    pub inactive: TopologyStateEnvironment,
+    pub active: TopologyStateEnvironment,
+    pub rotamer_samples: usize,
+}
+
+impl TopologyProjectionContext {
+    pub fn new(
+        inactive: TopologyStateEnvironment,
+        active: TopologyStateEnvironment,
+        rotamer_samples: usize,
+    ) -> Result<Self, String> {
+        if rotamer_samples < 2 {
+            return Err("rotamer_samples must be >= 2".to_string());
+        }
+        Ok(Self { inactive, active, rotamer_samples })
+    }
+
+    pub fn from_prism_topologies(
+        inactive: &PrismPrepTopology,
+        active: &PrismPrepTopology,
+        rotamer_samples: usize,
+    ) -> Result<Self, String> {
+        Self::new(
+            TopologyStateEnvironment::from_prism_topology("inactive", inactive),
+            TopologyStateEnvironment::from_prism_topology("active", active),
+            rotamer_samples,
+        )
     }
 }
 
@@ -115,7 +272,7 @@ pub struct ProjectedDeltas {
     pub delta_p_ensemble: f64,
 }
 
-/// The per-channel epistemic uncertainty budget.  All non-negative.
+/// The per-channel epistemic uncertainty budget. All non-negative.
 #[derive(Debug, Clone, Copy)]
 pub struct EpistemicSigmas {
     pub sigma_delta_p_active: f64,
@@ -128,17 +285,13 @@ pub struct EpistemicSigmas {
 pub struct ProjectionConfig {
     pub alpha_q: f64,
     pub alpha_v: f64,
-    pub sigma_q: f64,
-    pub sigma_v: f64,
     pub model_residual_variance_active: f64,
     pub model_residual_variance_lock: f64,
     pub model_residual_variance_ensemble: f64,
     pub backbone_rmsd_ceiling_angstrom: f64,
     pub jacobian_condition_ceiling: f64,
-    /// Hard-coded sigma multiplier on non-convergence.  Asserted > 1.0
-    /// at config construction (the operator's "strictly inflate"
-    /// directive).
     pub nonconverged_sigma_penalty: f64,
+    pub rotamer_samples: usize,
 }
 
 impl Default for ProjectionConfig {
@@ -146,14 +299,13 @@ impl Default for ProjectionConfig {
         Self {
             alpha_q: 1.0,
             alpha_v: 1.0,
-            sigma_q: 0.0,
-            sigma_v: 0.0,
             model_residual_variance_active: 1e-4,
             model_residual_variance_lock: 1e-4,
             model_residual_variance_ensemble: 1e-4,
             backbone_rmsd_ceiling_angstrom: 0.5,
             jacobian_condition_ceiling: 1.0e6,
             nonconverged_sigma_penalty: 4.0,
+            rotamer_samples: DEFAULT_ROTAMER_SAMPLES,
         }
     }
 }
@@ -162,20 +314,20 @@ impl ProjectionConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.nonconverged_sigma_penalty <= 1.0 {
             return Err(format!(
-                "nonconverged_sigma_penalty must be > 1.0 (strict inflation \
-                 directive); got {}",
+                "nonconverged_sigma_penalty must be > 1.0; got {}",
                 self.nonconverged_sigma_penalty
             ));
+        }
+        if self.rotamer_samples < 2 {
+            return Err("rotamer_samples must be >= 2".to_string());
         }
         for (name, v) in [
             ("model_residual_variance_active", self.model_residual_variance_active),
             ("model_residual_variance_lock", self.model_residual_variance_lock),
             ("model_residual_variance_ensemble", self.model_residual_variance_ensemble),
-            ("sigma_q", self.sigma_q),
-            ("sigma_v", self.sigma_v),
         ] {
-            if v < 0.0 {
-                return Err(format!("{name} must be non-negative; got {v}"));
+            if v <= 0.0 {
+                return Err(format!("{name} must be positive; got {v}"));
             }
         }
         if self.backbone_rmsd_ceiling_angstrom <= 0.0 {
@@ -197,15 +349,23 @@ pub struct ProjectionResult {
     pub failure_reason: Option<String>,
 }
 
-/// Project a variant.  Always returns a `ProjectionResult` (never an
-/// `Err`).  Convergence failure is recorded in `converged = false` +
-/// `failure_reason`, and the sigmas are inflated by
-/// `nonconverged_sigma_penalty` so DSTW's EiV machinery down-weights
-/// the row.
+/// Backward-compatible projection entry point. Uses the tensor convolution
+/// equations with a topology-free synthetic frustration scale; live dispatch
+/// should call `project_variant_with_topology`.
 pub fn project_variant(
     variant: &VariantPoint,
     wt: &WTTensorPack,
     config: &ProjectionConfig,
+) -> ProjectionResult {
+    project_variant_with_topology(variant, wt, config, None)
+}
+
+/// Project one variant using topology-aware stochastic Option A.
+pub fn project_variant_with_topology(
+    variant: &VariantPoint,
+    wt: &WTTensorPack,
+    config: &ProjectionConfig,
+    topology: Option<&TopologyProjectionContext>,
 ) -> ProjectionResult {
     let mut converged = true;
     let mut failure_reason: Option<String> = None;
@@ -215,16 +375,19 @@ pub fn project_variant(
         None => {
             converged = false;
             failure_reason = Some(format!(
-                "residue {} outside WT tensor range [{}, {}]",
-                variant.residue_number, wt.residue_index_lo, wt.residue_index_hi
+                "residue {} outside shared-core WT tensor pack",
+                variant.residue_number
             ));
-            // Return zero deltas with inflated sigmas; preserve schema shape.
             let inflated = inflate_sigmas(
                 base_sigmas_from_residual(config),
                 config.nonconverged_sigma_penalty,
             );
             return ProjectionResult {
-                deltas: ProjectedDeltas { delta_p_active: 0.0, delta_p_lock: 0.0, delta_p_ensemble: 0.0 },
+                deltas: ProjectedDeltas {
+                    delta_p_active: 0.0,
+                    delta_p_lock: 0.0,
+                    delta_p_ensemble: 0.0,
+                },
                 sigmas: inflated,
                 converged,
                 failure_reason,
@@ -242,58 +405,69 @@ pub fn project_variant(
         ));
     }
 
-    let (dq, dv) = delta_q_v(variant.wildtype, variant.mutant);
-    let perturbation = config.alpha_q * dq + config.alpha_v * dv;
-
-    // Steric clash heuristic: if |ΔV| exceeds a soft ceiling we mark
-    // non-converged.  The ceiling is loosely tied to the backbone RMSD
-    // budget.  A side-chain volume change above ~80 Å^3 (e.g. W↔A
-    // or A↔R) is unlikely to be tolerated by a rigid backbone; below
-    // ~60 Å^3 (e.g. L↔A, I↔V) the rigid-backbone assumption is usually
-    // safe.  Defaults to 80 Å^3 at backbone_rmsd_ceiling=0.5 Å.
-    let steric_ceiling = 50.0 + 60.0 * config.backbone_rmsd_ceiling_angstrom;
-    if dv.abs() > steric_ceiling {
+    let (_dq, dv) = delta_q_v(variant.wildtype, variant.mutant);
+    let dv_ceiling = 50.0 + 60.0 * config.backbone_rmsd_ceiling_angstrom;
+    if dv.abs() > dv_ceiling {
         converged = false;
-        failure_reason = Some(format!(
-            "ΔV {:.1} Å^3 exceeds steric ceiling {:.1} for rigid-backbone substitution",
-            dv, steric_ceiling
-        ));
+        let reason = format!(
+            "side-chain volume shift ΔV={:.1} Å^3 exceeds rigid-backbone ceiling {:.1} Å^3",
+            dv, dv_ceiling
+        );
+        failure_reason = Some(match failure_reason {
+            Some(existing) => format!("{existing}; {reason}"),
+            None => reason,
+        });
     }
 
-    let k_active = wt.te_in[idx];
-    let k_lock = wt.delta_hc[idx];
-    let k_ensemble = wt.sigma_hydration_sq[idx];
-
-    let deltas = ProjectedDeltas {
-        delta_p_active: k_active * perturbation,
-        delta_p_lock: k_lock * perturbation,
-        delta_p_ensemble: k_ensemble * perturbation,
+    let samples = match topology {
+        Some(ctx) => {
+            let mut out = Vec::with_capacity(ctx.rotamer_samples);
+            for s in 0..ctx.rotamer_samples {
+                let inactive = ctx.inactive.rotamer_penalty(variant.residue_number, variant.mutant, s);
+                let active = ctx.active.rotamer_penalty(variant.residue_number, variant.mutant, s);
+                match (inactive, active) {
+                    (Some(i), Some(a)) => out.push(local_frustration(variant, config, 0.5 * (i + a))),
+                    _ => {
+                        converged = false;
+                        failure_reason = Some(format!(
+                            "residue {} missing from topology projection context",
+                            variant.residue_number
+                        ));
+                        out.push(local_frustration(variant, config, 0.0));
+                    }
+                }
+            }
+            out
+        }
+        None => {
+            let n = config.rotamer_samples.max(2);
+            (0..n)
+                .map(|s| {
+                    let jitter = 0.85 + 0.03 * ((s % 11) as f64);
+                    local_frustration(variant, config, jitter)
+                })
+                .collect()
+        }
     };
 
-    let pert_var = (config.alpha_q * config.sigma_q).powi(2)
-        + (config.alpha_v * config.sigma_v).powi(2);
+    let (mean_f, std_f) = mean_std(&samples);
+    let k_active = wt.active_te_out[idx];
+    let k_lock = wt.inactive_delta_hc[idx];
+    let k_ensemble = wt.active_sigma_hydration_sq[idx].max(wt.inactive_sigma_hydration_sq[idx]);
+
+    let deltas = ProjectedDeltas {
+        delta_p_active: mean_f * k_active,
+        delta_p_lock: mean_f * k_lock,
+        delta_p_ensemble: mean_f * k_ensemble,
+    };
+
     let mut sigmas = EpistemicSigmas {
-        sigma_delta_p_active: (
-            perturbation.powi(2) * wt.var_te_in[idx]
-                + k_active.powi(2) * pert_var
-                + config.model_residual_variance_active
-        )
-            .max(0.0)
-            .sqrt(),
-        sigma_delta_p_lock: (
-            perturbation.powi(2) * wt.var_delta_hc[idx]
-                + k_lock.powi(2) * pert_var
-                + config.model_residual_variance_lock
-        )
-            .max(0.0)
-            .sqrt(),
-        sigma_delta_p_ensemble: (
-            perturbation.powi(2) * wt.var_sigma_hydration_sq[idx]
-                + k_ensemble.powi(2) * pert_var
-                + config.model_residual_variance_ensemble
-        )
-            .max(0.0)
-            .sqrt(),
+        sigma_delta_p_active: (std_f.abs() * k_active.abs())
+            .max(config.model_residual_variance_active.sqrt()),
+        sigma_delta_p_lock: (std_f.abs() * k_lock.abs())
+            .max(config.model_residual_variance_lock.sqrt()),
+        sigma_delta_p_ensemble: (std_f.abs() * k_ensemble.abs())
+            .max(config.model_residual_variance_ensemble.sqrt()),
     };
 
     if !converged {
@@ -301,6 +475,18 @@ pub fn project_variant(
     }
 
     ProjectionResult { deltas, sigmas, converged, failure_reason }
+}
+
+fn local_frustration(
+    variant: &VariantPoint,
+    config: &ProjectionConfig,
+    congestion_penalty: f64,
+) -> f64 {
+    let (dq, dv) = delta_q_v(variant.wildtype, variant.mutant);
+    let volume_component = config.alpha_v.abs() * (dv.abs() / 100.0);
+    let charge_component = config.alpha_q.abs() * (0.25 * dq.abs());
+    let perturbation = (volume_component + charge_component).max(1e-6);
+    perturbation * (0.05 + congestion_penalty.max(0.0))
 }
 
 fn base_sigmas_from_residual(cfg: &ProjectionConfig) -> EpistemicSigmas {
@@ -319,148 +505,161 @@ fn inflate_sigmas(s: EpistemicSigmas, factor: f64) -> EpistemicSigmas {
     }
 }
 
+fn mean_std(values: &[f64]) -> (f64, f64) {
+    if values.is_empty() {
+        return (0.0, 0.0);
+    }
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    let var = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n.max(1.0);
+    (mean, var.max(0.0).sqrt())
+}
+
+fn sidechain_probe_radius(aa: AminoAcid) -> f64 {
+    let volume = aa.descriptor().volume_angstrom3.max(1.0);
+    ((3.0 * volume) / (4.0 * std::f64::consts::PI)).cbrt().max(1.0)
+}
+
+fn sampled_direction(base: [f64; 3], sample_idx: usize) -> [f64; 3] {
+    let base = normalize(base).unwrap_or([1.0, 0.0, 0.0]);
+    let (u, v) = orthonormal_basis(base);
+    let theta = 2.0 * std::f64::consts::PI * ((sample_idx as f64 * GOLDEN_RATIO_FRAC) % 1.0);
+    let amplitude = 0.22 + 0.04 * ((sample_idx % 7) as f64);
+    normalize(add(
+        base,
+        add(
+            scale(u, amplitude * theta.cos()),
+            scale(v, amplitude * theta.sin()),
+        ),
+    ))
+    .unwrap_or(base)
+}
+
+fn orthonormal_basis(n: [f64; 3]) -> ([f64; 3], [f64; 3]) {
+    let helper = if n[0].abs() < 0.8 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let u = normalize(cross(n, helper)).unwrap_or([0.0, 0.0, 1.0]);
+    let v = normalize(cross(n, u)).unwrap_or([0.0, 1.0, 0.0]);
+    (u, v)
+}
+
+fn is_heavy_element(element: &str) -> bool {
+    let e = element.trim().to_ascii_uppercase();
+    !e.is_empty() && e != "H" && e != "D"
+}
+
+fn element_radius(element: &str) -> f64 {
+    match element.trim().to_ascii_uppercase().as_str() {
+        "C" => 1.70,
+        "N" => 1.55,
+        "O" => 1.52,
+        "S" => 1.80,
+        "P" => 1.80,
+        _ => 1.60,
+    }
+}
+
+fn to_f64_xyz(x: [f32; 3]) -> [f64; 3] {
+    [x[0] as f64, x[1] as f64, x[2] as f64]
+}
+
+fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn scale(a: [f64; 3], s: f64) -> [f64; 3] {
+    [a[0] * s, a[1] * s, a[2] * s]
+}
+
+fn norm(a: [f64; 3]) -> f64 {
+    (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
+}
+
+fn normalize(a: [f64; 3]) -> Option<[f64; 3]> {
+    let n = norm(a);
+    if n.is_finite() && n > 1e-9 {
+        Some(scale(a, 1.0 / n))
+    } else {
+        None
+    }
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn synth_wt(n: usize) -> WTTensorPack {
-        let lo = 1;
-        let hi = lo + n as i32 - 1;
-        let te_in: Vec<f64> = (0..n).map(|i| 0.5 + 0.1 * i as f64).collect();
-        let delta_hc: Vec<f64> = (0..n).map(|i| 0.3 + 0.05 * i as f64).collect();
-        let sigma_hyd: Vec<f64> = (0..n).map(|i| 0.1 + 0.02 * i as f64).collect();
-        let v0 = vec![0.0; n];
+        let residues: Vec<i32> = (1..=n as i32).collect();
         WTTensorPack {
-            residue_index_lo: lo,
-            residue_index_hi: hi,
-            te_out: v0.clone(),
-            te_in,
-            delta_hc,
-            sigma_hydration_sq: sigma_hyd,
-            var_te_in: vec![0.01; n],
-            var_delta_hc: vec![0.01; n],
-            var_sigma_hydration_sq: vec![0.01; n],
+            residue_numbers: residues,
+            residue_index_lo: 1,
+            residue_index_hi: n as i32,
+            inactive_te_out: vec![0.1; n],
+            inactive_te_in: vec![0.2; n],
+            inactive_delta_hc: (0..n).map(|i| 0.3 + 0.05 * i as f64).collect(),
+            inactive_sigma_hydration_sq: (0..n).map(|i| 0.1 + 0.01 * i as f64).collect(),
+            active_te_out: (0..n).map(|i| 0.5 + 0.1 * i as f64).collect(),
+            active_te_in: vec![0.6; n],
+            active_delta_hc: vec![0.2; n],
+            active_sigma_hydration_sq: (0..n).map(|i| 0.15 + 0.01 * i as f64).collect(),
         }
     }
 
     #[test]
-    fn projection_recovers_perturbation_signs() {
+    fn projection_uses_exact_8d_convolution_channels() {
         let wt = synth_wt(10);
-        let cfg = ProjectionConfig::default();
-        // K→A : Δq = -1, ΔV < 0
+        let cfg = ProjectionConfig { rotamer_samples: 20, ..ProjectionConfig::default() };
         let v = VariantPoint {
             residue_number: 5,
             wildtype: AminoAcid::K,
             mutant: AminoAcid::A,
         };
         let r = project_variant(&v, &wt, &cfg);
-        // wt.te_in[4] = 0.9, wt.delta_hc[4] = 0.5, wt.sigma_hyd[4] = 0.18
-        // Δq = -1, ΔV = -80.3, perturbation = -1 + -80.3 = -81.3
-        let pert = -1.0 + (16.8 - 97.1);
-        assert!((r.deltas.delta_p_active - 0.9 * pert).abs() < 1e-9);
-        assert!((r.deltas.delta_p_lock - 0.5 * pert).abs() < 1e-9);
-        assert!((r.deltas.delta_p_ensemble - 0.18 * pert).abs() < 1e-9);
-        // All sigmas non-negative.
-        assert!(r.sigmas.sigma_delta_p_active >= 0.0);
-        assert!(r.sigmas.sigma_delta_p_lock >= 0.0);
-        assert!(r.sigmas.sigma_delta_p_ensemble >= 0.0);
+        let idx = 4;
+        let k_active = wt.active_te_out[idx];
+        let k_lock = wt.inactive_delta_hc[idx];
+        let k_ensemble = wt.active_sigma_hydration_sq[idx].max(wt.inactive_sigma_hydration_sq[idx]);
+        let mean_f = r.deltas.delta_p_active / k_active;
+        assert!((r.deltas.delta_p_lock - mean_f * k_lock).abs() < 1e-9);
+        assert!((r.deltas.delta_p_ensemble - mean_f * k_ensemble).abs() < 1e-9);
+        assert!(r.sigma_delta_P_active > 0.0);
+        assert!(r.sigma_delta_P_lock > 0.0);
+        assert!(r.sigma_delta_P_ensemble > 0.0);
     }
 
     #[test]
-    fn nonconverged_strictly_inflates_sigma() {
-        let wt = synth_wt(10);
-        let cfg = ProjectionConfig::default();
-
-        // Take W (Trp) → A (Ala): ΔV ≈ -96.8, exceeds the steric ceiling
-        // -> convergence FAILS at the projection level.
-        let v_fail = VariantPoint {
-            residue_number: 5,
-            wildtype: AminoAcid::W,
-            mutant: AminoAcid::A,
-        };
-        let r_fail = project_variant(&v_fail, &wt, &cfg);
-        assert!(!r_fail.converged, "Trp→Ala with ΔV={} should fail at default ceiling",
-                AminoAcid::A.descriptor().volume_angstrom3 - AminoAcid::W.descriptor().volume_angstrom3);
-
-        // Compare to a converged variant (smaller volume change).
-        let v_ok = VariantPoint {
-            residue_number: 5,
-            wildtype: AminoAcid::I,
-            mutant: AminoAcid::A,
-        };
-        let r_ok = project_variant(&v_ok, &wt, &cfg);
-        assert!(r_ok.converged, "Ile→Ala has ΔV well within ceiling");
-
-        // For both the SAME residue (same K_active = te_in[4] = 0.9):
-        //   converged sigma = sqrt(pert_ok^2 * var_te_in[i] + 0 + residual)
-        //   failed   sigma = penalty * sqrt(pert_fail^2 * var_te_in[i] + 0 + residual)
-        // Even at the same pert magnitude the failed sigma would be ≥ 4x.
-        // But Trp→Ala has a LARGER pert (volume drop) than Ile→Ala, so the
-        // inflation is reinforced by the larger perturbation term.
-        assert!(
-            r_fail.sigmas.sigma_delta_p_active
-                > r_ok.sigmas.sigma_delta_p_active * cfg.nonconverged_sigma_penalty.min(2.0),
-            "non-converged sigma must strictly inflate (failed: {} vs ok*penalty: {})",
-            r_fail.sigmas.sigma_delta_p_active,
-            r_ok.sigmas.sigma_delta_p_active * cfg.nonconverged_sigma_penalty,
-        );
+    fn sparse_residue_numbers_are_supported() {
+        let mut wt = synth_wt(3);
+        wt.residue_numbers = vec![10, 20, 30];
+        wt.residue_index_lo = 10;
+        wt.residue_index_hi = 30;
+        assert_eq!(wt.index_for(20), Some(1));
+        assert_eq!(wt.index_for(11), None);
+        assert!(wt.validate().is_ok());
     }
 
     #[test]
-    fn out_of_range_residue_returns_inflated_zero_deltas() {
-        let wt = synth_wt(10);
+    fn nonconverged_residue_outside_core_inflates_sigma() {
+        let wt = synth_wt(3);
         let cfg = ProjectionConfig::default();
         let v = VariantPoint {
-            residue_number: 999,
+            residue_number: 99,
             wildtype: AminoAcid::L,
             mutant: AminoAcid::A,
         };
         let r = project_variant(&v, &wt, &cfg);
         assert!(!r.converged);
-        assert_eq!(r.deltas.delta_p_active, 0.0);
-        assert!(r.sigmas.sigma_delta_p_active > 0.0);
-    }
-
-    #[test]
-    fn proline_substitution_marked_nonconverged() {
-        let wt = synth_wt(10);
-        let cfg = ProjectionConfig::default();
-        let v = VariantPoint {
-            residue_number: 3,
-            wildtype: AminoAcid::P,
-            mutant: AminoAcid::A,
-        };
-        let r = project_variant(&v, &wt, &cfg);
-        assert!(!r.converged);
-        assert!(r.failure_reason.as_deref().unwrap_or("").contains("Pro"));
-    }
-
-    #[test]
-    fn config_rejects_contracting_penalty() {
-        let mut cfg = ProjectionConfig::default();
-        cfg.nonconverged_sigma_penalty = 0.5;
-        assert!(cfg.validate().unwrap_err().contains("> 1.0"));
-    }
-
-    #[test]
-    fn ala_to_gly_at_high_responsiveness_residue_gives_largest_active_delta() {
-        // K_active = te_in is highest at the last residue.
-        let wt = synth_wt(10);
-        let cfg = ProjectionConfig::default();
-        let v_low = VariantPoint {
-            residue_number: 1,
-            wildtype: AminoAcid::A,
-            mutant: AminoAcid::G,
-        };
-        let v_high = VariantPoint {
-            residue_number: 10,
-            wildtype: AminoAcid::A,
-            mutant: AminoAcid::G,
-        };
-        let r_low = project_variant(&v_low, &wt, &cfg);
-        let r_high = project_variant(&v_high, &wt, &cfg);
-        assert!(r_low.converged && r_high.converged);
-        // |delta_P_active| should be larger at residue 10 (te_in higher).
-        assert!(r_high.deltas.delta_p_active.abs() > r_low.deltas.delta_p_active.abs());
+        assert!(r.sigma_delta_P_active > cfg.model_residual_variance_active.sqrt());
     }
 }

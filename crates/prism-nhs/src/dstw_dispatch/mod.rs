@@ -50,13 +50,17 @@ pub use cuda::{
     propagate_cpu_reference, row_sums_cpu_reference, Backend, CudaPropagationKernel,
     PropagationShape, CH_ACTIVE, CH_ENSEMBLE, CH_LOCK, N_CHANNELS,
 };
-pub use dispatcher::{dispatch_variant_batch, DispatchError, VariantDispatchConfig};
+pub use dispatcher::{
+    dispatch_variant_batch, dispatch_variant_batch_with_topology, DispatchError,
+    VariantDispatchConfig,
+};
 pub use handshake::{
     PRISMExecutionAcquisition, PRISMExecutionRequest, PRISMExecutionResponse,
     VariantExecutionRequest, VariantExecutionResponse, REQUIRED_DELTA_CHANNELS,
     RESPONSE_SCHEMA_TAG,
 };
 pub use projection::{
-    project_variant, EpistemicSigmas, ProjectedDeltas, VariantPoint, WTTensorPack,
+    project_variant, project_variant_with_topology, EpistemicSigmas, ProjectedDeltas,
+    TopologyProjectionContext, TopologyStateEnvironment, VariantPoint, WTTensorPack,
 };
 pub use sidechain_tables::{AminoAcid, SidechainDescriptor};

@@ -10,7 +10,8 @@ use super::handshake::{
     VariantExecutionResponse,
 };
 use super::projection::{
-    project_variant, ProjectionConfig, VariantPoint, WTTensorPack,
+    project_variant, project_variant_with_topology, ProjectionConfig,
+    TopologyProjectionContext, VariantPoint, WTTensorPack,
 };
 use super::sidechain_tables::AminoAcid;
 
@@ -126,6 +127,18 @@ pub fn dispatch_variant_batch(
     wt: &WTTensorPack,
     config: &VariantDispatchConfig,
 ) -> Result<PRISMExecutionResponse, DispatchError> {
+    dispatch_variant_batch_with_topology(request, wt, config, None)
+}
+
+/// Run the projection with an optional paired active/inactive topology
+/// context. Live Option A dispatch passes `Some(topology)` so the stochastic
+/// rotamer ensemble can score steric congestion in the WT coordinate frame.
+pub fn dispatch_variant_batch_with_topology(
+    request: &PRISMExecutionRequest,
+    wt: &WTTensorPack,
+    config: &VariantDispatchConfig,
+    topology: Option<&TopologyProjectionContext>,
+) -> Result<PRISMExecutionResponse, DispatchError> {
     request
         .validate()
         .map_err(DispatchError::SchemaMismatch)?;
@@ -151,7 +164,10 @@ pub fn dispatch_variant_batch(
             wildtype: wt_aa,
             mutant: mu_aa,
         };
-        let r = project_variant(&vp, wt, &config.projection);
+        let r = match topology {
+            Some(ctx) => project_variant_with_topology(&vp, wt, &config.projection, Some(ctx)),
+            None => project_variant(&vp, wt, &config.projection),
+        };
 
         // Finiteness check on every emitted scalar.  This is where the
         // DSTW Pydantic schema would have rejected us; we catch it here
@@ -212,15 +228,17 @@ mod tests {
     fn synth_wt() -> WTTensorPack {
         let n = 100;
         WTTensorPack {
+            residue_numbers: (1..=n as i32).collect(),
             residue_index_lo: 1,
             residue_index_hi: n as i32,
-            te_out: vec![0.0; n],
-            te_in: vec![0.5; n],
-            delta_hc: vec![0.3; n],
-            sigma_hydration_sq: vec![0.1; n],
-            var_te_in: vec![0.01; n],
-            var_delta_hc: vec![0.01; n],
-            var_sigma_hydration_sq: vec![0.01; n],
+            inactive_te_out: vec![0.0; n],
+            inactive_te_in: vec![0.5; n],
+            inactive_delta_hc: vec![0.3; n],
+            inactive_sigma_hydration_sq: vec![0.1; n],
+            active_te_out: vec![0.6; n],
+            active_te_in: vec![0.5; n],
+            active_delta_hc: vec![0.3; n],
+            active_sigma_hydration_sq: vec![0.1; n],
         }
     }
 
