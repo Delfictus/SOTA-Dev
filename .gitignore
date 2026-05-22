@@ -14,6 +14,9 @@ __pycache__/
 CLAUDE.local.md
 snapshots/
 venv/
+.venv/
+.mypy_cache/
+*.egg-info/
 myc_max_cosolvent_results/
 e2e_validation_test/results_*/
 

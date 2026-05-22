@@ -40,9 +40,11 @@
 //!     `blake3(canonical_json(request))`.  No global RNG.
 
 pub mod cuda;
+pub mod edge_attenuator;
 pub mod handshake;
 pub mod projection;
 pub mod sidechain_tables;
+pub mod types;
 
 mod dispatcher;
 
@@ -54,6 +56,9 @@ pub use dispatcher::{
     dispatch_variant_batch, dispatch_variant_batch_with_topology, DispatchError,
     VariantDispatchConfig,
 };
+pub use edge_attenuator::{
+    attenuate_edges, AttenuationError, EdgePenalty, PerturbedEdgeStats, ScalingConstants,
+};
 pub use handshake::{
     PRISMExecutionAcquisition, PRISMExecutionRequest, PRISMExecutionResponse,
     VariantExecutionRequest, VariantExecutionResponse, REQUIRED_DELTA_CHANNELS,
@@ -64,3 +69,9 @@ pub use projection::{
     TopologyProjectionContext, TopologyStateEnvironment, VariantPoint, WTTensorPack,
 };
 pub use sidechain_tables::{AminoAcid, SidechainDescriptor};
+pub use types::{
+    AnalogIdx, AngstromDistance, CampaignId, ChannelCapacity, ComplementPenalty, ConformerIdx,
+    DTSGEdge, DTSGEdgeMetrics, EdgeIdx, FrustrationPenalty, HydrationVariance, HysteresisCapacity,
+    HysteresisEnthalpy, HysteresisPersistence, PoseUncertainty, ResidueIdx, ScaffoldIdx,
+    ScalingConstant, SpatialVariance, TransferEntropy, VoxelIdx,
+};
