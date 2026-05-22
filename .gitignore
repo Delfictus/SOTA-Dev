@@ -20,11 +20,17 @@ venv/
 .figvenv/
 .scratch/
 .wrangler/cache/
+.claude/
+.codex/.gitignore
+.codex/CURRENT_PHASE.txt
+.codex/GLOBAL_CONTEXT.txt
+.prism_orchestration/
 myc_max_cosolvent_results/
 e2e_validation_test/results_*/
 
 # PDB / structure files — never push these (huge, regenerable)
 *.pdb
+*.pdb1
 *.cif
 *.pdbqt
 *.sdf
@@ -175,3 +181,48 @@ prism4d_training/
 .pass*
 .stats*
 .snapshot*
+
+# Local validation/forensics outputs generated during PRISM publication audits.
+/0.6
+/json
+/kcc_threshold
+/re
+/references/
+/rmsd\[1\]
+/runpod/
+/scipy.sparse.csr_matrix
+/sys
+/temporal_corr_threshold.
+/prepped_*
+/p2rank_*/
+/p2rank_*.tar.gz
+/forensic_no_baseline_dependency_audit_*/
+/prism_publication_rigor_audit_*/
+/prism_strict_null_controls_*/
+/kv31_*_validation/
+/kv31_*_forensics/
+/kv31_*_figures_*/
+/kv31_baseline_*/
+/kv31_validation_frozen_*/
+/kv31_validation_frozen_*.tar.gz
+/kv31_*_overlay.png
+
+# Root-level scratch scripts; production scripts live under scripts/.
+/ams_trajectory_extractor.py
+/brute_force_live_parser.py
+/build_pharma_campaign.py
+/causal_preflight.py
+/extract_violation_telemetry.py
+/freeze_kv31_validation_artifact.sh
+/generate_kv31_publication_figures.sh
+/prism_analysis_code_index.txt
+/prism_kv31_*.py
+/prism_publication_rigor_audit.py
+/prism_relational_audit.py
+/prism_script_inventory.txt
+/prism_strict_null_controls.py
+
+# Manuscript generated assets and local backups.
+/prism4d_manuscript/*.bak_*
+/prism4d_manuscript/figures_pfr/
+/prism4d_manuscript/pfr_assets/
