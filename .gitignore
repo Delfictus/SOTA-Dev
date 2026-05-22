@@ -17,6 +17,9 @@ venv/
 .venv/
 .mypy_cache/
 *.egg-info/
+.figvenv/
+.scratch/
+.wrangler/cache/
 myc_max_cosolvent_results/
 e2e_validation_test/results_*/
 
