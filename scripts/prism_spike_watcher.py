@@ -73,21 +73,26 @@ SPIKE_PATTERNS = [
 
 # R2 bucket routing
 # Key: regex matching the parent directory path -> (bucket, prefix)
-R2_ROUTING = {
-    r"/twin-runs/":      ("prism-archive", "twin-runs"),
-    r"/cryptobench199/": ("prism-archive", "cryptobench199"),
-    r"/v1\.1-physics/":  ("prism-archive", "v1.1-physics"),
-    r"/10k-runs/":       ("prism-archive", "10k-runs"),
-    r"^/tmp/":           ("prism-archive", "dev-runs"),
-}
-R2_DEFAULT = ("prism-archive", "runs")  # fallback
+# Fresh spike bucket created 2026-05-12 — all new spike data routes here.
+# Feature extractor must use: R2_BUCKET=prism-spikes-20260512
+SPIKE_BUCKET = "prism-spikes-20260512"
 
-# rclone settings
+R2_ROUTING = {
+    r"/twin-runs/":      (SPIKE_BUCKET, "twin-runs"),
+    r"/cryptobench199/": (SPIKE_BUCKET, "cryptobench199"),
+    r"/v1\.1-physics/":  (SPIKE_BUCKET, "v1.1-physics"),
+    r"/10k-runs/":       (SPIKE_BUCKET, "10k-runs"),
+    r"^/tmp/":           (SPIKE_BUCKET, "dev-runs"),
+}
+R2_DEFAULT = (SPIKE_BUCKET, "runs")  # fallback
+
+# rclone settings — chunk_size=64M / upload_concurrency=4 from 2026-04 benchmark
+# (134 MiB/s sustained to R2 on AT&T Fiber; 128M/32 offered no improvement)
 RCLONE_REMOTE = "r2"
 RCLONE_UPLOAD_FLAGS = [
-    "--transfers", "64",
-    "--s3-chunk-size", "128M",
-    "--s3-upload-concurrency", "32",
+    "--transfers", "4",
+    "--s3-chunk-size", "64M",
+    "--s3-upload-concurrency", "4",
     "--no-check-dest",
 ]
 
@@ -438,6 +443,147 @@ def write_manifest_entry(entry: dict):
 
 
 # ---------------------------------------------------------------------------
+# Pre-sync schema validation
+# ---------------------------------------------------------------------------
+
+# Fields required by feature_extractor.py Block 6 (compute_phase_features).
+# Absence of any one of these makes the file useless for teacher training.
+_BLOCK6_REQUIRED = frozenset({"x", "y", "z", "intensity", "ccns_phase", "timestep"})
+
+# Full canonical spike schema (14 fields per spike as of Ghost Lattice v5).
+_SPIKE_ALL_FIELDS = frozenset({
+    "aromatic_residue_id", "ccns_phase", "frame_index", "intensity",
+    "n_nearby_excited", "spike_source", "timestep", "type",
+    "vibrational_energy", "water_density", "wavelength_nm", "x", "y", "z",
+})
+
+# Top-level site fields required for teacher routing context.
+_TOPLEVEL_REQUIRED = frozenset({"site_id", "n_spikes", "spikes"})
+_TOPLEVEL_PREFERRED = frozenset({"centroid", "lining_cutoff", "open_frequency"})
+
+# Canonical phase names as produced by the Ghost Lattice v5 engine.
+# feature_extractor.py Block 6 groups by these; any value outside this set
+# indicates a schema regression or version mismatch.
+CCNS_PHASE_NAMES = frozenset({
+    "heating", "warm_hold", "cooling", "cold_return", "cold_hold",
+})
+# Integer phase encoding is also accepted (older runs / coupled-twin output).
+CCNS_PHASE_INTS = frozenset({0, 1, 2, 3, 4})
+
+
+def validate_spike_schema(json_path: str) -> tuple[bool, str, dict]:
+    """
+    Validate a spike JSON file against the teacher ensemble training schema.
+
+    Returns (is_valid, reason, stats).
+
+    Rejects if:
+      - JSON cannot be loaded
+      - Top-level required fields missing (site_id / n_spikes / spikes)
+      - spikes array is empty
+      - ANY spike is missing a Block-6-critical field (x, y, z, intensity, ccns_phase, timestep)
+      - ccns_phase values outside 0–4
+      - x/y/z contain non-finite values
+
+    Warns (does not reject) if optional fields are absent.
+    """
+    try:
+        with open(json_path, "r") as f:
+            data = json.load(f)
+    except Exception as e:
+        return False, f"JSON parse error: {e}", {}
+
+    # ---- top-level checks ----
+    if not isinstance(data, dict):
+        return False, f"Expected dict, got {type(data).__name__}", {}
+
+    missing_top = _TOPLEVEL_REQUIRED - data.keys()
+    if missing_top:
+        return False, f"Missing top-level keys: {sorted(missing_top)}", {}
+
+    spikes = data.get("spikes", [])
+    if not isinstance(spikes, list) or len(spikes) == 0:
+        return False, "spikes array is empty or not a list", {}
+
+    n_spikes = len(spikes)
+
+    # ---- per-spike checks ----
+    missing_b6_any = set()
+    ccns_bad = []
+    coord_bad = []
+    field_coverage_sum = 0
+
+    for idx, spike in enumerate(spikes):
+        if not isinstance(spike, dict):
+            return False, f"spikes[{idx}] is not a dict", {}
+
+        present = frozenset(spike.keys())
+
+        # Block-6 critical fields — hard rejection
+        missing_b6 = _BLOCK6_REQUIRED - present
+        if missing_b6:
+            missing_b6_any.update(missing_b6)
+
+        # ccns_phase validity check — accept canonical string names or integer 0–4
+        if "ccns_phase" in spike:
+            ph = spike["ccns_phase"]
+            if isinstance(ph, str):
+                if ph not in CCNS_PHASE_NAMES:
+                    ccns_bad.append((idx, ph))
+            else:
+                try:
+                    if int(ph) not in CCNS_PHASE_INTS:
+                        ccns_bad.append((idx, ph))
+                except (ValueError, TypeError):
+                    ccns_bad.append((idx, ph))
+
+        # coordinate sanity
+        for ax in ("x", "y", "z"):
+            if ax in spike:
+                try:
+                    v = float(spike[ax])
+                    if not (v == v) or abs(v) == float("inf"):  # NaN or Inf
+                        coord_bad.append((idx, ax, v))
+                except (ValueError, TypeError):
+                    coord_bad.append((idx, ax, spike[ax]))
+
+        field_coverage_sum += len(present & _SPIKE_ALL_FIELDS)
+
+    coverage_pct = 100.0 * field_coverage_sum / (n_spikes * len(_SPIKE_ALL_FIELDS))
+
+    preferred_missing = _TOPLEVEL_PREFERRED - data.keys()
+    optional_per_spike = _SPIKE_ALL_FIELDS - _BLOCK6_REQUIRED
+    first_spike_fields = frozenset(spikes[0].keys()) if spikes else frozenset()
+    optional_missing = optional_per_spike - first_spike_fields
+
+    stats = {
+        "n_spikes": n_spikes,
+        "site_id": data.get("site_id"),
+        "field_coverage_pct": round(coverage_pct, 1),
+        "block6_required_present": not bool(missing_b6_any),
+        "toplevel_preferred_missing": sorted(preferred_missing),
+        "optional_per_spike_missing": sorted(optional_missing),
+        "ccns_phase_violations": len(ccns_bad),
+        "coord_violations": len(coord_bad),
+    }
+
+    if missing_b6_any:
+        return False, f"Block-6 required fields absent in ≥1 spike: {sorted(missing_b6_any)}", stats
+    if ccns_bad:
+        return False, f"ccns_phase invalid (not in {sorted(CCNS_PHASE_NAMES)} or 0-4) in {len(ccns_bad)} spike(s), e.g. {ccns_bad[0]}", stats
+    if coord_bad:
+        return False, f"Non-finite coordinate in {len(coord_bad)} spike(s): {coord_bad[:3]}", stats
+
+    # Warn about optional gaps but don't reject
+    if preferred_missing:
+        logger.warning(f"  SCHEMA WARN: {json_path} missing preferred top-level: {sorted(preferred_missing)}")
+    if optional_missing:
+        logger.warning(f"  SCHEMA WARN: {json_path} missing optional per-spike fields: {sorted(optional_missing)}")
+
+    return True, "ok", stats
+
+
+# ---------------------------------------------------------------------------
 # Core processing pipeline
 # ---------------------------------------------------------------------------
 
@@ -460,6 +606,26 @@ def process_spike_file(json_path: str, dry_run: bool = False) -> bool:
     if json_size is None or json_size == 0:
         logger.warning(f"  SKIP: File missing or empty: {json_path}")
         return False
+
+    # ---- Pre-sync schema validation (teacher ensemble training requirements) ----
+    is_valid, reason, vstats = validate_spike_schema(json_path)
+    if not is_valid:
+        logger.error(
+            f"  SCHEMA REJECT: {json_path} — {reason} | "
+            f"stats={vstats}"
+        )
+        write_manifest_entry({
+            "action": "rejected",
+            "json_path": json_path,
+            "reason": reason,
+            "validation_stats": vstats,
+        })
+        return False
+    logger.info(
+        f"  SCHEMA OK: {vstats.get('n_spikes')} spikes, "
+        f"{vstats.get('field_coverage_pct')}% field coverage, "
+        f"site_id={vstats.get('site_id')}"
+    )
 
     r2_dir = get_r2_dir(json_path)
     r2_json_path = get_r2_remote_path(json_path)

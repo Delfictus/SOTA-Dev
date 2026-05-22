@@ -3,10 +3,9 @@
 // Throughput design (replaces rclone subprocess approach):
 //   • One persistent aws-sdk-s3 Client — HTTP/2 connection pool, no fork/TLS
 //     re-handshake per call.
-//   • 3 parallel PUTs per file via tokio::try_join!:
-//       JSON  → prism-spikes-20260512  (training)
-//       Parquet → prism-spikes-20260512  (training)
-//       JSON  → prism-archive/raw-spike-archive  (permanent safety copy)
+//   • Parallel PUTs per file:
+//       JSON/Arrow/Parquet → configured training bucket
+//       JSON/Arrow/Parquet → configured archive bucket/prefix
 //   • json_data: Bytes cloned O(1) to both training and archive PUT; no memcpy.
 //   • 3 parallel HEADs for verification.
 //   • Semaphore(MAX_CONCURRENT_FILES=4) bounds concurrent file processing;
@@ -75,6 +74,55 @@ struct Cli {
     /// Bound simultaneous object PUT requests across JSON, Parquet, and archive uploads.
     #[arg(long)]
     upload_concurrency: Option<usize>,
+    /// Training R2 bucket. Defaults to PRISM_SPIKE_BUCKET, then prism-spikes-20260512.
+    #[arg(long)]
+    spike_bucket: Option<String>,
+    /// Permanent archive R2 bucket. Defaults to PRISM_ARCHIVE_BUCKET, then prism-archive.
+    #[arg(long)]
+    archive_bucket: Option<String>,
+    /// Archive prefix inside the archive bucket.
+    #[arg(long)]
+    archive_prefix: Option<String>,
+    /// Fallback key prefix for broad roots without an explicit route.
+    #[arg(long)]
+    fallback_prefix: Option<String>,
+    /// Disable built-in roots; use only --watch-dir and --route roots.
+    #[arg(long)]
+    no_default_watch_dirs: bool,
+    /// Route root to R2 key prefix while preserving the path below the root: /local/root=prefix.
+    #[arg(long)]
+    route: Vec<String>,
+    /// Filesystem path used for free-space checks.
+    #[arg(long, default_value = "/mnt/storage")]
+    disk_root: String,
+    /// Delete verified local Arrow/Parquet artifacts when free space is below this GiB watermark.
+    #[arg(long)]
+    evict_verified_local_below_gib: Option<f64>,
+    /// Delete verified local Arrow/Parquet artifacts immediately after both R2 copies verify.
+    #[arg(long)]
+    evict_verified_local_after_upload: bool,
+}
+
+fn parse_routes(raw_routes: &[String]) -> Result<Vec<config::RootRoute>> {
+    let mut routes = Vec::with_capacity(raw_routes.len());
+    for raw in raw_routes {
+        let Some((root, prefix)) = raw.split_once('=') else {
+            bail!("invalid --route '{}': expected /local/root=r2-prefix", raw);
+        };
+        let root = root.trim();
+        let prefix = prefix.trim();
+        if root.is_empty() || prefix.is_empty() {
+            bail!(
+                "invalid --route '{}': root and prefix must be non-empty",
+                raw
+            );
+        }
+        routes.push(config::RootRoute {
+            root: PathBuf::from(root),
+            prefix: prefix.to_string(),
+        });
+    }
+    Ok(routes)
 }
 
 // ── Entrypoint ────────────────────────────────────────────────────────────────
@@ -96,25 +144,56 @@ async fn main() -> Result<()> {
         .init();
 
     // ── Watch directories ─────────────────────────────────────────────────────
-    let mut watch_dirs: Vec<PathBuf> = config::default_watch_dirs();
+    let mut watch_dirs: Vec<PathBuf> = if cli.no_default_watch_dirs {
+        Vec::new()
+    } else {
+        config::default_watch_dirs()
+    };
     for d in &cli.extra_dirs {
         watch_dirs.push(PathBuf::from(d));
+    }
+    let root_routes = parse_routes(&cli.route)?;
+    for route in &root_routes {
+        if !watch_dirs.iter().any(|root| root == &route.root) {
+            watch_dirs.push(route.root.clone());
+        }
+    }
+    let upload_config = Arc::new(config::UploadConfig::new(
+        cli.spike_bucket
+            .clone()
+            .or_else(|| std::env::var("PRISM_SPIKE_BUCKET").ok())
+            .unwrap_or_else(|| config::DEFAULT_SPIKE_BUCKET.to_string()),
+        cli.archive_bucket
+            .clone()
+            .or_else(|| std::env::var("PRISM_ARCHIVE_BUCKET").ok())
+            .unwrap_or_else(|| config::DEFAULT_ARCHIVE_BUCKET.to_string()),
+        cli.archive_prefix
+            .clone()
+            .or_else(|| std::env::var("PRISM_ARCHIVE_PREFIX").ok())
+            .unwrap_or_else(|| config::DEFAULT_ARCHIVE_PREFIX.to_string()),
+        cli.fallback_prefix
+            .clone()
+            .unwrap_or_else(|| "runs".to_string()),
+        root_routes,
+    ));
+    if watch_dirs.is_empty() {
+        bail!("no watch roots configured; pass --watch-dir or --route, or remove --no-default-watch-dirs");
     }
     let reject_cache = Arc::new(
         reject_cache::RejectCache::load(config::REJECT_CACHE_PATH).context("load reject cache")?,
     );
 
     if cli.inventory_only {
-        inventory_report(&watch_dirs, &reject_cache)?;
+        inventory_report(&watch_dirs, upload_config.as_ref(), &reject_cache)?;
         return Ok(());
     }
 
     if cli.backfill_report {
         let s3 = s3::S3Client::from_env().context("S3 client init — check R2_* env vars")?;
-        s3.probe(config::SPIKE_BUCKET)
+        s3.probe(&upload_config.spike_bucket)
             .await
             .context("R2 connectivity probe")?;
-        backfill_report(&watch_dirs, &reject_cache, &s3).await?;
+        backfill_report(&watch_dirs, upload_config.as_ref(), &reject_cache, &s3).await?;
         return Ok(());
     }
 
@@ -127,17 +206,22 @@ async fn main() -> Result<()> {
 
     // ── S3 client (shared across all tasks) ──────────────────────────────────
     let s3 = Arc::new(s3::S3Client::from_env().context("S3 client init — check R2_* env vars")?);
-    s3.probe(config::SPIKE_BUCKET)
+    s3.probe(&upload_config.spike_bucket)
         .await
         .context("R2 connectivity probe")?;
     info!(
-        spike_bucket = config::SPIKE_BUCKET,
-        archive_bucket = config::ARCHIVE_BUCKET,
+        spike_bucket = %upload_config.spike_bucket,
+        archive_bucket = %upload_config.archive_bucket,
+        archive_prefix = %upload_config.archive_prefix,
+        routes = upload_config.root_routes.len(),
         concurrency = cli.concurrency,
         validation_concurrency = cli.validation_concurrency,
         upload_concurrency = cli.upload_concurrency.unwrap_or(cli.concurrency),
         dry_run = cli.dry_run,
         keep_local_json = cli.keep_local_json,
+        disk_root = %cli.disk_root,
+        evict_verified_local_below_gib = cli.evict_verified_local_below_gib,
+        evict_verified_local_after_upload = cli.evict_verified_local_after_upload,
         parquet_cache_dir = ?cli.parquet_cache_dir,
         reject_cache_entries = reject_cache.len(),
         "prism-spike-shipper starting — S3 ok"
@@ -176,8 +260,12 @@ async fn main() -> Result<()> {
             let upload_sem = Arc::clone(&upload_sem);
             let s3 = Arc::clone(&s3);
             let roots = Arc::clone(&watch_roots);
+            let upload_config = Arc::clone(&upload_config);
             let reject_cache = Arc::clone(&reject_cache);
             let parquet_cache_dir = cli.parquet_cache_dir.clone();
+            let disk_root = cli.disk_root.clone();
+            let evict_verified_local_below_gib = cli.evict_verified_local_below_gib;
+            let evict_verified_local_after_upload = cli.evict_verified_local_after_upload;
             let dry_run = cli.dry_run;
             let keep_local_json = cli.keep_local_json;
             handles.push(tokio::spawn(async move {
@@ -189,9 +277,13 @@ async fn main() -> Result<()> {
                     parquet_cache_dir.as_deref(),
                     &s3,
                     roots.as_ref().as_slice(),
+                    upload_config.as_ref(),
                     &reject_cache,
                     &validation_sem,
                     &upload_sem,
+                    &disk_root,
+                    evict_verified_local_below_gib,
+                    evict_verified_local_after_upload,
                 )
                 .await
                 {
@@ -236,12 +328,16 @@ async fn main() -> Result<()> {
                 let sem          = Arc::clone(&sem);
                 let s3           = Arc::clone(&s3);
                 let roots        = Arc::clone(&watch_roots);
+                let upload_config = Arc::clone(&upload_config);
                 let reject_cache = Arc::clone(&reject_cache);
                 let validation_sem = Arc::clone(&validation_sem);
                 let upload_sem = Arc::clone(&upload_sem);
                 let dry          = cli.dry_run;
                 let keep_local_json = cli.keep_local_json;
                 let parquet_cache_dir = cli.parquet_cache_dir.clone();
+                let disk_root = cli.disk_root.clone();
+                let evict_verified_local_below_gib = cli.evict_verified_local_below_gib;
+                let evict_verified_local_after_upload = cli.evict_verified_local_after_upload;
                 tokio::spawn(async move {
                     // Stability wait outside semaphore — many files can wait in
                     // parallel without consuming concurrency slots.
@@ -257,9 +353,13 @@ async fn main() -> Result<()> {
                         parquet_cache_dir.as_deref(),
                         &s3,
                         roots.as_ref().as_slice(),
+                        upload_config.as_ref(),
                         &reject_cache,
                         &validation_sem,
                         &upload_sem,
+                        &disk_root,
+                        evict_verified_local_below_gib,
+                        evict_verified_local_after_upload,
                     ).await {
                         error!(path = %path.display(), error = %e, "processing failed");
                     }
@@ -294,6 +394,7 @@ async fn is_stable(path: &Path) -> bool {
 enum SpikeArtifactKind {
     Json,
     Arrow,
+    Parquet,
 }
 
 impl SpikeArtifactKind {
@@ -303,6 +404,8 @@ impl SpikeArtifactKind {
             Some(Self::Json)
         } else if name.ends_with(config::ARROW_SPIKE_SUFFIX) {
             Some(Self::Arrow)
+        } else if name.ends_with(config::PARQUET_SPIKE_SUFFIX) {
+            Some(Self::Parquet)
         } else {
             None
         }
@@ -316,9 +419,13 @@ async fn process_file(
     parquet_cache_dir: Option<&Path>,
     s3: &s3::S3Client,
     roots: &[PathBuf],
+    upload_config: &config::UploadConfig,
     reject_cache: &reject_cache::RejectCache,
     validation_sem: &Semaphore,
     upload_sem: &Semaphore,
+    disk_root: &str,
+    evict_verified_local_below_gib: Option<f64>,
+    evict_verified_local_after_upload: bool,
 ) -> Result<()> {
     match SpikeArtifactKind::from_path(path) {
         Some(SpikeArtifactKind::Json) => {
@@ -329,9 +436,13 @@ async fn process_file(
                 parquet_cache_dir,
                 s3,
                 roots,
+                upload_config,
                 reject_cache,
                 validation_sem,
                 upload_sem,
+                disk_root,
+                evict_verified_local_below_gib,
+                evict_verified_local_after_upload,
             )
             .await
         }
@@ -341,9 +452,29 @@ async fn process_file(
                 dry_run,
                 s3,
                 roots,
+                upload_config,
                 reject_cache,
                 validation_sem,
                 upload_sem,
+                disk_root,
+                evict_verified_local_below_gib,
+                evict_verified_local_after_upload,
+            )
+            .await
+        }
+        Some(SpikeArtifactKind::Parquet) => {
+            process_parquet_file(
+                path,
+                dry_run,
+                s3,
+                roots,
+                upload_config,
+                reject_cache,
+                validation_sem,
+                upload_sem,
+                disk_root,
+                evict_verified_local_below_gib,
+                evict_verified_local_after_upload,
             )
             .await
         }
@@ -358,9 +489,13 @@ async fn process_json_file(
     parquet_cache_dir: Option<&Path>,
     s3: &s3::S3Client,
     roots: &[PathBuf],
+    upload_config: &config::UploadConfig,
     reject_cache: &reject_cache::RejectCache,
     validation_sem: &Semaphore,
     upload_sem: &Semaphore,
+    disk_root: &str,
+    evict_verified_local_below_gib: Option<f64>,
+    evict_verified_local_after_upload: bool,
 ) -> Result<()> {
     let manifest_path = Path::new(config::MANIFEST_PATH);
     if let Some(p) = manifest_path.parent() {
@@ -416,11 +551,14 @@ async fn process_json_file(
                         r2_parquet: None,
                         r2_archive_json: None,
                         r2_archive_arrow: None,
+                        r2_archive_parquet: None,
                         json_verified: false,
                         arrow_verified: None,
                         parquet_verified: false,
                         json_deleted: false,
-                        disk_free_gib: s3::disk_free_gib("/mnt/storage"),
+                        arrow_deleted: None,
+                        parquet_deleted: None,
+                        disk_free_gib: s3::disk_free_gib(disk_root),
                         dry_run,
                         n_spikes: 0,
                         site_id: 0,
@@ -450,7 +588,7 @@ async fn process_json_file(
     // ── 3. Parquet conversion (CPU work — spawn_blocking) ─────────────────────
     let parquet_upload_path = parquet_upload_path_for(json_path);
     let parquet_path = if let Some(cache_dir) = parquet_cache_dir {
-        let (_, parquet_key) = config::spike_key(&parquet_upload_path, roots);
+        let (_, parquet_key) = config::spike_key(&parquet_upload_path, roots, upload_config);
         cache_dir.join(parquet_key)
     } else {
         parquet_upload_path.clone()
@@ -480,9 +618,10 @@ async fn process_json_file(
     drop(validation_permit);
 
     // ── 4. S3 key construction ────────────────────────────────────────────────
-    let (spike_b, spike_json_key) = config::spike_key(json_path, roots);
-    let (spike_b2, spike_parquet_key) = config::spike_key(&parquet_upload_path, roots);
-    let (arch_b, arch_json_key) = config::archive_key(json_path, roots);
+    let (spike_b, spike_json_key) = config::spike_key(json_path, roots, upload_config);
+    let (spike_b2, spike_parquet_key) =
+        config::spike_key(&parquet_upload_path, roots, upload_config);
+    let (arch_b, arch_json_key) = config::archive_key(json_path, roots, upload_config);
     debug_assert_eq!(spike_b, spike_b2);
 
     // ── 5. 3 parallel PUTs ────────────────────────────────────────────────────
@@ -498,9 +637,9 @@ async fn process_json_file(
     } else {
         // Skip objects already on R2 (idempotent restart-safety).
         let (j_exists, p_exists, a_exists) = tokio::join!(
-            s3.exists(spike_b, &spike_json_key),
-            s3.exists(spike_b, &spike_parquet_key),
-            s3.exists(arch_b, &arch_json_key),
+            s3.exists(&spike_b, &spike_json_key),
+            s3.exists(&spike_b, &spike_parquet_key),
+            s3.exists(&arch_b, &arch_json_key),
         );
 
         match (j_exists, p_exists, a_exists) {
@@ -516,7 +655,7 @@ async fn process_json_file(
                         } else {
                             let _permit =
                                 upload_sem.acquire().await.expect("upload semaphore closed");
-                            s3.put_with_retry(spike_b, &spike_json_key, json_bytes.clone())
+                            s3.put_with_retry(&spike_b, &spike_json_key, json_bytes.clone())
                                 .await
                         }
                     },
@@ -526,7 +665,7 @@ async fn process_json_file(
                         } else {
                             let _permit =
                                 upload_sem.acquire().await.expect("upload semaphore closed");
-                            s3.put_with_retry(spike_b, &spike_parquet_key, parquet_bytes.clone())
+                            s3.put_with_retry(&spike_b, &spike_parquet_key, parquet_bytes.clone())
                                 .await
                         }
                     },
@@ -536,7 +675,7 @@ async fn process_json_file(
                         } else {
                             let _permit =
                                 upload_sem.acquire().await.expect("upload semaphore closed");
-                            s3.put_with_retry(arch_b, &arch_json_key, json_bytes.clone())
+                            s3.put_with_retry(&arch_b, &arch_json_key, json_bytes.clone())
                                 .await
                         }
                     },
@@ -562,9 +701,9 @@ async fn process_json_file(
         (true, true, true)
     } else {
         tokio::join!(
-            s3.verify(spike_b, &spike_json_key, json_size),
-            s3.verify(spike_b, &spike_parquet_key, parquet_size),
-            s3.verify(arch_b, &arch_json_key, json_size),
+            s3.verify(&spike_b, &spike_json_key, json_size),
+            s3.verify(&spike_b, &spike_parquet_key, parquet_size),
+            s3.verify(&arch_b, &arch_json_key, json_size),
         )
     };
 
@@ -602,14 +741,20 @@ async fn process_json_file(
     };
 
     // ── 8. Disk pressure ──────────────────────────────────────────────────────
-    let disk_free = s3::disk_free_gib("/mnt/storage");
-    if parquet_ok && disk_free < config::DISK_CRITICAL_GB && !dry_run {
-        warn!(
-            free_gib = disk_free,
-            "disk critical — evicting local Parquet"
-        );
-        fs::remove_file(&parquet_path).ok();
-    }
+    let disk_free = s3::disk_free_gib(disk_root);
+    let evict_below = evict_verified_local_below_gib.unwrap_or(config::DISK_CRITICAL_GB);
+    let parquet_deleted =
+        if parquet_ok && (evict_verified_local_after_upload || disk_free < evict_below) && !dry_run
+        {
+            warn!(
+                free_gib = disk_free,
+                evict_below_gib = evict_below,
+                "disk critical — evicting local Parquet"
+            );
+            fs::remove_file(&parquet_path).is_ok()
+        } else {
+            false
+        };
 
     // ── 9. Manifest ───────────────────────────────────────────────────────────
     let completed = json_ok && parquet_ok && archive_ok;
@@ -635,10 +780,13 @@ async fn process_json_file(
                 r2_parquet: Some(&spk),
                 r2_archive_json: Some(&ajk),
                 r2_archive_arrow: None,
+                r2_archive_parquet: None,
                 json_verified: json_ok,
                 arrow_verified: None,
                 parquet_verified: parquet_ok,
                 json_deleted,
+                arrow_deleted: None,
+                parquet_deleted: Some(parquet_deleted),
                 disk_free_gib: disk_free,
                 dry_run,
                 n_spikes: vstats.n_spikes,
@@ -662,6 +810,13 @@ async fn process_json_file(
 #[derive(Debug)]
 struct ArrowValidation {
     n_batches: usize,
+    n_columns: usize,
+    has_mechanism_tag: bool,
+}
+
+#[derive(Debug)]
+struct ParquetValidation {
+    n_rows: i64,
     n_columns: usize,
     has_mechanism_tag: bool,
 }
@@ -706,9 +861,13 @@ async fn process_arrow_file(
     dry_run: bool,
     s3: &s3::S3Client,
     roots: &[PathBuf],
+    upload_config: &config::UploadConfig,
     reject_cache: &reject_cache::RejectCache,
     validation_sem: &Semaphore,
     upload_sem: &Semaphore,
+    disk_root: &str,
+    evict_verified_local_below_gib: Option<f64>,
+    evict_verified_local_after_upload: bool,
 ) -> Result<()> {
     let manifest_path = Path::new(config::MANIFEST_PATH);
     if let Some(p) = manifest_path.parent() {
@@ -757,11 +916,14 @@ async fn process_arrow_file(
                         r2_parquet: None,
                         r2_archive_json: None,
                         r2_archive_arrow: None,
+                        r2_archive_parquet: None,
                         json_verified: false,
                         arrow_verified: Some(false),
                         parquet_verified: false,
                         json_deleted: false,
-                        disk_free_gib: s3::disk_free_gib("/mnt/storage"),
+                        arrow_deleted: Some(false),
+                        parquet_deleted: None,
+                        disk_free_gib: s3::disk_free_gib(disk_root),
                         dry_run,
                         n_spikes: 0,
                         site_id: 0,
@@ -784,8 +946,8 @@ async fn process_arrow_file(
         "ARROW SCHEMA OK"
     );
 
-    let (spike_b, spike_arrow_key) = config::spike_key(arrow_path, roots);
-    let (arch_b, arch_arrow_key) = config::archive_key(arrow_path, roots);
+    let (spike_b, spike_arrow_key) = config::spike_key(arrow_path, roots, upload_config);
+    let (arch_b, arch_arrow_key) = config::archive_key(arrow_path, roots, upload_config);
 
     if dry_run {
         info!(
@@ -795,8 +957,8 @@ async fn process_arrow_file(
         );
     } else {
         let (t_exists, a_exists) = tokio::join!(
-            s3.exists(spike_b, &spike_arrow_key),
-            s3.exists(arch_b, &arch_arrow_key),
+            s3.exists(&spike_b, &spike_arrow_key),
+            s3.exists(&arch_b, &arch_arrow_key),
         );
         let (r_training, r_archive) = tokio::join!(
             async {
@@ -804,7 +966,7 @@ async fn process_arrow_file(
                     Ok(())
                 } else {
                     let _permit = upload_sem.acquire().await.expect("upload semaphore closed");
-                    s3.put_file_with_retry(spike_b, &spike_arrow_key, arrow_path)
+                    s3.put_file_with_retry(&spike_b, &spike_arrow_key, arrow_path)
                         .await
                 }
             },
@@ -813,7 +975,7 @@ async fn process_arrow_file(
                     Ok(())
                 } else {
                     let _permit = upload_sem.acquire().await.expect("upload semaphore closed");
-                    s3.put_file_with_retry(arch_b, &arch_arrow_key, arrow_path)
+                    s3.put_file_with_retry(&arch_b, &arch_arrow_key, arrow_path)
                         .await
                 }
             },
@@ -831,13 +993,29 @@ async fn process_arrow_file(
         (true, true)
     } else {
         tokio::join!(
-            s3.verify(spike_b, &spike_arrow_key, identity.size),
-            s3.verify(arch_b, &arch_arrow_key, identity.size),
+            s3.verify(&spike_b, &spike_arrow_key, identity.size),
+            s3.verify(&arch_b, &arch_arrow_key, identity.size),
         )
     };
 
-    let disk_free = s3::disk_free_gib("/mnt/storage");
+    let disk_free = s3::disk_free_gib(disk_root);
     let completed = arrow_ok && archive_ok;
+    let arrow_deleted = if completed
+        && (evict_verified_local_after_upload
+            || evict_verified_local_below_gib.is_some_and(|threshold| disk_free < threshold))
+        && !dry_run
+    {
+        let threshold = evict_verified_local_below_gib.unwrap_or(disk_free);
+        warn!(
+            path = %arrow_path.display(),
+            free_gib = disk_free,
+            evict_below_gib = threshold,
+            "disk below watermark — evicting verified local Arrow"
+        );
+        fs::remove_file(arrow_path).is_ok()
+    } else {
+        false
+    };
     let sak = format!("s3://{}/{}", spike_b, spike_arrow_key);
     let aak = format!("s3://{}/{}", arch_b, arch_arrow_key);
     if !dry_run {
@@ -858,10 +1036,13 @@ async fn process_arrow_file(
                 r2_parquet: None,
                 r2_archive_json: None,
                 r2_archive_arrow: Some(&aak),
+                r2_archive_parquet: None,
                 json_verified: false,
                 arrow_verified: Some(arrow_ok && archive_ok),
                 parquet_verified: false,
                 json_deleted: false,
+                arrow_deleted: Some(arrow_deleted),
+                parquet_deleted: None,
                 disk_free_gib: disk_free,
                 dry_run,
                 n_spikes: 0,
@@ -881,6 +1062,249 @@ async fn process_arrow_file(
         path = %arrow_path.display(),
         arrow_ok,
         archive_ok,
+        arrow_deleted,
+        disk_free_gib = disk_free,
+        "DONE"
+    );
+    Ok(())
+}
+
+fn validate_parquet_file(path: &Path) -> Result<ParquetValidation> {
+    let file = fs::File::open(path).with_context(|| format!("open Parquet {}", path.display()))?;
+    let builder = ::parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
+        .context("ParquetRecordBatchReaderBuilder")?;
+    let schema = builder.schema();
+    let required = ["timestep", "x", "y", "z", "intensity", "site_id"];
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|name| schema.field_with_name(name).is_err())
+        .collect();
+    if !missing.is_empty() {
+        bail!(
+            "Parquet schema missing required spike columns: {}",
+            missing.join(",")
+        );
+    }
+    let n_rows = builder.metadata().file_metadata().num_rows();
+    if n_rows <= 0 {
+        bail!("Parquet contains zero rows");
+    }
+    Ok(ParquetValidation {
+        n_rows,
+        n_columns: schema.fields().len(),
+        has_mechanism_tag: schema.field_with_name("mechanism_tag").is_ok(),
+    })
+}
+
+async fn process_parquet_file(
+    parquet_path: &Path,
+    dry_run: bool,
+    s3: &s3::S3Client,
+    roots: &[PathBuf],
+    upload_config: &config::UploadConfig,
+    reject_cache: &reject_cache::RejectCache,
+    validation_sem: &Semaphore,
+    upload_sem: &Semaphore,
+    disk_root: &str,
+    evict_verified_local_below_gib: Option<f64>,
+    evict_verified_local_after_upload: bool,
+) -> Result<()> {
+    let manifest_path = Path::new(config::MANIFEST_PATH);
+    if let Some(p) = manifest_path.parent() {
+        fs::create_dir_all(p).ok();
+    }
+
+    let identity = reject_cache::FileIdentity::from_path(parquet_path)
+        .with_context(|| format!("stat {}", parquet_path.display()))?;
+    if !dry_run {
+        if let Some(reason) = reject_cache.unchanged_reason(parquet_path, &identity) {
+            info!(
+                path = %parquet_path.display(),
+                reason,
+                "cached Parquet reject unchanged — skipping"
+            );
+            return Ok(());
+        }
+    }
+
+    let validation_permit = validation_sem
+        .acquire()
+        .await
+        .expect("validation semaphore closed");
+    let pp = parquet_path.to_path_buf();
+    let stats = match tokio::task::spawn_blocking(move || validate_parquet_file(&pp)).await? {
+        Ok(stats) => stats,
+        Err(e) => {
+            let reason = e.to_string();
+            error!(path = %parquet_path.display(), error = %reason, "PARQUET REJECT");
+            if !dry_run {
+                reject_cache.record(parquet_path, &identity, &reason).ok();
+                manifest::append(
+                    manifest_path,
+                    &manifest::Entry {
+                        ts: manifest::now_ts(),
+                        action: "rejected",
+                        source_format: Some("parquet"),
+                        json_path: &parquet_path.to_string_lossy(),
+                        arrow_path: None,
+                        parquet_path: Some(&parquet_path.to_string_lossy()),
+                        json_bytes: 0,
+                        arrow_bytes: None,
+                        parquet_bytes: identity.size,
+                        r2_json: "",
+                        r2_arrow: None,
+                        r2_parquet: None,
+                        r2_archive_json: None,
+                        r2_archive_arrow: None,
+                        r2_archive_parquet: None,
+                        json_verified: false,
+                        arrow_verified: None,
+                        parquet_verified: false,
+                        json_deleted: false,
+                        arrow_deleted: None,
+                        parquet_deleted: Some(false),
+                        disk_free_gib: s3::disk_free_gib(disk_root),
+                        dry_run,
+                        n_spikes: 0,
+                        site_id: 0,
+                        coverage_pct: 0.0,
+                        validation_note: "parquet_schema_reject",
+                    },
+                )
+                .ok();
+            }
+            return Ok(());
+        }
+    };
+    drop(validation_permit);
+
+    info!(
+        path = %parquet_path.display(),
+        rows = stats.n_rows,
+        columns = stats.n_columns,
+        has_mechanism_tag = stats.has_mechanism_tag,
+        "PARQUET SCHEMA OK"
+    );
+
+    let (spike_b, spike_parquet_key) = config::spike_key(parquet_path, roots, upload_config);
+    let (arch_b, arch_parquet_key) = config::archive_key(parquet_path, roots, upload_config);
+
+    if dry_run {
+        info!(
+            training = %format!("s3://{}/{}", spike_b, spike_parquet_key),
+            archive = %format!("s3://{}/{}", arch_b, arch_parquet_key),
+            "[dry-run] would stream-upload Parquet to training and archive"
+        );
+    } else {
+        let (t_exists, a_exists) = tokio::join!(
+            s3.exists(&spike_b, &spike_parquet_key),
+            s3.exists(&arch_b, &arch_parquet_key),
+        );
+        let (r_training, r_archive) = tokio::join!(
+            async {
+                if t_exists {
+                    Ok(())
+                } else {
+                    let _permit = upload_sem.acquire().await.expect("upload semaphore closed");
+                    s3.put_file_with_retry(&spike_b, &spike_parquet_key, parquet_path)
+                        .await
+                }
+            },
+            async {
+                if a_exists {
+                    Ok(())
+                } else {
+                    let _permit = upload_sem.acquire().await.expect("upload semaphore closed");
+                    s3.put_file_with_retry(&arch_b, &arch_parquet_key, parquet_path)
+                        .await
+                }
+            },
+        );
+        r_training.context("primary Parquet upload")?;
+        r_archive.context("archive Parquet upload")?;
+        info!(
+            training_parquet = %spike_parquet_key,
+            archive_parquet = %arch_parquet_key,
+            "Parquet PUTs complete"
+        );
+    }
+
+    let (parquet_ok, archive_ok) = if dry_run {
+        (true, true)
+    } else {
+        tokio::join!(
+            s3.verify(&spike_b, &spike_parquet_key, identity.size),
+            s3.verify(&arch_b, &arch_parquet_key, identity.size),
+        )
+    };
+
+    let disk_free = s3::disk_free_gib(disk_root);
+    let completed = parquet_ok && archive_ok;
+    let parquet_deleted = if completed
+        && (evict_verified_local_after_upload
+            || evict_verified_local_below_gib.is_some_and(|threshold| disk_free < threshold))
+        && !dry_run
+    {
+        let threshold = evict_verified_local_below_gib.unwrap_or(disk_free);
+        warn!(
+            path = %parquet_path.display(),
+            free_gib = disk_free,
+            evict_below_gib = threshold,
+            "disk below watermark — evicting verified local Parquet"
+        );
+        fs::remove_file(parquet_path).is_ok()
+    } else {
+        false
+    };
+
+    let spk = format!("s3://{}/{}", spike_b, spike_parquet_key);
+    let apk = format!("s3://{}/{}", arch_b, arch_parquet_key);
+    if !dry_run {
+        manifest::append(
+            manifest_path,
+            &manifest::Entry {
+                ts: manifest::now_ts(),
+                action: if completed { "completed" } else { "partial" },
+                source_format: Some("parquet"),
+                json_path: &parquet_path.to_string_lossy(),
+                arrow_path: None,
+                parquet_path: Some(&parquet_path.to_string_lossy()),
+                json_bytes: 0,
+                arrow_bytes: None,
+                parquet_bytes: identity.size,
+                r2_json: "",
+                r2_arrow: None,
+                r2_parquet: Some(&spk),
+                r2_archive_json: None,
+                r2_archive_arrow: None,
+                r2_archive_parquet: Some(&apk),
+                json_verified: false,
+                arrow_verified: None,
+                parquet_verified: parquet_ok && archive_ok,
+                json_deleted: false,
+                arrow_deleted: None,
+                parquet_deleted: Some(parquet_deleted),
+                disk_free_gib: disk_free,
+                dry_run,
+                n_spikes: stats.n_rows as usize,
+                site_id: 0,
+                coverage_pct: if stats.has_mechanism_tag { 100.0 } else { 96.7 },
+                validation_note: if stats.has_mechanism_tag {
+                    "ok"
+                } else {
+                    "ok_missing_mechanism_tag"
+                },
+            },
+        )
+        .ok();
+    }
+
+    info!(
+        path = %parquet_path.display(),
+        parquet_ok,
+        archive_ok,
+        parquet_deleted,
         disk_free_gib = disk_free,
         "DONE"
     );
@@ -1053,24 +1477,29 @@ async fn retroactive_process_file(
     parquet_cache_dir: Option<&Path>,
     s3: &s3::S3Client,
     roots: &[PathBuf],
+    upload_config: &config::UploadConfig,
     reject_cache: &reject_cache::RejectCache,
     validation_sem: &Semaphore,
     upload_sem: &Semaphore,
+    disk_root: &str,
+    evict_verified_local_below_gib: Option<f64>,
+    evict_verified_local_after_upload: bool,
 ) -> Result<()> {
-    let (sb, sk) = config::spike_key(path, roots);
-    let (ab, ak) = config::archive_key(path, roots);
+    let (sb, sk) = config::spike_key(path, roots, upload_config);
+    let (ab, ak) = config::archive_key(path, roots, upload_config);
     match SpikeArtifactKind::from_path(path) {
         Some(SpikeArtifactKind::Json) => {
             let parquet_upload_path = parquet_upload_path_for(path);
-            let (sbp, spk) = config::spike_key(&parquet_upload_path, roots);
-            if s3.exists(sb, &sk).await && s3.exists(sbp, &spk).await && s3.exists(ab, &ak).await {
+            let (sbp, spk) = config::spike_key(&parquet_upload_path, roots, upload_config);
+            if s3.exists(&sb, &sk).await && s3.exists(&sbp, &spk).await && s3.exists(&ab, &ak).await
+            {
                 info!(path = %path.display(), "retroactive: JSON already on R2");
                 return Ok(());
             }
         }
-        Some(SpikeArtifactKind::Arrow) => {
-            if s3.exists(sb, &sk).await && s3.exists(ab, &ak).await {
-                info!(path = %path.display(), "retroactive: Arrow already on R2");
+        Some(SpikeArtifactKind::Arrow) | Some(SpikeArtifactKind::Parquet) => {
+            if s3.exists(&sb, &sk).await && s3.exists(&ab, &ak).await {
+                info!(path = %path.display(), "retroactive: artifact already on R2");
                 return Ok(());
             }
         }
@@ -1085,9 +1514,13 @@ async fn retroactive_process_file(
         parquet_cache_dir,
         s3,
         roots,
+        upload_config,
         reject_cache,
         validation_sem,
         upload_sem,
+        disk_root,
+        evict_verified_local_below_gib,
+        evict_verified_local_after_upload,
     )
     .await
 }
@@ -1099,12 +1532,17 @@ struct InventoryGroup {
     files: u64,
     json_files: u64,
     arrow_files: u64,
+    parquet_files: u64,
     bytes: u64,
     cached_rejects: u64,
     rejected_empty: u64,
 }
 
-fn inventory_report(roots: &[PathBuf], reject_cache: &reject_cache::RejectCache) -> Result<()> {
+fn inventory_report(
+    roots: &[PathBuf],
+    upload_config: &config::UploadConfig,
+    reject_cache: &reject_cache::RejectCache,
+) -> Result<()> {
     let mut groups: BTreeMap<String, InventoryGroup> = BTreeMap::new();
     let mut total = InventoryGroup::default();
     let mut planned_keys: HashMap<String, PathBuf> = HashMap::new();
@@ -1159,6 +1597,7 @@ fn inventory_report(roots: &[PathBuf], reject_cache: &reject_cache::RejectCache)
                 match kind {
                     SpikeArtifactKind::Json => group.json_files += 1,
                     SpikeArtifactKind::Arrow => group.arrow_files += 1,
+                    SpikeArtifactKind::Parquet => group.parquet_files += 1,
                 }
                 group.bytes += size;
                 if is_cached_reject {
@@ -1172,6 +1611,7 @@ fn inventory_report(roots: &[PathBuf], reject_cache: &reject_cache::RejectCache)
                 match kind {
                     SpikeArtifactKind::Json => total.json_files += 1,
                     SpikeArtifactKind::Arrow => total.arrow_files += 1,
+                    SpikeArtifactKind::Parquet => total.parquet_files += 1,
                 }
                 total.bytes += size;
                 if is_cached_reject {
@@ -1181,7 +1621,7 @@ fn inventory_report(roots: &[PathBuf], reject_cache: &reject_cache::RejectCache)
                     total.rejected_empty += 1;
                 }
 
-                let plan = config::key_plan(&path, roots);
+                let plan = config::key_plan(&path, roots, upload_config);
                 let key_id = format!("s3://{}/{}", plan.bucket, plan.training_key);
                 if let Some(first) = planned_keys.insert(key_id.clone(), path.clone()) {
                     collisions.push((key_id, first, path.clone()));
@@ -1199,24 +1639,26 @@ fn inventory_report(roots: &[PathBuf], reject_cache: &reject_cache::RejectCache)
     println!("PRISM spike shipper inventory");
     println!("mode\tmetadata_only_no_uploads_no_deletes_no_manifest");
     println!("reject_cache_entries\t{}", reject_cache.len());
-    println!("root\tfiles\tjson\tarrow\tbytes_gib\tcached_rejects\trejected_empty");
+    println!("root\tfiles\tjson\tarrow\tparquet\tbytes_gib\tcached_rejects\trejected_empty");
     for (root, group) in &groups {
         println!(
-            "{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
             root,
             group.files,
             group.json_files,
             group.arrow_files,
+            group.parquet_files,
             group.bytes as f64 / 1024.0 / 1024.0 / 1024.0,
             group.cached_rejects,
             group.rejected_empty
         );
     }
     println!(
-        "TOTAL\t{}\t{}\t{}\t{:.3}\t{}\t{}",
+        "TOTAL\t{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
         total.files,
         total.json_files,
         total.arrow_files,
+        total.parquet_files,
         total.bytes as f64 / 1024.0 / 1024.0 / 1024.0,
         total.cached_rejects,
         total.rejected_empty
@@ -1251,8 +1693,10 @@ struct BackfillReport {
     files: u64,
     json_files: u64,
     arrow_files: u64,
+    parquet_files: u64,
     json_bytes: u64,
     arrow_bytes: u64,
+    parquet_bytes: u64,
     cached_rejects: u64,
     rejected_empty: u64,
     expected_objects: u64,
@@ -1304,6 +1748,7 @@ enum MissingKind {
 
 async fn backfill_report(
     roots: &[PathBuf],
+    upload_config: &config::UploadConfig,
     reject_cache: &reject_cache::RejectCache,
     s3: &s3::S3Client,
 ) -> Result<()> {
@@ -1328,6 +1773,10 @@ async fn backfill_report(
                 report.arrow_files += 1;
                 report.arrow_bytes += identity.size;
             }
+            SpikeArtifactKind::Parquet => {
+                report.parquet_files += 1;
+                report.parquet_bytes += identity.size;
+            }
         }
 
         if let Some(reason) = reject_cache.unchanged_reason(&path, &identity) {
@@ -1341,13 +1790,13 @@ async fn backfill_report(
         let mut file_ok = true;
         match kind {
             SpikeArtifactKind::Json => {
-                let (sb, sk) = config::spike_key(&path, roots);
+                let (sb, sk) = config::spike_key(&path, roots, upload_config);
                 let parquet_upload_path = parquet_upload_path_for(&path);
-                let (spb, spk) = config::spike_key(&parquet_upload_path, roots);
-                let (ab, ak) = config::archive_key(&path, roots);
+                let (spb, spk) = config::spike_key(&parquet_upload_path, roots, upload_config);
+                let (ab, ak) = config::archive_key(&path, roots, upload_config);
                 file_ok &= check_object(
                     s3,
-                    sb,
+                    &sb,
                     &sk,
                     Some(identity.size),
                     &mut report,
@@ -1355,10 +1804,10 @@ async fn backfill_report(
                 )
                 .await;
                 file_ok &=
-                    check_object(s3, spb, &spk, None, &mut report, MissingKind::Parquet).await;
+                    check_object(s3, &spb, &spk, None, &mut report, MissingKind::Parquet).await;
                 file_ok &= check_object(
                     s3,
-                    ab,
+                    &ab,
                     &ak,
                     Some(identity.size),
                     &mut report,
@@ -1367,11 +1816,11 @@ async fn backfill_report(
                 .await;
             }
             SpikeArtifactKind::Arrow => {
-                let (sb, sk) = config::spike_key(&path, roots);
-                let (ab, ak) = config::archive_key(&path, roots);
+                let (sb, sk) = config::spike_key(&path, roots, upload_config);
+                let (ab, ak) = config::archive_key(&path, roots, upload_config);
                 file_ok &= check_object(
                     s3,
-                    sb,
+                    &sb,
                     &sk,
                     Some(identity.size),
                     &mut report,
@@ -1380,7 +1829,29 @@ async fn backfill_report(
                 .await;
                 file_ok &= check_object(
                     s3,
-                    ab,
+                    &ab,
+                    &ak,
+                    Some(identity.size),
+                    &mut report,
+                    MissingKind::Archive,
+                )
+                .await;
+            }
+            SpikeArtifactKind::Parquet => {
+                let (sb, sk) = config::spike_key(&path, roots, upload_config);
+                let (ab, ak) = config::archive_key(&path, roots, upload_config);
+                file_ok &= check_object(
+                    s3,
+                    &sb,
+                    &sk,
+                    Some(identity.size),
+                    &mut report,
+                    MissingKind::Training,
+                )
+                .await;
+                file_ok &= check_object(
+                    s3,
+                    &ab,
                     &ak,
                     Some(identity.size),
                     &mut report,
@@ -1403,6 +1874,7 @@ async fn backfill_report(
     println!("files\t{}", report.files);
     println!("json_files\t{}", report.json_files);
     println!("arrow_files\t{}", report.arrow_files);
+    println!("parquet_files\t{}", report.parquet_files);
     println!(
         "json_bytes_gib\t{:.3}",
         report.json_bytes as f64 / 1024.0 / 1024.0 / 1024.0
@@ -1410,6 +1882,10 @@ async fn backfill_report(
     println!(
         "arrow_bytes_gib\t{:.3}",
         report.arrow_bytes as f64 / 1024.0 / 1024.0 / 1024.0
+    );
+    println!(
+        "parquet_bytes_gib\t{:.3}",
+        report.parquet_bytes as f64 / 1024.0 / 1024.0 / 1024.0
     );
     println!("cached_rejects\t{}", report.cached_rejects);
     println!("rejected_empty\t{}", report.rejected_empty);

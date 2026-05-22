@@ -3,18 +3,57 @@ use std::path::{Component, Path, PathBuf};
 // ── Bucket names ─────────────────────────────────────────────────────────────
 
 /// Training bucket — feature_extractor.py must set R2_BUCKET=prism-spikes-20260512
-pub const SPIKE_BUCKET: &str = "prism-spikes-20260512";
+pub const DEFAULT_SPIKE_BUCKET: &str = "prism-spikes-20260512";
 /// Permanent archive of raw JSON — never pruned, separate from training bucket
-pub const ARCHIVE_BUCKET: &str = "prism-archive";
-pub const ARCHIVE_PREFIX: &str = "raw-spike-archive";
+pub const DEFAULT_ARCHIVE_BUCKET: &str = "prism-archive";
+pub const DEFAULT_ARCHIVE_PREFIX: &str = "raw-spike-archive";
+
+#[derive(Clone, Debug)]
+pub struct RootRoute {
+    pub root: PathBuf,
+    pub prefix: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct UploadConfig {
+    pub spike_bucket: String,
+    pub archive_bucket: String,
+    pub archive_prefix: String,
+    pub fallback_prefix: String,
+    pub root_routes: Vec<RootRoute>,
+}
+
+impl UploadConfig {
+    pub fn new(
+        spike_bucket: String,
+        archive_bucket: String,
+        archive_prefix: String,
+        fallback_prefix: String,
+        root_routes: Vec<RootRoute>,
+    ) -> Self {
+        Self {
+            spike_bucket,
+            archive_bucket,
+            archive_prefix: clean_prefix(&archive_prefix),
+            fallback_prefix: clean_prefix(&fallback_prefix),
+            root_routes: root_routes
+                .into_iter()
+                .map(|route| RootRoute {
+                    root: route.root,
+                    prefix: clean_prefix(&route.prefix),
+                })
+                .collect(),
+        }
+    }
+}
 
 // ── S3 key construction ───────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
 pub struct KeyPlan {
-    pub bucket: &'static str,
+    pub bucket: String,
     pub training_key: String,
-    pub archive_bucket: &'static str,
+    pub archive_bucket: String,
     pub archive_key: String,
 }
 
@@ -25,25 +64,25 @@ pub struct KeyPlan {
 /// the longest matching configured root. This prevents deep output trees such as
 /// `hect-family/itch/5_engine/...` from collapsing into a single `5_engine/`
 /// namespace on R2.
-pub fn key_plan(path: &Path, roots: &[PathBuf]) -> KeyPlan {
-    let (prefix, relative_key, archive_keeps_prefix) = routed_relative_key(path, roots);
+pub fn key_plan(path: &Path, roots: &[PathBuf], upload: &UploadConfig) -> KeyPlan {
+    let (prefix, relative_key, archive_keeps_prefix) = routed_relative_key(path, roots, upload);
     let training_key = format!("{}/{}", prefix, relative_key);
     let archive_key = if archive_keeps_prefix {
-        format!("{}/{}", ARCHIVE_PREFIX, training_key)
+        format!("{}/{}", upload.archive_prefix, training_key)
     } else {
-        format!("{}/{}", ARCHIVE_PREFIX, relative_key)
+        format!("{}/{}", upload.archive_prefix, relative_key)
     };
     KeyPlan {
-        bucket: SPIKE_BUCKET,
+        bucket: upload.spike_bucket.clone(),
         training_key,
-        archive_bucket: ARCHIVE_BUCKET,
+        archive_bucket: upload.archive_bucket.clone(),
         archive_key,
     }
 }
 
 /// S3 key in the training bucket: "<prefix>/<preserved-relative-path>"
-pub fn spike_key(path: &Path, roots: &[PathBuf]) -> (&'static str, String) {
-    let plan = key_plan(path, roots);
+pub fn spike_key(path: &Path, roots: &[PathBuf], upload: &UploadConfig) -> (String, String) {
+    let plan = key_plan(path, roots, upload);
     (plan.bucket, plan.training_key)
 }
 
@@ -51,8 +90,8 @@ pub fn spike_key(path: &Path, roots: &[PathBuf]) -> (&'static str, String) {
 ///
 /// Known historical routes keep their existing archive layout, while configured
 /// broad/fallback roots include the training prefix to avoid namespace collapse.
-pub fn archive_key(path: &Path, roots: &[PathBuf]) -> (&'static str, String) {
-    let plan = key_plan(path, roots);
+pub fn archive_key(path: &Path, roots: &[PathBuf], upload: &UploadConfig) -> (String, String) {
+    let plan = key_plan(path, roots, upload);
     (plan.archive_bucket, plan.archive_key)
 }
 
@@ -66,22 +105,38 @@ const ROUTE_ANCHORS: &[(&str, &str)] = &[
     ("/runs/", "runs"),
 ];
 
-fn routed_relative_key(path: &Path, roots: &[PathBuf]) -> (&'static str, String, bool) {
+fn routed_relative_key(
+    path: &Path,
+    roots: &[PathBuf],
+    upload: &UploadConfig,
+) -> (String, String, bool) {
     let s = path.to_string_lossy();
 
+    if let Some((prefix, rel)) = relative_to_best_route(path, &upload.root_routes) {
+        return (prefix, rel, true);
+    }
+
     if let Some(rel) = s.strip_prefix("/tmp/") {
-        return ("dev-runs", normalize_key_path(Path::new(rel)), true);
+        return (
+            "dev-runs".to_string(),
+            normalize_key_path(Path::new(rel)),
+            true,
+        );
     }
 
     for (anchor, prefix) in ROUTE_ANCHORS {
         if let Some(idx) = s.find(anchor) {
             let rel = &s[(idx + anchor.len())..];
-            return (prefix, normalize_key_path(Path::new(rel)), false);
+            return (
+                (*prefix).to_string(),
+                normalize_key_path(Path::new(rel)),
+                false,
+            );
         }
     }
 
     if let Some(rel) = relative_to_best_root(path, roots) {
-        return ("runs", rel, true);
+        return (upload.fallback_prefix.clone(), rel, true);
     }
 
     let fallback = path
@@ -90,7 +145,28 @@ fn routed_relative_key(path: &Path, roots: &[PathBuf]) -> (&'static str, String,
         .and_then(|dir| path.file_name().map(|file| PathBuf::from(dir).join(file)))
         .or_else(|| path.file_name().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("unknown"));
-    ("runs", normalize_key_path(&fallback), false)
+    (
+        upload.fallback_prefix.clone(),
+        normalize_key_path(&fallback),
+        false,
+    )
+}
+
+fn relative_to_best_route(path: &Path, routes: &[RootRoute]) -> Option<(String, String)> {
+    routes
+        .iter()
+        .filter_map(|route| {
+            path.strip_prefix(&route.root).ok().map(|rel| {
+                (
+                    route.root.components().count(),
+                    route.prefix.clone(),
+                    normalize_key_path(rel),
+                )
+            })
+        })
+        .max_by_key(|(depth, _, _)| *depth)
+        .map(|(_, prefix, rel)| (prefix, rel))
+        .filter(|(_, rel)| !rel.is_empty())
 }
 
 fn relative_to_best_root(path: &Path, roots: &[PathBuf]) -> Option<String> {
@@ -119,6 +195,19 @@ fn normalize_key_path(path: &Path) -> String {
         "unknown".to_string()
     } else {
         parts.join("/")
+    }
+}
+
+fn clean_prefix(prefix: &str) -> String {
+    let cleaned = prefix
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("/");
+    if cleaned.is_empty() {
+        "runs".to_string()
+    } else {
+        cleaned
     }
 }
 
@@ -160,7 +249,8 @@ pub const WATCH_DIRS: &[&str] = &[
 
 pub const JSON_SPIKE_SUFFIX: &str = ".spike_events.json";
 pub const ARROW_SPIKE_SUFFIX: &str = ".spike_events.arrow";
-pub const SPIKE_SUFFIXES: &[&str] = &[JSON_SPIKE_SUFFIX, ARROW_SPIKE_SUFFIX];
+pub const PARQUET_SPIKE_SUFFIX: &str = ".spike_events.parquet";
+pub const SPIKE_SUFFIXES: &[&str] = &[JSON_SPIKE_SUFFIX, ARROW_SPIKE_SUFFIX, PARQUET_SPIKE_SUFFIX];
 
 pub fn default_watch_dirs() -> Vec<PathBuf> {
     WATCH_DIRS.iter().map(PathBuf::from).collect()

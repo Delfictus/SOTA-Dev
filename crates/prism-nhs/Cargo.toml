@@ -264,10 +264,12 @@ path = "src/bin/dstw_export_wt.rs"
 
 # PRISM-4D Option A variant dispatcher.  Reads a DSTW BALD request,
 # projects rigid-backbone Δq/ΔV through the WT thermodynamic tensors,
-# emits the PRISMExecutionResponse.  CPU reference; no GPU runtime.
+# emits the PRISMExecutionResponse.  GPU path (operator-authorised
+# 2026-05-20); CPU fallback removed.
 [[bin]]
 name = "dstw-dispatch-variants"
 path = "src/bin/dstw_dispatch_variants.rs"
+required-features = ["gpu"]
 
 [[bin]]
 name = "m1_v3_synthetic"

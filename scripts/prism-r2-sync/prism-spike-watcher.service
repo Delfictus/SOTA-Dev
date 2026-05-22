@@ -11,8 +11,9 @@ Type=simple
 User=diddy
 Group=diddy
 
-# Run with retroactive scan on startup (catches anything missed while down)
-ExecStart=/usr/bin/python3 /home/diddy/Desktop/Prism4D-bio/scripts/prism_spike_watcher.py --foreground --retroactive
+# Rust shipper replaces the legacy Python/rclone watcher. Run with
+# retroactive scan on startup (catches anything missed while down).
+ExecStart=/home/diddy/Desktop/Prism4D-bio/target/release/prism-spike-shipper --retroactive --concurrency 64 --upload-concurrency 64 --validation-concurrency 16 --keep-local-json
 
 # Restart on failure, but wait 30s to avoid thrashing
 Restart=on-failure

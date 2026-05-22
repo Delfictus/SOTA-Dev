@@ -4840,6 +4840,7 @@ dependencies = [
  "arrow-array 58.3.0",
  "arrow-ipc 58.3.0",
  "arrow-schema 58.3.0",
+ "blake3",
  "chrono",
  "clap",
  "cudarc",

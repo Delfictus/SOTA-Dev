@@ -24,11 +24,17 @@ pub struct Entry<'a> {
     pub r2_archive_json: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r2_archive_arrow: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r2_archive_parquet: Option<&'a str>,
     pub json_verified: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arrow_verified: Option<bool>,
     pub parquet_verified: bool,
     pub json_deleted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arrow_deleted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parquet_deleted: Option<bool>,
     pub disk_free_gib: f64,
     pub dry_run: bool,
     /// Validation stats (coverage %, site_id, n_spikes)

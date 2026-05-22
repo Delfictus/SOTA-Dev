@@ -467,7 +467,9 @@ impl S3Client {
         self.head(bucket, key).await.is_some()
     }
 
-    /// Verify object is present and content-length is within 1% of `expected`.
+    /// Verify object is present and content-length exactly matches `expected`.
+    /// Disk eviction depends on this gate, so approximate size checks are not
+    /// acceptable for the production corpus lane.
     pub async fn verify(&self, bucket: &str, key: &str, expected: u64) -> bool {
         match self.head(bucket, key).await {
             None => {
@@ -475,19 +477,8 @@ impl S3Client {
                 false
             }
             Some(r2_len) => {
-                if expected == 0 {
-                    return r2_len == 0;
-                }
-                let diff = r2_len.abs_diff(expected) as f64 / expected as f64;
-                if diff > 0.01 {
-                    warn!(
-                        bucket,
-                        key,
-                        r2_len,
-                        expected,
-                        diff_pct = diff * 100.0,
-                        "verify: size mismatch"
-                    );
+                if r2_len != expected {
+                    warn!(bucket, key, r2_len, expected, "verify: size mismatch");
                     false
                 } else {
                     debug!(bucket, key, r2_len, expected, "verify ok");

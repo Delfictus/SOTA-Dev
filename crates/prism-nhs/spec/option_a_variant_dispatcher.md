@@ -1,8 +1,11 @@
 # Option A: Thermodynamic Frustration Projection Dispatcher
 
-**Status:** SPEC ONLY — no kernels, no compiled feature.  Authorised
-2026-05-20 to lock the wire shape between PRISM-4D and DSTW for the
-variant-batch path that closes the BALD active-learning loop.
+**Status:** IMPLEMENTED — Rust serde schemas, request validation,
+CPU reference projection, EiV sigma propagation, and the
+`dstw-dispatch-variants` binary are present in `crates/prism-nhs`.
+This document is now the frozen audit contract between PRISM-4D and
+DSTW for the variant-batch path that closes the BALD active-learning
+loop.
 
 **Scope:**
 Read a `PRISMExecutionRequest` (mint by DSTW from a stratified seed or
@@ -267,18 +270,18 @@ deterministic across re-runs.
 
 ---
 
-## 4. What's IN scope for the spec
+## 4. What's IN scope for this implementation gate
 
 * Wire schemas (both directions).
-* Rust function signatures for the dispatcher and the projection.
+* Rust dispatcher and projection implementation.
 * Validation contract (schema, finiteness, chain link, non-NaN).
 * Convergence flag + sigma penalty contract.
 * CLI signature for the dispatcher binary.
+* CPU reference rigid-backbone delta-q / delta-V projection.
+* EiV sigma emission for all three vector channels.
 
-## 5. What's OUT of scope (deferred to a future gate)
+## 5. What's OUT of scope or still gated
 
-* CUDA kernels for the `K_active`, `K_lock`, `K_ensemble` propagation
-  matrices.
 * Choice of partial-charge force field (AMBER ff14SB vs ff19SB vs
   custom — needs operator gate).
 * Adaptive `alpha_q`, `alpha_v` tuning (currently configuration knobs).
@@ -286,8 +289,10 @@ deterministic across re-runs.
   loop currently caps at 100/round via `max_per_round`).
 * Multi-chain dispatch for oligomeric receptors (single-chain
   rigid-backbone substitution only at this gate).
+* Final production calibration of projection residual variances against
+  replicated WT prime-run telemetry.
 
-## 6. Air-gap status after this spec
+## 6. Air-gap status after this implementation
 
 | component | side | status |
 |---|---|---|
@@ -295,21 +300,19 @@ deterministic across re-runs.
 | WT prime-run schema | PRISM-4D (Rust serde) | done (`dstw_export_wt.rs`) |
 | WT prime-run exporter | PRISM-4D | done, compiles, tested, validates against DSTW schema |
 | Variant-request schema | DSTW (Pydantic) | done |
-| Variant-request schema | PRISM-4D (Rust serde) | **spec-only, this document** |
+| Variant-request schema | PRISM-4D (Rust serde) | done (`dstw_dispatch::handshake`) |
 | Variant-response schema | DSTW (Pydantic) | done |
-| Variant-response schema | PRISM-4D (Rust serde) | **spec-only, this document** |
-| Variant-dispatch binary | PRISM-4D | **not yet implemented** (next gate) |
-| Δq / ΔV side-chain table | PRISM-4D | not yet built |
-| K_active / K_lock / K_ensemble kernels | PRISM-4D (CUDA) | not yet built |
+| Variant-response schema | PRISM-4D (Rust serde) | done (`dstw_dispatch::handshake`) |
+| Variant-dispatch binary | PRISM-4D | done (`dstw-dispatch-variants`) |
+| Δq / ΔV side-chain table | PRISM-4D | done via `AminoAcidProperties` |
+| K_active / K_lock / K_ensemble projection | PRISM-4D | CPU reference implemented; CUDA dispatch path present |
 | BALD round-trip | DSTW | done (ingest_response wired) |
 
-Once the operator authorises the next gate, the implementation plan is:
+The next gate is not schema work.  It is live telemetry work:
 
-1. Translate this spec's Rust structs into `crates/prism-nhs/src/dstw_dispatch.rs`.
-2. Implement the rigid-backbone Δq / ΔV substitution helpers (CPU-only first; AMBER ff14SB charge tables).
-3. Implement the three projection kernels (CPU reference + CUDA).
-4. Wire the `dstw-dispatch-variants` binary with the CLI signature above.
-5. Round-trip test: mint a DSTW seed manifest → run the dispatcher → ingest the response back into DSTW's `BayesianActiveLearner` → confirm posterior updates without raising the EiV / Tobit / monotonic guards.
-
-The deliverable for THIS gate is the spec and the WT exporter only.
-No engine execution.
+1. Compile `dstw-dispatch-variants`, `dstw-export-wt`, and the canonical
+   PRISM runtime.
+2. Run the WT prime physics on the activated GLP-1R 5VEX / 6X1A topology
+   pair.
+3. Export `wt_physics_payload.parquet` and `wt_contact_graph.parquet`
+   back to DSTW through the hash-manifest air-gap.
