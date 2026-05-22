@@ -1,0 +1,43 @@
+{
+  "artifacts": [
+    {
+      "artifact": "prism_execution_manifest.json",
+      "bytes": 5457,
+      "destination_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/manifests/prism_execution_manifest.json",
+      "hash_verified_source_equals_destination": true,
+      "sha256": "7f0bee70f1fa6adce7e58adc65ced8de3b260b82ab5f816d943ac3a48fdba051",
+      "source_path": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration/campaigns/glp1r_aleniglipron/prism_execution_manifest.json"
+    },
+    {
+      "artifact": "5vex_clean.pdb",
+      "bytes": 187141,
+      "destination_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/inputs/structures/5vex_clean.pdb",
+      "hash_verified_source_equals_destination": true,
+      "sha256": "968d25e4beeaab71191e4ddb8de72670384db1f02506c49f48e403e62bb5e9fd",
+      "source_path": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration/campaigns/glp1r_aleniglipron/inputs/structures/5vex_clean.pdb"
+    },
+    {
+      "artifact": "6x1a_clean.pdb",
+      "bytes": 527443,
+      "destination_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/inputs/structures/6x1a_clean.pdb",
+      "hash_verified_source_equals_destination": true,
+      "sha256": "51a7b6a29a95c2dd9445a2e3b4652d158aa44cf0c6453cc512d764af0b796e09",
+      "source_path": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration/campaigns/glp1r_aleniglipron/inputs/structures/6X1A_apo_primed_wt_attempt.pdb"
+    },
+    {
+      "artifact": "wt_baseline_gate.md",
+      "bytes": 2601,
+      "destination_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/provenance/wt_baseline_gate.md",
+      "hash_verified_source_equals_destination": true,
+      "sha256": "f47460c70f2578f83a718dc01ea821bd625f6da9b72eb037bcd8f63c31962380",
+      "source_path": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration/campaigns/glp1r_aleniglipron/topology/wt_baseline_gate.md"
+    }
+  ],
+  "created_at_utc": "2026-05-20T21:40:10Z",
+  "destination_prism4d_commit_before_handoff": "532a0b8236a46e569df257ad2764deb9feafe73d",
+  "destination_workspace": "/home/diddy/Desktop/Prism4D-bio",
+  "handoff_id": "glp1r_aleniglipron_dstw_to_prism4d",
+  "source_dstw_commit": "123faa779f07a319ccf04114607687f4c764022a",
+  "source_workspace": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration",
+  "validation_note": "wt_baseline_gate.md contains topology validation status, not embedded artifact hashes; this handoff manifest records SHA-256 for source and destination bytes and verifies equality after copy."
+}

@@ -1,0 +1,1409 @@
+{
+  "campaign_id": "glp1r_aleniglipron",
+  "round_index": 0,
+  "previous_round_blake3": null,
+  "issued_at_utc": "2026-05-20T22:10:04Z",
+  "variants": [
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "D198A",
+      "residue_number": 198,
+      "wildtype_aa": "D",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L192S",
+      "residue_number": 192,
+      "wildtype_aa": "L",
+      "mutant_aa": "S",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "D198N",
+      "residue_number": 198,
+      "wildtype_aa": "D",
+      "mutant_aa": "N",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K197I",
+      "residue_number": 197,
+      "wildtype_aa": "K",
+      "mutant_aa": "I",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "D198E",
+      "residue_number": 198,
+      "wildtype_aa": "D",
+      "mutant_aa": "E",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K197R",
+      "residue_number": 197,
+      "wildtype_aa": "K",
+      "mutant_aa": "R",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "M233F",
+      "residue_number": 233,
+      "wildtype_aa": "M",
+      "mutant_aa": "F",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F187A",
+      "residue_number": 187,
+      "wildtype_aa": "F",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "M233T",
+      "residue_number": 233,
+      "wildtype_aa": "M",
+      "mutant_aa": "T",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K197Q",
+      "residue_number": 197,
+      "wildtype_aa": "K",
+      "mutant_aa": "Q",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "R190L",
+      "residue_number": 190,
+      "wildtype_aa": "R",
+      "mutant_aa": "L",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q234E",
+      "residue_number": 234,
+      "wildtype_aa": "Q",
+      "mutant_aa": "E",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "R190K",
+      "residue_number": 190,
+      "wildtype_aa": "R",
+      "mutant_aa": "K",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "H180A",
+      "residue_number": 180,
+      "wildtype_aa": "H",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "R299S",
+      "residue_number": 299,
+      "wildtype_aa": "R",
+      "mutant_aa": "S",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q234N",
+      "residue_number": 234,
+      "wildtype_aa": "Q",
+      "mutant_aa": "N",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "H363A",
+      "residue_number": 363,
+      "wildtype_aa": "H",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K197A",
+      "residue_number": 197,
+      "wildtype_aa": "K",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "C296A",
+      "residue_number": 296,
+      "wildtype_aa": "C",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L384V",
+      "residue_number": 384,
+      "wildtype_aa": "L",
+      "mutant_aa": "V",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E364Q",
+      "residue_number": 364,
+      "wildtype_aa": "E",
+      "mutant_aa": "Q",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E364D",
+      "residue_number": 364,
+      "wildtype_aa": "E",
+      "mutant_aa": "D",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L388F",
+      "residue_number": 388,
+      "wildtype_aa": "L",
+      "mutant_aa": "F",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E364Y",
+      "residue_number": 364,
+      "wildtype_aa": "E",
+      "mutant_aa": "Y",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "C296S",
+      "residue_number": 296,
+      "wildtype_aa": "C",
+      "mutant_aa": "S",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q211R",
+      "residue_number": 211,
+      "wildtype_aa": "Q",
+      "mutant_aa": "R",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "W297H",
+      "residue_number": 297,
+      "wildtype_aa": "W",
+      "mutant_aa": "H",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E292A",
+      "residue_number": 292,
+      "wildtype_aa": "E",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L388I",
+      "residue_number": 388,
+      "wildtype_aa": "L",
+      "mutant_aa": "I",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E387N",
+      "residue_number": 387,
+      "wildtype_aa": "E",
+      "mutant_aa": "N",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E387D",
+      "residue_number": 387,
+      "wildtype_aa": "E",
+      "mutant_aa": "D",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E364A",
+      "residue_number": 364,
+      "wildtype_aa": "E",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "M397L",
+      "residue_number": 397,
+      "wildtype_aa": "M",
+      "mutant_aa": "L",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "N300Q",
+      "residue_number": 300,
+      "wildtype_aa": "N",
+      "mutant_aa": "Q",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q211D",
+      "residue_number": 211,
+      "wildtype_aa": "Q",
+      "mutant_aa": "D",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E387A",
+      "residue_number": 387,
+      "wildtype_aa": "E",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "W214V",
+      "residue_number": 214,
+      "wildtype_aa": "W",
+      "mutant_aa": "V",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q394N",
+      "residue_number": 394,
+      "wildtype_aa": "Q",
+      "mutant_aa": "N",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F385A",
+      "residue_number": 385,
+      "wildtype_aa": "F",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "G285A",
+      "residue_number": 285,
+      "wildtype_aa": "G",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "G295A",
+      "residue_number": 295,
+      "wildtype_aa": "G",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "H212A",
+      "residue_number": 212,
+      "wildtype_aa": "H",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "I286A",
+      "residue_number": 286,
+      "wildtype_aa": "I",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "I309A",
+      "residue_number": 309,
+      "wildtype_aa": "I",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "I382A",
+      "residue_number": 382,
+      "wildtype_aa": "I",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K383A",
+      "residue_number": 383,
+      "wildtype_aa": "K",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L217A",
+      "residue_number": 217,
+      "wildtype_aa": "L",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L384A",
+      "residue_number": 384,
+      "wildtype_aa": "L",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L388A",
+      "residue_number": 388,
+      "wildtype_aa": "L",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "M303A",
+      "residue_number": 303,
+      "wildtype_aa": "M",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "N300A",
+      "residue_number": 300,
+      "wildtype_aa": "N",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "N302A",
+      "residue_number": 302,
+      "wildtype_aa": "N",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "N304A",
+      "residue_number": 304,
+      "wildtype_aa": "N",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q211A",
+      "residue_number": 211,
+      "wildtype_aa": "Q",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L218A",
+      "residue_number": 218,
+      "wildtype_aa": "L",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Y220D",
+      "residue_number": 220,
+      "wildtype_aa": "Y",
+      "mutant_aa": "D",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q221A",
+      "residue_number": 221,
+      "wildtype_aa": "Q",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "S219A",
+      "residue_number": 219,
+      "wildtype_aa": "S",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "S223A",
+      "residue_number": 223,
+      "wildtype_aa": "S",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L141A",
+      "residue_number": 141,
+      "wildtype_aa": "L",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Y148F",
+      "residue_number": 148,
+      "wildtype_aa": "Y",
+      "mutant_aa": "F",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F195L",
+      "residue_number": 195,
+      "wildtype_aa": "F",
+      "mutant_aa": "L",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "T149S",
+      "residue_number": 149,
+      "wildtype_aa": "T",
+      "mutant_aa": "S",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Y148N",
+      "residue_number": 148,
+      "wildtype_aa": "Y",
+      "mutant_aa": "N",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Y152H",
+      "residue_number": 152,
+      "wildtype_aa": "Y",
+      "mutant_aa": "H",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "S155A",
+      "residue_number": 155,
+      "wildtype_aa": "S",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "T149A",
+      "residue_number": 149,
+      "wildtype_aa": "T",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "N320A",
+      "residue_number": 320,
+      "wildtype_aa": "N",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "T353A",
+      "residue_number": 353,
+      "wildtype_aa": "T",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "D372A",
+      "residue_number": 372,
+      "wildtype_aa": "D",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F381E",
+      "residue_number": 381,
+      "wildtype_aa": "F",
+      "mutant_aa": "E",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "N240Q",
+      "residue_number": 240,
+      "wildtype_aa": "N",
+      "mutant_aa": "Q",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F367I",
+      "residue_number": 367,
+      "wildtype_aa": "F",
+      "mutant_aa": "I",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "R380G",
+      "residue_number": 380,
+      "wildtype_aa": "R",
+      "mutant_aa": "G",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F381S",
+      "residue_number": 381,
+      "wildtype_aa": "F",
+      "mutant_aa": "S",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F381R",
+      "residue_number": 381,
+      "wildtype_aa": "F",
+      "mutant_aa": "R",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F367H",
+      "residue_number": 367,
+      "wildtype_aa": "F",
+      "mutant_aa": "H",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F367A",
+      "residue_number": 367,
+      "wildtype_aa": "F",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "R380D",
+      "residue_number": 380,
+      "wildtype_aa": "R",
+      "mutant_aa": "D",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "R380Q",
+      "residue_number": 380,
+      "wildtype_aa": "R",
+      "mutant_aa": "Q",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "F381A",
+      "residue_number": 381,
+      "wildtype_aa": "F",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "D222A",
+      "residue_number": 222,
+      "wildtype_aa": "D",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "D293A",
+      "residue_number": 293,
+      "wildtype_aa": "D",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E294A",
+      "residue_number": 294,
+      "wildtype_aa": "E",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Y289A",
+      "residue_number": 289,
+      "wildtype_aa": "Y",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "D215A",
+      "residue_number": 215,
+      "wildtype_aa": "D",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L278M",
+      "residue_number": 278,
+      "wildtype_aa": "L",
+      "mutant_aa": "M",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K202A",
+      "residue_number": 202,
+      "wildtype_aa": "K",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L201A",
+      "residue_number": 201,
+      "wildtype_aa": "L",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q210A",
+      "residue_number": 210,
+      "wildtype_aa": "Q",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "Q213A",
+      "residue_number": 213,
+      "wildtype_aa": "Q",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "S206A",
+      "residue_number": 206,
+      "wildtype_aa": "S",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "M371A",
+      "residue_number": 371,
+      "wildtype_aa": "M",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "R310A",
+      "residue_number": 310,
+      "wildtype_aa": "R",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "T298A",
+      "residue_number": 298,
+      "wildtype_aa": "T",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "E247A",
+      "residue_number": 247,
+      "wildtype_aa": "E",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K288L",
+      "residue_number": 288,
+      "wildtype_aa": "K",
+      "mutant_aa": "L",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "M204R",
+      "residue_number": 204,
+      "wildtype_aa": "M",
+      "mutant_aa": "R",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "K288A",
+      "residue_number": 288,
+      "wildtype_aa": "K",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    },
+    {
+      "target": "GLP1R",
+      "uniprot_accession": "P43220",
+      "variant": "L290A",
+      "residue_number": 290,
+      "wildtype_aa": "L",
+      "mutant_aa": "A",
+      "requested_channels": [
+        "delta_P_active",
+        "delta_P_lock",
+        "delta_P_ensemble"
+      ],
+      "acquisition_reason": "stratified_seed"
+    }
+  ],
+  "expected_response_schema": "dstw_prism_execution_response_v1"
+}

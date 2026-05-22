@@ -1,0 +1,21 @@
+{
+  "created_at_utc": "2026-05-20T22:14:18Z",
+  "source_repo": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration",
+  "dest_dir": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/dstw_ingest/round_000",
+  "files": [
+    {
+      "source": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration/campaigns/glp1r_aleniglipron/orchestration/BALD_Round_000_Request.json",
+      "dest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/dstw_ingest/round_000/BALD_Round_000_Request.json",
+      "bytes": 34423,
+      "sha256": "49fdc6c3e545698da9b0de76585e27fc45827c383789ab972f98ed637c3e48fd",
+      "blake3": "07d8f8d281752b189bdc31919feb7f9e18d01b22684b6630f004fe8edbc7beb6"
+    },
+    {
+      "source": "/home/diddy/Desktop/PRISM-DSTW/prism-dstw-calibration/campaigns/glp1r_aleniglipron/prism4d_payload/wt_prime/wt_physics_payload.parquet",
+      "dest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/dstw_ingest/round_000/wt_physics_payload.parquet",
+      "bytes": 12713,
+      "sha256": "a5ce9541f3bbf477fb9128c52552f1c738cbe6498a3930bf4cadebf833647932",
+      "blake3": "6ef01bf201ecbf3422e8c274f090e0347a56e4f61466114c98db476cc4aa97af"
+    }
+  ]
+}

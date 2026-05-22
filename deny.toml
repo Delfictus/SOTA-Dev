@@ -1,0 +1,20 @@
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[[bans.deny]]
+name = "duckdb"
+reason = "PRISM-DSTW lineage is Arrow/Polars-native; DuckDB is banned from production dependency trees."
+
+[[bans.deny]]
+name = "rusqlite"
+reason = "SQLite-class analytics are banned from PRISM-DSTW production dependency trees; D1 metadata access must be isolated outside analytical lineage."
+
+[[bans.deny]]
+name = "libsqlite3-sys"
+reason = "SQLite native bindings are banned from PRISM-DSTW production dependency trees."
+
+[[bans.deny]]
+name = "sqlx-sqlite"
+reason = "SQLite-backed SQLx is banned from PRISM-DSTW production dependency trees."

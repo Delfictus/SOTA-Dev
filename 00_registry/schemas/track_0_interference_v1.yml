@@ -1,0 +1,65 @@
+schema_version: "track_0_interference.v1"
+columns:
+  analog_id:
+    dtype: string
+    ontology: AnalogId
+    unit: dimensionless
+    nullable: false
+  edge_from_residue:
+    dtype: uint32
+    ontology: ResidueIdx
+    unit: dimensionless
+    nullable: false
+  edge_to_residue:
+    dtype: uint32
+    ontology: ResidueIdx
+    unit: dimensionless
+    nullable: false
+  edge_class:
+    dtype: string
+    ontology: Track0EdgeClass
+    unit: dimensionless
+    nullable: false
+    allowed:
+      - pocket_vector
+      - downstream_lock
+  clash_assessment:
+    dtype: string
+    ontology: ClashAssessment
+    unit: ordinal_category
+    nullable: false
+    allowed:
+      - none
+      - minor
+      - moderate
+      - severe
+  complement_assessment:
+    dtype: string
+    ontology: ComplementAssessment
+    unit: ordinal_category
+    nullable: false
+    allowed:
+      - none
+      - minor
+      - moderate
+      - strong
+  pose_confidence:
+    dtype: string
+    ontology: PoseConfidence
+    unit: ordinal_category
+    nullable: false
+    allowed:
+      - high
+      - medium
+      - low
+      - unresolvable
+  structural_rationale:
+    dtype: string
+    ontology: StructuralRationale
+    unit: dimensionless
+    nullable: false
+  analyst_id:
+    dtype: string
+    ontology: AnalystId
+    unit: dimensionless
+    nullable: false

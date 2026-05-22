@@ -1,0 +1,39 @@
+schema_version: "analog_intake.v1"
+columns:
+  analog_id:
+    dtype: string
+    ontology: AnalogId
+    unit: dimensionless
+    nullable: false
+  canonical_smiles:
+    dtype: string
+    ontology: CanonicalSmiles
+    unit: dimensionless
+    nullable: false
+  motif_class:
+    dtype: string
+    ontology: MotifClass
+    unit: dimensionless
+    nullable: false
+  scaffold_hash:
+    dtype: string
+    ontology: ScaffoldHash
+    unit: dimensionless
+    nullable: false
+  conformer_ensemble_uri:
+    dtype: string
+    ontology: ConformerEnsembleURI
+    unit: dimensionless
+    nullable: false
+  conformer_count:
+    dtype: uint32
+    ontology: ConformerCount
+    unit: conformers
+    nullable: false
+  charge_method:
+    dtype: string
+    ontology: PartialChargeMethod
+    unit: dimensionless
+    nullable: false
+    allowed:
+      - AM1-BCC

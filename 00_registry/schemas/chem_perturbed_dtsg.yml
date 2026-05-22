@@ -1,0 +1,42 @@
+schema_version: "chem_perturbed_dtsg.v1"
+columns:
+  residue_i:
+    dtype: uint32
+    ontology: ResidueIdx
+    unit: dimensionless
+    nullable: false
+  residue_j:
+    dtype: uint32
+    ontology: ResidueIdx
+    unit: dimensionless
+    nullable: false
+  te_out_perturbed:
+    dtype: float64
+    ontology: TransferEntropy
+    unit: nats
+    nullable: false
+  te_in_perturbed:
+    dtype: float64
+    ontology: TransferEntropy
+    unit: nats
+    nullable: false
+  delta_hc_perturbed:
+    dtype: float64
+    ontology: HysteresisEnthalpy
+    unit: kcal/mol
+    nullable: false
+  sigma_hyd_perturbed:
+    dtype: float64
+    ontology: HydrationVariance
+    unit: "water_density_variance"
+    nullable: false
+  u_pose_te:
+    dtype: float64
+    ontology: PoseUncertainty
+    unit: "nats^2"
+    nullable: false
+  u_pose_delta_hc:
+    dtype: float64
+    ontology: PoseUncertainty
+    unit: "(kcal/mol)^2"
+    nullable: false

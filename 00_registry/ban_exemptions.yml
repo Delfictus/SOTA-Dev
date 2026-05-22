@@ -1,0 +1,2478 @@
+# Temporary violation registry generated from scripts/ci/ban_check.py.
+# Exemptions are line-bound; a new violation in an exempted file/rule still fails.
+# Active GLP-1R lineage producers and core gates are intentionally not exempted.
+exemptions:
+  - path: "scripts/admet_predict.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [121]
+      - rule: "print_banned_production_logging"
+        lines: [209, 212, 213, 214, 222, 227, 234, 236, 243, 244, 245]
+  - path: "scripts/analyze_ensemble_pockets.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [81]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [341]
+      - rule: "print_banned_production_logging"
+        lines: [58, 90, 97, 117, 216, 220, 223, 224, 225, 229, 233, 237, 278, 279, 280, 283, 293, 296, 298, 307, 308, 309, 310, 316, 324, 326, 328, 332, 334, 342]
+  - path: "scripts/analyze_with_alignment.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [63]
+      - rule: "broad_exception_banned"
+        lines: [304, 795]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [731]
+      - rule: "print_banned_production_logging"
+        lines: [223, 376, 377, 378, 379, 388, 389, 390, 391, 398, 399, 416, 422, 430, 431, 432, 437, 438, 450, 451, 452, 453, 454, 459, 460, 461, 468, 469, 470, 471, 472, 477, 481, 482, 484, 485, 487, 492, 493, 494, 496, 512, 517, 518, 519, 539, 542, 545, 550, 551, 552, 555, 563, 568, 570, 571, 572, 575, 576, 581, 582, 583, 595, 596, 597, 598, 616, 635, 652, 654, 661, 662, 663, 673, 674, 677, 678, 680, 682, 684, 689, 690, 691, 732, 741, 749, 792, 794, 796, 801, 802, 803, 805, 806, 807, 808, 812, 814, 816]
+  - path: "scripts/anchor_point_map.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [499]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [551]
+      - rule: "print_banned_production_logging"
+        lines: [552, 555, 560]
+  - path: "scripts/arrow_to_parquet.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [42, 64, 77]
+      - rule: "direct_parquet_writer_banned"
+        lines: [56]
+      - rule: "print_banned_production_logging"
+        lines: [25, 35, 36, 43, 48, 49, 52, 65, 70, 71, 72, 78, 86, 88, 92, 93, 94, 96, 116, 119, 123, 126, 130, 131, 133, 134, 135, 136, 137, 138, 144]
+  - path: "scripts/auto_parameterize_ligands.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [58]
+      - rule: "print_banned_production_logging"
+        lines: [26, 32, 56, 59, 60, 89, 97, 98]
+  - path: "scripts/bayesian_rerank.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [35]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [348]
+      - rule: "print_banned_production_logging"
+        lines: [222, 223, 228, 230, 250, 251, 305, 306, 307, 308, 317, 318, 321, 323, 325, 339, 340, 351, 352, 355, 368]
+  - path: "scripts/benchmark_compare.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [22]
+      - rule: "broad_exception_banned"
+        lines: [223]
+      - rule: "print_banned_production_logging"
+        lines: [392, 393, 395]
+  - path: "scripts/benchmark_comparison.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [220]
+      - rule: "banned_text_table_io"
+        lines: [21]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [835]
+      - rule: "print_banned_production_logging"
+        lines: [151, 354, 358, 362, 421, 425, 490, 493, 680, 681, 682, 683, 684, 687, 689, 690, 691, 699, 703, 709, 713, 717, 718, 719, 720, 722, 723, 726, 745, 746, 749, 750, 751, 752, 754, 755, 758, 771, 772, 775, 776, 777, 782, 794, 796, 797, 800, 801, 802, 803, 808, 812, 816, 836, 865, 868, 871, 876, 881, 886, 892, 899, 926, 929, 931, 944, 950, 953, 973]
+  - path: "scripts/blind_benchmark_viral.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [447]
+      - rule: "print_banned_production_logging"
+        lines: [134, 170, 311, 312, 313, 314, 320, 321, 322, 323, 329, 333, 334, 341, 345, 346, 349, 355, 356, 358, 361, 362, 363, 365, 369, 373, 377, 380, 381, 382, 383, 384, 385, 386, 397, 398, 399, 400, 401, 405, 415, 416, 420, 421, 422, 423, 435, 437, 440, 442, 457, 458]
+  - path: "scripts/build_pdf.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [164, 166, 168, 189, 193, 198, 201, 202, 207, 208, 209, 212, 215, 217]
+  - path: "scripts/cluster_objective_analysis.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [5]
+      - rule: "broad_exception_banned"
+        lines: [723]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [733]
+      - rule: "print_banned_production_logging"
+        lines: [719, 724, 735, 736, 737, 738, 739, 740, 741, 742, 743, 745, 747, 753, 754]
+  - path: "scripts/cluster_to_pocket_mapper.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [5]
+      - rule: "broad_exception_banned"
+        lines: [712]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [722]
+      - rule: "print_banned_production_logging"
+        lines: [709, 713, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735, 736, 737, 738, 739, 740, 741, 742, 743, 745, 746]
+  - path: "scripts/cluster_void_center_mapper.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [5]
+      - rule: "broad_exception_banned"
+        lines: [846]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [856]
+      - rule: "print_banned_production_logging"
+        lines: [843, 847, 858, 859, 860, 861, 862, 863, 864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876, 877, 878, 880, 881]
+  - path: "scripts/cluster_voxel_void_mapper.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [5]
+      - rule: "broad_exception_banned"
+        lines: [829]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [839]
+      - rule: "print_banned_production_logging"
+        lines: [826, 830, 841, 842, 843, 844, 845, 846, 847, 848, 849, 850, 851, 852, 853, 854, 855, 856, 857, 858, 859, 860, 861, 863, 864]
+  - path: "scripts/coherence_prt70_panel_sweep.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [5]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [682]
+      - rule: "print_banned_production_logging"
+        lines: [595, 695, 697, 709, 712, 719, 720, 721]
+  - path: "scripts/coherence_recluster.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [652]
+      - rule: "print_banned_production_logging"
+        lines: [308, 543, 549, 557, 563, 594, 597, 606, 609, 702, 704, 709, 713, 719, 723]
+  - path: "scripts/coherence_sweep.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [599]
+      - rule: "print_banned_production_logging"
+        lines: [558, 601, 604, 615]
+  - path: "scripts/combine_chain_topologies.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [139]
+      - rule: "print_banned_production_logging"
+        lines: [40, 131, 142, 149]
+  - path: "scripts/consensus.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [548, 570, 596]
+      - rule: "print_banned_production_logging"
+        lines: [428, 431, 437, 533, 599, 600, 601, 602, 603, 604, 606, 610, 618, 619]
+  - path: "scripts/contact_reorg_gate.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [320]
+      - rule: "print_banned_production_logging"
+        lines: [321, 325, 328]
+  - path: "scripts/coupled_spikes_to_parquet.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "direct_parquet_writer_banned"
+        lines: [56, 76, 83]
+      - rule: "print_banned_production_logging"
+        lines: [80, 90, 98, 101, 104, 108, 109, 110, 111]
+  - path: "scripts/create_prism_topology.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [79]
+      - rule: "print_banned_production_logging"
+        lines: [9, 71, 72, 73, 74, 75, 76, 81]
+  - path: "scripts/design_brief_builder.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [125]
+      - rule: "print_banned_production_logging"
+        lines: [465]
+  - path: "scripts/docking_prep.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [331, 339, 346, 347, 348, 349, 354, 360, 365, 369, 373, 375, 381, 383, 388, 393, 394, 396]
+  - path: "scripts/dossier_full.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [15]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [791]
+      - rule: "print_banned_production_logging"
+        lines: [55, 56, 57, 58, 129, 130, 131, 132, 133, 134, 135, 137, 157, 216, 218, 592, 593, 594, 690, 691, 692, 693, 694, 699, 702, 705, 706, 707, 710, 712, 714, 725, 726, 727, 729, 730, 793, 794, 795, 800, 801, 802, 805, 807, 808, 809, 811, 813, 814, 815]
+      - rule: "sklearn_model_import_requires_exemption"
+        lines: [561]
+  - path: "scripts/dossier_unified.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [16]
+      - rule: "banned_determinant"
+        lines: [504]
+      - rule: "broad_exception_banned"
+        lines: [476, 1066]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [1395]
+      - rule: "print_banned_production_logging"
+        lines: [132, 133, 134, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 170, 171, 172, 173, 174, 176, 177, 178, 179, 180, 183, 184, 185, 186, 187, 323, 324, 325, 332, 372, 373, 375, 377, 378, 380, 400, 452, 454, 459, 461, 467, 477, 483, 495, 519, 933, 934, 935, 939, 943, 953, 960, 963, 979, 982, 985, 987, 991, 992, 993, 1212, 1215, 1217, 1218, 1219, 1222, 1227, 1232, 1235, 1240, 1249, 1252, 1256, 1267, 1268, 1269, 1271, 1272, 1274, 1275, 1276, 1279, 1281, 1283, 1287, 1288, 1289, 1291, 1293, 1297, 1300, 1305, 1397, 1398, 1399, 1400, 1405, 1406, 1407, 1413, 1417, 1418, 1419]
+      - rule: "sklearn_model_import_requires_exemption"
+        lines: [787]
+  - path: "scripts/download_and_setup.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [88]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [252]
+      - rule: "print_banned_production_logging"
+        lines: [43, 44, 45, 78, 82, 86, 89, 97, 99, 138, 141, 146, 150, 154, 158, 162, 169, 173, 186, 187, 189, 193, 204, 212, 220, 226, 237, 247, 253, 256, 257, 258, 259, 260, 261, 262, 421, 468, 593, 594]
+  - path: "scripts/download_atlas.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [178]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [223]
+      - rule: "print_banned_production_logging"
+        lines: [151, 152, 153, 154, 155, 156, 157, 158, 161, 177, 179, 182, 183, 194, 218, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241]
+  - path: "scripts/download_atlas_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [208]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [265]
+      - rule: "print_banned_production_logging"
+        lines: [179, 180, 181, 182, 183, 184, 185, 186, 187, 190, 207, 209, 212, 213, 227, 235, 260, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286]
+  - path: "scripts/download_biosecurity_dataset.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [76]
+      - rule: "broad_exception_banned"
+        lines: [62, 64]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [218]
+      - rule: "print_banned_production_logging"
+        lines: [82, 83, 84, 85, 89, 96, 97, 105, 108, 109, 119, 120, 133, 143, 144, 145, 146, 147, 148, 151, 152, 155, 156, 186, 188, 190, 191, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235]
+  - path: "scripts/download_expansion_structures.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [128]
+      - rule: "print_banned_production_logging"
+        lines: [76, 82, 93, 107, 121, 134, 139, 163, 164, 165, 166, 167, 168, 169, 170, 173, 174, 183, 184, 186, 188, 189, 192, 199, 200, 211, 212, 213, 216, 217, 219, 220, 221, 222, 223, 224]
+  - path: "scripts/egnn_pocket_ranker.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [379, 382, 389, 449, 464, 467, 468, 493, 495, 553, 554, 555, 557, 595]
+  - path: "scripts/egnn_pocket_ranker_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [403, 410, 763, 873, 877, 881, 894, 895, 896, 950, 956, 957, 961, 962, 963, 1017, 1024, 1027, 1028, 1029, 1051, 1052, 1063, 1067, 1068, 1091, 1141, 1142, 1143, 1145, 1184]
+  - path: "scripts/evaluate_benchmark.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [722]
+      - rule: "print_banned_production_logging"
+        lines: [314, 315, 316, 317, 318, 319, 321, 323, 344, 359, 472, 484, 492, 493, 494, 497, 501, 503, 504, 505, 509, 512, 513, 514, 517, 520, 521, 522, 525, 532, 541, 542, 548, 549, 550, 578, 582, 584, 590, 591, 592, 593, 594, 595, 601, 602, 603, 604, 605, 606, 609, 610, 613, 614, 620, 621, 622, 623, 695, 696, 702, 706, 711, 717, 736]
+  - path: "scripts/explicit_solvent/pocket_refinement.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [183]
+  - path: "scripts/explicit_solvent/refine_from_prism.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [205, 539]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [315, 366]
+      - rule: "print_banned_production_logging"
+        lines: [119, 131, 135, 140, 144, 147, 151, 154, 164, 167, 175, 176, 177, 184, 190, 193, 207, 213, 216, 219, 224, 269, 271, 317, 318, 319, 320, 321, 322, 323, 324, 326, 327, 328, 340, 341, 342, 391, 395, 398, 401, 406, 411, 431, 432, 441, 469, 480, 490, 491, 493, 507, 510, 518, 581, 599, 600, 603, 617, 619, 626, 627, 628, 629, 631, 632, 633]
+  - path: "scripts/explicit_solvent/water_map_analysis.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "sklearn_model_import_requires_exemption"
+        lines: [250]
+  - path: "scripts/fep/analyze_fep.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [350]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [356]
+      - rule: "print_banned_production_logging"
+        lines: [391, 397]
+  - path: "scripts/fep/prepare_abfe.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [181]
+      - rule: "print_banned_production_logging"
+        lines: [291, 292, 293]
+  - path: "scripts/fep/prepare_rbfe.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [122]
+  - path: "scripts/fep/prism_to_openfe.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [127, 273]
+  - path: "scripts/fep/run_fep.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [343]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [105, 287]
+      - rule: "print_banned_production_logging"
+        lines: [374, 376, 395, 397]
+  - path: "scripts/filters/filter_pipeline.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [227]
+  - path: "scripts/filters/stage1_validity.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [42]
+  - path: "scripts/filters/stage5_novelty.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [59]
+  - path: "scripts/gating_stack.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [284]
+      - rule: "print_banned_production_logging"
+        lines: [285, 287, 288, 292, 303, 307, 319, 327]
+  - path: "scripts/generate_chimerax_viz.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [17]
+      - rule: "print_banned_production_logging"
+        lines: [246, 247, 248, 251, 255, 257, 258, 262, 264, 267, 269, 271, 272, 273, 274, 275, 276, 277, 278, 279]
+  - path: "scripts/generate_comprehensive_figures.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [1501]
+      - rule: "print_banned_production_logging"
+        lines: [111, 173, 274, 304, 383, 445, 541, 864, 938, 987, 1038, 1093, 1149, 1313, 1473, 1480, 1481, 1482, 1483, 1489, 1492, 1493, 1494, 1497, 1500, 1502, 1506, 1508, 1511, 1514, 1517, 1520, 1526, 1527, 1528, 1530, 1533, 1536, 1539, 1542, 1543, 1544, 1549, 1551, 1553, 1555, 1557, 1559, 1561, 1562, 1563, 1565, 1566, 1567, 1568, 1569]
+  - path: "scripts/generate_figures.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [95, 99, 121, 130, 219, 228, 288, 297, 303]
+  - path: "scripts/generate_md_rmsf.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [17]
+      - rule: "broad_exception_banned"
+        lines: [101, 162]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [277]
+      - rule: "print_banned_production_logging"
+        lines: [38, 163, 215, 220, 221, 222, 223, 224, 225, 226, 228, 229, 235, 244, 250, 253, 279, 280, 283, 284, 285, 286, 287, 288, 289, 293, 294, 295]
+  - path: "scripts/generate_publication_data.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [17]
+      - rule: "banned_determinant"
+        lines: [154]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [816]
+      - rule: "print_banned_production_logging"
+        lines: [96, 224, 284, 311, 369, 412, 473, 514, 557, 607, 636, 709, 710, 761, 762, 818, 1034, 1043, 1044, 1045, 1051, 1054, 1056, 1058, 1061, 1063, 1065, 1068, 1069, 1072, 1080, 1088, 1093, 1097, 1101, 1102, 1103, 1104, 1105, 1106, 1107, 1108, 1109, 1110, 1111, 1112, 1113]
+  - path: "scripts/generate_pymol_viz.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [20]
+      - rule: "print_banned_production_logging"
+        lines: [373, 374, 375, 378, 382, 384, 385, 389, 391, 394, 396, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407]
+  - path: "scripts/generate_rmsf_from_bfactors.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [257]
+      - rule: "print_banned_production_logging"
+        lines: [172, 173, 174, 175, 176, 177, 178, 179, 201, 209, 253, 259, 260, 261, 262, 263, 264, 265, 266, 271, 272, 273, 285]
+  - path: "scripts/generate_v4_report.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [713]
+      - rule: "print_banned_production_logging"
+        lines: [703, 706, 711, 715, 719, 723, 726, 727, 728, 729, 730, 731, 732, 742, 744]
+  - path: "scripts/genphore/generate.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [85]
+      - rule: "print_banned_production_logging"
+        lines: [257]
+  - path: "scripts/genphore/run_pgmg.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [116]
+  - path: "scripts/genphore/run_phoregen.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [169]
+  - path: "scripts/glycan_preprocessor.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [443]
+      - rule: "print_banned_production_logging"
+        lines: [239, 240, 242, 243, 267, 321, 322, 361, 362, 386, 392, 401, 488, 490, 494, 499, 503, 510, 511]
+  - path: "scripts/gpu_dock.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [1242, 1286]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [728]
+      - rule: "print_banned_production_logging"
+        lines: [72, 73, 74, 75, 194, 200, 202, 204, 285, 311, 315, 322, 325, 410, 411, 412, 413, 421, 427, 431, 447, 473, 481, 484, 660, 684, 686, 729, 734, 739, 915, 916, 917, 918, 919, 920, 921, 930, 933, 937, 940, 942, 945, 964, 1161, 1163, 1164, 1167, 1171, 1173, 1184, 1199, 1216, 1239, 1241, 1243, 1248, 1249, 1258, 1280, 1285, 1287, 1292, 1293, 1308, 1309, 1310, 1311, 1312, 1318, 1321, 1322, 1323, 1325, 1326]
+  - path: "scripts/gpu_dock_batched.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [958]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [352, 579]
+      - rule: "print_banned_production_logging"
+        lines: [69, 70, 71, 72, 191, 197, 199, 201, 221, 224, 227, 312, 313, 314, 315, 323, 329, 333, 402, 432, 462, 465, 511, 535, 537, 580, 585, 590, 766, 767, 768, 769, 770, 771, 772, 781, 784, 788, 791, 793, 796, 815, 912, 915, 919, 921, 924, 932, 935, 961, 962, 963, 964, 967, 968]
+  - path: "scripts/gpu_dock_fast.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [95, 98, 99, 115, 116, 117, 118, 119, 120, 121, 122, 125, 127, 130, 137, 140, 143, 145, 149, 150, 151, 159, 162, 165, 166, 167, 169, 170, 171, 172]
+  - path: "scripts/growth_vector_map.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [360]
+      - rule: "print_banned_production_logging"
+        lines: [361, 364]
+  - path: "scripts/interchain_contacts.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [350, 351, 352, 353, 355, 378, 379, 380, 381, 382, 383, 386, 388, 392, 394, 395, 396, 425, 445]
+  - path: "scripts/interfaces/anchor_point.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [14]
+  - path: "scripts/interfaces/consensus_site.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [16]
+  - path: "scripts/interfaces/contact_reorg_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [13]
+  - path: "scripts/interfaces/design_brief.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [13]
+  - path: "scripts/interfaces/docking_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [11]
+  - path: "scripts/interfaces/ensemble_score.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [14]
+  - path: "scripts/interfaces/explicit_solvent_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [13]
+  - path: "scripts/interfaces/fep_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [9]
+  - path: "scripts/interfaces/filtered_candidate.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [11]
+  - path: "scripts/interfaces/gating_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [14]
+  - path: "scripts/interfaces/generated_molecule.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [9]
+  - path: "scripts/interfaces/growth_vector.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [16]
+  - path: "scripts/interfaces/membrane_system.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [13]
+  - path: "scripts/interfaces/pipeline_config.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [10]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [152]
+  - path: "scripts/interfaces/pocket_dynamics.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [13]
+  - path: "scripts/interfaces/pocket_profile.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [13]
+  - path: "scripts/interfaces/residue_mapping.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [14]
+  - path: "scripts/interfaces/response_profile.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [14]
+  - path: "scripts/interfaces/site_ranking.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [14]
+  - path: "scripts/interfaces/site_spike_view.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [189, 194, 217, 224, 229, 235, 289, 721, 843]
+      - rule: "direct_parquet_writer_banned"
+        lines: [302]
+  - path: "scripts/interfaces/spike_pharmacophore.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [20]
+  - path: "scripts/interfaces/tautomer_state.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [15]
+  - path: "scripts/interfaces/viewer_payload.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [13]
+  - path: "scripts/interfaces/water_map.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [14]
+  - path: "scripts/json_to_pdb.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [15, 17, 81, 86, 87, 97, 111, 112, 113, 114, 115]
+  - path: "scripts/kcc_validation_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [350]
+      - rule: "print_banned_production_logging"
+        lines: [283, 351, 356, 365]
+  - path: "scripts/managed-agents/r2_upload_webhook.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [123]
+      - rule: "print_banned_production_logging"
+        lines: [32, 75, 83, 104, 122, 124, 191, 203, 204, 205, 206, 212]
+  - path: "scripts/managed-agents/setup_agents.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [443]
+      - rule: "print_banned_production_logging"
+        lines: [47, 270, 273, 275, 279, 283, 285, 289, 293, 295, 298, 314, 317, 318, 319, 326, 344, 346, 350, 428, 431, 432, 433, 434, 440, 442, 444, 464, 465]
+  - path: "scripts/measure_noise_floor.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [123, 158, 185, 218, 234, 270, 272, 325]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [76]
+      - rule: "print_banned_production_logging"
+        lines: [563, 564, 565, 566, 567, 568]
+  - path: "scripts/mmgbsa_rescore.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [142, 217]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [224]
+      - rule: "print_banned_production_logging"
+        lines: [195, 196, 197, 198, 199, 204, 209, 212, 213, 214, 215, 218, 254, 255, 256]
+  - path: "scripts/multichain_preprocessor.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [203, 306]
+      - rule: "print_banned_production_logging"
+        lines: [124, 125, 126, 127, 128, 129, 130, 184, 196, 200, 201, 205, 288, 299, 303, 304, 308, 339, 340, 341, 342, 344, 346, 353, 372, 375, 379, 383, 394, 395, 396, 397, 398, 399, 400, 403, 435, 436, 437, 438, 439, 440, 456, 457, 461, 465, 470, 476, 478, 563, 567]
+  - path: "scripts/numbering_audit.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [25]
+      - rule: "print_banned_production_logging"
+        lines: [73, 74, 79, 175, 176, 177, 178, 180, 181]
+  - path: "scripts/p2rank_rescore.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [20]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [176]
+      - rule: "print_banned_production_logging"
+        lines: [111, 113, 172, 180, 181, 186, 187]
+  - path: "scripts/pharmacophore_extract.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [96, 99, 112, 140, 145, 154, 160, 161, 167, 168, 171, 176, 179, 191, 196, 199, 201, 208, 211, 262, 265, 266, 267, 268, 269, 270, 271, 272, 275, 276, 277, 278, 279, 280]
+  - path: "scripts/phase_manifold_ranker.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [10]
+      - rule: "broad_exception_banned"
+        lines: [70, 79, 92]
+      - rule: "print_banned_production_logging"
+        lines: [700, 701, 702, 703, 704, 705, 706, 857, 858, 859, 860, 861, 862, 864]
+  - path: "scripts/pocket_fusion.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [398]
+      - rule: "print_banned_production_logging"
+        lines: [332, 336, 339, 351, 355, 380, 381, 382, 383, 386, 388, 390, 400]
+  - path: "scripts/pocket_profile_builder.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [212]
+      - rule: "print_banned_production_logging"
+        lines: [213, 216]
+  - path: "scripts/post_dock_analysis.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [836]
+      - rule: "print_banned_production_logging"
+        lines: [623, 626, 770, 771, 772, 775, 779, 780, 792, 795, 798, 805, 816, 832, 837, 850, 857, 860, 867, 878, 886, 890, 895, 901, 904, 905, 906, 908, 909, 910, 911, 912, 914, 915, 916, 917]
+  - path: "scripts/postprocess_twin.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [129, 1126, 1783]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [131]
+      - rule: "print_banned_production_logging"
+        lines: [107]
+  - path: "scripts/prepare_production_topologies.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [74]
+      - rule: "broad_exception_banned"
+        lines: [128]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [231]
+      - rule: "print_banned_production_logging"
+        lines: [33, 34, 135, 136, 137, 138, 147, 156, 157, 158, 159, 160, 173, 176, 180, 181, 182, 183, 191, 192, 193, 194, 195, 198, 199, 201, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 239]
+  - path: "scripts/prepare_protein.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [264]
+      - rule: "print_banned_production_logging"
+        lines: [16, 25, 26, 29, 36, 42, 50, 68, 70, 74, 79, 100, 103, 111, 119, 152, 166, 181, 195, 205, 218, 222, 236, 238, 262, 266, 332]
+  - path: "scripts/prepare_protien.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "python_syntax_error"
+        lines: [2]
+  - path: "scripts/prepare_structure_openmm.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [37, 38, 44, 45, 52, 55, 56, 57, 58, 59, 60, 61, 64, 70, 72, 81, 82, 86, 91, 94, 99, 101, 104, 109, 116, 119, 142, 150, 151, 156, 166, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180]
+  - path: "scripts/preprocessing/membrane_builder.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [74]
+      - rule: "print_banned_production_logging"
+        lines: [340, 349, 351]
+  - path: "scripts/preprocessing/protein_fixer.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [331]
+  - path: "scripts/preprocessing/target_classifier.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [89, 125, 160]
+      - rule: "print_banned_production_logging"
+        lines: [344]
+  - path: "scripts/preprocessing/tautomer_enumeration.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [77, 150]
+      - rule: "print_banned_production_logging"
+        lines: [329]
+  - path: "scripts/prism-clean.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [17, 51, 64, 65, 66, 67, 68, 71, 76, 82]
+  - path: "scripts/prism-corpus-status.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [711]
+  - path: "scripts/prism-ground-truth.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [448, 461, 462, 466, 467, 471, 473, 474, 476, 478, 479]
+  - path: "scripts/prism-lookup-residue.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [18, 43, 45, 55, 67, 72, 76]
+  - path: "scripts/prism-merge-chains.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [142]
+      - rule: "print_banned_production_logging"
+        lines: [23, 39, 127, 145, 147, 151, 152]
+  - path: "scripts/prism-postflight.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [45, 179, 180, 181, 182, 183, 185, 189, 195, 205, 208, 212, 213, 216, 264, 271, 272, 276, 278, 279, 280, 283, 284, 285, 291, 294, 300, 306, 326, 334, 335, 336, 340, 365, 379, 384, 387]
+  - path: "scripts/prism-preflight.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [43, 51, 61, 137, 138, 139, 140, 141, 142, 143, 145, 148, 152, 153, 156, 163, 169, 171, 173]
+  - path: "scripts/prism-r2-sync/prism_spike_watcher.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [254, 281, 292, 540, 556, 828]
+      - rule: "direct_parquet_writer_banned"
+        lines: [374, 397, 472, 507]
+  - path: "scripts/prism_canonical.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [296, 298]
+      - rule: "print_banned_production_logging"
+        lines: [182, 186, 191, 200, 204, 209, 215, 230, 233, 240, 243, 248, 253, 258, 263, 268, 273, 280, 300, 305, 306, 309, 310, 311, 312, 313, 314, 315, 350, 353]
+  - path: "scripts/prism_chronic_durability_bridge.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "direct_parquet_writer_banned"
+        lines: [249, 290]
+      - rule: "print_banned_production_logging"
+        lines: [352, 353]
+  - path: "scripts/prism_kcc_decoder.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "direct_parquet_writer_banned"
+        lines: [281, 282, 283]
+      - rule: "print_banned_production_logging"
+        lines: [320, 321]
+  - path: "scripts/prism_pipeline.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [242]
+      - rule: "broad_exception_banned"
+        lines: [630]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [351, 558]
+      - rule: "print_banned_production_logging"
+        lines: [103, 104, 105, 122, 127, 166, 167, 168, 169, 170, 196, 197, 201, 205, 267, 268, 276, 277, 290, 308, 309, 321, 322, 329, 354, 433, 434, 435, 457, 458, 459, 483, 484, 485, 510, 511, 512, 520, 529, 549, 561, 562, 563, 564, 565, 566, 567, 569, 570, 571, 631]
+  - path: "scripts/prism_pipeline_batch.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [140, 360, 519]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [433]
+      - rule: "print_banned_production_logging"
+        lines: [167, 199, 200, 218, 221, 254, 258, 285, 299, 324, 325, 326, 327, 328, 329, 330, 331, 332, 336, 337, 338, 359, 362, 368, 371, 376, 377, 378, 379, 397, 402, 403, 404, 405, 414, 436, 437, 438, 439, 440, 441, 442, 443, 444, 446, 503, 520]
+  - path: "scripts/prism_ranker.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [74]
+      - rule: "print_banned_production_logging"
+        lines: [77]
+  - path: "scripts/prism_replicate.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [39, 77, 94, 111, 114, 141, 142, 143, 144, 152, 159, 163, 165, 170, 173, 178, 180, 189, 193, 200, 201, 203]
+  - path: "scripts/prism_spike_event_integrator.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "direct_parquet_writer_banned"
+        lines: [579, 657, 685, 747, 754]
+      - rule: "print_banned_production_logging"
+        lines: [853, 855, 859]
+  - path: "scripts/prism_spike_watcher.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [262, 289, 300, 425, 441, 493, 870]
+      - rule: "direct_parquet_writer_banned"
+        lines: [357, 392]
+  - path: "scripts/prism_twin_forensic_schema_audit.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [22, 199, 224, 276, 310, 324, 353, 475]
+      - rule: "print_banned_production_logging"
+        lines: [1158, 1159]
+  - path: "scripts/production/apply_phase4_migration.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [110, 114, 115, 116, 119, 141, 143, 145, 147, 148, 153, 157, 159, 161, 163]
+  - path: "scripts/production/curate_prism5000_chain_targets.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [20]
+      - rule: "print_banned_production_logging"
+        lines: [286, 513, 537, 786, 787, 794, 809, 814, 833, 839, 842, 848, 855, 859]
+  - path: "scripts/production/export_v4_snapshot.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [103]
+      - rule: "broad_exception_banned"
+        lines: [80, 144, 177, 211]
+      - rule: "direct_parquet_writer_banned"
+        lines: [186, 188, 189, 190, 191, 192, 193]
+      - rule: "print_banned_production_logging"
+        lines: [36, 113, 119, 122, 130, 212, 332, 333, 334, 335]
+  - path: "scripts/production/finalize_prism5000_ready_set.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [17]
+      - rule: "print_banned_production_logging"
+        lines: [135]
+  - path: "scripts/production/prepare_prism5000_chain_targets.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [181, 288, 351]
+      - rule: "print_banned_production_logging"
+        lines: [393, 423, 448]
+  - path: "scripts/production/prism-strip-hect.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [248, 256, 261, 275, 291, 293, 324, 325, 326, 327, 328, 329, 330, 331, 332]
+  - path: "scripts/production/stale_row_purge.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [71, 168, 267]
+      - rule: "print_banned_production_logging"
+        lines: [172, 296, 299, 303, 310, 315, 319, 321, 325, 333]
+  - path: "scripts/production/validate_v4_contract.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [131, 145, 326]
+      - rule: "print_banned_production_logging"
+        lines: [30, 352, 353, 355, 356, 357, 358, 359, 360, 370, 372, 374]
+  - path: "scripts/production/w2_dcc_pin.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [58, 274]
+      - rule: "print_banned_production_logging"
+        lines: [257, 283, 374, 376, 379, 384, 390, 396]
+  - path: "scripts/production/w3b_event_aggregates_pin.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [60, 139, 174, 282, 296]
+      - rule: "print_banned_production_logging"
+        lines: [340, 378, 415, 417, 420, 425, 431, 441]
+  - path: "scripts/production/w4_pin_runtime.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [105, 108, 111, 128, 133, 135, 136, 137, 138, 139, 141, 143, 146]
+  - path: "scripts/prt70_panel_sweep.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [663]
+      - rule: "print_banned_production_logging"
+        lines: [570, 571, 572, 575, 665, 668, 681, 684, 691]
+  - path: "scripts/quarantine/aggregate_site_tags.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [1284]
+      - rule: "print_banned_production_logging"
+        lines: [1279]
+  - path: "scripts/quarantine/align_6p8y_to_6oim.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [52, 68, 69, 70, 75]
+  - path: "scripts/quarantine/arrow_to_legacy_json.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [192]
+  - path: "scripts/quarantine/audit_compute_kras_holo_pockets.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [110, 114, 152, 154]
+  - path: "scripts/quarantine/audit_json_parquet_equivalence.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [174, 297, 346]
+      - rule: "print_banned_production_logging"
+        lines: [370, 371, 372, 373, 374, 375, 376, 378, 379, 381, 382, 384, 385, 393, 394, 396, 399, 401, 408, 410, 412, 416, 419, 421, 422, 423, 424, 425, 427, 428, 449, 452, 453, 454, 458, 463, 475, 499, 506, 524, 528, 533, 534, 538, 539, 540]
+  - path: "scripts/quarantine/audit_manifest_gt.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [281]
+      - rule: "print_banned_production_logging"
+        lines: [220, 224, 227, 238, 242, 245, 265, 266, 267, 268, 269, 270, 271, 272, 276, 288, 296, 304]
+  - path: "scripts/quarantine/augment_therm_ccns_join.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [10]
+      - rule: "print_banned_production_logging"
+        lines: [142, 152, 183, 185]
+  - path: "scripts/quarantine/b_no_therm_feature_gap.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [211, 213, 214, 215, 219, 220, 223, 225, 226, 234, 237, 239, 240, 242, 243, 244, 245, 250, 257, 260, 272, 273, 274, 276, 277, 278, 279, 281, 282, 285, 296, 299]
+  - path: "scripts/quarantine/build_m1_panel.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [108, 109, 111, 113, 114, 115, 116, 163]
+  - path: "scripts/quarantine/build_never_bound_manifest.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [421, 453, 463, 470]
+      - rule: "print_banned_production_logging"
+        lines: [117, 133, 139, 146, 152, 186, 189, 291, 292, 316, 319, 320, 321, 322, 343, 346, 353, 387, 428, 429, 445, 450, 458, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491]
+  - path: "scripts/quarantine/build_true_apo_manifest.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [26]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [161, 241, 606, 678]
+      - rule: "print_banned_production_logging"
+        lines: [66, 69, 70, 88, 89, 92, 98, 104, 109, 111, 113, 115, 117, 119, 120, 122, 125, 126, 127, 128, 150, 162, 194, 230, 242, 247, 265, 395, 396, 397, 398, 426, 427, 430, 440, 454, 462, 469, 525, 527, 529, 541, 561, 570, 577, 608, 615, 630, 631, 633, 635, 679, 686, 696, 697, 698, 699, 700, 701, 704, 709, 713, 717, 719, 721, 733, 737, 745, 746, 753, 764, 780, 781]
+  - path: "scripts/quarantine/canonical_dcc_audit.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [121]
+      - rule: "print_banned_production_logging"
+        lines: [216, 217, 227, 240, 241, 242, 243, 244, 245, 246, 249, 250, 252, 255, 256, 258, 262, 263, 265, 266, 273, 274]
+  - path: "scripts/quarantine/classifier_audit.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [302, 303, 304, 306, 307, 309, 320, 322, 323, 324, 326, 327, 329, 330, 331, 332, 335, 338, 345, 347, 348, 349, 350, 351, 353, 356, 365, 366, 367, 369, 372, 375, 391, 392, 393, 395, 409, 410]
+  - path: "scripts/quarantine/classifier_audit_expanded.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [22]
+      - rule: "broad_exception_banned"
+        lines: [42]
+      - rule: "print_banned_production_logging"
+        lines: [233, 234, 235, 236, 238, 240, 249, 250, 251, 252, 253, 254, 257, 260, 261, 262]
+  - path: "scripts/quarantine/completeness_certifier.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [22]
+      - rule: "broad_exception_banned"
+        lines: [173, 202, 319, 354, 368, 374, 382, 399]
+      - rule: "print_banned_production_logging"
+        lines: [677, 681, 700, 701, 702, 704]
+  - path: "scripts/quarantine/d3_parity_harness.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [211]
+  - path: "scripts/quarantine/d3_timing_harness.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [132, 133, 134, 147]
+  - path: "scripts/quarantine/d4_rank1_harness.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [248, 249, 250, 251, 252, 261]
+  - path: "scripts/quarantine/d5_step_e_harness.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [158, 159, 167, 168, 170, 179, 193, 194, 195, 196, 197]
+  - path: "scripts/quarantine/d5_v2_phase2_harness.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [135, 136, 137, 138, 139]
+  - path: "scripts/quarantine/d5_wave1_extract_all_features_harness.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [171]
+      - rule: "print_banned_production_logging"
+        lines: [173, 174, 186, 187, 202, 217, 218, 219, 220, 221, 222, 223]
+  - path: "scripts/quarantine/d5_wave1_train_v006_harness.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [169, 176]
+      - rule: "print_banned_production_logging"
+        lines: [171, 177, 178, 179, 193, 196, 205, 206, 207, 208, 209, 210, 211]
+  - path: "scripts/quarantine/docx_one_panel_per_page.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [100]
+      - rule: "print_banned_production_logging"
+        lines: [101, 103, 104, 115, 130, 133, 158, 163, 167]
+  - path: "scripts/quarantine/docx_split_panels_per_page.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [200]
+      - rule: "print_banned_production_logging"
+        lines: [128, 137, 194, 201]
+  - path: "scripts/quarantine/engine_full_harvest.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [18]
+      - rule: "broad_exception_banned"
+        lines: [168, 192, 280, 287, 314, 467]
+      - rule: "print_banned_production_logging"
+        lines: [688, 723, 724, 725, 726, 727, 728]
+  - path: "scripts/quarantine/enrich_spike_arrow.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "direct_parquet_writer_banned"
+        lines: [371]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [327]
+      - rule: "print_banned_production_logging"
+        lines: [64, 68, 87, 229, 236, 268, 328, 342, 345, 346, 347, 348, 369, 372, 400]
+  - path: "scripts/quarantine/enrich_tem1_report.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [174, 309, 447, 802]
+      - rule: "print_banned_production_logging"
+        lines: [100, 126, 134, 176, 201, 255, 263, 283, 290, 311, 334, 449, 457, 519, 532, 595, 603, 677, 686, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 821, 822, 823, 824, 828, 829, 832, 833, 836, 837, 842, 843, 844, 845, 846, 847, 848, 850, 858, 859, 860, 861, 865, 869, 873, 883, 886]
+  - path: "scripts/quarantine/fill_prism_manifold_residues.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [199]
+      - rule: "print_banned_production_logging"
+        lines: [90, 91, 94, 112, 127, 156, 157, 158, 164, 165, 190, 200]
+  - path: "scripts/quarantine/fix_tem1_v3.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [694]
+      - rule: "print_banned_production_logging"
+        lines: [39, 57, 58, 63, 196, 197, 202, 205, 224, 230, 257, 258, 261, 262, 263, 292, 293, 298, 302, 308, 327, 328, 379, 380, 385, 439, 558, 561, 566, 581, 591, 598, 603, 607, 622, 628, 637, 648, 652, 654, 656, 658, 660, 663, 664, 665, 666, 667, 668, 669, 670, 671, 672, 673, 674, 675, 676, 677, 696, 697, 698, 701, 702, 703, 704, 705, 707, 708]
+  - path: "scripts/quarantine/freeze_package_manifest.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [116, 119, 120, 121, 122, 123, 124]
+  - path: "scripts/quarantine/full_schema_lossless_validator.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [35]
+      - rule: "broad_exception_banned"
+        lines: [207, 249]
+      - rule: "print_banned_production_logging"
+        lines: [221, 458, 459, 460, 461, 463, 464, 465, 467, 468, 469, 470, 471, 473, 475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 485]
+  - path: "scripts/quarantine/gate_a_validator.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [18]
+      - rule: "print_banned_production_logging"
+        lines: [336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 351]
+  - path: "scripts/quarantine/generate_tem1_report.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [238, 240, 352, 386, 474, 485, 1073]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [1060, 1111, 1148, 1173]
+      - rule: "print_banned_production_logging"
+        lines: [95, 96, 97, 102, 140, 141, 142, 143, 154, 157, 164, 168, 172, 177, 229, 241, 248, 350, 355, 367, 371, 390, 391, 401, 453, 455, 460, 637, 888, 893, 936, 969, 1061, 1077, 1112, 1152, 1182, 1187, 1188, 1189, 1190, 1191, 1192, 1193, 1194, 1195, 1196, 1197, 1198, 1199, 1200, 1201, 1202, 1203, 1204, 1205, 1206, 1207, 1208, 1213, 1214, 1215, 1216, 1217, 1218, 1219, 1220, 1221, 1223, 1224, 1225, 1227, 1228, 1230, 1234, 1235, 1240, 1242, 1243, 1244, 1249, 1250, 1251, 1252, 1253, 1254, 1255, 1256, 1257, 1259, 1260, 1261, 1264, 1265, 1266, 1267, 1268, 1269]
+  - path: "scripts/quarantine/ghost_v2_native_spatial_probe.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [122]
+      - rule: "print_banned_production_logging"
+        lines: [215, 216]
+  - path: "scripts/quarantine/incremental_delete.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [28, 44, 55, 97]
+      - rule: "print_banned_production_logging"
+        lines: [111]
+  - path: "scripts/quarantine/insert_pfr_section_v6.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [180, 195, 273, 296, 298, 301]
+  - path: "scripts/quarantine/investigate_json_only_sites.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [118, 138, 234]
+      - rule: "print_banned_production_logging"
+        lines: [119, 168, 169, 170, 172, 180, 183, 185, 186, 187, 189, 232, 235, 241, 242, 247, 249, 254, 256, 259, 261, 264]
+  - path: "scripts/quarantine/m1_1_manifest.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [57]
+      - rule: "print_banned_production_logging"
+        lines: [102, 104, 106, 111, 112, 113, 114, 121]
+  - path: "scripts/quarantine/m1_2_25_audit_driver.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [33]
+      - rule: "print_banned_production_logging"
+        lines: [577, 583, 584, 585, 586, 587, 588, 589, 590, 591, 592, 593, 594, 596, 597]
+  - path: "scripts/quarantine/m1_2_decision_notes.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [15]
+      - rule: "print_banned_production_logging"
+        lines: [330, 364, 365, 366, 367, 368]
+  - path: "scripts/quarantine/m1_2b_note_hygiene.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [24]
+      - rule: "broad_exception_banned"
+        lines: [176, 201]
+      - rule: "print_banned_production_logging"
+        lines: [548, 557, 558, 559, 560, 562, 564, 566, 568]
+  - path: "scripts/quarantine/m1_2c_cleanup.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [13]
+      - rule: "broad_exception_banned"
+        lines: [40, 62]
+      - rule: "print_banned_production_logging"
+        lines: [348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359]
+  - path: "scripts/quarantine/m1_ablation.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [376]
+      - rule: "print_banned_production_logging"
+        lines: [453, 454, 455, 457, 459, 462, 468, 469, 470, 471, 472, 473, 476, 478, 479, 480, 482, 483, 484, 485, 487, 490, 498, 504, 505]
+  - path: "scripts/quarantine/m1_v4_postflight_check.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [276, 282, 285, 297, 308, 322, 325, 326]
+  - path: "scripts/quarantine/per_target_completion_block.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [50]
+      - rule: "print_banned_production_logging"
+        lines: [171]
+  - path: "scripts/quarantine/pfr_build_10A_10C.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [8]
+      - rule: "print_banned_production_logging"
+        lines: [130, 209]
+  - path: "scripts/quarantine/pfr_build_feature_csvs.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [25]
+      - rule: "broad_exception_banned"
+        lines: [147, 192, 196, 210]
+      - rule: "print_banned_production_logging"
+        lines: [211, 311, 317, 322, 327, 343, 406, 470]
+  - path: "scripts/quarantine/pfr_composite_10B.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [73]
+  - path: "scripts/quarantine/pfr_render_panels.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [13]
+      - rule: "broad_exception_banned"
+        lines: [71, 203]
+  - path: "scripts/quarantine/prism-aggregate-sites.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [1055]
+  - path: "scripts/quarantine/prism_engine_prov.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [518]
+      - rule: "print_banned_production_logging"
+        lines: [527, 530, 531, 532, 536, 537, 539, 540, 541, 542, 544]
+  - path: "scripts/quarantine/prism_manifold_shell_validator.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [150]
+      - rule: "banned_text_table_io"
+        lines: [30]
+      - rule: "broad_exception_banned"
+        lines: [344, 442]
+      - rule: "print_banned_production_logging"
+        lines: [345, 443, 951, 958, 959, 960, 961, 964, 968, 971, 997, 1002, 1012, 1016, 1022, 1025, 1029, 1035, 1037, 1039, 1109, 1113, 1115, 1119, 1121, 1150, 1153, 1161, 1162, 1163, 1166, 1186, 1187, 1188, 1189, 1190, 1191, 1192, 1193, 1194, 1195]
+  - path: "scripts/quarantine/prism_postrun_seqalign.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [151, 171, 192, 217, 237, 257, 277]
+      - rule: "print_banned_production_logging"
+        lines: [368, 371, 372, 378, 381, 393, 406, 419, 427, 433, 437, 443, 447, 453, 457, 464, 468, 475, 479, 486, 490, 496, 500, 507, 509, 510, 511]
+  - path: "scripts/quarantine/prism_prov.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [212, 456]
+      - rule: "print_banned_production_logging"
+        lines: [473, 474, 475]
+  - path: "scripts/quarantine/prism_pub_baseline_validator.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [181]
+      - rule: "banned_text_table_io"
+        lines: [32]
+      - rule: "broad_exception_banned"
+        lines: [381, 480]
+      - rule: "print_banned_production_logging"
+        lines: [382, 481, 658, 661, 698, 701, 1291, 1292, 1293, 1294, 1295, 1298, 1302, 1305, 1340, 1346, 1347, 1349, 1350, 1352, 1355, 1365, 1381, 1385, 1395, 1403, 1462, 1466, 1477, 1480, 1484, 1487, 1489, 1493, 1518, 1519, 1520, 1521, 1522, 1523, 1524, 1525, 1527, 1528, 1533, 1539, 1543]
+  - path: "scripts/quarantine/process_cryptobank.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [31]
+      - rule: "banned_pickle_serialization"
+        lines: [20]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [370, 402]
+      - rule: "print_banned_production_logging"
+        lines: [147, 149, 186, 189, 224, 232, 238, 246, 251, 266, 274, 276, 283, 297, 305, 311, 323, 374, 410, 411, 412, 413, 414, 415, 419, 420, 423, 426, 427, 428, 429, 430]
+  - path: "scripts/quarantine/r2_manifest_enrich_and_proof.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [57]
+      - rule: "print_banned_production_logging"
+        lines: [132, 133, 134, 135, 136, 137, 138, 140, 141, 142, 145, 148, 149, 151, 153, 154, 155, 157, 160]
+  - path: "scripts/quarantine/r2_offload_completed_targets.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [22]
+      - rule: "broad_exception_banned"
+        lines: [237, 251, 267, 308, 400, 412]
+      - rule: "print_banned_production_logging"
+        lines: [337, 344, 376, 405, 411, 431, 433, 434, 439, 440, 444, 445, 446, 448, 450, 451, 453, 455]
+  - path: "scripts/quarantine/rebuild_patent_docx.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [211, 212]
+  - path: "scripts/quarantine/rebuild_patent_docx_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [397, 398, 402]
+  - path: "scripts/quarantine/remap_topo_resids.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [213]
+      - rule: "print_banned_production_logging"
+        lines: [116, 119, 132, 140, 143, 148, 152, 153, 154, 157, 161, 186, 188, 189, 190, 191, 193, 197, 209, 215, 216, 217, 218]
+  - path: "scripts/quarantine/reranker_v4_six_pillar_manifold.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [148, 163, 174, 182, 183, 185, 213, 216, 219, 226, 227, 233, 239]
+  - path: "scripts/quarantine/run_metadata_writer.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [155]
+  - path: "scripts/quarantine/run_stages.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [419]
+      - rule: "broad_exception_banned"
+        lines: [74, 148, 223, 522, 702, 870, 896, 1171, 1450]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [574, 1096, 1185, 1202, 1226, 1246, 1373]
+      - rule: "print_banned_production_logging"
+        lines: [75, 704, 1440, 1452, 1458, 1460, 1463]
+  - path: "scripts/quarantine/site_vs_holo_strict.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 309, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322]
+  - path: "scripts/quarantine/spike_metadata_inventory.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [58, 82]
+      - rule: "print_banned_production_logging"
+        lines: [492, 493, 494, 496, 497, 498, 499, 500, 505, 508, 511, 513, 515, 517, 519, 520, 521, 522, 523, 524, 525, 536, 537, 538, 540, 541, 552, 553, 554, 555, 556, 560, 564, 565]
+  - path: "scripts/quarantine/twin10_audit.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [249, 329, 504]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [566]
+      - rule: "print_banned_production_logging"
+        lines: [524, 525, 545, 549, 550, 552, 554, 567]
+  - path: "scripts/quarantine/validate_dcc_smoke5.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [269]
+      - rule: "print_banned_production_logging"
+        lines: [150, 153, 156, 161, 166, 170, 171, 175, 178, 188, 189, 190, 221, 222, 223, 224, 225, 235, 236, 237, 239, 242, 244, 253, 254, 255, 256, 257, 258, 261, 263, 265, 276]
+  - path: "scripts/quarantine/validate_v2_7c8r.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [29, 43, 44, 45, 46, 52, 53, 62]
+  - path: "scripts/quarantine/verify_twin_provenance.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [51, 71, 89, 142]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [258]
+      - rule: "print_banned_production_logging"
+        lines: [184, 190, 191, 192, 195, 202, 208, 211, 212, 218, 221, 224, 227, 228, 238, 239, 242, 243, 244, 245, 246, 247, 248, 252, 253, 274]
+  - path: "scripts/quarantine/w3b_shard_targets.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [32, 49, 51, 53]
+  - path: "scripts/quarantine/wrn_1522_spatial_validation.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [221, 222, 223, 224, 225, 226, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 242, 243, 244, 245, 246]
+  - path: "scripts/quarantine/wrn_1522_strict_verify.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [75, 85, 135, 136, 137, 139, 140, 144, 145, 146, 151, 152, 153, 154, 163, 164, 165, 166, 167, 185, 186, 187, 188, 204, 205, 206, 207, 208, 209, 210, 211, 212, 223, 224, 225, 226, 227, 236, 237, 238, 246, 247, 248, 249, 250, 251, 252, 284, 285]
+  - path: "scripts/rank_search.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [91, 98, 140, 143, 164, 165, 166, 173, 176, 177, 179, 180, 181, 184, 188, 189, 193, 194, 197]
+  - path: "scripts/ranking_lab.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [18]
+      - rule: "print_banned_production_logging"
+        lines: [196, 202, 236, 239, 240, 241, 244, 249, 250, 258]
+  - path: "scripts/ranking_lab_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [17]
+      - rule: "print_banned_production_logging"
+        lines: [190, 224, 227, 228, 229, 232, 235, 236, 243]
+  - path: "scripts/rerank_sites.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [121]
+      - rule: "print_banned_production_logging"
+        lines: [166, 170, 173, 174, 175, 176, 182, 188, 194, 195, 197]
+  - path: "scripts/response_selectivity.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [90, 528]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [586]
+      - rule: "print_banned_production_logging"
+        lines: [587, 591, 602]
+  - path: "scripts/run_baselines.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [39]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [413]
+      - rule: "print_banned_production_logging"
+        lines: [220, 221, 222, 223, 224, 258, 260, 261, 270, 271, 294, 302, 305, 313, 320, 332, 377, 380, 389, 392, 401, 414]
+  - path: "scripts/run_bench10.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [22]
+      - rule: "broad_exception_banned"
+        lines: [341, 460]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [273, 334, 353, 396, 504]
+      - rule: "print_banned_production_logging"
+        lines: [90]
+  - path: "scripts/run_cryptobench.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [230]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [258]
+      - rule: "print_banned_production_logging"
+        lines: [191, 203, 207, 209, 216, 219, 232, 233, 236, 243, 246, 247, 248, 249, 250, 251, 254, 260]
+  - path: "scripts/run_hard_targets.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [31, 129, 222, 521]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [417]
+      - rule: "print_banned_production_logging"
+        lines: [32, 33, 34, 90]
+  - path: "scripts/setup_atlas_benchmark.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [11]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [88, 95, 116]
+      - rule: "print_banned_production_logging"
+        lines: [41, 42, 43, 44, 45, 51, 70, 77, 78, 79, 80, 81, 90, 91, 96, 118, 126, 133, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144]
+  - path: "scripts/spike_pharmacophore_map.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [85, 728]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [680]
+      - rule: "print_banned_production_logging"
+        lines: [701, 702, 703, 709, 734, 735, 742, 743, 751, 758, 761, 766, 769, 771, 774, 778, 784, 788, 792, 795, 796, 797, 804, 805, 806, 807, 811, 812, 813, 814]
+  - path: "scripts/stage1_sanitize.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [75, 317]
+      - rule: "print_banned_production_logging"
+        lines: [35, 36, 68, 73, 126, 131, 143, 147, 159, 166, 184, 190, 198, 199, 218, 219, 223, 248, 306, 307, 308, 309, 310, 311, 313, 318]
+  - path: "scripts/stage1_sanitize_amber.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [146]
+      - rule: "print_banned_production_logging"
+        lines: [87, 98, 108, 112, 122, 138, 139, 144, 147, 180, 185, 186, 192, 193, 194, 195, 196, 203, 204, 205]
+  - path: "scripts/stage1_sanitize_hybrid.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [170]
+      - rule: "broad_exception_banned"
+        lines: [131, 191]
+      - rule: "print_banned_production_logging"
+        lines: [92, 127, 133, 146, 156, 183, 189, 193, 223, 224, 241, 247, 254, 276, 282, 283, 284, 285, 286, 291, 292]
+  - path: "scripts/stage2_topology.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [1116]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [883, 902, 929]
+      - rule: "print_banned_production_logging"
+        lines: [33, 34, 240, 242, 249, 336, 396, 461, 476, 478, 492, 495, 509, 514, 524, 547, 552, 566, 577, 581, 646, 662, 677, 693, 709, 721, 757, 769, 784, 786, 880, 904, 931, 935, 1050, 1051, 1052, 1087, 1103, 1104, 1105, 1106, 1107, 1108, 1109, 1110, 1112, 1117]
+  - path: "scripts/stage2_topology_glycam.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "bare_except_banned"
+        lines: [87]
+      - rule: "broad_exception_banned"
+        lines: [171, 213, 587]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [461]
+      - rule: "print_banned_production_logging"
+        lines: [32, 33, 123, 129, 138, 142, 143, 144, 148, 149, 150, 154, 165, 168, 173, 174, 175, 176, 177, 185, 195, 220, 223, 224, 225, 227, 237, 242, 256, 267, 271, 301, 316, 331, 347, 363, 375, 390, 395, 409, 411, 458, 465, 555, 571, 572, 573, 574, 575, 576, 577, 578, 580, 581, 583, 588]
+  - path: "scripts/target_config.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [128, 129, 131, 132, 133, 134, 137, 139, 140]
+  - path: "scripts/test_coherence_layer.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [72, 73, 74, 122, 127, 128, 129]
+  - path: "scripts/test_contact_reorg.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [168, 169, 181, 184, 186, 204, 205, 212, 217, 219]
+  - path: "scripts/test_dccm.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [84, 102, 105, 112, 113, 114, 116, 117, 121, 122, 132, 138, 139, 140, 141, 142]
+  - path: "scripts/test_four_stage_decision.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [53, 83]
+  - path: "scripts/test_probe_panel.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [155, 156, 157, 178, 185, 188, 200, 203, 208, 209, 210, 211, 212]
+  - path: "scripts/test_rerank.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [150, 153, 154, 155, 161, 167, 170, 171, 174, 175, 176, 182, 183, 195]
+  - path: "scripts/test_target_config.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [108]
+  - path: "scripts/tests/test_m1_1_panel_integrity.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [108]
+  - path: "scripts/tier2_wasserstein_alignment.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [84]
+  - path: "scripts/train_hysteresis_predictor.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [29]
+      - rule: "banned_pickle_serialization"
+        lines: [22]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [462]
+      - rule: "print_banned_production_logging"
+        lines: [161, 226, 227, 228, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 332, 333, 334, 353, 363, 364, 365, 367, 369, 374, 401, 402, 403, 408, 417, 420, 427, 431, 440, 441, 442, 450, 451, 458, 463, 468, 475, 476, 477, 493, 494, 495, 498, 500, 503, 505, 507, 508, 512, 513, 515, 518, 519, 523, 524, 526, 527, 529, 530, 532, 533, 534, 538, 539, 541, 542, 544, 545, 553, 554]
+      - rule: "sklearn_model_import_requires_exemption"
+        lines: [31]
+  - path: "scripts/training/add_temporal_to_npz.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [92, 104, 142, 173]
+      - rule: "print_banned_production_logging"
+        lines: [215, 234, 241]
+  - path: "scripts/training/assemble_v003_bundle.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [231]
+      - rule: "print_banned_production_logging"
+        lines: [134, 227, 232, 235]
+  - path: "scripts/training/cluster_split.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [52, 228, 276]
+      - rule: "print_banned_production_logging"
+        lines: [209, 225, 233, 246, 256, 304, 312, 313, 314]
+  - path: "scripts/training/differential_analysis.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [34]
+      - rule: "broad_exception_banned"
+        lines: [104, 134, 155, 224]
+      - rule: "print_banned_production_logging"
+        lines: [274, 281, 292, 388, 399, 432]
+  - path: "scripts/training/extract_all_features.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [115, 189, 285, 384, 429, 588, 628, 673, 734, 829]
+      - rule: "print_banned_production_logging"
+        lines: [801, 810, 817, 837, 849, 850]
+  - path: "scripts/training/extract_channel_features.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [122, 129, 434, 478]
+      - rule: "print_banned_production_logging"
+        lines: [513, 540, 551, 553]
+  - path: "scripts/training/extract_from_r2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [184]
+      - rule: "print_banned_production_logging"
+        lines: [161, 173, 202, 213, 215]
+  - path: "scripts/training/extract_scan_teacher_artifacts.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [366]
+      - rule: "print_banned_production_logging"
+        lines: [367]
+  - path: "scripts/training/extract_structural_nma_batch.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [41, 47, 58, 64]
+      - rule: "print_banned_production_logging"
+        lines: [42, 48, 53, 59, 65, 77, 153, 158, 161, 166]
+  - path: "scripts/training/extract_structural_nma_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [148, 162, 202, 237, 347]
+      - rule: "print_banned_production_logging"
+        lines: [314, 318, 329, 334, 337, 341, 345, 348, 350]
+  - path: "scripts/training/feature_extractor.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [525]
+      - rule: "broad_exception_banned"
+        lines: [251, 335, 535]
+      - rule: "print_banned_production_logging"
+        lines: [673, 699, 716, 802, 803, 805, 810, 814, 815, 816, 817]
+  - path: "scripts/training/master_runpod_training.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [275, 491, 498]
+      - rule: "print_banned_production_logging"
+        lines: [84, 90, 146, 166, 218, 237, 252, 264, 276, 297, 315, 328, 347, 371, 386, 410, 449, 450, 465, 467, 476, 492, 504, 505]
+  - path: "scripts/training/phase_manifold_features.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [80, 99]
+      - rule: "direct_parquet_writer_banned"
+        lines: [220]
+      - rule: "print_banned_production_logging"
+        lines: [78, 81, 216, 221]
+  - path: "scripts/training/physics_constraints.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [320, 324]
+  - path: "scripts/training/physics_predictor.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [111, 135, 210, 251, 262, 290, 294, 299, 312, 314, 315, 317, 318, 320, 321, 340, 385, 386, 387, 388, 389, 392, 401]
+  - path: "scripts/training/post_campaign_analysis.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [132, 210]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [442, 453]
+      - rule: "print_banned_production_logging"
+        lines: [147, 310, 399, 401, 406, 410, 417, 419, 423, 424, 438, 439, 448, 455, 456, 457, 459, 460, 462, 464, 465, 466]
+  - path: "scripts/training/predict_v004.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [339, 340, 341, 342, 343, 346, 350, 353, 355, 359, 363, 372, 375, 391, 396, 400, 402, 404, 405]
+  - path: "scripts/training/prism_native_signal_decoders.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [79, 130, 234]
+      - rule: "direct_parquet_writer_banned"
+        lines: [272]
+      - rule: "print_banned_production_logging"
+        lines: [273]
+  - path: "scripts/training/prism_only_feature_extractor_v1.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [156, 412, 420, 426]
+      - rule: "direct_parquet_writer_banned"
+        lines: [430]
+      - rule: "print_banned_production_logging"
+        lines: [200, 201, 203, 205, 233, 350, 356, 364, 413, 421, 427, 432]
+  - path: "scripts/training/prism_only_feature_extractor_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [109, 184, 315, 323, 329]
+      - rule: "direct_parquet_writer_banned"
+        lines: [333]
+      - rule: "print_banned_production_logging"
+        lines: [135, 136, 139, 163, 261, 268, 316, 324, 330, 337]
+  - path: "scripts/training/prism_only_feature_extractor_v3_gpu.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [52, 66, 193, 334, 342, 348, 663, 709, 760]
+      - rule: "direct_parquet_writer_banned"
+        lines: [352, 795]
+      - rule: "print_banned_production_logging"
+        lines: [152, 153, 155, 158, 280, 287, 335, 343, 349, 356, 796]
+  - path: "scripts/training/prism_only_feature_extractor_v5.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [21]
+      - rule: "broad_exception_banned"
+        lines: [65, 80, 190, 495, 535, 579, 608, 635, 669, 710, 730]
+      - rule: "direct_parquet_writer_banned"
+        lines: [822]
+      - rule: "print_banned_production_logging"
+        lines: [765, 766, 769, 773, 810, 814, 826]
+  - path: "scripts/training/site_vqvae.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [234, 295, 403, 409, 413, 416, 419, 433, 491, 492, 493, 495, 496, 497, 498, 501, 505, 507]
+  - path: "scripts/training/spike_attention_ranker.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [134]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [701]
+      - rule: "print_banned_production_logging"
+        lines: [381, 450, 472, 473, 474, 478, 481, 483, 488, 504, 531, 560, 564, 565, 566, 570, 582, 585, 589, 590, 591, 594, 615, 620, 659, 661, 664, 665, 666, 670, 678, 683, 684, 685, 686, 687, 688, 689, 690, 691, 694, 695, 696, 697, 707, 708, 709, 715, 724, 727, 728]
+  - path: "scripts/training/spike_bert.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [85, 88, 106, 118, 120, 169, 320, 375, 377, 403, 411, 414, 415, 416, 426, 430, 436, 437, 438, 446, 454, 455, 456, 459, 464, 476, 477, 478, 494, 497, 498, 504, 505, 506, 527, 530, 531, 532, 552, 553, 554, 555, 556, 557, 559, 560, 561, 562, 563, 564, 565, 566, 567]
+      - rule: "sklearn_model_import_requires_exemption"
+        lines: [108]
+  - path: "scripts/training/spike_bert_v002.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [48, 57, 63, 92, 227, 250, 256, 274, 275, 278, 284, 285, 295, 328, 331, 332, 336, 354, 357, 369, 378, 379, 380, 381]
+      - rule: "sklearn_model_import_requires_exemption"
+        lines: [47]
+  - path: "scripts/training/spike_bert_v003.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [219, 307, 315, 327, 390, 403, 406]
+  - path: "scripts/training/spikebert.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [319, 474]
+      - rule: "print_banned_production_logging"
+        lines: [311, 516, 520, 527, 536, 555, 578, 590, 603, 617, 627, 628, 629, 631, 632, 634, 636, 649]
+  - path: "scripts/training/temporal_tokenizer.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [302, 308, 309, 319, 329, 337, 340, 355, 376, 377, 384, 387, 388, 389, 390, 391, 392, 393, 394, 395, 397, 398]
+      - rule: "sklearn_model_import_requires_exemption"
+        lines: [353]
+  - path: "scripts/training/train_teacher.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [354]
+      - rule: "print_banned_production_logging"
+        lines: [329, 349, 355, 383, 421, 457, 461, 464, 466, 470, 473, 479, 482, 486, 491, 499, 503, 516, 517, 518, 519, 520, 521, 524, 541, 545]
+  - path: "scripts/training/train_v006.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [157, 186, 208, 424, 501]
+      - rule: "print_banned_production_logging"
+        lines: [130, 131, 132, 142, 158, 161, 212, 226, 227, 228, 229, 445, 446, 447, 456, 503, 507, 517, 518, 519, 520, 521, 708, 709, 710, 711, 712, 752, 765, 835, 851, 856, 857, 871, 971, 998, 999, 1000, 1001]
+  - path: "scripts/training/validate_176_gate.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [106]
+      - rule: "print_banned_production_logging"
+        lines: [95, 154, 155, 156, 158, 159, 160, 162, 166, 167]
+  - path: "scripts/training/validate_tide_coverage.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [43]
+      - rule: "print_banned_production_logging"
+        lines: [84, 85, 86, 87, 88, 89, 90, 92, 93]
+  - path: "scripts/training/vn_egnn/model.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [386, 407, 408, 409, 410]
+  - path: "scripts/training/vn_egnn/train.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [217]
+      - rule: "print_banned_production_logging"
+        lines: [273, 277, 281, 285, 287, 290, 308, 323, 349, 361, 371, 373, 378, 393, 398]
+  - path: "scripts/training/vn_egnn/train_v004.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [248, 252, 253, 254, 255, 259, 260, 261, 265, 266, 271, 282, 285, 286, 288, 289, 293, 299, 300, 301, 328, 333, 336, 339, 340, 347, 348, 349, 351, 352, 353, 357, 358, 359, 360, 361, 364, 367, 368, 369, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407]
+  - path: "scripts/training/xgboost_ranker.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [58]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [371, 402]
+      - rule: "print_banned_production_logging"
+        lines: [92, 95, 97, 100, 105, 117, 121, 127, 194, 279, 334, 343, 347, 351, 360, 361, 362, 363, 364, 365, 366, 367, 372, 375, 377, 379, 382, 386, 396, 398, 403]
+  - path: "scripts/training/xgboost_ranker_v2.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [43]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [288, 322]
+      - rule: "print_banned_production_logging"
+        lines: [152, 221, 267, 269, 271, 274, 278, 279, 280, 281, 282, 283, 284, 285, 291, 292, 293, 294, 295, 298, 300, 302, 304, 307, 318, 320, 324]
+  - path: "scripts/training/xgboost_ranker_v3.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [157, 224, 463]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [219, 492, 510, 545]
+      - rule: "print_banned_production_logging"
+        lines: [225, 240, 255, 259, 276, 278, 280, 341, 408, 461, 464, 481, 482, 483, 495, 500, 501, 502, 503, 504, 505, 506, 507, 513, 514, 515, 516, 517, 518, 521, 523, 525, 527, 530, 541, 543, 548, 551, 553]
+  - path: "scripts/training/xgboost_ranker_v4.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_dataframe_engine"
+        lines: [40]
+      - rule: "broad_exception_banned"
+        lines: [318]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [385, 409]
+      - rule: "print_banned_production_logging"
+        lines: [89, 92, 96, 100, 104, 114, 116, 189, 256, 261, 313, 316, 319, 343, 351, 353, 355, 357, 364, 372, 376, 377, 378, 379, 380, 381, 382, 383, 388, 389, 390, 391, 392, 396, 405, 407, 411, 412, 413]
+  - path: "scripts/trajectory_anchor_delta.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [404, 464, 466, 478]
+  - path: "scripts/validate_apo_holo.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [8, 9, 21, 24, 27, 35, 79, 80]
+  - path: "scripts/validate_chainC_aligned.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [291]
+      - rule: "broad_exception_banned"
+        lines: [52, 61, 102, 154]
+      - rule: "print_banned_production_logging"
+        lines: [602, 603, 604, 605, 606, 607, 608, 609, 610, 613]
+  - path: "scripts/validate_kras_residue_overlap.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [66, 92, 164]
+      - rule: "print_banned_production_logging"
+        lines: [59, 265, 267, 271, 279, 280, 281, 282, 283, 284, 285, 286, 291, 293, 295, 300, 302, 304, 312, 314, 317, 318, 319, 320, 328, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 385, 387, 389, 417, 418, 419, 420, 424, 428, 434, 435, 436, 437, 438, 439, 452, 453, 454, 455, 468, 469, 470, 471, 490, 491, 492, 493, 513, 514, 515, 516, 535, 536, 537, 538, 539, 540, 541, 542, 543]
+  - path: "scripts/validate_structure.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [517]
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [719]
+      - rule: "print_banned_production_logging"
+        lines: [536, 537, 549, 584, 585, 586, 588, 589, 590, 591, 594, 597, 600, 602, 605, 608, 610, 613, 615, 619, 621, 624, 627, 629, 632, 635, 636, 637, 639, 641, 644, 647, 649, 652, 653, 656, 659, 663, 668, 670, 673, 676, 678, 680, 682, 684, 685, 703, 720]
+  - path: "scripts/validate_topology.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [291, 292, 293, 294, 295, 296, 297, 298, 304, 306, 308, 314, 316, 318, 324, 326, 328, 334, 336, 338, 344, 346, 348, 352, 354, 356, 358, 359, 377]
+  - path: "scripts/validation/pfr/pfr_a_vectorial_pharmacophore_gen.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [85, 86, 429, 434, 464, 487, 488, 489, 490, 491, 502, 504, 511, 512, 517, 518, 519, 520, 523]
+  - path: "scripts/validation/pfr/pfr_b_temporal_scramble_null.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [261, 275, 278, 284, 324, 351, 354, 355, 356, 357, 368, 384]
+  - path: "scripts/validation/pfr/pfr_c_holo_interaction_extractor.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [573, 577, 593, 613, 633, 634, 635, 636, 637, 638, 645, 646, 659, 668, 669, 670, 671, 672]
+  - path: "scripts/validation/pfr/pfr_d_vectorial_pfr_scorer.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_determinant"
+        lines: [128]
+      - rule: "print_banned_production_logging"
+        lines: [146, 153, 408, 416, 439, 702, 703, 704, 705, 706, 707, 708, 709, 715, 719, 755, 756, 757, 758, 760, 761, 762, 763, 767, 768, 769, 770, 773, 774, 777, 780, 781, 782, 783, 784, 786, 787, 788, 789, 790]
+  - path: "scripts/verify_dossier.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [11, 12, 13, 19, 20, 27, 44, 49, 56, 61, 67]
+  - path: "scripts/verify_topology.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [70, 71, 72, 78, 79, 80, 81, 82, 83, 84, 129, 130, 137, 140, 142, 144, 146, 152, 154, 161, 162, 163, 164, 165, 179, 182, 184, 186, 188, 194, 227, 230, 232, 234, 236, 238, 241, 243, 245, 248, 250, 252, 255, 263, 265, 267, 268, 270, 272, 277, 294, 295, 298, 303, 311, 313, 315, 318, 320, 325, 357, 374, 390, 399, 400, 403, 405, 407, 413, 414, 415, 418, 426, 428, 433, 438, 439, 440, 446, 448, 453, 455, 456, 457, 463, 466, 541, 545, 547, 549, 552, 553, 555, 557, 558, 560, 562, 564, 567, 572, 573, 574, 575, 577, 579, 583, 588, 589, 590, 591, 594, 596, 600, 602, 606, 609, 611, 617, 618, 619, 640, 643, 645, 646, 648, 655, 656, 657, 658, 659, 660, 661, 662, 678, 679, 680, 683, 685, 688, 690, 691]
+  - path: "scripts/view_topologies.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [12, 13, 14, 15, 16, 17, 18]
+  - path: "scripts/viewer/build_viewer.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "print_banned_production_logging"
+        lines: [217]
+  - path: "scripts/visualize_dossier.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_text_table_io"
+        lines: [32]
+      - rule: "broad_exception_banned"
+        lines: [480, 732]
+      - rule: "print_banned_production_logging"
+        lines: [825, 826, 827, 828, 830]
+  - path: "tests/test_filters/conftest.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "broad_exception_banned"
+        lines: [53]
+  - path: "tests/test_filters/test_filter_pipeline.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [166, 208]
+  - path: "tests/test_gating/test_pipeline_integration.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [112, 124, 222, 231]
+  - path: "tests/test_genphore/test_spike_to_pharmacophore.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "json_dump_banned_for_analytical_data"
+        lines: [70, 276, 292]
+  - path: "tests/test_interfaces/test_docking_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_ensemble_score.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_explicit_solvent_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_fep_result.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_filtered_candidate.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_generated_molecule.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_membrane_system.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_pipeline_config.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [6]
+  - path: "tests/test_interfaces/test_pocket_dynamics.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_residue_mapping.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_spike_pharmacophore.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_tautomer_state.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_viewer_payload.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]
+  - path: "tests/test_interfaces/test_water_map.py"
+    expires: "2026-08-19"
+    justification: "Temporary legacy remediation backlog; production gate remains blocking for non-exempt files and new line-level violations."
+    rules:
+      - rule: "banned_pickle_serialization"
+        lines: [5]

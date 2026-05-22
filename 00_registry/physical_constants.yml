@@ -1,0 +1,27 @@
+schema_version: "prism_dstw_physical_constants.v1"
+constants:
+  beta_f:
+    value: 1.0
+    ontology: ScalingConstant
+    unit: "kcal^-1 mol"
+    description: "Initial frustration attenuation scale for destructive ligand-receptor interference."
+  beta_s:
+    value: 0.6
+    ontology: ScalingConstant
+    unit: "kcal^-1 mol"
+    description: "Initial stabilization amplification scale for constructive ligand-receptor interference; proxy-derived until calibrated."
+  epsilon_probability:
+    value: 1.0e-12
+    ontology: NumericalTolerance
+    unit: dimensionless
+    description: "Probability floor for log and KL-divergence calculations."
+  float_atol:
+    value: 1.0e-10
+    ontology: NumericalTolerance
+    unit: native_float64
+    description: "Absolute tolerance for float64 equality checks."
+  float_rtol:
+    value: 1.0e-8
+    ontology: NumericalTolerance
+    unit: native_float64
+    description: "Relative tolerance for float64 equality checks."

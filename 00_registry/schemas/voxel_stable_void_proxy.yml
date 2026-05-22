@@ -1,0 +1,57 @@
+schema_version: "voxel_stable_void_proxy.v1"
+columns:
+  campaign_id:
+    dtype: string
+    ontology: CampaignId
+    unit: dimensionless
+    nullable: false
+  run_label:
+    dtype: string
+    ontology: RunLabel
+    unit: dimensionless
+    nullable: false
+  structure_id:
+    dtype: string
+    ontology: StructureId
+    unit: dimensionless
+    nullable: false
+  stream_id:
+    dtype: int16
+    ontology: StreamId
+    unit: dimensionless
+    nullable: false
+  scope_type:
+    dtype: string
+    ontology: ScopeType
+    unit: dimensionless
+    nullable: false
+  scope_id:
+    dtype: string
+    ontology: ScopeId
+    unit: dimensionless
+    nullable: false
+  voxel_idx:
+    dtype: int64
+    ontology: VoxelIdx
+    unit: dimensionless
+    nullable: false
+  stable_occupied_proxy_score:
+    dtype: float64
+    ontology: StableOccupiedProxy
+    unit: dimensionless
+    nullable: false
+  high_variance_void_proxy_score:
+    dtype: float64
+    ontology: HighVarianceVoidProxy
+    unit: dimensionless
+    nullable: false
+  voxel_field_class_proxy:
+    dtype: string
+    ontology: VoxelVarianceProxyClass
+    unit: dimensionless
+    nullable: false
+  calibration_status:
+    dtype: string
+    ontology: CalibrationStatus
+    unit: dimensionless
+    nullable: false

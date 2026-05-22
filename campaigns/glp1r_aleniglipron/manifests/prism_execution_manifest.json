@@ -1,0 +1,122 @@
+{
+  "bald_ignition": {
+    "dp_gmm_max_components": 15,
+    "graph_smoothing": "X_smoothed = A_tilde X",
+    "output_request": "campaigns/glp1r_aleniglipron/orchestration/BALD_Round_000_Request.json",
+    "routing_script": "campaigns/glp1r_aleniglipron/orchestration/prepare_bald_round_000.py",
+    "seed_budget": 100,
+    "seed_policy": "proportional_cluster_budget_plus_physicochemical_mutant_class_diversity",
+    "status": "routing_script_staged_waiting_for_real_prism_wt_physics",
+    "stratifier": "prism_dstw.orchestration.physical_strata.fit_graph_bayesian_gmm",
+    "variant_catalog": "campaigns/glp1r_aleniglipron/calibration_data/dms/gpcrdb_glp1r_fold_shift_candidates.parquet",
+    "variant_rows_available": 1179
+  },
+  "campaign_id": "glp1r_aleniglipron",
+  "created_at_utc": "2026-05-20T17:20:00Z",
+  "execution_request": {
+    "activation_gate": "5VEX apo-primed WT-reverted topology passed kinematic CCD, rotamer repacking, Ramachandran, steric, and boundary validation",
+    "construct_mask_policy": {
+      "apply_construct_masks_before_tso_export": true,
+      "apply_structural_mutation_masks_before_wt_baseline_use": true,
+      "blocked_wt_baseline_structures_allowed_as_state_controls": true
+    },
+    "engine": "PRISM-4D",
+    "phase_protocol": "5_phase_cryo_thermal_loop",
+    "replicate_policy": {
+      "escalate_if_rhat_p95_gt": 1.2,
+      "important_feature_rhat_target": 1.1,
+      "minimum_replicates_per_topology": 10
+    },
+    "run_status": "queued",
+    "states": [
+      "cryo_baseline_50K",
+      "thermal_ramp_50K_to_300K",
+      "physiological_hold_300K",
+      "cryo_return_300K_to_50K",
+      "recovery_hysteresis_readout"
+    ]
+  },
+  "manifest_kind": "prism_execution_manifest",
+  "non_negotiable_gates": [
+    "Do not treat 5VEX or 6X1A as WT-baseline eligible for P_lock/P_ensemble calibration.",
+    "Do not use the beta1AR PXD051297 HDX archive as GLP-1R HDX ground truth.",
+    "Do not run BALD seeding until authentic GLP-1R WT PRISM physics and Dynamic Contact Graph are present.",
+    "Do not use scalar Wasserstein or scalar variant divergence for functional mapping."
+  ],
+  "provenance_masks": {
+    "chain_purge": {
+      "kept": [
+        "A"
+      ],
+      "reason": "biological_monomerization_before_AABB_CCD",
+      "removed": [
+        "B"
+      ]
+    },
+    "rebuilt_unobserved": [
+      "A:204-217"
+    ]
+  },
+  "required_prism_outputs": {
+    "coordinate_mode": "residue_graph_aggregated",
+    "dynamic_contact_graph_required_edge_fields": [
+      "source_uniprot_residue_index",
+      "target_uniprot_residue_index",
+      "contact_probability",
+      "mean_distance_angstrom",
+      "dynamic_correlation",
+      "replicate_id"
+    ],
+    "forbidden_payload_modes": [
+      "absolute_voxel_field",
+      "raw_xyz_voxel_time_series_without_alignment",
+      "solvent_box_voxel_indices_without_receptor_alignment"
+    ],
+    "handshake_registry": "00_registry/prism_tso_handshake.yml",
+    "physics_feature_channels": [
+      "te_out",
+      "te_in",
+      "delta_hc",
+      "sigma_hydration_sq"
+    ],
+    "required_graph": "WT_Dynamic_Contact_Graph",
+    "residue_index_scheme": "UniProt"
+  },
+  "schema_version": "1.0.0",
+  "status": "active",
+  "target": {
+    "campaign_context": "Aleniglipron Phase 3 Dynamic-State Durability Audit",
+    "receptor": "GLP1R",
+    "uniprot_accession": "P43220"
+  },
+  "topology_inputs": [
+    {
+      "apo_primed_wt_reverted_topology": "campaigns/glp1r_aleniglipron/inputs/structures/5vex_clean.pdb",
+      "baseline_gate_reason": "BRIL/T4 lysozyme-family fusion plus target-sequence engineering/deletions/linkers; usable as a state/control topology only after masking, not as WT baseline.",
+      "candidate_metrics": "campaigns/glp1r_aleniglipron/topology/5VEX/apo_primed/5VEX_target_only_point_reverted.ccd_candidate_metrics.json",
+      "construct_masks": "campaigns/glp1r_aleniglipron/topology/5VEX/construct_masks.parquet",
+      "geometry_validation_failure": null,
+      "pdb_id": "5VEX",
+      "role": "inactive_NAM_bound_quiet_thermal_control",
+      "source_cif": "campaigns/glp1r_aleniglipron/inputs/structures/5VEX.cif",
+      "structural_mutation_masks": "campaigns/glp1r_aleniglipron/topology/5VEX/structural_mutation_masks.parquet",
+      "topology_anchor": "campaigns/glp1r_aleniglipron/topology/5VEX/structure_anchor.json",
+      "topology_validation_status": "clean_kinematic_ccd_validated",
+      "wt_baseline_eligible": false
+    },
+    {
+      "apo_primed_wt_reverted_topology": "campaigns/glp1r_aleniglipron/inputs/structures/6X1A_apo_primed_wt_attempt.pdb",
+      "baseline_gate_reason": "Active PF-06882961 GLP-1R:Gs complex with partner chains/tags and target-sequence differences; usable as activation topology only after masking, not as WT baseline.",
+      "construct_masks": "campaigns/glp1r_aleniglipron/topology/6X1A/construct_masks.parquet",
+      "ligand": "PF-06882961",
+      "pdb_id": "6X1A",
+      "role": "active_nonpeptide_agonist_gs_bound_productive_activation_control",
+      "source_cif": "campaigns/glp1r_aleniglipron/inputs/structures/6X1A.cif",
+      "structural_mutation_masks": "campaigns/glp1r_aleniglipron/topology/6X1A/structural_mutation_masks.parquet",
+      "topology_anchor": "campaigns/glp1r_aleniglipron/topology/6X1A/structure_anchor.json",
+      "topology_validation_status": "clean_apo_prime_validated",
+      "wt_baseline_eligible": false
+    }
+  ],
+  "updated_at_utc": "2026-05-20T21:32:30Z"
+}

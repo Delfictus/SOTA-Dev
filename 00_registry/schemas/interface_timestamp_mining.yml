@@ -1,0 +1,52 @@
+schema_version: "interface_timestamp_mining.v1"
+columns:
+  campaign_id:
+    dtype: string
+    ontology: CampaignId
+    unit: dimensionless
+    nullable: false
+  run_label:
+    dtype: string
+    ontology: RunLabel
+    unit: dimensionless
+    nullable: false
+  structure_id:
+    dtype: string
+    ontology: StructureId
+    unit: dimensionless
+    nullable: false
+  stream_id:
+    dtype: int16
+    ontology: StreamId
+    unit: dimensionless
+    nullable: false
+  timestep:
+    dtype: int64
+    ontology: SimulationTimestep
+    unit: step
+    nullable: false
+  interface_id:
+    dtype: string
+    ontology: InterfaceId
+    unit: dimensionless
+    nullable: false
+  physical_time_ps:
+    dtype: float64
+    ontology: PhysicalTime
+    unit: ps
+    nullable: true
+  total_event_count:
+    dtype: uint64
+    ontology: EventCount
+    unit: count
+    nullable: false
+  hit_count:
+    dtype: uint64
+    ontology: EventCount
+    unit: count
+    nullable: false
+  support_fraction:
+    dtype: float64
+    ontology: InterfaceSupportScore
+    unit: dimensionless
+    nullable: false

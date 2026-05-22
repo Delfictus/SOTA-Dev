@@ -1,0 +1,57 @@
+schema_version: "propagation_ledger.v1"
+columns:
+  entry_id:
+    dtype: string
+    ontology: PropagationEntryId
+    unit: dimensionless
+    nullable: false
+  module:
+    dtype: string
+    ontology: ModuleName
+    unit: dimensionless
+    nullable: false
+  operation:
+    dtype: string
+    ontology: OperationName
+    unit: dimensionless
+    nullable: false
+  inputs:
+    dtype: object
+    ontology: LineageInputMap
+    unit: dimensionless
+    nullable: false
+  input_checksums:
+    dtype: object
+    ontology: ChecksumMap
+    unit: sha256
+    nullable: false
+  parameters:
+    dtype: object
+    ontology: ParameterMap
+    unit: mixed
+    nullable: false
+  output_value:
+    dtype: object
+    ontology: OutputValue
+    unit: mixed
+    nullable: true
+  output_uncertainty:
+    dtype: float64
+    ontology: OutputUncertainty
+    unit: metric_native_variance
+    nullable: true
+  timestamp:
+    dtype: string
+    ontology: Timestamp
+    unit: ISO-8601
+    nullable: false
+  gate_status:
+    dtype: object
+    ontology: GateStatusMap
+    unit: boolean_map
+    nullable: false
+  supersedes:
+    dtype: string
+    ontology: PropagationEntryId
+    unit: dimensionless
+    nullable: true
