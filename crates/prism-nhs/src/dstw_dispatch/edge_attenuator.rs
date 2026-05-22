@@ -1,8 +1,8 @@
 use core::fmt;
 
 use super::types::{
-    ChannelCapacity, ComplementPenalty, DTSGEdge, FrustrationPenalty, HysteresisCapacity,
-    HysteresisEnthalpy, PoseUncertainty, ScalingConstant, TransferEntropy,
+    CausalCoupling, ChannelCapacity, ComplementPenalty, DTSGEdge, FrustrationPenalty,
+    HysteresisCapacity, HysteresisEnthalpy, PoseUncertainty, ScalingConstant,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -46,8 +46,8 @@ impl EdgePenalty {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PerturbedEdgeStats {
     pub edge: DTSGEdge,
-    pub te_out_mean: TransferEntropy,
-    pub te_in_mean: TransferEntropy,
+    pub te_out_mean: CausalCoupling,
+    pub te_in_mean: CausalCoupling,
     pub delta_hc_mean: HysteresisEnthalpy,
     pub u_pose_te: PoseUncertainty,
     pub u_pose_hc: PoseUncertainty,
@@ -65,6 +65,13 @@ pub enum AttenuationError {
         edge_index: usize,
         conformer_index: usize,
         value: f64,
+    },
+    PhysicallyImpossibleInput {
+        edge_index: usize,
+        conformer_index: usize,
+        quantity: &'static str,
+        value: f64,
+        capacity: f64,
     },
     InvalidQuantity(String),
 }
@@ -88,6 +95,16 @@ impl fmt::Display for AttenuationError {
             } => write!(
                 formatter,
                 "non-finite attenuation scale for conformer {conformer_index}, edge {edge_index}: {value}"
+            ),
+            Self::PhysicallyImpossibleInput {
+                edge_index,
+                conformer_index,
+                quantity,
+                value,
+                capacity,
+            } => write!(
+                formatter,
+                "physically impossible {quantity} for conformer {conformer_index}, edge {edge_index}: {value} exceeds channel capacity {capacity}"
             ),
             Self::InvalidQuantity(message) => write!(formatter, "{message}"),
         }
@@ -162,13 +179,8 @@ pub fn attenuate_edges(
 
         for (conformer_index, penalties) in conformer_penalties.iter().enumerate() {
             let penalty = penalties[edge_index];
-            let perturbed = perturb_edge_metrics(&edge, penalty, scaling).map_err(|value| {
-                AttenuationError::NonFiniteScale {
-                    edge_index,
-                    conformer_index,
-                    value,
-                }
-            })?;
+            let perturbed =
+                perturb_edge_metrics(&edge, penalty, scaling, edge_index, conformer_index)?;
             te_out.push(perturbed.te_out);
             te_in.push(perturbed.te_in);
             delta_hc.push(perturbed.delta_hc);
@@ -176,9 +188,9 @@ pub fn attenuate_edges(
 
         output.push(PerturbedEdgeStats {
             edge,
-            te_out_mean: TransferEntropy::new(te_out.mean())
+            te_out_mean: CausalCoupling::new(te_out.mean())
                 .map_err(|err| AttenuationError::InvalidQuantity(err.to_string()))?,
-            te_in_mean: TransferEntropy::new(te_in.mean())
+            te_in_mean: CausalCoupling::new(te_in.mean())
                 .map_err(|err| AttenuationError::InvalidQuantity(err.to_string()))?,
             delta_hc_mean: HysteresisEnthalpy::new(delta_hc.mean())
                 .map_err(|err| AttenuationError::InvalidQuantity(err.to_string()))?,
@@ -202,29 +214,35 @@ fn perturb_edge_metrics(
     edge: &DTSGEdge,
     penalty: EdgePenalty,
     scaling: ScalingConstants,
-) -> Result<PerturbedMetricValues, f64> {
+    edge_index: usize,
+    conformer_index: usize,
+) -> Result<PerturbedMetricValues, AttenuationError> {
     let destructive_scale = destructive_interference_scale(penalty, scaling);
     let constructive_drive = constructive_interference_drive(penalty, scaling);
-    let te_out = saturated_transfer_entropy(
+    let te_out = saturated_causal_coupling(
+        "te_out",
         edge.metrics.te_out.get() * destructive_scale,
         constructive_drive,
         scaling.te_channel_capacity,
-    );
-    let te_in = saturated_transfer_entropy(
+        edge_index,
+        conformer_index,
+    )?;
+    let te_in = saturated_causal_coupling(
+        "te_in",
         edge.metrics.te_in.get() * destructive_scale,
         constructive_drive,
         scaling.te_channel_capacity,
-    );
+        edge_index,
+        conformer_index,
+    )?;
     let delta_hc = saturated_hysteresis_enthalpy(
+        "delta_hc",
         edge.metrics.delta_hc.get() * destructive_scale,
         constructive_drive,
         scaling.hysteresis_capacity,
-    );
-    for value in [te_out, te_in, delta_hc] {
-        if !value.is_finite() {
-            return Err(value);
-        }
-    }
+        edge_index,
+        conformer_index,
+    )?;
     Ok(PerturbedMetricValues {
         te_out,
         te_in,
@@ -241,40 +259,79 @@ fn constructive_interference_drive(penalty: EdgePenalty, scaling: ScalingConstan
     scaling.beta_stabilization.get() * penalty.complement.get()
 }
 
-fn saturated_transfer_entropy(
+fn saturated_causal_coupling(
+    quantity: &'static str,
     base_after_clash: f64,
     constructive_drive: f64,
     capacity: ChannelCapacity,
-) -> f64 {
-    saturated_signed_magnitude(base_after_clash, constructive_drive, capacity.get())
+    edge_index: usize,
+    conformer_index: usize,
+) -> Result<f64, AttenuationError> {
+    saturated_signed_magnitude(
+        quantity,
+        base_after_clash,
+        constructive_drive,
+        capacity.get(),
+        edge_index,
+        conformer_index,
+    )
 }
 
 fn saturated_hysteresis_enthalpy(
+    quantity: &'static str,
     base_after_clash: f64,
     constructive_drive: f64,
     capacity: HysteresisCapacity,
-) -> f64 {
-    saturated_signed_magnitude(base_after_clash, constructive_drive, capacity.get())
+    edge_index: usize,
+    conformer_index: usize,
+) -> Result<f64, AttenuationError> {
+    saturated_signed_magnitude(
+        quantity,
+        base_after_clash,
+        constructive_drive,
+        capacity.get(),
+        edge_index,
+        conformer_index,
+    )
 }
 
 fn saturated_signed_magnitude(
+    quantity: &'static str,
     base_after_clash: f64,
     constructive_drive: f64,
     channel_capacity: f64,
-) -> f64 {
+    edge_index: usize,
+    conformer_index: usize,
+) -> Result<f64, AttenuationError> {
+    if !base_after_clash.is_finite() {
+        return Err(AttenuationError::NonFiniteScale {
+            edge_index,
+            conformer_index,
+            value: base_after_clash,
+        });
+    }
+    if !constructive_drive.is_finite() {
+        return Err(AttenuationError::NonFiniteScale {
+            edge_index,
+            conformer_index,
+            value: constructive_drive,
+        });
+    }
     if base_after_clash == 0.0 {
-        return 0.0;
+        return Ok(0.0);
     }
     let sign = base_after_clash.signum();
     let magnitude = base_after_clash.abs();
     if magnitude >= channel_capacity {
-        return sign * channel_capacity;
+        return Err(AttenuationError::PhysicallyImpossibleInput {
+            edge_index,
+            conformer_index,
+            quantity,
+            value: magnitude,
+            capacity: channel_capacity,
+        });
     }
-    let bounded_drive = if constructive_drive.is_finite() {
-        constructive_drive.max(0.0)
-    } else {
-        f64::INFINITY
-    };
+    let bounded_drive = constructive_drive.max(0.0);
     let log_ratio = (channel_capacity - magnitude).ln() - magnitude.ln();
     let logistic_argument = log_ratio - bounded_drive;
     let saturated_magnitude = if logistic_argument >= 0.0 {
@@ -283,7 +340,15 @@ fn saturated_signed_magnitude(
     } else {
         channel_capacity / (1.0 + logistic_argument.exp())
     };
-    sign * saturated_magnitude
+    let signed_value = sign * saturated_magnitude;
+    if !signed_value.is_finite() {
+        return Err(AttenuationError::NonFiniteScale {
+            edge_index,
+            conformer_index,
+            value: signed_value,
+        });
+    }
+    Ok(signed_value)
 }
 
 #[cfg(test)]
@@ -299,8 +364,8 @@ mod tests {
             ResidueIdx::new(144),
             ResidueIdx::new(145),
             DTSGEdgeMetrics::new(
-                TransferEntropy::new(2.0).unwrap_or_else(|err| panic!("{err}")),
-                TransferEntropy::new(1.0).unwrap_or_else(|err| panic!("{err}")),
+                CausalCoupling::new(2.0).unwrap_or_else(|err| panic!("{err}")),
+                CausalCoupling::new(1.0).unwrap_or_else(|err| panic!("{err}")),
                 HysteresisEnthalpy::new(4.0).unwrap_or_else(|err| panic!("{err}")),
                 HydrationVariance::new(0.2).unwrap_or_else(|err| panic!("{err}")),
                 SpatialVariance::new(0.3).unwrap_or_else(|err| panic!("{err}")),
@@ -332,11 +397,15 @@ mod tests {
             attenuate_edges(&[edge()], &penalties, scaling).unwrap_or_else(|err| panic!("{err}"));
         let mean = stats[0].te_out_mean.get();
         let attenuated = 2.0_f64 * (-1.0_f64).exp();
-        let amplified = saturated_transfer_entropy(
+        let amplified = saturated_causal_coupling(
+            "te_out",
             2.0,
             0.6,
             ChannelCapacity::new(10.0).unwrap_or_else(|err| panic!("{err}")),
-        );
+            0,
+            0,
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
         let expected = (attenuated + amplified) / 2.0;
         assert!((mean - expected).abs() < 1.0e-12);
         assert!(stats[0].u_pose_te.get() > 0.0);
@@ -388,8 +457,24 @@ mod tests {
     #[test]
     fn constructive_interference_saturates_at_channel_capacity() {
         let capacity = ChannelCapacity::new(3.0).unwrap_or_else(|err| panic!("{err}"));
-        let saturated = saturated_transfer_entropy(2.0, 1.0e300, capacity);
+        let saturated = saturated_causal_coupling("te_out", 2.0, 1.0e300, capacity, 0, 0)
+            .unwrap_or_else(|err| panic!("{err}"));
         assert!(saturated <= capacity.get());
         assert!((saturated - capacity.get()).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn rejects_pre_saturated_baseline_as_physical_input_error() {
+        let capacity = ChannelCapacity::new(3.0).unwrap_or_else(|err| panic!("{err}"));
+        let result = saturated_causal_coupling("te_out", 3.0, 0.0, capacity, 7, 11);
+        assert!(matches!(
+            result,
+            Err(AttenuationError::PhysicallyImpossibleInput {
+                edge_index: 7,
+                conformer_index: 11,
+                quantity: "te_out",
+                ..
+            })
+        ));
     }
 }

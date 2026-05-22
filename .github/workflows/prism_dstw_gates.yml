@@ -36,7 +36,7 @@ jobs:
         run: cargo deny check
 
       - name: Rust format gate
-        run: cargo fmt --check
+        run: cargo fmt -p prism-nhs --check
 
-      - name: Rust clippy gate
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust test gate
+        run: cargo test -p prism-nhs

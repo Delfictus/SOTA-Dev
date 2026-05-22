@@ -129,7 +129,7 @@ impl CampaignId {
     }
 }
 
-finite_quantity!(TransferEntropy);
+finite_quantity!(CausalCoupling);
 finite_quantity!(HysteresisEnthalpy);
 finite_quantity!(HydrationVariance, non_negative);
 finite_quantity!(SpatialVariance, non_negative);
@@ -171,8 +171,8 @@ impl HysteresisPersistence {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct DTSGEdgeMetrics {
-    pub te_out: TransferEntropy,
-    pub te_in: TransferEntropy,
+    pub te_out: CausalCoupling,
+    pub te_in: CausalCoupling,
     pub delta_hc: HysteresisEnthalpy,
     pub sigma_hyd: HydrationVariance,
     pub spatial_var: SpatialVariance,
@@ -181,8 +181,8 @@ pub struct DTSGEdgeMetrics {
 
 impl DTSGEdgeMetrics {
     pub fn new(
-        te_out: TransferEntropy,
-        te_in: TransferEntropy,
+        te_out: CausalCoupling,
+        te_in: CausalCoupling,
         delta_hc: HysteresisEnthalpy,
         sigma_hyd: HydrationVariance,
         spatial_var: SpatialVariance,

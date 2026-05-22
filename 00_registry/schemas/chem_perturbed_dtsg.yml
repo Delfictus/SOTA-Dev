@@ -12,12 +12,12 @@ columns:
     nullable: false
   te_out_perturbed:
     dtype: float64
-    ontology: TransferEntropy
+    ontology: CausalCoupling
     unit: nats
     nullable: false
   te_in_perturbed:
     dtype: float64
-    ontology: TransferEntropy
+    ontology: CausalCoupling
     unit: nats
     nullable: false
   delta_hc_perturbed:

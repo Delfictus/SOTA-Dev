@@ -24,7 +24,7 @@ ConformerEnsembleURI = NewType("ConformerEnsembleURI", str)
 ScaffoldIdx = NewType("ScaffoldIdx", int)
 VoxelIdx = NewType("VoxelIdx", int)
 
-TransferEntropy = NewType("TransferEntropy", float)
+CausalCoupling = NewType("CausalCoupling", float)
 HysteresisEnthalpy = NewType("HysteresisEnthalpy", float)
 HydrationVariance = NewType("HydrationVariance", float)
 SpatialVariance = NewType("SpatialVariance", float)
@@ -60,8 +60,8 @@ class AnalogIntakeRecord:
 class DTSGEdge:
     from_residue: ResidueIdx
     to_residue: ResidueIdx
-    te_out: TransferEntropy
-    te_in: TransferEntropy
+    te_out: CausalCoupling
+    te_in: CausalCoupling
     delta_hc: HysteresisEnthalpy
     sigma_hyd: HydrationVariance
     spatial_var: SpatialVariance
@@ -71,8 +71,8 @@ class DTSGEdge:
 @dataclass(frozen=True)
 class PerturbedEdge:
     edge: DTSGEdge
-    te_out_perturbed: TransferEntropy
-    te_in_perturbed: TransferEntropy
+    te_out_perturbed: CausalCoupling
+    te_in_perturbed: CausalCoupling
     delta_hc_perturbed: HysteresisEnthalpy
     u_pose_te: PoseUncertainty
     u_pose_hc: PoseUncertainty
