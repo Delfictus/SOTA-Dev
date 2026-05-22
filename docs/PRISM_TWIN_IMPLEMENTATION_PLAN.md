@@ -1728,7 +1728,7 @@ scripts/prism-validate-and-run.sh \
     --hmr --adaptive-dt \
     --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker \
+    --site-ranker phase-manifold \
     --replica-seed 42 -v
 
 # TWIN run (historical --coupled-twin; see lockdown notice at top)

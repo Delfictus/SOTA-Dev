@@ -39,6 +39,8 @@ class MemberSite:
     n_anchors: int
     lining_residue_ids: List[int]
     growth_vector_directions: List[Tuple[float, float, float]]
+    delta_stability: Optional[float] = None
+    delta_rms: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -74,6 +76,10 @@ class ConsensusSite:
         anchor_consistency:      Jaccard similarity of anchor residue sets.
         growth_vector_consistency: Cosine similarity of growth vector directions.
         lining_consistency:      Jaccard similarity of lining residue sets.
+        mean_delta_stability:    Optional medoid-diff stability signal, higher is
+                                 more stable. Not part of legacy RF3 ranking unless
+                                 a caller explicitly opts into lexicographic ranking.
+        mean_delta_rms:          Optional residue/site delta magnitude in Angstrom.
         mean_localization:       Mean localization score across members.
         gate_failure_reasons:    Why failed members were blocked.
     """
@@ -93,6 +99,8 @@ class ConsensusSite:
     growth_vector_consistency: float
     lining_consistency: float
     gate_failure_reasons: Dict[str, int]
+    mean_delta_stability: Optional[float] = None
+    mean_delta_rms: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -110,6 +118,8 @@ class ConsensusSite:
             "anchor_consistency": self.anchor_consistency,
             "growth_vector_consistency": self.growth_vector_consistency,
             "lining_consistency": self.lining_consistency,
+            "mean_delta_stability": self.mean_delta_stability,
+            "mean_delta_rms": self.mean_delta_rms,
             "gate_failure_reasons": dict(self.gate_failure_reasons),
         }
 
@@ -121,6 +131,8 @@ class ConsensusSite:
         data = copy.deepcopy(d)
         data["member_sites"] = [MemberSite.from_dict(m) for m in data["member_sites"]]
         data["centroid_mean"] = tuple(data["centroid_mean"])
+        data.setdefault("mean_delta_stability", None)
+        data.setdefault("mean_delta_rms", None)
         return cls(**data)
 
     @classmethod

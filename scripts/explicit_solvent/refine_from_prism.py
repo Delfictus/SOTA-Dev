@@ -382,7 +382,7 @@ def run_prism_redetect(refined_pdb, topology_json, output_dir, gt_centroid_str=N
         "--hmr", "--adaptive-dt",
         "--multi-differential",
         "--closed-loop-steering", "--asymmetric-steering",
-        "--use-xgb-ranker",
+        "--site-ranker", "phase-manifold",
         "--cascade",
         "--replica-seed", "42",
         "-v",

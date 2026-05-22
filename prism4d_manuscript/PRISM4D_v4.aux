@@ -32,7 +32,6 @@
 \newlabel{eq:sigma_conversion}{{2}{2}{In Silico UV Pump-Probe Spectroscopy}{equation.2.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Three-Channel Spike Detection Network}{2}{subsection.2.5}\protected@file@percent }
 \newlabel{sec:channels}{{2.5}{2}{Three-Channel Spike Detection Network}{subsection.2.5}{}}
-\newlabel{eq:cooperative}{{3}{2}{Three-Channel Spike Detection Network}{equation.2.3}{}}
 \citation{gerstner2002}
 \citation{warshel1976}
 \citation{parker2010}
@@ -42,17 +41,18 @@
 \newlabel{fig:pipeline}{{1}{3}{\textbf {PRISM-4D computational pipeline.} Stage~1: NHS engine (AMBER ff14SB MD + cryo-thermal protocol + UV excitation). Stage~2: Three-channel LIF neuromorphic spike detection (UV/LIF/EFP). Stage~3: SNDC 4-stage GPU clustering pipeline (RT-DBSCAN $\to $ Watershed segmentation $\to $ Eikonal BFS $\to $ Peak centroid tracking). Stage~4: Multi-parametric site characterization and scoring}{figure.caption.1}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces UV chromophore photophysical parameters. $\lambda _{\max }$: peak absorption wavelength. $\varepsilon $: molar extinction coefficient. $\eta $: thermal dissipation yield. Values from~\cite  {wetlaufer1962,pace1995,pantos1978,cundall1972}.}}{3}{table.caption.3}\protected@file@percent }
 \newlabel{tab:chromophores}{{1}{3}{UV chromophore photophysical parameters. $\lambda _{\max }$: peak absorption wavelength. $\varepsilon $: molar extinction coefficient. $\eta $: thermal dissipation yield. Values from~\cite {wetlaufer1962,pace1995,pantos1978,cundall1972}}{table.caption.3}{}}
+\newlabel{eq:cooperative}{{3}{3}{Three-Channel Spike Detection Network}{equation.2.3}{}}
 \newlabel{eq:lif}{{4}{3}{Three-Channel Spike Detection Network}{equation.2.4}{}}
 \newlabel{eq:warshel}{{5}{3}{Three-Channel Spike Detection Network}{equation.2.5}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Spike-Native Density Clustering (SNDC)}{3}{subsection.2.6}\protected@file@percent }
 \newlabel{sec:sndc}{{2.6}{3}{Spike-Native Density Clustering (SNDC)}{subsection.2.6}{}}
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {2.6.1}Stage 3a: RT-DBSCAN}{3}{subsubsection.2.6.1}\protected@file@percent }
 \newlabel{eq:adaptive_eps}{{6}{3}{Stage 3a: RT-DBSCAN}{equation.2.6}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.6.2}Stage 3b: Watershed Segmentation}{3}{subsubsection.2.6.2}\protected@file@percent }
 \citation{sethian1996}
 \citation{pantos1978,cundall1972}
 \@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces \textbf  {Five-phase cryo-thermal hysteresis protocol.} Phase~1: cold hold at 50\,K (14{,}000 steps). Phase~2: ramp up 50$\to $300\,K (6{,}000 steps). Phase~3: warm hold at 300\,K (15{,}000 steps). Phase~4: ramp down 300$\to $50\,K (6{,}000 steps, hysteresis probe). Phase~5: cold return at 50\,K (14{,}000 steps). Total: 55{,}000 steps per stream. Teal triangles indicate UV burst positions (every 250 steps, cycling [280, 274, 258, 211]\,nm).}}{4}{figure.caption.2}\protected@file@percent }
 \newlabel{fig:hysteresis}{{2}{4}{\textbf {Five-phase cryo-thermal hysteresis protocol.} Phase~1: cold hold at 50\,K (14{,}000 steps). Phase~2: ramp up 50$\to $300\,K (6{,}000 steps). Phase~3: warm hold at 300\,K (15{,}000 steps). Phase~4: ramp down 300$\to $50\,K (6{,}000 steps, hysteresis probe). Phase~5: cold return at 50\,K (14{,}000 steps). Total: 55{,}000 steps per stream. Teal triangles indicate UV burst positions (every 250 steps, cycling [280, 274, 258, 211]\,nm)}{figure.caption.2}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.6.2}Stage 3b: Watershed Segmentation}{4}{subsubsection.2.6.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {2.6.3}Stage 3c: Eikonal BFS}{4}{subsubsection.2.6.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {2.6.4}Stage 3d: Peak Centroid Tracking}{4}{subsubsection.2.6.4}\protected@file@percent }
 \newlabel{eq:centroid}{{7}{4}{Stage 3d: Peak Centroid Tracking}{equation.2.7}{}}
@@ -85,31 +85,46 @@
 \@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces $\beta $-catenin Site~6 characterization.}}{6}{table.caption.9}\protected@file@percent }
 \newlabel{tab:bcatenin}{{4}{6}{$\beta $-catenin Site~6 characterization}{table.caption.9}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Reproducibility Validation}{6}{subsection.3.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Comparison to Existing Methods}{6}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Post-Freeze Blind Vectorial Pharmacophore Feature Recovery}{6}{subsection.3.5}\protected@file@percent }
+\newlabel{sec:pfr}{{3.5}{6}{Post-Freeze Blind Vectorial Pharmacophore Feature Recovery}{subsection.3.5}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.1}Audit rationale and validation status}{6}{subsubsection.3.5.1}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces \textbf  {Reproducibility across 5 stochastic seeds} ($\beta $-catenin Site~6). (A)~Centroid X--Y scatter. (B)~Spike counts (CV = 0.2\%). (C)~Pairwise centroid displacement distribution (max = 0.06\,\r A{}).}}{7}{figure.caption.10}\protected@file@percent }
 \newlabel{fig:repro}{{6}{7}{\textbf {Reproducibility across 5 stochastic seeds} ($\beta $-catenin Site~6). (A)~Centroid X--Y scatter. (B)~Spike counts (CV = 0.2\%). (C)~Pairwise centroid displacement distribution (max = 0.06\,\AA {})}{figure.caption.10}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces $\beta $-catenin Site~6 reproducibility across 5 stochastic seeds.}}{7}{table.caption.11}\protected@file@percent }
 \newlabel{tab:repro}{{5}{7}{$\beta $-catenin Site~6 reproducibility across 5 stochastic seeds}{table.caption.11}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{7}{section.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Thermodynamic Event Detection}{7}{subsection.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Technical Contributions}{7}{subsection.5.2}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces \textbf  {Methodological capability matrix.} Filled circles: full support. Half-filled: partial support. Empty: not supported.}}{7}{figure.caption.13}\protected@file@percent }
-\newlabel{fig:capability}{{7}{7}{\textbf {Methodological capability matrix.} Filled circles: full support. Half-filled: partial support. Empty: not supported}{figure.caption.13}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces \textbf  {Hardware cost comparison} for methods capable of cryptic pocket analysis (log scale).}}{7}{figure.caption.15}\protected@file@percent }
-\newlabel{fig:cost}{{8}{7}{\textbf {Hardware cost comparison} for methods capable of cryptic pocket analysis (log scale)}{figure.caption.15}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}The Dual-Cysteine Prediction on $\beta $-Catenin}{7}{subsection.5.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Hardware Accessibility}{7}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.2}Vectorial PFR scoring}{7}{subsubsection.3.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.3}Temporal-scramble null model}{7}{subsubsection.3.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.4}Corrected headline result}{7}{subsubsection.3.5.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Corrected Vectorial PFR results. Phase-ordered versus temporal-scramble null (1{,}000 permutations, conservative plus-one empirical estimator). Prior $p = 1.0$ values were a one-sided directionality error and are replaced here.}}{7}{table.caption.12}\protected@file@percent }
+\newlabel{tab:pfr}{{6}{7}{Corrected Vectorial PFR results. Phase-ordered versus temporal-scramble null (1{,}000 permutations, conservative plus-one empirical estimator). Prior $p = 1.0$ values were a one-sided directionality error and are replaced here}{table.caption.12}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.5}Limitation: internal confidence stratification}{7}{subsubsection.3.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.6}Validation firewall and provenance note}{8}{subsubsection.3.5.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces \textbf  {Vectorial pharmacophore feature recovery (PFR) scoring criterion.} A predicted apo-derived pharmacophore feature (red sphere) is counted as recovered only if the matched holo ligand pharmacophore satisfies matching pharmacophore class, centroid distance ${\leq }\,3.5$~\r A{}, and angular agreement within $30^\circ $ of the predicted interaction vector. The translucent cyan $30^\circ $ angular cone and the $3.5$~\r A{} distance envelope (grey wireframe) together define the vectorial scoring volume. Inside both = HIT (green); outside angular cone or beyond $3.5$~\r A{} = MISS (grey).}}{8}{figure.caption.13}\protected@file@percent }
+\newlabel{fig:pfr_scoring}{{7}{8}{\textbf {Vectorial pharmacophore feature recovery (PFR) scoring criterion.} A predicted apo-derived pharmacophore feature (red sphere) is counted as recovered only if the matched holo ligand pharmacophore satisfies matching pharmacophore class, centroid distance ${\leq }\,3.5$~\AA {}, and angular agreement within $30^\circ $ of the predicted interaction vector. The translucent cyan $30^\circ $ angular cone and the $3.5$~\AA {} distance envelope (grey wireframe) together define the vectorial scoring volume. Inside both = HIT (green); outside angular cone or beyond $3.5$~\AA {} = MISS (grey)}{figure.caption.13}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces \textbf  {Phase-ordered vs temporal-scramble vectorial pharmacophore recovery across six multi-holo targets.} Per-target side-by-side panels with matched cameras, identical protein/ligand coordinates, and identical residue rendering. Left column: phase-ordered PRISM4D manifold with colored directional pharmacophore vectors (red = H-bond acceptor; blue = donor; orange = aromatic; green = hydrophobic; purple = positive ionizable; cyan = halogen). Right column: temporal-scramble null preserving the same feature positions but with randomized direction vectors (grey arrows). Targets: CDK2 allosteric (3PXZ + 2AN probe), Thrombin exosite (1HAH + TYS phosphotyrosine), cGAS (4O67 + 1SY cyclic dinucleotide), CRBN (5FQD + LVY degrader scaffold), HRAS Q61H (6OIM + GDP), TP53 R175H (3ZME + QC5 stabilizer). Each panel is annotated with phase-ordered PFR \% and corrected empirical $p$-value (left) or the 2.2\% null baseline (right).}}{8}{figure.caption.14}\protected@file@percent }
+\newlabel{fig:pfr_grid}{{8}{8}{\textbf {Phase-ordered vs temporal-scramble vectorial pharmacophore recovery across six multi-holo targets.} Per-target side-by-side panels with matched cameras, identical protein/ligand coordinates, and identical residue rendering. Left column: phase-ordered PRISM4D manifold with colored directional pharmacophore vectors (red = H-bond acceptor; blue = donor; orange = aromatic; green = hydrophobic; purple = positive ionizable; cyan = halogen). Right column: temporal-scramble null preserving the same feature positions but with randomized direction vectors (grey arrows). Targets: CDK2 allosteric (3PXZ + 2AN probe), Thrombin exosite (1HAH + TYS phosphotyrosine), cGAS (4O67 + 1SY cyclic dinucleotide), CRBN (5FQD + LVY degrader scaffold), HRAS Q61H (6OIM + GDP), TP53 R175H (3ZME + QC5 stabilizer). Each panel is annotated with phase-ordered PFR \% and corrected empirical $p$-value (left) or the 2.2\% null baseline (right)}{figure.caption.14}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces \textbf  {Per-target PFR and fold enrichment with corrected empirical $p$-values.} Left: phase-ordered PRISM4D vectorial PFR (green bars) vs temporal-scramble null PFR (grey bars) for each of the six flagship targets and the aggregate (dark blue). Right: fold enrichment over the temporal-scramble null with corrected one-sided empirical $p$-values, computed under the conservative plus-one estimator $p = (1 + \#\{\mathrm  {null} \geq \mathrm  {real}\}) / (n+1)$ with $n = 1{,}000$ permutations. All per-target enrichments are ${\geq }\,6.9{\times }$; aggregate enrichment is $12.2{\times }$ (empirical $p \leq 0.001$). The vertical dotted line at fold $= 1$ marks the no-enrichment threshold.}}{9}{figure.caption.15}\protected@file@percent }
+\newlabel{fig:pfr_bars}{{9}{9}{\textbf {Per-target PFR and fold enrichment with corrected empirical $p$-values.} Left: phase-ordered PRISM4D vectorial PFR (green bars) vs temporal-scramble null PFR (grey bars) for each of the six flagship targets and the aggregate (dark blue). Right: fold enrichment over the temporal-scramble null with corrected one-sided empirical $p$-values, computed under the conservative plus-one estimator $p = (1 + \#\{\mathrm {null} \geq \mathrm {real}\}) / (n+1)$ with $n = 1{,}000$ permutations. All per-target enrichments are ${\geq }\,6.9{\times }$; aggregate enrichment is $12.2{\times }$ (empirical $p \leq 0.001$). The vertical dotted line at fold $= 1$ marks the no-enrichment threshold}{figure.caption.15}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Comparison to Existing Methods}{9}{section.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces \textbf  {Methodological capability matrix.} Filled circles: full support. Half-filled: partial support. Empty: not supported.}}{9}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:capability}{{10}{9}{\textbf {Methodological capability matrix.} Filled circles: full support. Half-filled: partial support. Empty: not supported}{figure.caption.17}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces \textbf  {Hardware cost comparison} for methods capable of cryptic pocket analysis (log scale).}}{9}{figure.caption.19}\protected@file@percent }
+\newlabel{fig:cost}{{11}{9}{\textbf {Hardware cost comparison} for methods capable of cryptic pocket analysis (log scale)}{figure.caption.19}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{9}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Thermodynamic Event Detection}{9}{subsection.5.1}\protected@file@percent }
 \citation{cimermancic2016}
 \citation{meller2023}
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Methodological comparison including hardware and deployment requirements.}}{10}{table.caption.16}\protected@file@percent }
+\newlabel{tab:comparison}{{7}{10}{Methodological comparison including hardware and deployment requirements}{table.caption.16}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Hardware and cost comparison for cryptic pocket detection methods.}}{10}{table.caption.18}\protected@file@percent }
+\newlabel{tab:cost}{{8}{10}{Hardware and cost comparison for cryptic pocket detection methods}{table.caption.18}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Technical Contributions}{10}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}The Dual-Cysteine Prediction on $\beta $-Catenin}{10}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Hardware Accessibility}{10}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Limitations and Future Work}{10}{subsection.5.5}\protected@file@percent }
 \citation{meller2023}
 \citation{schmidtke2011}
 \citation{ghanakota2016}
-\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Methodological comparison including hardware and deployment requirements.}}{8}{table.caption.12}\protected@file@percent }
-\newlabel{tab:comparison}{{6}{8}{Methodological comparison including hardware and deployment requirements}{table.caption.12}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Hardware and cost comparison for cryptic pocket detection methods.}}{8}{table.caption.14}\protected@file@percent }
-\newlabel{tab:cost}{{7}{8}{Hardware and cost comparison for cryptic pocket detection methods}{table.caption.14}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Limitations and Future Work}{8}{subsection.5.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusion}{8}{section.6}\protected@file@percent }
 \bibcite{bowman2012}{{1}{}{{}}{{}}}
 \bibcite{bowman2015}{{2}{}{{}}{{}}}
 \bibcite{beglov2018}{{3}{}{{}}{{}}}
@@ -117,6 +132,10 @@
 \bibcite{cundall1972}{{5}{}{{}}{{}}}
 \bibcite{durrant2011}{{6}{}{{}}{{}}}
 \bibcite{ester1996}{{7}{}{{}}{{}}}
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces PRISM-4D technical contributions classified by novelty type.}}{11}{table.caption.20}\protected@file@percent }
+\newlabel{tab:innovations}{{9}{11}{PRISM-4D technical contributions classified by novelty type}{table.caption.20}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusion}{11}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Data and Code Availability}{11}{section.7}\protected@file@percent }
 \bibcite{gerstner2002}{{8}{}{{}}{{}}}
 \bibcite{ghanakota2016}{{9}{}{{}}{{}}}
 \bibcite{goodford1985}{{10}{}{{}}{{}}}
@@ -125,9 +144,6 @@
 \bibcite{izaguirre2001}{{13}{}{{}}{{}}}
 \bibcite{jimenez2017}{{14}{}{{}}{{}}}
 \bibcite{kozakov2015}{{15}{}{{}}{{}}}
-\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces PRISM-4D technical contributions classified by novelty type.}}{9}{table.caption.16}\protected@file@percent }
-\newlabel{tab:innovations}{{8}{9}{PRISM-4D technical contributions classified by novelty type}{table.caption.16}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {7}Data and Code Availability}{9}{section.7}\protected@file@percent }
 \bibcite{krivak2018}{{16}{}{{}}{{}}}
 \bibcite{lakowicz2006}{{17}{}{{}}{{}}}
 \bibcite{leguilloux2009}{{18}{}{{}}{{}}}
@@ -149,4 +165,4 @@
 \bibcite{young2007}{{34}{}{{}}{{}}}
 \bibcite{sirpa_xchem2025}{{35}{}{{}}{{}}}
 \providecommand\NAT@force@numbers{}\NAT@force@numbers
-\gdef \@abspage@last{10}
+\gdef \@abspage@last{13}

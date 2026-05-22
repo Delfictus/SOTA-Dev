@@ -22,6 +22,7 @@ Dependencies:
 import sys
 import json
 import argparse
+import math
 from pathlib import Path
 from collections import defaultdict
 
@@ -130,6 +131,124 @@ ELEMENT_RADII = {
     'Na': 1.87,
     'K': 2.43,
 }
+
+
+# =============================================================================
+# DISULFIDE ENFORCEMENT
+# =============================================================================
+
+def _residue_key(residue):
+    """Stable residue key used for disulfide metadata."""
+    try:
+        pdb_resid = int(residue.id)
+    except (TypeError, ValueError):
+        pdb_resid = residue.index + 1
+    return (residue.chain.id, pdb_resid)
+
+
+def _cys_sg_atoms(topology):
+    """Return SG atoms for cysteine-like residues keyed by chain/PDB residue."""
+    sg_atoms = {}
+    for residue in topology.residues():
+        if residue.name not in ("CYS", "CYX"):
+            continue
+        for atom in residue.atoms():
+            if atom.name == "SG":
+                sg_atoms[_residue_key(residue)] = atom
+                break
+    return sg_atoms
+
+
+def _atom_distance_angstrom(atom_a, atom_b, positions):
+    pa = positions[atom_a.index].value_in_unit(unit.angstrom)
+    pb = positions[atom_b.index].value_in_unit(unit.angstrom)
+    return math.dist((pa.x, pa.y, pa.z), (pb.x, pb.y, pb.z))
+
+
+def enforce_disulfides(modeller, verbose=False):
+    """
+    Enforce close cysteine SG-SG pairs as explicit disulfide bonds.
+
+    GLP-1R's ECL1/ECL2 disulfide, canonically Cys226-Cys296 in the
+    UniProt-numbered clean anchors, is a hard pre-flight invariant. OpenMM
+    does not use tleap, so this is the equivalent topology-level crosslink:
+    close SG pairs are explicitly bonded before hydrogen addition/system
+    construction, and downstream residue metadata is emitted as CYX.
+    """
+    topology = modeller.topology
+    positions = modeller.positions
+
+    # Let OpenMM add any standard disulfide bonds it can infer from geometry.
+    topology.createDisulfideBonds(positions)
+
+    sg_atoms = _cys_sg_atoms(topology)
+    close_pairs = []
+    keys = sorted(sg_atoms)
+    for i, key_a in enumerate(keys):
+        atom_a = sg_atoms[key_a]
+        for key_b in keys[i + 1:]:
+            atom_b = sg_atoms[key_b]
+            distance_a = _atom_distance_angstrom(atom_a, atom_b, positions)
+            if distance_a <= 2.5:
+                close_pairs.append((key_a, key_b, atom_a, atom_b, distance_a))
+
+    existing = {
+        tuple(sorted((bond[0].index, bond[1].index)))
+        for bond in topology.bonds()
+    }
+    enforced_pairs = []
+    for key_a, key_b, atom_a, atom_b, distance_a in close_pairs:
+        atom_pair = tuple(sorted((atom_a.index, atom_b.index)))
+        if atom_pair not in existing:
+            topology.addBond(atom_a, atom_b)
+            existing.add(atom_pair)
+        enforced_pairs.append({
+            "chain_i": key_a[0],
+            "residue_i": key_a[1],
+            "chain_j": key_b[0],
+            "residue_j": key_b[1],
+            "distance_angstrom": distance_a,
+        })
+
+    # The Class-B GPCR ECL1/ECL2 disulfide is mandatory if both residues
+    # are present in the anchor.  Fail fast if it is geometrically absent.
+    by_chain = defaultdict(set)
+    for chain, pdb_resid in sg_atoms:
+        by_chain[chain].add(pdb_resid)
+    for chain, residues in by_chain.items():
+        if 226 in residues and 296 in residues:
+            pair_ok = any(
+                (p["chain_i"], p["residue_i"], p["chain_j"], p["residue_j"]) in (
+                    (chain, 226, chain, 296),
+                    (chain, 296, chain, 226),
+                )
+                for p in enforced_pairs
+            )
+            if not pair_ok:
+                raise ValueError(
+                    f"mandatory GLP-1R disulfide {chain}:226-{chain}:296 "
+                    "not bonded; refusing topology"
+                )
+
+    disulfide_residue_keys = set()
+    for pair in enforced_pairs:
+        disulfide_residue_keys.add((pair["chain_i"], pair["residue_i"]))
+        disulfide_residue_keys.add((pair["chain_j"], pair["residue_j"]))
+
+    if verbose:
+        if enforced_pairs:
+            print(f"  Disulfides enforced: {len(enforced_pairs)}")
+            for pair in enforced_pairs:
+                print(
+                    "    "
+                    f"{pair['chain_i']}:{pair['residue_i']}--"
+                    f"{pair['chain_j']}:{pair['residue_j']} "
+                    f"({pair['distance_angstrom']:.3f} A)"
+                )
+        else:
+            print("  Disulfides enforced: none detected")
+
+    return enforced_pairs, disulfide_residue_keys
 
 
 # =============================================================================
@@ -362,6 +481,11 @@ def prepare_topology(
     toDelete = [atom for atom in modeller.topology.atoms() if atom.element.symbol == 'H']
     modeller.delete(toDelete)
 
+    # Enforce native disulfide crosslinks before hydrogen placement.  This
+    # prevents bonded cysteines from being protonated as free thiols and
+    # preserves the Class-B GPCR ECL1/ECL2 bridge during WT prime runs.
+    disulfide_bonds, disulfide_residue_keys = enforce_disulfides(modeller, verbose=verbose)
+
     # Add terminal caps (ACE/NME) if requested
     if cap_termini:
         if verbose:
@@ -478,6 +602,15 @@ def prepare_topology(
         atom_names.append(atom.name)
         # Use proper histidine tautomer name if available
         res_name = atom.residue.name
+        try:
+            pdb_resid_for_resname = int(atom.residue.id)
+        except (ValueError, TypeError):
+            pdb_resid_for_resname = atom.residue.index + 1
+        if (
+            res_name == 'CYS'
+            and (atom.residue.chain.id, pdb_resid_for_resname) in disulfide_residue_keys
+        ):
+            res_name = 'CYX'
         if res_name == 'HIS' and atom.residue.index in his_tautomers:
             res_name = his_tautomers[atom.residue.index]
         residue_names.append(res_name)
@@ -591,6 +724,27 @@ def prepare_topology(
                 exclusions[p1].add(p2)
                 exclusions[p2].add(p1)
 
+    # Verify the enforced disulfides survived force-field system creation.
+    sg_by_residue = {}
+    for atom in topology.atoms():
+        if atom.name == 'SG':
+            try:
+                pdb_resid = int(atom.residue.id)
+            except (ValueError, TypeError):
+                pdb_resid = atom.residue.index + 1
+            sg_by_residue[(atom.residue.chain.id, pdb_resid)] = atom.index
+    bonded_pairs = {tuple(sorted((bond["i"], bond["j"]))) for bond in bonds}
+    for pair in disulfide_bonds:
+        key_i = (pair["chain_i"], pair["residue_i"])
+        key_j = (pair["chain_j"], pair["residue_j"])
+        sg_i = sg_by_residue.get(key_i)
+        sg_j = sg_by_residue.get(key_j)
+        if sg_i is None or sg_j is None or tuple(sorted((sg_i, sg_j))) not in bonded_pairs:
+            raise ValueError(
+                f"disulfide {key_i[0]}:{key_i[1]}--{key_j[0]}:{key_j[1]} "
+                "was not present in HarmonicBondForce output"
+            )
+
     # Find water oxygens
     water_oxygens = []
     for residue in topology.residues():
@@ -663,6 +817,7 @@ def prepare_topology(
         "water_oxygens": water_oxygens,
         "h_clusters": h_clusters,
         "exclusions": exclusions_list,
+        "disulfide_bonds": disulfide_bonds,
     }
 
     if box_vectors:

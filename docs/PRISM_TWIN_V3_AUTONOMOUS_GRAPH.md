@@ -251,7 +251,7 @@ initialize from CryoUvProtocol fields, upload once at simulation start.
 
 **Gate criteria**:
 - `cargo test -p prism-nhs --lib` passes
-- 1btl E2E with §B canonical (`--fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v`)
+- 1btl E2E with §B canonical (`--fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --site-ranker phase-manifold --replica-seed 42 -v`)
   produces sites within 1Å DCC of pre-modification baseline
 - Spike counts within 5% of baseline (stochastic variation expected)
 
@@ -263,7 +263,7 @@ scripts/prism-validate-and-run.sh -t 1btl.topology.json -o /tmp/baseline_1btl \
     --multi-stream 8 --spike-percentile 70 --fused-steps 6 \
     --hmr --adaptive-dt --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker --replica-seed 42 -v
+    --site-ranker phase-manifold --replica-seed 42 -v
 
 # Run AFTER modification:
 scripts/prism-validate-and-run.sh -t 1btl.topology.json -o /tmp/modified_1btl \
@@ -271,7 +271,7 @@ scripts/prism-validate-and-run.sh -t 1btl.topology.json -o /tmp/modified_1btl \
     --multi-stream 8 --spike-percentile 70 --fused-steps 6 \
     --hmr --adaptive-dt --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker --replica-seed 42 -v
+    --site-ranker phase-manifold --replica-seed 42 -v
 
 # Compare:
 python3 -c "

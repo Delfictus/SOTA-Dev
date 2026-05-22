@@ -101,6 +101,14 @@ Direct invocation of `nhs_rt_full` is PROHIBITED in all scripts, Makefiles, and 
 
 # Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see Provenance Table)
 # Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
+#
+# RED FLAG (operator-locked 2026-05-20): every invocation MUST include
+# --md-only-evidence + --path-a-production-profile + --path-a-max-wall-seconds.
+# The engine's internal post-MD CCL union-find clustering is FORBIDDEN
+# across the board, forever.  Phase-manifold ranking REPLACES it (it does
+# not run in addition to it).  Stevens GLP1R aleniglipron campaign canonical
+# (3.046B spikes, 194s mean replica wall) used exactly this shape — see
+# `prism-glp1r-aleniglipron-workspace/.../02_RUNTIME_CONFIG/glp1r_runtime.env`.
 
 ```bash
 scripts/prism-validate-and-run.sh \
@@ -113,9 +121,18 @@ scripts/prism-validate-and-run.sh \
     --hmr --adaptive-dt \
     --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker \
+    --site-ranker phase-manifold \
+    --md-only-evidence \
+    --path-a-production-profile \
+    --path-a-max-wall-seconds 180 \
+    --uv-wavelengths 280,274,258,254,211 \
+    --nma-amplification 3.0 --nma-scan-fraction 0.3 \
     --replica-seed 42 -v
 ```
+
+DO NOT add (per the red flag): `--use-xgb-ranker`, `--boltzmann-rank`,
+`--cascade`, or monolithic `--replicas`.  N-replicate consensus goes
+through `scripts/prism_replicate.py` only.
 
 ### Full prep pipeline for any new target
 ```bash
@@ -131,6 +148,7 @@ scripts/prism-prep xxxx_clean.pdb xxxx_clean.topology.json
 # 4. Run with validation gates
 # Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see Provenance Table)
 # Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
+# RED FLAG: --md-only-evidence is MANDATORY (see canonical block above).
 scripts/prism-validate-and-run.sh \
     -t xxxx_clean.topology.json \
     -o output/xxxx \
@@ -141,7 +159,12 @@ scripts/prism-validate-and-run.sh \
     --hmr --adaptive-dt \
     --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker \
+    --site-ranker phase-manifold \
+    --md-only-evidence \
+    --path-a-production-profile \
+    --path-a-max-wall-seconds 180 \
+    --uv-wavelengths 280,274,258,254,211 \
+    --nma-amplification 3.0 --nma-scan-fraction 0.3 \
     --replica-seed 42 -v
 
 # 5. (Optional) P2Rank reranking
@@ -208,6 +231,7 @@ scripts/prism-prep xxxx_merged.pdb xxxx_merged.topology.json
 # 6. Run with chain map passed through
 # Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see Provenance Table)
 # Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
+# RED FLAG: --md-only-evidence is MANDATORY (see canonical block above).
 scripts/prism-validate-and-run.sh \
     -t xxxx_merged.topology.json \
     -o output/xxxx \
@@ -219,7 +243,12 @@ scripts/prism-validate-and-run.sh \
     --hmr --adaptive-dt \
     --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker \
+    --site-ranker phase-manifold \
+    --md-only-evidence \
+    --path-a-production-profile \
+    --path-a-max-wall-seconds 180 \
+    --uv-wavelengths 280,274,258,254,211 \
+    --nma-amplification 3.0 --nma-scan-fraction 0.3 \
     --replica-seed 42 -v
 ```
 

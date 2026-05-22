@@ -38,6 +38,14 @@ def run_engine(
     if not wrapper.exists():
         print(f"    Wrapper not found: {wrapper}", file=sys.stderr)
         return False
+    # RED FLAG (operator-locked 2026-05-20): --md-only-evidence +
+    # --path-a-production-profile + --path-a-max-wall-seconds are
+    # mandatory.  Engine post-MD CCL union-find clustering is FORBIDDEN;
+    # phase-manifold ranker is the production scorer and operates on
+    # md_evidence_manifest.json instead of binding_sites.json.
+    # Source of truth:
+    #   - project CLAUDE.md §"Canonical run command"
+    #   - prism-glp1r-aleniglipron-workspace/.../glp1r_runtime.env
     cmd = [
         str(wrapper),
         "-t", topology,
@@ -49,7 +57,13 @@ def run_engine(
         "--hmr", "--adaptive-dt",
         "--multi-differential",
         "--closed-loop-steering", "--asymmetric-steering",
-        "--use-xgb-ranker",
+        "--site-ranker", "phase-manifold",
+        "--md-only-evidence",
+        "--path-a-production-profile",
+        "--path-a-max-wall-seconds", "180",
+        "--uv-wavelengths", "280,274,258,254,211",
+        "--nma-amplification", "3.0",
+        "--nma-scan-fraction", "0.3",
         "--replica-seed", str(seed),
     ]
     if verbose:

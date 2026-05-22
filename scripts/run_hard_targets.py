@@ -72,7 +72,7 @@ ENGINE_ARGS = [
     "--adaptive-dt",
     "--multi-differential",
     "--closed-loop-steering", "--asymmetric-steering",
-    "--use-xgb-ranker",
+    "--site-ranker", "phase-manifold",
     "--replica-seed", "42",
     "-v",
 ]

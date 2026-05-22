@@ -11,10 +11,18 @@
 #       -o <output_dir> \
 #       [all other engine flags passed through]
 #
-# CANONICAL PRODUCTION RUN (as of 2026-04-21, code-verified):
+# CANONICAL PRODUCTION RUN (2026-05-20 red-flag revision):
 #
 # Source of truth: crates/prism-nhs/src/bin/nhs_rt_full.rs (see docs/CANONICAL_PROVENANCE.md)
 # Sizing rule: <200 residues: --multi-stream 8  |  200-400: --multi-stream 8  |  >400: --multi-stream 20
+#
+# RED FLAG (operator-locked 2026-05-20): every invocation MUST include
+# --md-only-evidence + --path-a-production-profile + --path-a-max-wall-seconds.
+# The engine's internal post-MD CCL union-find clustering is FORBIDDEN
+# across the board, forever.  Phase-manifold ranking REPLACES it (does
+# not run in addition).  Stevens GLP1R aleniglipron canonical (40 replicas,
+# 3.046B spikes, 194s mean replica wall) used this exact shape -- see
+# prism-glp1r-aleniglipron-workspace/.../02_RUNTIME_CONFIG/glp1r_runtime.env
 #
 #   scripts/prism-validate-and-run.sh \
 #       -t <topology.json> \
@@ -26,8 +34,16 @@
 #       --hmr --adaptive-dt \
 #       --multi-differential \
 #       --closed-loop-steering --asymmetric-steering \
-#       --use-xgb-ranker \
+#       --site-ranker phase-manifold \
+#       --md-only-evidence \
+#       --path-a-production-profile \
+#       --path-a-max-wall-seconds 180 \
+#       --uv-wavelengths 280,274,258,254,211 \
+#       --nma-amplification 3.0 --nma-scan-fraction 0.3 \
 #       --replica-seed 42 -v
+#
+# DO NOT add: --use-xgb-ranker, --boltzmann-rank, --cascade, monolithic
+# --replicas.  N-replicate consensus goes through prism_replicate.py only.
 
 set -euo pipefail
 
@@ -105,7 +121,20 @@ fi
 
 if [[ ! -f "$ENGINE" ]]; then
     echo "ERROR: Engine binary not found: $ENGINE"
-    echo "Build with: cargo build --release --features gpu -p prism-nhs --bin nhs_rt_full"
+    echo "Build with: cargo build --release --features v2_ignition -p prism-nhs --bin nhs_rt_full"
+    exit 1
+fi
+
+engine_has_symbol() {
+    grep -a -q -- "$1" "$ENGINE"
+}
+
+if ! engine_has_symbol "producer_frames_enqueued" \
+    || ! engine_has_symbol "frames_written" \
+    || ! engine_has_symbol "all_hashes_match" \
+    || ! engine_has_symbol "lossless backpressure"; then
+    echo "ERROR: Engine binary does not contain the V2 lossless trajectory audit path."
+    echo "Rebuild with: cargo build --release --features v2_ignition -p prism-nhs --bin nhs_rt_full"
     exit 1
 fi
 

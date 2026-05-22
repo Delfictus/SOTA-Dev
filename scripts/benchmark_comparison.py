@@ -87,7 +87,7 @@ PRISM_FLAGS = [
     "--hmr", "--adaptive-dt",
     "--multi-differential",
     "--closed-loop-steering", "--asymmetric-steering",
-    "--use-xgb-ranker",
+    "--site-ranker", "phase-manifold",
     "--replica-seed", "42", "-v",
 ]
 

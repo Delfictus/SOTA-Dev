@@ -375,7 +375,7 @@ def validate_topology(
         return False, {'error': f"Topology file not found: {topology_path}"}
 
     # Run verify_topology.py
-    verify_args = [str(topology_path)]
+    verify_args = [str(topology_path.resolve())]
     if not verbose:
         verify_args.append("-q")
 

@@ -1,6 +1,6 @@
 # PRISM-4D Canonical Command Provenance
 
-**Last verified:** 2026-04-21 against git HEAD `94179b796a9fedc6a0d7f24532247301bfefef65`.
+**Last verified:** 2026-05-15 against local source after phase-manifold ranker promotion.
 **Verification script:** `~/prism_verify_truth.sh` (keep in sync with repo).
 
 ## The Canonical Command
@@ -16,7 +16,7 @@ scripts/prism-validate-and-run.sh \
     --hmr --adaptive-dt \
     --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker \
+    --site-ranker phase-manifold \
     --replica-seed 42 -v
 ```
 
@@ -36,7 +36,7 @@ scripts/prism-validate-and-run.sh \
 | `--multi-differential` | present | `nhs_rt_full.rs:404-410` | 4-group interferometer; "Overrides --coupled-twin" |
 | `--closed-loop-steering` | present | `nhs_rt_full.rs:149-162` | Closes ACS loop; without it hotspots are discarded at `:3740-3749` |
 | `--asymmetric-steering` | present | `nhs_rt_full.rs:164-204` | Scout=UCB / Observer=LCB per-group split |
-| `--use-xgb-ranker` | present | `nhs_rt_full.rs:444` ("This is the PRODUCTION ranker. Set for all pct70+ canonical runs.") + `:428` (+11.4 pts SR@1 over tokenized) | In-code-declared production ranker |
+| `--site-ranker phase-manifold` | present | `nhs_rt_full.rs` `Args.site_ranker` default + final phase-manifold rerank after enrichment | PRISM-native production ranker for v004 teacher generation; no ligand-truth or deprecated XGB dependency |
 | `--replica-seed 42` | 42 | `nhs_rt_full.rs:86-87`; historical campaign seed | Deterministic baseline |
 | `-v` | present | convention; every canonical block has it | Verbose logging |
 
@@ -45,8 +45,9 @@ scripts/prism-validate-and-run.sh \
 | Flag | Why forbidden | Source |
 |---|---|---|
 | `--persistent-coupling` | DISABLED on Blackwell SM120 | `coupled_md.rs:946-949`; `nhs_rt_full.rs:393` |
-| `--boltzmann-rank` (in canonical) | Superseded by `--use-xgb-ranker` | `nhs_rt_full.rs:444` |
-| `--use-tokenized-ranker` (in canonical) | SUPERSEDED (+11.4 pts gap) | `nhs_rt_full.rs:428` |
+| `--boltzmann-rank` (in canonical) | Superseded by `--site-ranker phase-manifold` | `nhs_rt_full.rs` final-ranker selector |
+| `--use-tokenized-ranker` (in canonical) | Legacy replay only; ignored unless `--site-ranker tokenized-v4` is explicit | `nhs_rt_full.rs` legacy selector guard |
+| `--use-xgb-ranker` (in canonical) | Deprecated legacy replay only; ignored unless `--site-ranker xgb-v3` is explicit | `nhs_rt_full.rs` legacy selector guard |
 | `--spike-percentile 95` | Not engine default; not pct70 campaign | `nhs_rt_full.rs:136` |
 | `--fused-steps 4` | Not engine default; not Nyquist-validated value | `nhs_rt_full.rs:327-329` |
 | `--graph-coupling` together with `--multi-differential` | Mutually exclusive | `nhs_rt_full.rs:400` ("Requires --coupled-twin"); `:408` (multi-diff overrides coupled-twin) |
@@ -88,7 +89,9 @@ scripts/prism-validate-and-run.sh \
 - `--persistent-coupling` is DISABLED on Blackwell SM120 (`coupled_md.rs:946`) — never pass it
 - `--coupled-twin` requires even `--multi-stream` (`nhs_rt_full.rs:976-982`)
 - `--filter-otsu` overrides `--spike-percentile` (`nhs_rt_full.rs:285-287`)
-- `--use-xgb-ranker` + `--use-tokenized-ranker`: xgb wins (`nhs_rt_full.rs:445-446`)
+- Deprecated ranker flags are inert for production unless the matching
+  explicit `--site-ranker tokenized-v4` or `--site-ranker xgb-v3` selector is
+  also set.
 
 ## Known Dead-Code / Quarantined Items (separate cleanup lane)
 

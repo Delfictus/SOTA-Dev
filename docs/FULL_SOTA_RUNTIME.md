@@ -174,7 +174,7 @@ run_from_manifest()
 | `--cryo-temp` | - | float | 100.0 | Cryo temperature (Kelvin) |
 | `--rt-clustering` | - | flag | true | Enable RT-core accelerated clustering |
 | `--cluster-threshold` | - | float | 5.0 | Cluster matching threshold (Ångströms) |
-| `--ultimate-mode` | - | flag | true | Enable UltimateEngine (2-4× faster MD) |
+| `--ultimate-mode` | - | flag | false | Experimental UltimateEngine side path; canonical teacher runs use fused NHS-AMBER |
 | `--multi-scale` | - | flag | false | Multi-scale clustering with adaptive epsilon |
 | `--adaptive-epsilon` | - | flag | true | GPU k-NN adaptive epsilon selection |
 | `--lining-cutoff` | - | float | 8.0 | Lining residue distance cutoff (Ångströms) |

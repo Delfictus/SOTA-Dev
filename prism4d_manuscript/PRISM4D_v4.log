@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.2.9)  22 FEB 2026 19:54
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.5.13)  14 MAY 2026 06:25
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -434,7 +434,7 @@ See the natbib package documentation for explanation.
 Type  H <return>  for immediate help.
  ...                                              
                                                   
-l.151 ...and\NAT@force@numbers{}\NAT@force@numbers
+l.167 ...and\NAT@force@numbers{}\NAT@force@numbers
                                                   
 Check the bibliography entries for non-compliant syntax,
 or select author-year BibTeX style, e.g. plainnat
@@ -526,88 +526,82 @@ Package hyperref Info: Link coloring ON on input line 40.
 Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: wrapfig package is loaded.
 Package caption Info: End \AtBeginDocument code.
-LaTeX Font Info:    Trying to load font information for U+msa on input line 93.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 97.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 93.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 97.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
 LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 9
-3.
+7.
 
 (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ot1pcr.fd
 File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
 )
-Underfull \hbox (badness 2717) in paragraph at lines 108--119
+Underfull \hbox (badness 2717) in paragraph at lines 112--123
 []\OT1/ptm/m/n/10 Current com-pu-ta-tional ap-proaches fall into two cat-e-
  []
 
 
-Underfull \hbox (badness 2846) in paragraph at lines 120--125
+Underfull \hbox (badness 2846) in paragraph at lines 124--129
 []\OT1/ptm/m/n/10 Beyond method-olog-i-cal lim-i-ta-tions, com-pu-ta-tional ap-
 
  []
 
-
-Underfull \vbox (badness 10000) has occurred while \output is active []
-
- [1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texlive/texmf
--dist/fonts/enc/dvips/base/8r.enc}
+[1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texlive/texmf-
+dist/fonts/enc/dvips/base/8r.enc}
 
 
 ]
 LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 1
-32.
+36.
 
 (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ts1ptm.fd
 File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
 )
-<figures/fig1_pipeline.pdf, id=160, 686.565pt x 181.3977pt>
+<figures/fig1_pipeline.pdf, id=188, 686.565pt x 181.3977pt>
 File: figures/fig1_pipeline.pdf Graphic file (type pdf)
 <use figures/fig1_pipeline.pdf>
-Package pdftex.def Info: figures/fig1_pipeline.pdf  used on input line 149.
+Package pdftex.def Info: figures/fig1_pipeline.pdf  used on input line 153.
 (pdftex.def)             Requested size: 480.59395pt x 126.97751pt.
-<figures/fig2_hysteresis.pdf, id=167, 625.98087pt x 329.01671pt>
+<figures/fig2_hysteresis.pdf, id=195, 625.98087pt x 329.01671pt>
 File: figures/fig2_hysteresis.pdf Graphic file (type pdf)
 <use figures/fig2_hysteresis.pdf>
-Package pdftex.def Info: figures/fig2_hysteresis.pdf  used on input line 203.
+Package pdftex.def Info: figures/fig2_hysteresis.pdf  used on input line 207.
 (pdftex.def)             Requested size: 430.00958pt x 226.01266pt.
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 [2]
-Underfull \hbox (badness 1038) in paragraph at lines 313--317
+Underfull \hbox (badness 1038) in paragraph at lines 317--321
 \OT1/ptm/m/n/10 SNDC is a 4-stage GPU-accelerated clus-ter-ing al-go-rithm
  []
 
 
-Underfull \hbox (badness 1286) in paragraph at lines 313--317
+Underfull \hbox (badness 1286) in paragraph at lines 317--321
 \OT1/ptm/m/n/10 turally in-te-grated with the spike gen-er-a-tion pipeline and
  []
 
 [3 <./figures/fig1_pipeline.pdf>]
-Underfull \hbox (badness 1509) in paragraph at lines 345--351
+Underfull \hbox (badness 1509) in paragraph at lines 349--355
 \OT1/ptm/m/n/10 Distance-field prop-a-ga-tion from each watershed-separated
  []
 
-
-Underfull \vbox (badness 1558) has occurred while \output is active []
-
- [4 <./figures/fig2_hysteresis.pdf>]
-Underfull \hbox (badness 1184) in paragraph at lines 395--401
+[4 <./figures/fig2_hysteresis.pdf>]
+Underfull \hbox (badness 1184) in paragraph at lines 399--405
 \OT1/ptm/m/n/10 200--800[]A$[]$), $\OML/cmm/m/it/10 S[]$ \OT1/ptm/m/n/10 is en-
 clo-sure frac-tion (pocket vol-ume /
  []
 
 
-Overfull \hbox (11.5194pt too wide) detected at line 405
+Overfull \hbox (11.5194pt too wide) detected at line 409
 [][][]\OML/cmm/m/it/10 Q \OT1/cmr/m/n/10 = 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 2
 5 \OMS/cmsy/m/n/10 ^^A []  [] \OT1/cmr/m/n/10 + 0\OML/cmm/m/it/10 :\OT1/cmr/m/n
 /10 25 \OMS/cmsy/m/n/10 ^^A []  [] \OT1/cmr/m/n/10 + 0\OML/cmm/m/it/10 :\OT1/cm
@@ -616,45 +610,45 @@ r/m/n/10 30 \OMS/cmsy/m/n/10 ^^A \OML/cmm/m/it/10 D \OT1/cmr/m/n/10 + 0\OML/cmm
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 419--424
+Underfull \hbox (badness 10000) in paragraph at lines 423--428
 \OT1/ptm/m/n/10 with \OT1/pcr/m/n/10 RUST[]LOG=info\OT1/ptm/m/n/10 . Topol-ogy 
 prepa-ra-tion used
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 419--424
+Underfull \hbox (badness 10000) in paragraph at lines 423--428
 \OT1/pcr/m/n/10 scripts/prism-prep \OT1/ptm/m/n/10 with AM-BER ff14SB force
  []
 
 
-Underfull \hbox (badness 1043) in paragraph at lines 419--424
+Underfull \hbox (badness 1043) in paragraph at lines 423--428
 \OT1/ptm/m/n/10 ac-cu-racy was mea-sured by DCC: the Eu-clidean dis-tance
  []
 
-<figures/fig3_benchmark.pdf, id=283, 612.1401pt x 318.59653pt>
+<figures/fig3_benchmark.pdf, id=312, 612.1401pt x 318.59653pt>
 File: figures/fig3_benchmark.pdf Graphic file (type pdf)
 <use figures/fig3_benchmark.pdf>
-Package pdftex.def Info: figures/fig3_benchmark.pdf  used on input line 473.
+Package pdftex.def Info: figures/fig3_benchmark.pdf  used on input line 477.
 (pdftex.def)             Requested size: 247.94499pt x 129.04546pt.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/fig4_accuracy.pdf, id=285, 442.08914pt x 322.75896pt>
+<figures/fig4_accuracy.pdf, id=314, 442.08914pt x 322.75896pt>
 File: figures/fig4_accuracy.pdf Graphic file (type pdf)
 <use figures/fig4_accuracy.pdf>
-Package pdftex.def Info: figures/fig4_accuracy.pdf  used on input line 491.
+Package pdftex.def Info: figures/fig4_accuracy.pdf  used on input line 495.
 (pdftex.def)             Requested size: 247.94499pt x 181.01958pt.
-<figures/fig8_sirpa.pdf, id=288, 714.1223pt x 352.27962pt>
+<figures/fig8_sirpa.pdf, id=317, 714.1223pt x 352.27962pt>
 File: figures/fig8_sirpa.pdf Graphic file (type pdf)
 <use figures/fig8_sirpa.pdf>
-Package pdftex.def Info: figures/fig8_sirpa.pdf  used on input line 507.
+Package pdftex.def Info: figures/fig8_sirpa.pdf  used on input line 511.
 (pdftex.def)             Requested size: 247.94499pt x 122.31064pt.
 [5 <./figures/fig3_benchmark.pdf> <./figures/fig4_accuracy.pdf>]
-<figures/fig5_reproducibility.pdf, id=331, 856.7696pt x 280.95464pt>
+<figures/fig5_reproducibility.pdf, id=361, 856.7696pt x 280.95464pt>
 File: figures/fig5_reproducibility.pdf Graphic file (type pdf)
 <use figures/fig5_reproducibility.pdf>
 Package pdftex.def Info: figures/fig5_reproducibility.pdf  used on input line 5
-70.
+74.
 (pdftex.def)             Requested size: 247.94499pt x 81.30327pt.
 
 
@@ -663,82 +657,144 @@ LaTeX Warning: `h' float specifier changed to `ht'.
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/fig6_capability.pdf, id=334, 586.93001pt x 425.5866pt>
+[6 <./figures/fig8_sirpa.pdf>]
+Underfull \hbox (badness 10000) in paragraph at lines 653--661
+\OT1/ptm/m/n/10 Across the multi-holo flag-ship tar-gets, phase-ordered
+ []
+
+
+Underfull \hbox (badness 1552) in paragraph at lines 653--661
+\OT1/ptm/m/n/10 null---an ab-so-lute gain of 24.7 per-cent-age points and a
+ []
+
+
+Underfull \hbox (badness 1354) in paragraph at lines 653--661
+\OT1/ptm/m/n/10 for vec-to-rial phar-ma-cophore re-cov-ery: when times-tamps
+ []
+
+
+Underfull \hbox (badness 1152) in paragraph at lines 653--661
+\OT1/ptm/m/n/10 ligand-facing phar-ma-cophore sig-nal col-lapsed to the null
+ []
+
+
+Overfull \hbox (59.15825pt too wide) in paragraph at lines 669--689
+ [][] 
+ []
+
+[7 <./figures/fig5_reproducibility.pdf>]
+<figures_pfr/Figure10A_vectorial_PFR_scoring.png, id=416, 588.0369pt x 570.6921
+pt>
+File: figures_pfr/Figure10A_vectorial_PFR_scoring.png Graphic file (type png)
+<use figures_pfr/Figure10A_vectorial_PFR_scoring.png>
+Package pdftex.def Info: figures_pfr/Figure10A_vectorial_PFR_scoring.png  used 
+on input line 714.
+(pdftex.def)             Requested size: 394.59357pt x 382.95386pt.
+
+Overfull \hbox (146.64857pt too wide) in paragraph at lines 714--722
+ [][] 
+ []
+
+<figures_pfr/Figure10B_phase_vs_scramble_grid.png, id=418, 793.2837pt x 1513.57
+47pt>
+File: figures_pfr/Figure10B_phase_vs_scramble_grid.png Graphic file (type png)
+<use figures_pfr/Figure10B_phase_vs_scramble_grid.png>
+Package pdftex.def Info: figures_pfr/Figure10B_phase_vs_scramble_grid.png  used
+ on input line 729.
+(pdftex.def)             Requested size: 505.89pt x 965.22025pt.
+
+Overfull \hbox (257.945pt too wide) in paragraph at lines 729--741
+ [][] 
+ []
+
+
+LaTeX Warning: Float too large for page by 489.79024pt on input line 743.
+
+<figures_pfr/Figure10C_PFR_enrichment.png, id=419, 1073.6913pt x 498.663pt>
+File: figures_pfr/Figure10C_PFR_enrichment.png Graphic file (type png)
+<use figures_pfr/Figure10C_PFR_enrichment.png>
+Package pdftex.def Info: figures_pfr/Figure10C_PFR_enrichment.png  used on inpu
+t line 748.
+(pdftex.def)             Requested size: 505.89pt x 234.94992pt.
+
+Overfull \hbox (257.945pt too wide) in paragraph at lines 748--758
+ [][] 
+ []
+
+[8 <./figures_pfr/Figure10A_vectorial_PFR_scoring.png> <./figures_pfr/Figure10B
+_phase_vs_scramble_grid.png>]
+<figures/fig6_capability.pdf, id=431, 586.93001pt x 425.5866pt>
 File: figures/fig6_capability.pdf Graphic file (type pdf)
 <use figures/fig6_capability.pdf>
-Package pdftex.def Info: figures/fig6_capability.pdf  used on input line 634.
+Package pdftex.def Info: figures/fig6_capability.pdf  used on input line 796.
 (pdftex.def)             Requested size: 247.94499pt x 179.78418pt.
 
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-Overfull \hbox (38.62361pt too wide) in paragraph at lines 644--655
+Overfull \hbox (38.62361pt too wide) in paragraph at lines 806--817
  [][] 
  []
 
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-<figures/fig7_cost.pdf, id=335, 672.1685pt x 326.5387pt>
+<figures/fig7_cost.pdf, id=432, 672.1685pt x 326.5387pt>
 File: figures/fig7_cost.pdf Graphic file (type pdf)
 <use figures/fig7_cost.pdf>
-Package pdftex.def Info: figures/fig7_cost.pdf  used on input line 659.
+Package pdftex.def Info: figures/fig7_cost.pdf  used on input line 821.
 (pdftex.def)             Requested size: 247.94499pt x 120.44872pt.
-
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-[6 <./figures/fig8_sirpa.pdf>]
-Overfull \hbox (37.21553pt too wide) in paragraph at lines 694--710
+[9 <./figures_pfr/Figure10C_PFR_enrichment.png> <./figures/fig6_capability.pdf>
+ <./figures/fig7_cost.pdf>]
+Overfull \hbox (37.21553pt too wide) in paragraph at lines 856--872
  [][] 
  []
 
 
-Underfull \hbox (badness 5189) in paragraph at lines 723--731
+Underfull \hbox (badness 5189) in paragraph at lines 885--893
 \OT1/ptm/m/n/10 The com-plete PRISM-4D platform---including AM-BER
  []
 
 
-Underfull \hbox (badness 5667) in paragraph at lines 723--731
+Underfull \hbox (badness 5667) in paragraph at lines 885--893
 \OT1/ptm/m/n/10 spec-troscopy, spike de-tec-tion, RT-core clus-ter-ing, and
  []
 
-[7 <./figures/fig5_reproducibility.pdf> <./figures/fig6_capability.pdf> <./figu
-res/fig7_cost.pdf>]
-Underfull \hbox (badness 2096) in paragraph at lines 779--788
+[10]
+Underfull \hbox (badness 2096) in paragraph at lines 941--950
 \OT1/ptm/m/n/10 pipeline---RT-DBSCAN, wa-ter-shed seg-men-ta-tion, Eikonal
  []
 
-[8]
-Underfull \hbox (badness 3240) in paragraph at lines 855--858
+[11]
+Underfull \hbox (badness 3240) in paragraph at lines 1017--1020
 []\OT1/ptm/m/n/10 Ghanakota, P. and Carl-son, H.A. (2016). Driv-ing
  []
 
-[9]
-Underfull \hbox (badness 1365) in paragraph at lines 944--947
+
+Underfull \hbox (badness 1365) in paragraph at lines 1106--1109
 []\OT1/ptm/m/n/10 Ryckaert, J.P., Ci-c-cotti, G., and Berend-sen, H.J.C.
  []
 
 
-Underfull \hbox (badness 1158) in paragraph at lines 949--952
+Underfull \hbox (badness 1158) in paragraph at lines 1111--1114
 \OT1/ptm/m/n/10 V. (2011). MD-pocket: open-source cav-ity de-tec-tion
  []
 
-[10] (./PRISM4D_v4.aux)
+[12] [13
+
+] (./PRISM4D_v4.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
  ***********
 Package rerunfilecheck Info: File `PRISM4D_v4.out' has not changed.
-(rerunfilecheck)             Checksum: 61AE381DE7A97136597AB998EFA2650B;5821.
+(rerunfilecheck)             Checksum: 036C54903B5BFEDFAB7FF6FD29A87968;7623.
  ) 
 Here is how much of TeX's memory you used:
- 13767 strings out of 476182
- 214076 string characters out of 5795596
- 1956975 words of memory out of 5000000
- 35458 multiletter control sequences out of 15000+600000
+ 13816 strings out of 476106
+ 215648 string characters out of 5793933
+ 1950975 words of memory out of 5000000
+ 35502 multiletter control sequences out of 15000+600000
  588435 words of font info for 106 fonts, out of 8000000 for 9000
- 14 hyphenation exceptions out of 8191
- 90i,15n,93p,601b,620s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 59 hyphenation exceptions out of 8191
+ 90i,15n,93p,1089b,689s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></us
 r/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx7.pfb></usr/share
 /texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/texli
@@ -748,17 +804,19 @@ mf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/share/texlive/texmf-dist
 type1/public/amsfonts/cm/cmmib10.pfb></usr/share/texlive/texmf-dist/fonts/type1
 /public/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public
 /amsfonts/cm/cmr6.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfont
-s/cm/cmr7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cms
-y10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb
-></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/
-share/texlive/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive
-/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/share/texlive/texmf-dist/fon
-ts/type1/urw/times/utmr8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/ti
-mes/utmri8a.pfb>
-Output written on PRISM4D_v4.pdf (10 pages, 413781 bytes).
+s/cm/cmr7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr
+9.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb>
+</usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/s
+hare/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/share/te
+xlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/share/texlive/t
+exmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive/texmf-dist/fon
+ts/type1/urw/times/utmb8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/ti
+mes/utmr8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmri8a.pfb
+>
+Output written on PRISM4D_v4.pdf (13 pages, 4110462 bytes).
 PDF statistics:
- 550 PDF objects out of 1000 (max. 8388607)
- 431 compressed objects within 5 object streams
- 106 named destinations out of 1000 (max. 500000)
- 281 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 616 PDF objects out of 1000 (max. 8388607)
+ 484 compressed objects within 5 object streams
+ 120 named destinations out of 1000 (max. 500000)
+ 352 words of extra memory for PDF output out of 10000 (max. 10000000)
 

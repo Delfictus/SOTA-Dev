@@ -34,7 +34,7 @@ scripts/prism-validate-and-run.sh \
     --hmr --adaptive-dt \
     --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker \
+    --site-ranker phase-manifold \
     --replica-seed 42 -v \
     2>&1 | grep -E "CRYPTIC|completed|Error|PASS|FAIL" | head -10
 

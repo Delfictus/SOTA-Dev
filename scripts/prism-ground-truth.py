@@ -80,10 +80,47 @@ PANDDA_KEYWORDS = ["PANDDA", "FRAGMENT SCREEN", "FRAGMENT-BASED",
                    "FRAGMENT SCREENING", "XCHEM", "X-CHEM"]
 ENAMINE_ID_PATTERN = re.compile(r'\bZ[0-9]{8,12}\b')
 
+# Frozen publication/corpus aliases whose topology filenames are target
+# names rather than literal PDB IDs. Keep this table narrow and explicit:
+# it only restores labels for method-locked validation targets already
+# documented in docs/blind_validation/LAST10_METHOD_LOCK.md.
+KNOWN_TARGET_ALIASES = {
+    "kras_g12c": ("4obe", "A"),
+    "kv31": ("7phh", "A"),
+    "p53_y220c": ("2j1x", "A"),
+    "akt1": ("3o96", "A"),
+    "tead3": ("8a0v", "A"),
+    "trpv1": ("7lqy", "A"),
+    "glp1r": ("7lci", "A"),
+    "mcl1": ("6oqc", "A"),
+    "sting": ("6nt5", "A"),
+    "m4r": ("5dsg", "A"),
+}
+
 
 # ─────────────────────────────────────────────────────────────────────
 # Topology parsing
 # ─────────────────────────────────────────────────────────────────────
+
+def topology_alias_key_and_chain(path_name):
+    """Return normalized target alias and explicit _chainX if present."""
+    name = os.path.basename(path_name).lower()
+    for suffix in (".topology.json", ".json", ".pdb", ".cif"):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+
+    explicit_chain = None
+    m = re.search(r'(?:^|_)chain([a-z0-9]+)$', name, re.IGNORECASE)
+    if m:
+        chain_token = m.group(1)
+        if len(chain_token) == 1:
+            explicit_chain = chain_token.upper()
+        name = name[:m.start()]
+
+    name = re.sub(r'(_clean|_sanitized|_prepared|_protein|_topology)+$', '', name)
+    return name, explicit_chain
+
 
 def parse_pdb_id_and_chain(topology_path):
     """
@@ -95,6 +132,7 @@ def parse_pdb_id_and_chain(topology_path):
         13sb_chainB.topology.json   -> ("13sb", "B")
         1btl_clean.topology.json    -> ("1btl", "A") [chain default]
         4lpk.topology.json          -> ("4lpk", "A") [chain default]
+        TRPV1_chainA.topology.json  -> ("7lqy", "A") [known corpus alias]
     """
     # Try the embedded source_pdb field first — most authoritative
     try:
@@ -119,6 +157,12 @@ def parse_pdb_id_and_chain(topology_path):
             pdb_id = m.group(1).lower()
             chain = (m.group(2) or "A").upper()
             return pdb_id, chain
+
+    for name in candidates:
+        alias_key, explicit_chain = topology_alias_key_and_chain(name)
+        if alias_key in KNOWN_TARGET_ALIASES:
+            pdb_id, default_chain = KNOWN_TARGET_ALIASES[alias_key]
+            return pdb_id, explicit_chain or default_chain
 
     return None, None
 

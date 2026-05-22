@@ -206,7 +206,7 @@ scripts/prism-validate-and-run.sh \
     --hmr --adaptive-dt \
     --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker \
+    --site-ranker phase-manifold \
     --replica-seed 42 -v
 ```
 
@@ -1201,7 +1201,7 @@ scripts/prism-validate-and-run.sh \
     --multi-stream 8 --spike-percentile 70 --fused-steps 6 \
     --hmr --adaptive-dt --multi-differential \
     --closed-loop-steering --asymmetric-steering \
-    --use-xgb-ranker --replica-seed 42 -v
+    --site-ranker phase-manifold --replica-seed 42 -v
 ```
 
 | PDB | Target | DCC (Å) | Grade | Sites | Spikes |

@@ -30,6 +30,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+if __package__ is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from scripts.interfaces.consensus_site import (
     ConsensusSite,
     ConsensusResult,
@@ -63,7 +66,11 @@ def _jaccard(a: Set[int], b: Set[int]) -> float:
 # ---------------------------------------------------------------------------
 # Load run data
 # ---------------------------------------------------------------------------
-def load_run_sites(run_dir: Path, run_id: int) -> List[MemberSite]:
+def load_run_sites(
+    run_dir: Path,
+    run_id: int,
+    delta_by_member: Optional[Dict[Tuple[int, int], Dict[str, float]]] = None,
+) -> List[MemberSite]:
     """Load all site objects from a single run's canonical pipeline output."""
     # Load binding_sites
     bs_files = sorted(run_dir.glob("*.binding_sites.json"))
@@ -129,6 +136,7 @@ def load_run_sites(run_dir: Path, run_id: int) -> List[MemberSite]:
         lining = site.get("lining_residues", [])
         lining_ids = [r.get("resid", -1) for r in lining]
 
+        delta = (delta_by_member or {}).get((run_id, sid), {})
         members.append(MemberSite(
             run_id=run_id,
             site_id=sid,
@@ -149,6 +157,8 @@ def load_run_sites(run_dir: Path, run_id: int) -> List[MemberSite]:
             n_anchors=len(anchor_data.get(sid, [])),
             lining_residue_ids=lining_ids,
             growth_vector_directions=growth_data.get(sid, []),
+            delta_stability=delta.get("delta_stability"),
+            delta_rms=delta.get("delta_rms"),
         ))
 
     return members
@@ -270,6 +280,19 @@ def build_consensus_site(
     # Mean localization
     mean_loc = sum(m.mean_localization for m in members) / len(members)
 
+    delta_stabilities = [
+        float(m.delta_stability) for m in members if m.delta_stability is not None
+    ]
+    delta_rms_values = [float(m.delta_rms) for m in members if m.delta_rms is not None]
+    mean_delta_stability = (
+        sum(delta_stabilities) / len(delta_stabilities)
+        if delta_stabilities else None
+    )
+    mean_delta_rms = (
+        sum(delta_rms_values) / len(delta_rms_values)
+        if delta_rms_values else None
+    )
+
     # Growth vector consistency: mean pairwise cosine similarity of direction sets
     def _cosine_sim_sets(
         dirs_a: List[Tuple[float, float, float]],
@@ -323,7 +346,44 @@ def build_consensus_site(
         growth_vector_consistency=round(growth_vector_consistency, 4),
         lining_consistency=round(lining_consistency, 4),
         gate_failure_reasons=dict(failures),
+        mean_delta_stability=(
+            round(mean_delta_stability, 6)
+            if mean_delta_stability is not None else None
+        ),
+        mean_delta_rms=round(mean_delta_rms, 6) if mean_delta_rms is not None else None,
     )
+
+
+def load_delta_stability_manifest(path: Optional[str]) -> Dict[Tuple[int, int], Dict[str, float]]:
+    """Load optional medoid-diff stability sidecar keyed by run_id/site_id.
+
+    Accepted rows:
+      {"run_id": 0, "site_id": 3, "delta_stability": 0.91, "delta_rms": 0.08}
+      {"replicate": 0, "id": 3, "stability": 0.91, "rms": 0.08}
+    """
+    if not path:
+        return {}
+    with open(path) as f:
+        data = json.load(f)
+    rows = data.get("sites", data if isinstance(data, list) else [])
+    out: Dict[Tuple[int, int], Dict[str, float]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        run_id = row.get("run_id", row.get("replicate", row.get("replicate_id")))
+        site_id = row.get("site_id", row.get("id"))
+        if run_id is None or site_id is None:
+            continue
+        stability = row.get("delta_stability", row.get("stability"))
+        delta_rms = row.get("delta_rms", row.get("rms", row.get("residue_delta_rms")))
+        values: Dict[str, float] = {}
+        if stability is not None:
+            values["delta_stability"] = float(stability)
+        if delta_rms is not None:
+            values["delta_rms"] = float(delta_rms)
+        if values:
+            out[(int(run_id), int(site_id))] = values
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -336,9 +396,13 @@ class ConsensusBuilder:
         self,
         centroid_threshold: float = CENTROID_THRESHOLD,
         lining_overlap_min: float = LINING_OVERLAP_MIN,
+        delta_by_member: Optional[Dict[Tuple[int, int], Dict[str, float]]] = None,
+        rank_mode: str = "rf3",
     ):
         self.centroid_threshold = centroid_threshold
         self.lining_overlap_min = lining_overlap_min
+        self.delta_by_member = delta_by_member or {}
+        self.rank_mode = rank_mode
 
     def build(
         self,
@@ -359,7 +423,7 @@ class ConsensusBuilder:
         # Load all member sites from all runs
         all_members: List[MemberSite] = []
         for run_id, rd in enumerate(run_dirs):
-            members = load_run_sites(Path(rd), run_id)
+            members = load_run_sites(Path(rd), run_id, self.delta_by_member)
             all_members.extend(members)
             print(f"  Run {run_id}: {len(members)} sites loaded "
                   f"({sum(1 for m in members if m.gate_passed)} passed)")
@@ -406,10 +470,25 @@ class ConsensusBuilder:
 
             return [enc_r[i] + per_r[i] + ac_r[i] for i in range(n)]
 
-        rf3_scores = _rf3_rank(consensus_sites)
-        order = sorted(range(len(consensus_sites)),
-                       key=lambda i: rf3_scores[i])
-        consensus_sites = [consensus_sites[i] for i in order]
+        if self.rank_mode == "lexicographic":
+            def _stability(cs: ConsensusSite) -> float:
+                if cs.mean_delta_stability is not None:
+                    return cs.mean_delta_stability
+                return 1.0 / (1.0 + max(cs.centroid_variance, 0.0))
+
+            consensus_sites.sort(
+                key=lambda cs: (
+                    -cs.persistence,
+                    -cs.pass_fraction,
+                    -_stability(cs),
+                    -cs.mean_quality_score,
+                )
+            )
+        else:
+            rf3_scores = _rf3_rank(consensus_sites)
+            order = sorted(range(len(consensus_sites)),
+                           key=lambda i: rf3_scores[i])
+            consensus_sites = [consensus_sites[i] for i in order]
 
         # Re-assign cluster IDs by rank order
         for i, cs in enumerate(consensus_sites):
@@ -438,11 +517,28 @@ def main() -> None:
     parser.add_argument("--out", required=True, help="Output directory")
     parser.add_argument("--centroid-threshold", type=float, default=5.0)
     parser.add_argument("--lining-overlap", type=float, default=0.2)
+    parser.add_argument(
+        "--delta-stability-manifest",
+        default=None,
+        help="Optional medoid-diff stability sidecar keyed by run_id/site_id",
+    )
+    parser.add_argument(
+        "--rank-mode",
+        choices=("rf3", "lexicographic"),
+        default="rf3",
+        help="rf3 preserves legacy behavior; lexicographic uses persistence/pass/stability/quality",
+    )
     args = parser.parse_args()
 
     print(f"[Consensus] {args.target_name}: {len(args.run_dirs)} replicates")
 
-    builder = ConsensusBuilder(args.centroid_threshold, args.lining_overlap)
+    delta_by_member = load_delta_stability_manifest(args.delta_stability_manifest)
+    builder = ConsensusBuilder(
+        args.centroid_threshold,
+        args.lining_overlap,
+        delta_by_member=delta_by_member,
+        rank_mode=args.rank_mode,
+    )
     result = builder.build(args.run_dirs, args.target_name)
 
     out = Path(args.out)
@@ -463,6 +559,8 @@ def main() -> None:
             "cluster_id": cs.cluster_id,
             "persistence": cs.persistence,
             "pass_fraction": cs.pass_fraction,
+            "mean_delta_stability": cs.mean_delta_stability,
+            "mean_delta_rms": cs.mean_delta_rms,
             "gate_failure_reasons": cs.gate_failure_reasons,
             "n_members": len(cs.member_sites),
             "n_passed": sum(1 for m in cs.member_sites if m.gate_passed),
@@ -488,6 +586,8 @@ def main() -> None:
             "anchor_consistency": cs.anchor_consistency,
             "growth_vector_consistency": cs.growth_vector_consistency,
             "lining_consistency": cs.lining_consistency,
+            "mean_delta_stability": cs.mean_delta_stability,
+            "mean_delta_rms": cs.mean_delta_rms,
             "gate_failure_reasons": cs.gate_failure_reasons,
             "n_members": len(cs.member_sites),
             "member_runs": [m.run_id for m in cs.member_sites],
@@ -502,11 +602,14 @@ def main() -> None:
     print(f"  Consensus sites: {result.n_consensus}")
     print()
     print(f"  {'Rank':>4} {'Persist':>7} {'Pass%':>6} {'Var(A)':>6} "
-          f"{'mGTCKL':>7} {'mCR':>6} {'AnchJ':>6} {'LinJ':>6} {'Members':>7}")
-    print(f"  {'-'*62}")
+          f"{'DeltaS':>7} {'mGTCKL':>7} {'mCR':>6} {'AnchJ':>6} {'LinJ':>6} {'Members':>7}")
+    print(f"  {'-'*72}")
     for cs in result.consensus_sites[:20]:
+        delta_s = cs.mean_delta_stability
+        delta_s_str = f"{delta_s:>7.3f}" if delta_s is not None else f"{'NA':>7}"
         print(f"  {cs.cluster_id:>4} {cs.persistence:>7.2f} "
               f"{cs.pass_fraction:>6.2f} {cs.centroid_variance:>6.2f} "
+              f"{delta_s_str} "
               f"{cs.mean_quality_score:>7.4f} {cs.mean_contact_reorg:>6.4f} "
               f"{cs.anchor_consistency:>6.2f} {cs.lining_consistency:>6.2f} "
               f"{len(cs.member_sites):>7}")
