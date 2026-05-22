@@ -619,6 +619,7 @@ mod tests {
                     charged_fraction: 0.0,
                 },
                 uv_response: UvResponseMetrics::default(),
+                temporal: None,
             },
             rank_score: 0.8,
             confidence: 0.85,
