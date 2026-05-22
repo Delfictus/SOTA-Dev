@@ -118,26 +118,86 @@ pub struct SidechainDescriptor {
 impl AminoAcid {
     pub fn descriptor(self) -> SidechainDescriptor {
         match self {
-            AminoAcid::A => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  16.8 },
-            AminoAcid::R => SidechainDescriptor { net_charge:  1.0, volume_angstrom3: 105.1 },
-            AminoAcid::N => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  58.7 },
-            AminoAcid::D => SidechainDescriptor { net_charge: -1.0, volume_angstrom3:  54.6 },
-            AminoAcid::C => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  44.6 },
-            AminoAcid::Q => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  78.7 },
-            AminoAcid::E => SidechainDescriptor { net_charge: -1.0, volume_angstrom3:  74.7 },
-            AminoAcid::G => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:   0.0 },
-            AminoAcid::H => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  79.0 },
-            AminoAcid::I => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  66.9 },
-            AminoAcid::L => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  66.9 },
-            AminoAcid::K => SidechainDescriptor { net_charge:  1.0, volume_angstrom3:  97.1 },
-            AminoAcid::M => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  83.7 },
-            AminoAcid::F => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  88.2 },
-            AminoAcid::P => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  44.6 },
-            AminoAcid::S => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  25.3 },
-            AminoAcid::T => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  44.0 },
-            AminoAcid::W => SidechainDescriptor { net_charge:  0.0, volume_angstrom3: 113.6 },
-            AminoAcid::Y => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  98.2 },
-            AminoAcid::V => SidechainDescriptor { net_charge:  0.0, volume_angstrom3:  50.5 },
+            AminoAcid::A => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 16.8,
+            },
+            AminoAcid::R => SidechainDescriptor {
+                net_charge: 1.0,
+                volume_angstrom3: 105.1,
+            },
+            AminoAcid::N => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 58.7,
+            },
+            AminoAcid::D => SidechainDescriptor {
+                net_charge: -1.0,
+                volume_angstrom3: 54.6,
+            },
+            AminoAcid::C => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 44.6,
+            },
+            AminoAcid::Q => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 78.7,
+            },
+            AminoAcid::E => SidechainDescriptor {
+                net_charge: -1.0,
+                volume_angstrom3: 74.7,
+            },
+            AminoAcid::G => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 0.0,
+            },
+            AminoAcid::H => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 79.0,
+            },
+            AminoAcid::I => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 66.9,
+            },
+            AminoAcid::L => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 66.9,
+            },
+            AminoAcid::K => SidechainDescriptor {
+                net_charge: 1.0,
+                volume_angstrom3: 97.1,
+            },
+            AminoAcid::M => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 83.7,
+            },
+            AminoAcid::F => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 88.2,
+            },
+            AminoAcid::P => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 44.6,
+            },
+            AminoAcid::S => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 25.3,
+            },
+            AminoAcid::T => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 44.0,
+            },
+            AminoAcid::W => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 113.6,
+            },
+            AminoAcid::Y => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 98.2,
+            },
+            AminoAcid::V => SidechainDescriptor {
+                net_charge: 0.0,
+                volume_angstrom3: 50.5,
+            },
         }
     }
 }
@@ -150,7 +210,10 @@ impl AminoAcid {
 pub fn delta_q_v(wildtype: AminoAcid, mutant: AminoAcid) -> (f64, f64) {
     let wt = wildtype.descriptor();
     let mu = mutant.descriptor();
-    (mu.net_charge - wt.net_charge, mu.volume_angstrom3 - wt.volume_angstrom3)
+    (
+        mu.net_charge - wt.net_charge,
+        mu.volume_angstrom3 - wt.volume_angstrom3,
+    )
 }
 
 /// Rigid-backbone substitution is invalid for any Pro↔non-Pro swap.
@@ -173,7 +236,10 @@ mod tests {
     #[test]
     fn aspartate_to_alanine_drops_negative_charge() {
         let (dq, _) = delta_q_v(AminoAcid::D, AminoAcid::A);
-        assert!((dq - 1.0).abs() < 1e-9, "D→A should DROP a negative charge => dq = +1");
+        assert!(
+            (dq - 1.0).abs() < 1e-9,
+            "D→A should DROP a negative charge => dq = +1"
+        );
     }
 
     #[test]

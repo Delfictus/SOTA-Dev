@@ -75,6 +75,7 @@ fn main() -> Result<()> {
         end_temp,
         ramp_steps: 10000,
         hold_steps: 20000,
+        cold_hold_steps: 0,
         current_step: 0,
     };
     engine.set_temperature_protocol(temp_protocol)?;

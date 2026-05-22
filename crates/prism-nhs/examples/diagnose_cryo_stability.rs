@@ -77,6 +77,7 @@ fn main() -> Result<()> {
         end_temp: 100.0,
         ramp_steps: 0,
         hold_steps: 100000,
+        cold_hold_steps: 0,
         current_step: 0,
     })?;
 
@@ -135,6 +136,7 @@ fn main() -> Result<()> {
         end_temp: 300.0,
         ramp_steps: 10000,
         hold_steps: 0,
+        cold_hold_steps: 0,
         current_step: 0,
     })?;
 
@@ -197,6 +199,7 @@ fn main() -> Result<()> {
         end_temp: 50.0,
         ramp_steps: 0,
         hold_steps: 100000,
+        cold_hold_steps: 0,
         current_step: 0,
     })?;
 

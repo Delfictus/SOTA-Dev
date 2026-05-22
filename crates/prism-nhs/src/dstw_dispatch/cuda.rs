@@ -152,7 +152,11 @@ pub fn row_sums_cpu_reference(
 ) -> Result<(), String> {
     shape.validate()?;
     if k.len() != shape.k_len() {
-        return Err(format!("K length mismatch: {} != {}", k.len(), shape.k_len()));
+        return Err(format!(
+            "K length mismatch: {} != {}",
+            k.len(),
+            shape.k_len()
+        ));
     }
     if residue_id.len() != shape.n_variants {
         return Err(format!(
@@ -234,9 +238,7 @@ impl CudaPropagationKernel {
 
 #[cfg(feature = "gpu")]
 mod gpu_impl {
-    use super::{
-        propagate_cpu_reference, Backend, PropagationShape, N_CHANNELS,
-    };
+    use super::{propagate_cpu_reference, Backend, PropagationShape, N_CHANNELS};
     use cudarc::driver::{CudaContext, CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
     use cudarc::nvrtc::Ptx;
     use std::sync::Arc;
@@ -299,8 +301,14 @@ mod gpu_impl {
                 .map_err(|e| format!("load_module({ptx_path}) failed: {e}"))?;
             let propagation_fn = module
                 .load_function("dstw_propagation_kernel")
-                .map_err(|e| format!("module.load_function(dstw_propagation_kernel) failed: {e}"))?;
-            Ok(Self { stream, propagation_fn, block_dim_x: 128 })
+                .map_err(|e| {
+                    format!("module.load_function(dstw_propagation_kernel) failed: {e}")
+                })?;
+            Ok(Self {
+                stream,
+                propagation_fn,
+                block_dim_x: 128,
+            })
         }
 
         pub fn select_backend(&self) -> Backend {
@@ -467,7 +475,10 @@ mod tests {
     #[test]
     fn shape_sweep_residue_counts() {
         for &n in &[32usize, 64, 128, 256, 352, 512] {
-            let shape = PropagationShape { n_residues: n, n_variants: 4 };
+            let shape = PropagationShape {
+                n_residues: n,
+                n_variants: 4,
+            };
             shape.validate().expect("valid shape");
             let k = synth_k(n);
             let residue_id = vec![0, 1, (n / 2) as i32, (n - 1) as i32];
@@ -491,7 +502,10 @@ mod tests {
     fn shape_sweep_variant_counts() {
         for &nv in &[1usize, 5, 25, 100] {
             let n = 128usize;
-            let shape = PropagationShape { n_residues: n, n_variants: nv };
+            let shape = PropagationShape {
+                n_residues: n,
+                n_variants: nv,
+            };
             shape.validate().expect("valid shape");
             let k = synth_k(n);
             let residue_id: Vec<i32> = (0..nv).map(|b| (b % n) as i32).collect();
@@ -515,7 +529,10 @@ mod tests {
     #[test]
     fn out_of_range_residue_yields_zero() {
         let n = 64usize;
-        let shape = PropagationShape { n_residues: n, n_variants: 3 };
+        let shape = PropagationShape {
+            n_residues: n,
+            n_variants: 3,
+        };
         let k = synth_k(n);
         let residue_id = vec![0, -1, 999];
         let pert = vec![1.0, 1.0, 1.0];
@@ -535,7 +552,10 @@ mod tests {
     fn row_sums_reference_matches_propagation() {
         let n = 96usize;
         let nv = 7usize;
-        let shape = PropagationShape { n_residues: n, n_variants: nv };
+        let shape = PropagationShape {
+            n_residues: n,
+            n_variants: nv,
+        };
         let k = synth_k(n);
         let residue_id: Vec<i32> = (0..nv).map(|b| ((b * 13) % n) as i32).collect();
         let pert = vec![1.0; nv];
@@ -556,12 +576,24 @@ mod tests {
 
     #[test]
     fn shape_validation_rejects_invalid_inputs() {
-        let shape = PropagationShape { n_residues: 0, n_variants: 10 };
+        let shape = PropagationShape {
+            n_residues: 0,
+            n_variants: 10,
+        };
         assert!(shape.validate().is_err());
-        let shape = PropagationShape { n_residues: 10, n_variants: 0 };
+        let shape = PropagationShape {
+            n_residues: 10,
+            n_variants: 0,
+        };
         assert!(shape.validate().is_err());
-        let shape = PropagationShape { n_residues: 2048, n_variants: 10 };
-        assert!(shape.validate().unwrap_err().contains("MAX_RESIDUES_PER_BLOCK"));
+        let shape = PropagationShape {
+            n_residues: 2048,
+            n_variants: 10,
+        };
+        assert!(shape
+            .validate()
+            .unwrap_err()
+            .contains("MAX_RESIDUES_PER_BLOCK"));
     }
 
     /// GPU dispatch test — actually launches the kernel on the host's
@@ -580,7 +612,10 @@ mod tests {
         };
         let n = 64;
         let nv = 4;
-        let shape = PropagationShape { n_residues: n, n_variants: nv };
+        let shape = PropagationShape {
+            n_residues: n,
+            n_variants: nv,
+        };
         let k = synth_k(n);
         let residue_id = vec![0, 7, (n / 2) as i32, (n - 1) as i32];
         let pert = vec![1.0, -1.0, 2.0, 0.5];

@@ -72,6 +72,7 @@ fn main() -> Result<()> {
             end_temp: 300.0,   // Ramp to room temp
             ramp_steps: 1500,  // Most of run is ramp
             hold_steps: 500,   // Short hold at 300K
+            cold_hold_steps: 0,
             current_step: 0,
         };
         engine.set_temperature_protocol(temp_protocol)?;

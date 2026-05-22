@@ -300,7 +300,8 @@ fn load_materialized(path: &Path) -> Result<Value> {
         .with_context(|| format!("read materialized sites {}", path.display()))?;
     let root: Value = serde_json::from_str(&text)
         .with_context(|| format!("parse materialized sites {}", path.display()))?;
-    if root.get("schema_kind").and_then(|v| v.as_str()) != Some("pathb_binding_sites_materialized") {
+    if root.get("schema_kind").and_then(|v| v.as_str()) != Some("pathb_binding_sites_materialized")
+    {
         bail!(
             "{}: expected schema_kind pathb_binding_sites_materialized",
             path.display()
@@ -339,16 +340,26 @@ fn aggregate_pathb(
         if lining.is_empty() {
             continue;
         }
-        let drivers: BTreeSet<i32> = convert_topology_indices(v_i32_vec(site, "driver_residues"), residue_map)
-            .into_iter()
-            .collect();
+        let drivers: BTreeSet<i32> =
+            convert_topology_indices(v_i32_vec(site, "driver_residues"), residue_map)
+                .into_iter()
+                .collect();
 
         let density = v_f64(site, &["score_components", "density_score"]);
         let temporal = v_f64(site, &["score_components", "temporal_persistence_factor"]);
         let stream_balance = v_f64(site, &["score_components", "stream_balance_factor"]);
-        let residue_shell = v_f64(site, &["score_components", "residue_shell_plausibility_factor"]);
-        let manifold = v_f64(site, &["score_components", "centroid_manifold_consistency_factor"])
-            .max(v_f64(site, &["manifold_consistency", "manifold_consistency_score"]));
+        let residue_shell = v_f64(
+            site,
+            &["score_components", "residue_shell_plausibility_factor"],
+        );
+        let manifold = v_f64(
+            site,
+            &["score_components", "centroid_manifold_consistency_factor"],
+        )
+        .max(v_f64(
+            site,
+            &["manifold_consistency", "manifold_consistency_score"],
+        ));
         let kcc_factor = v_f64(site, &["score_components", "kcc_driver_factor"]).max(1.0);
         let kcc_score = v_f64(site, &["kcc_driver", "kcc_driver_score"]);
         let rayleigh = v_f64(site, &["phase_support", "rayleigh_r_stat"]);
@@ -366,7 +377,8 @@ fn aggregate_pathb(
         //   sigma    := centroid spread variance proxy; downstream EiV paths
         //               can down-weight high-spread sites.
         let spike_scale = n_spikes.ln_1p().max(1.0);
-        let base_te_out = density.max(0.0) * temporal.max(0.0) * stream_balance.max(0.0) * spike_scale;
+        let base_te_out =
+            density.max(0.0) * temporal.max(0.0) * stream_balance.max(0.0) * spike_scale;
         let base_te_in = residue_shell.max(0.0) * manifold.max(0.0) * stream_balance.max(0.0);
         let site_delta_hc = rayleigh.max(0.0) * manifold.max(0.0);
         let site_sigma = (spread.max(0.0) / 10.0).powi(2);
@@ -452,7 +464,11 @@ fn epoch_to_civil(secs: u64) -> (i64, u32, u32, u32, u32, u32) {
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { (mp + 3) as u32 } else { (mp - 9) as u32 };
+    let m = if mp < 10 {
+        (mp + 3) as u32
+    } else {
+        (mp - 9) as u32
+    };
     let year = y + (if m <= 2 { 1 } else { 0 });
     let time = secs % secs_in_day;
     let hour = (time / 3600) as u32;
@@ -503,7 +519,8 @@ fn write_json(response: &WTPhysicalProfileResponse, out: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let f = File::create(out).with_context(|| format!("create {}", out.display()))?;
-    serde_json::to_writer_pretty(f, response).with_context(|| format!("write {}", out.display()))?;
+    serde_json::to_writer_pretty(f, response)
+        .with_context(|| format!("write {}", out.display()))?;
     Ok(())
 }
 
@@ -667,8 +684,17 @@ fn main() -> Result<()> {
     }
     let response = build_response(&args, &residue_map, &per_residue, edges);
     write_json(&response, &args.out_json)?;
-    write_physics_parquet(&response, &residue_map, &args.structure_anchor_id, &args.out_parquet)?;
-    write_contact_parquet(&response, &args.structure_anchor_id, &args.out_contact_parquet)?;
+    write_physics_parquet(
+        &response,
+        &residue_map,
+        &args.structure_anchor_id,
+        &args.out_parquet,
+    )?;
+    write_contact_parquet(
+        &response,
+        &args.structure_anchor_id,
+        &args.out_contact_parquet,
+    )?;
     eprintln!(
         "[dstw_export_wt_pathb] target={} anchor={} sites={} residues={} edges={}",
         response.target,
@@ -678,7 +704,10 @@ fn main() -> Result<()> {
         response.dynamic_contact_edges.len(),
     );
     eprintln!("[dstw_export_wt_pathb] wrote {}", args.out_json.display());
-    eprintln!("[dstw_export_wt_pathb] wrote {}", args.out_parquet.display());
+    eprintln!(
+        "[dstw_export_wt_pathb] wrote {}",
+        args.out_parquet.display()
+    );
     eprintln!(
         "[dstw_export_wt_pathb] wrote {}",
         args.out_contact_parquet.display()

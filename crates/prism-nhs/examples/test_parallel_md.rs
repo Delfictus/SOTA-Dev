@@ -242,6 +242,7 @@ fn run_parallel_physics_test(
         end_temp: target_temp,
         ramp_steps: 0,
         hold_steps: n_steps as i32,
+        cold_hold_steps: 0,
         current_step: 0,
     };
 

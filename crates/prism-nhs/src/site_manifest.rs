@@ -965,7 +965,7 @@ mod tests {
     fn sort_key() -> CausalSortKey {
         CausalSortKey {
             priorities: vec![
-                SortField::TransferEntropy,
+                SortField::CausalCoupling,
                 SortField::KccScore,
                 SortField::SpikeAttributionCount,
             ],

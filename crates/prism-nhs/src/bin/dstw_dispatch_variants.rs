@@ -13,19 +13,18 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
+use prism_nhs::dstw_dispatch::projection::ProjectionConfig;
 use prism_nhs::dstw_dispatch::{
     dispatch_variant_batch_with_topology, DispatchError, PRISMExecutionRequest,
     TopologyProjectionContext, VariantDispatchConfig, WTTensorPack,
 };
-use prism_nhs::dstw_dispatch::projection::ProjectionConfig;
 use prism_nhs::input::PrismPrepTopology;
-use std::{fs::File, io::BufReader, path::PathBuf};
 use std::sync::Arc;
+use std::{fs::File, io::BufReader, path::PathBuf};
 
 // Parquet reader for the WT tensor pack.
 use arrow_array::{
-    ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, RecordBatch,
-    StringArray,
+    ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray,
 };
 use arrow_schema::{DataType, Field, Schema};
 use parquet::{
@@ -36,7 +35,7 @@ use parquet::{
 #[derive(Parser, Debug)]
 #[command(
     name = "dstw_dispatch_variants",
-    about = "Project a DSTW BALD variant request onto the WT thermodynamic tensors.",
+    about = "Project a DSTW BALD variant request onto the WT thermodynamic tensors."
 )]
 struct Args {
     /// Path to the DSTW BALD_Round_NNN_Request.json.
@@ -98,15 +97,14 @@ struct Args {
 fn load_request(path: &PathBuf) -> Result<PRISMExecutionRequest> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let reader = BufReader::new(file);
-    let req: PRISMExecutionRequest = serde_json::from_reader(reader)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let req: PRISMExecutionRequest =
+        serde_json::from_reader(reader).with_context(|| format!("parse {}", path.display()))?;
     Ok(req)
 }
 
 fn load_wt_pack(path: &PathBuf) -> Result<WTTensorPack> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
-    let mut reader =
-        ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+    let mut reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
     // Concatenate every batch into Vec<f64> columns.
     let mut indices: Vec<i32> = Vec::new();
     let mut inactive_te_out: Vec<f64> = Vec::new();
@@ -147,9 +145,9 @@ fn load_wt_pack(path: &PathBuf) -> Result<WTTensorPack> {
             Ok(out)
         };
         // Drop residue_name column (string, not used by the projection).
-        let _ = batch.column_by_name("residue_name").and_then(|c| {
-            c.as_any().downcast_ref::<StringArray>().map(|_| ())
-        });
+        let _ = batch
+            .column_by_name("residue_name")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>().map(|_| ()));
         indices.extend(idx_values);
         inactive_te_out.extend(to_f64("inactive_te_out")?);
         inactive_te_in.extend(to_f64("inactive_te_in")?);
@@ -251,34 +249,74 @@ fn write_response_parquet(
         Arc::new(StringArray::from(repeat(&response.completed_at_utc))),
         Arc::new(StringArray::from(repeat(&response.response_schema))),
         Arc::new(StringArray::from(
-            response.variants.iter().map(|v| v.target.clone()).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.target.clone())
+                .collect::<Vec<_>>(),
         )),
         Arc::new(StringArray::from(
-            response.variants.iter().map(|v| v.variant.clone()).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.variant.clone())
+                .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
-            response.variants.iter().map(|v| v.delta_P_active).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.delta_P_active)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
-            response.variants.iter().map(|v| v.delta_P_lock).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.delta_P_lock)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
-            response.variants.iter().map(|v| v.delta_P_ensemble).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.delta_P_ensemble)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
-            response.variants.iter().map(|v| v.sigma_delta_P_active).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.sigma_delta_P_active)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
-            response.variants.iter().map(|v| v.sigma_delta_P_lock).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.sigma_delta_P_lock)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
-            response.variants.iter().map(|v| v.sigma_delta_P_ensemble).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.sigma_delta_P_ensemble)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(StringArray::from(
-            response.variants.iter().map(|v| v.prism_run_id.clone()).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.prism_run_id.clone())
+                .collect::<Vec<_>>(),
         )),
         Arc::new(BooleanArray::from(
-            response.variants.iter().map(|v| v.converged).collect::<Vec<_>>(),
+            response
+                .variants
+                .iter()
+                .map(|v| v.converged)
+                .collect::<Vec<_>>(),
         )),
     ];
     let batch = RecordBatch::try_new(schema.clone(), columns)
@@ -297,8 +335,13 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let request = load_request(&args.request)?;
     let wt = load_wt_pack(&args.wt_tensor_pack)?;
-    let inactive_topology = PrismPrepTopology::load(&args.inactive_topology)
-        .with_context(|| format!("load inactive topology {}", args.inactive_topology.display()))?;
+    let inactive_topology =
+        PrismPrepTopology::load(&args.inactive_topology).with_context(|| {
+            format!(
+                "load inactive topology {}",
+                args.inactive_topology.display()
+            )
+        })?;
     let active_topology = PrismPrepTopology::load(&args.active_topology)
         .with_context(|| format!("load active topology {}", args.active_topology.display()))?;
     let topology_context = TopologyProjectionContext::from_prism_topologies(
@@ -321,22 +364,28 @@ fn main() -> Result<()> {
             rotamer_samples: args.rotamer_samples,
         },
     };
-    let response = match dispatch_variant_batch_with_topology(&request, &wt, &cfg, Some(&topology_context)) {
-        Ok(r) => r,
-        Err(DispatchError::SchemaMismatch(m)) => bail!("schema mismatch: {m}"),
-        Err(DispatchError::NonFinite { target, variant, channel }) => bail!(
-            "non-finite {channel} emitted for variant ({target}, {variant})"
-        ),
-        Err(other) => bail!("{other}"),
-    };
+    let response =
+        match dispatch_variant_batch_with_topology(&request, &wt, &cfg, Some(&topology_context)) {
+            Ok(r) => r,
+            Err(DispatchError::SchemaMismatch(m)) => bail!("schema mismatch: {m}"),
+            Err(DispatchError::NonFinite {
+                target,
+                variant,
+                channel,
+            }) => bail!("non-finite {channel} emitted for variant ({target}, {variant})"),
+            Err(other) => bail!("{other}"),
+        };
     if let Some(out_json) = &args.out_json {
         if let Some(parent) = out_json.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let out = File::create(out_json)
-            .with_context(|| format!("create {}", out_json.display()))?;
+        let out =
+            File::create(out_json).with_context(|| format!("create {}", out_json.display()))?;
         serde_json::to_writer_pretty(out, &response)?;
-        eprintln!("[dstw_dispatch_variants] wrote JSON: {}", out_json.display());
+        eprintln!(
+            "[dstw_dispatch_variants] wrote JSON: {}",
+            out_json.display()
+        );
     }
     write_response_parquet(&response, &args.out_parquet)?;
     eprintln!(
@@ -350,7 +399,10 @@ fn main() -> Result<()> {
         "[dstw_dispatch_variants] request_blake3={}",
         response.request_blake3
     );
-    eprintln!("[dstw_dispatch_variants] wrote parquet: {}", args.out_parquet.display());
+    eprintln!(
+        "[dstw_dispatch_variants] wrote parquet: {}",
+        args.out_parquet.display()
+    );
     Ok(())
 }
 
@@ -364,8 +416,8 @@ fn main() -> Result<()> {
 mod tests {
     use super::*;
     use prism_nhs::dstw_dispatch::{
-        dispatch_variant_batch, PRISMExecutionAcquisition, REQUIRED_DELTA_CHANNELS, RESPONSE_SCHEMA_TAG,
-        VariantExecutionRequest,
+        dispatch_variant_batch, PRISMExecutionAcquisition, VariantExecutionRequest,
+        REQUIRED_DELTA_CHANNELS, RESPONSE_SCHEMA_TAG,
     };
 
     fn synth_wt(n: usize) -> WTTensorPack {
@@ -455,7 +507,8 @@ mod tests {
         assert!(
             bad.sigma_delta_P_active > ok.sigma_delta_P_active,
             "sigma_delta_P_active must inflate (ok={}, failed={})",
-            ok.sigma_delta_P_active, bad.sigma_delta_P_active,
+            ok.sigma_delta_P_active,
+            bad.sigma_delta_P_active,
         );
         assert!(bad.sigma_delta_P_lock > ok.sigma_delta_P_lock);
         assert!(bad.sigma_delta_P_ensemble > ok.sigma_delta_P_ensemble);
@@ -490,8 +543,8 @@ mod tests {
     // tests change, update both.
 
     use prism_nhs::dstw_dispatch::cuda::{
-        propagate_cpu_reference, row_sums_cpu_reference, Backend,
-        CudaPropagationKernel, PropagationShape, CH_ACTIVE, N_CHANNELS,
+        propagate_cpu_reference, row_sums_cpu_reference, Backend, CudaPropagationKernel,
+        PropagationShape, CH_ACTIVE, N_CHANNELS,
     };
 
     fn synth_k_for_cuda(n: usize) -> Vec<f32> {
@@ -515,7 +568,10 @@ mod tests {
     #[test]
     fn cuda_ref_shape_sweep_residue_counts() {
         for &n in &[32usize, 64, 128, 256, 352, 512] {
-            let shape = PropagationShape { n_residues: n, n_variants: 4 };
+            let shape = PropagationShape {
+                n_residues: n,
+                n_variants: 4,
+            };
             let k = synth_k_for_cuda(n);
             let residue_id = vec![0, 1, (n / 2) as i32, (n - 1) as i32];
             let pert = vec![1.0, -1.0, 2.0, 0.5];
@@ -538,7 +594,10 @@ mod tests {
     fn cuda_ref_shape_sweep_variant_counts() {
         for &nv in &[1usize, 5, 25, 100] {
             let n = 128usize;
-            let shape = PropagationShape { n_residues: n, n_variants: nv };
+            let shape = PropagationShape {
+                n_residues: n,
+                n_variants: nv,
+            };
             let k = synth_k_for_cuda(n);
             let residue_id: Vec<i32> = (0..nv).map(|b| (b % n) as i32).collect();
             let pert: Vec<f32> = (0..nv).map(|b| (b as f32) * 0.01).collect();
@@ -561,7 +620,10 @@ mod tests {
     #[test]
     fn cuda_ref_out_of_range_residue_yields_zero() {
         let n = 64usize;
-        let shape = PropagationShape { n_residues: n, n_variants: 3 };
+        let shape = PropagationShape {
+            n_residues: n,
+            n_variants: 3,
+        };
         let k = synth_k_for_cuda(n);
         let residue_id = vec![0, -1, 999];
         let pert = vec![1.0, 1.0, 1.0];
@@ -578,7 +640,10 @@ mod tests {
     fn cuda_ref_row_sums_match_propagation_at_unit_pert() {
         let n = 96usize;
         let nv = 7usize;
-        let shape = PropagationShape { n_residues: n, n_variants: nv };
+        let shape = PropagationShape {
+            n_residues: n,
+            n_variants: nv,
+        };
         let k = synth_k_for_cuda(n);
         let residue_id: Vec<i32> = (0..nv).map(|b| ((b * 13) % n) as i32).collect();
         let pert = vec![1.0; nv];
@@ -607,12 +672,17 @@ mod tests {
         };
         let n = 32;
         let nv = 2;
-        let shape = PropagationShape { n_residues: n, n_variants: nv };
+        let shape = PropagationShape {
+            n_residues: n,
+            n_variants: nv,
+        };
         let k = synth_k_for_cuda(n);
         let residue_id = vec![0, 5];
         let pert = vec![1.0, 1.0];
         let mut delta_p = vec![0.0f32; shape.delta_p_len()];
-        let backend = kernel.dispatch(shape, &k, &residue_id, &pert, &mut delta_p).unwrap();
+        let backend = kernel
+            .dispatch(shape, &k, &residue_id, &pert, &mut delta_p)
+            .unwrap();
         assert_eq!(backend, Backend::Cuda);
         assert_eq!(CH_ACTIVE, 0);
         // Spot-check one entry against the analytic row-sum.
@@ -622,7 +692,10 @@ mod tests {
 
     #[test]
     fn cuda_shape_validation_rejects_oversize_residue_count() {
-        let shape = PropagationShape { n_residues: 2048, n_variants: 4 };
+        let shape = PropagationShape {
+            n_residues: 2048,
+            n_variants: 4,
+        };
         let err = shape.validate().unwrap_err();
         assert!(err.contains("MAX_RESIDUES_PER_BLOCK"));
     }

@@ -300,6 +300,9 @@ fn run_structure_benchmark(
         uv_burst_duration: 50,  // Vibrational relaxation timescale
         scan_wavelengths: vec![280.0, 274.0, 258.0], // Trp/Tyr/Phe λ_max (literature)
         wavelength_dwell_steps: 500,
+        ramp_down_steps: 0,
+        cold_return_steps: 0,
+        stepped_holds: Vec::new(),
     };
 
     if let Err(e) = engine.set_cryo_uv_protocol(protocol) {

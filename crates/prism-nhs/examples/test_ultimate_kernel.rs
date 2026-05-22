@@ -49,6 +49,14 @@ fn create_test_topology(n_atoms: usize) -> PrismPrepTopology {
         exclusions: vec![vec![]; n_atoms],
         h_clusters: vec![],
         water_oxygens: vec![],
+        residues: (0..n_atoms)
+            .map(|idx| prism_nhs::input::ResidueMetadata {
+                residue_idx: idx,
+                residue_name: "ALA".to_string(),
+                residue_id: idx as i32,
+            })
+            .collect(),
+        dimer_dyad: None,
     }
 }
 

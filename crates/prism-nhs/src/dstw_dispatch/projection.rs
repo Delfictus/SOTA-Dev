@@ -54,7 +54,9 @@ impl WTTensorPack {
     }
 
     pub fn index_for(&self, residue_number: i32) -> Option<usize> {
-        self.residue_numbers.iter().position(|r| *r == residue_number)
+        self.residue_numbers
+            .iter()
+            .position(|r| *r == residue_number)
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -72,7 +74,10 @@ impl WTTensorPack {
             ("inactive_te_out", &self.inactive_te_out),
             ("inactive_te_in", &self.inactive_te_in),
             ("inactive_delta_hc", &self.inactive_delta_hc),
-            ("inactive_sigma_hydration_sq", &self.inactive_sigma_hydration_sq),
+            (
+                "inactive_sigma_hydration_sq",
+                &self.inactive_sigma_hydration_sq,
+            ),
             ("active_te_out", &self.active_te_out),
             ("active_te_in", &self.active_te_in),
             ("active_delta_hc", &self.active_delta_hc),
@@ -81,7 +86,9 @@ impl WTTensorPack {
             if v.len() != n {
                 return Err(format!(
                     "WT tensor {:?} length {} != expected {}",
-                    name, v.len(), n
+                    name,
+                    v.len(),
+                    n
                 ));
             }
             if !v.iter().all(|x| x.is_finite()) {
@@ -89,7 +96,10 @@ impl WTTensorPack {
             }
         }
         for (name, v) in [
-            ("inactive_sigma_hydration_sq", &self.inactive_sigma_hydration_sq),
+            (
+                "inactive_sigma_hydration_sq",
+                &self.inactive_sigma_hydration_sq,
+            ),
             ("active_sigma_hydration_sq", &self.active_sigma_hydration_sq),
         ] {
             if v.iter().any(|x| *x < 0.0) {
@@ -124,7 +134,10 @@ pub struct TopologyStateEnvironment {
 }
 
 impl TopologyStateEnvironment {
-    pub fn from_prism_topology(state_name: impl Into<String>, topology: &PrismPrepTopology) -> Self {
+    pub fn from_prism_topology(
+        state_name: impl Into<String>,
+        topology: &PrismPrepTopology,
+    ) -> Self {
         let state_name = state_name.into();
         let xyz = topology.positions_as_xyz();
         let mut heavy_atoms: Vec<AtomProbe> = Vec::new();
@@ -132,8 +145,17 @@ impl TopologyStateEnvironment {
 
         for atom_idx in 0..topology.n_atoms {
             let topo_residue_idx = topology.residue_ids[atom_idx];
-            by_residue_idx.entry(topo_residue_idx).or_default().push(atom_idx);
-            if is_heavy_element(topology.elements.get(atom_idx).map(String::as_str).unwrap_or("")) {
+            by_residue_idx
+                .entry(topo_residue_idx)
+                .or_default()
+                .push(atom_idx);
+            if is_heavy_element(
+                topology
+                    .elements
+                    .get(atom_idx)
+                    .map(String::as_str)
+                    .unwrap_or(""),
+            ) {
                 let residue_number = topology
                     .residues
                     .get(topo_residue_idx)
@@ -141,7 +163,13 @@ impl TopologyStateEnvironment {
                     .unwrap_or(topo_residue_idx as i32 + 1);
                 heavy_atoms.push(AtomProbe {
                     position: to_f64_xyz(xyz[atom_idx]),
-                    radius: element_radius(topology.elements.get(atom_idx).map(String::as_str).unwrap_or("")),
+                    radius: element_radius(
+                        topology
+                            .elements
+                            .get(atom_idx)
+                            .map(String::as_str)
+                            .unwrap_or(""),
+                    ),
                     residue_number,
                 });
             }
@@ -158,7 +186,13 @@ impl TopologyStateEnvironment {
             let mut centroid = [0.0f64; 3];
             let mut centroid_n = 0.0f64;
             for atom_idx in atom_indices {
-                if !is_heavy_element(topology.elements.get(*atom_idx).map(String::as_str).unwrap_or("")) {
+                if !is_heavy_element(
+                    topology
+                        .elements
+                        .get(*atom_idx)
+                        .map(String::as_str)
+                        .unwrap_or(""),
+                ) {
                     continue;
                 }
                 let pos = to_f64_xyz(xyz[*atom_idx]);
@@ -180,14 +214,21 @@ impl TopologyStateEnvironment {
                 Some(cb) => normalize(sub(cb, ca)).unwrap_or([1.0, 0.0, 0.0]),
                 None => normalize(sub(centroid, ca)).unwrap_or([1.0, 0.0, 0.0]),
             };
-            residues.insert(residue_number, ResidueLocalEnvironment {
+            residues.insert(
                 residue_number,
-                residue_name: meta.residue_name.clone(),
-                ca,
-                cb_direction,
-            });
+                ResidueLocalEnvironment {
+                    residue_number,
+                    residue_name: meta.residue_name.clone(),
+                    ca,
+                    cb_direction,
+                },
+            );
         }
-        Self { state_name, residues, heavy_atoms }
+        Self {
+            state_name,
+            residues,
+            heavy_atoms,
+        }
     }
 
     fn residue(&self, residue_number: i32) -> Option<&ResidueLocalEnvironment> {
@@ -240,7 +281,11 @@ impl TopologyProjectionContext {
         if rotamer_samples < 2 {
             return Err("rotamer_samples must be >= 2".to_string());
         }
-        Ok(Self { inactive, active, rotamer_samples })
+        Ok(Self {
+            inactive,
+            active,
+            rotamer_samples,
+        })
     }
 
     pub fn from_prism_topologies(
@@ -322,9 +367,18 @@ impl ProjectionConfig {
             return Err("rotamer_samples must be >= 2".to_string());
         }
         for (name, v) in [
-            ("model_residual_variance_active", self.model_residual_variance_active),
-            ("model_residual_variance_lock", self.model_residual_variance_lock),
-            ("model_residual_variance_ensemble", self.model_residual_variance_ensemble),
+            (
+                "model_residual_variance_active",
+                self.model_residual_variance_active,
+            ),
+            (
+                "model_residual_variance_lock",
+                self.model_residual_variance_lock,
+            ),
+            (
+                "model_residual_variance_ensemble",
+                self.model_residual_variance_ensemble,
+            ),
         ] {
             if v <= 0.0 {
                 return Err(format!("{name} must be positive; got {v}"));
@@ -423,10 +477,16 @@ pub fn project_variant_with_topology(
         Some(ctx) => {
             let mut out = Vec::with_capacity(ctx.rotamer_samples);
             for s in 0..ctx.rotamer_samples {
-                let inactive = ctx.inactive.rotamer_penalty(variant.residue_number, variant.mutant, s);
-                let active = ctx.active.rotamer_penalty(variant.residue_number, variant.mutant, s);
+                let inactive =
+                    ctx.inactive
+                        .rotamer_penalty(variant.residue_number, variant.mutant, s);
+                let active = ctx
+                    .active
+                    .rotamer_penalty(variant.residue_number, variant.mutant, s);
                 match (inactive, active) {
-                    (Some(i), Some(a)) => out.push(local_frustration(variant, config, 0.5 * (i + a))),
+                    (Some(i), Some(a)) => {
+                        out.push(local_frustration(variant, config, 0.5 * (i + a)))
+                    }
                     _ => {
                         converged = false;
                         failure_reason = Some(format!(
@@ -474,7 +534,12 @@ pub fn project_variant_with_topology(
         sigmas = inflate_sigmas(sigmas, config.nonconverged_sigma_penalty);
     }
 
-    ProjectionResult { deltas, sigmas, converged, failure_reason }
+    ProjectionResult {
+        deltas,
+        sigmas,
+        converged,
+        failure_reason,
+    }
 }
 
 fn local_frustration(
@@ -517,7 +582,9 @@ fn mean_std(values: &[f64]) -> (f64, f64) {
 
 fn sidechain_probe_radius(aa: AminoAcid) -> f64 {
     let volume = aa.descriptor().volume_angstrom3.max(1.0);
-    ((3.0 * volume) / (4.0 * std::f64::consts::PI)).cbrt().max(1.0)
+    ((3.0 * volume) / (4.0 * std::f64::consts::PI))
+        .cbrt()
+        .max(1.0)
 }
 
 fn sampled_direction(base: [f64; 3], sample_idx: usize) -> [f64; 3] {
@@ -536,7 +603,11 @@ fn sampled_direction(base: [f64; 3], sample_idx: usize) -> [f64; 3] {
 }
 
 fn orthonormal_basis(n: [f64; 3]) -> ([f64; 3], [f64; 3]) {
-    let helper = if n[0].abs() < 0.8 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let helper = if n[0].abs() < 0.8 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
     let u = normalize(cross(n, helper)).unwrap_or([0.0, 0.0, 1.0]);
     let v = normalize(cross(n, u)).unwrap_or([0.0, 1.0, 0.0]);
     (u, v)
@@ -619,7 +690,10 @@ mod tests {
     #[test]
     fn projection_uses_exact_8d_convolution_channels() {
         let wt = synth_wt(10);
-        let cfg = ProjectionConfig { rotamer_samples: 20, ..ProjectionConfig::default() };
+        let cfg = ProjectionConfig {
+            rotamer_samples: 20,
+            ..ProjectionConfig::default()
+        };
         let v = VariantPoint {
             residue_number: 5,
             wildtype: AminoAcid::K,
@@ -633,9 +707,9 @@ mod tests {
         let mean_f = r.deltas.delta_p_active / k_active;
         assert!((r.deltas.delta_p_lock - mean_f * k_lock).abs() < 1e-9);
         assert!((r.deltas.delta_p_ensemble - mean_f * k_ensemble).abs() < 1e-9);
-        assert!(r.sigma_delta_P_active > 0.0);
-        assert!(r.sigma_delta_P_lock > 0.0);
-        assert!(r.sigma_delta_P_ensemble > 0.0);
+        assert!(r.sigmas.sigma_delta_p_active > 0.0);
+        assert!(r.sigmas.sigma_delta_p_lock > 0.0);
+        assert!(r.sigmas.sigma_delta_p_ensemble > 0.0);
     }
 
     #[test]
@@ -660,6 +734,6 @@ mod tests {
         };
         let r = project_variant(&v, &wt, &cfg);
         assert!(!r.converged);
-        assert!(r.sigma_delta_P_active > cfg.model_residual_variance_active.sqrt());
+        assert!(r.sigmas.sigma_delta_p_active > cfg.model_residual_variance_active.sqrt());
     }
 }

@@ -46,6 +46,9 @@ fn main() -> Result<()> {
         uv_burst_duration: 50,
         scan_wavelengths: vec![280.0, 274.0, 258.0], // TRP, TYR, PHE
         wavelength_dwell_steps: 500,
+        ramp_down_steps: 0,
+        cold_return_steps: 0,
+        stepped_holds: Vec::new(),
     };
     engine.set_cryo_uv_protocol(protocol)?;
     println!("✓ Unified cryo-UV protocol: 77K → 310K with UV-LIF coupling");

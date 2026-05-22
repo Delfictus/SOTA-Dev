@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["PRISM-4D Engineering Team"]
 description = "Neuromorphic Holographic Stream (NHS) for real-time cryptic site detection with UV bias perturbation"
-license = "Proprietary"
+license.workspace = true
 readme = "README.md"
 
 [features]

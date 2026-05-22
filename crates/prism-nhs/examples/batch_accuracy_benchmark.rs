@@ -25,7 +25,7 @@ fn get_truth_residues_mock(topology: &PrismPrepTopology) -> HashSet<i32> {
         .aromatic_residues()
         .iter()
         .take(15) // Mock: first 15 aromatics are "binding site"
-        .cloned()
+        .map(|residue| *residue as i32)
         .collect()
 }
 
@@ -201,7 +201,7 @@ fn main() -> Result<()> {
         println!("  Truth residues: {}", truth.len());
 
         // Cluster predicted sites
-        let predicted_sites = cluster_residues_into_sites(spikes, 10, 15);
+        let predicted_sites = cluster_residues_into_sites(&spikes, 10, 15);
         println!("  Predicted sites: {}", predicted_sites.len());
 
         // Find best match

@@ -89,10 +89,10 @@ pub enum CausalSignal {
     KccScore,
     /// Directed transfer entropy, residue → site (incoming).
     /// Reserved for the producer-repair / TE lane.
-    TransferEntropyIn,
+    CausalCouplingIn,
     /// Directed transfer entropy, site → residue (outgoing).
     /// Reserved for the producer-repair / TE lane.
-    TransferEntropyOut,
+    CausalCouplingOut,
 }
 
 impl CausalSignal {
@@ -103,8 +103,8 @@ impl CausalSignal {
         match self {
             CausalSignal::SpikeAttributionCount => "spike_attribution_count",
             CausalSignal::KccScore => "kcc_score",
-            CausalSignal::TransferEntropyIn => "te_in",
-            CausalSignal::TransferEntropyOut => "te_out",
+            CausalSignal::CausalCouplingIn => "te_in",
+            CausalSignal::CausalCouplingOut => "te_out",
         }
     }
 }
@@ -191,7 +191,7 @@ impl TieBreakerPolicy {
 //
 // At M1, only `SpikeAttributionCount` carries honest values across the
 // support set. The four causal floating-point fields
-// (`KccScore`, `TransferEntropy`, `CausalLag`, `CausalDg`) are
+// (`KccScore`, `CausalCoupling`, `CausalLag`, `CausalDg`) are
 // initialized to `f64::NAN` by the M1 producer; they become honest as
 // M2 / M3 land. The progressive-population semantics
 // (see [`CausalSortKey`]) walk the priority list and select the first
@@ -222,7 +222,7 @@ impl TieBreakerPolicy {
 pub enum SortField {
     /// Directed transfer entropy magnitude. Honest as of M3; NaN at
     /// M1 / M2.
-    TransferEntropy,
+    CausalCoupling,
     /// KCC (kinetic-causal contribution) score per residue. Honest as
     /// of M2; NaN at M1.
     KccScore,
@@ -248,7 +248,7 @@ impl SortField {
     /// Pinned by the `sort_field_label_is_stable` unit test.
     pub fn as_str(&self) -> &'static str {
         match self {
-            SortField::TransferEntropy => "transfer_entropy",
+            SortField::CausalCoupling => "transfer_entropy",
             SortField::KccScore => "kcc_score",
             SortField::CausalLag => "causal_lag",
             SortField::CausalDg => "causal_dg",
@@ -307,7 +307,7 @@ impl IdentityTieBreaker {
 /// values across the support set; every higher-priority field is
 /// initialized to `f64::NAN` by the producer. The walk falls through
 /// to `SpikeAttributionCount`. As M2 fills `KccScore` and M3 fills
-/// `TransferEntropy` / `CausalLag` / `CausalDg`, the same priority
+/// `CausalCoupling` / `CausalLag` / `CausalDg`, the same priority
 /// list automatically upgrades — the data becoming honest is the
 /// activation mechanism. No constructor signature changes between
 /// lanes.
@@ -350,7 +350,7 @@ impl CausalSortKey {
     /// spike-attribution count is the M1 fallback.
     pub fn driver_default() -> Self {
         Self::new(vec![
-            SortField::TransferEntropy,
+            SortField::CausalCoupling,
             SortField::KccScore,
             SortField::CausalLag,
             SortField::SpikeAttributionCount,
@@ -970,8 +970,8 @@ mod tests {
             "spike_attribution_count"
         );
         assert_eq!(CausalSignal::KccScore.as_str(), "kcc_score");
-        assert_eq!(CausalSignal::TransferEntropyIn.as_str(), "te_in");
-        assert_eq!(CausalSignal::TransferEntropyOut.as_str(), "te_out");
+        assert_eq!(CausalSignal::CausalCouplingIn.as_str(), "te_in");
+        assert_eq!(CausalSignal::CausalCouplingOut.as_str(), "te_out");
     }
 
     #[test]
@@ -985,8 +985,8 @@ mod tests {
         let all_variants = [
             CausalSignal::SpikeAttributionCount,
             CausalSignal::KccScore,
-            CausalSignal::TransferEntropyIn,
-            CausalSignal::TransferEntropyOut,
+            CausalSignal::CausalCouplingIn,
+            CausalSignal::CausalCouplingOut,
         ];
         for v in all_variants {
             // every variant's name must be a *causal* identifier,
@@ -1009,7 +1009,7 @@ mod tests {
     fn sort_field_label_is_stable() {
         // M3 / M6 audit: the SortField name is part of provenance and
         // appears in JSON. Pin the exact strings.
-        assert_eq!(SortField::TransferEntropy.as_str(), "transfer_entropy");
+        assert_eq!(SortField::CausalCoupling.as_str(), "transfer_entropy");
         assert_eq!(SortField::KccScore.as_str(), "kcc_score");
         assert_eq!(SortField::CausalLag.as_str(), "causal_lag");
         assert_eq!(SortField::CausalDg.as_str(), "causal_dg");
@@ -1028,7 +1028,7 @@ mod tests {
         // are tempted to add a geometric signal, re-read blueprint
         // M2 + M1 contract §6.A first.
         let all_variants = [
-            SortField::TransferEntropy,
+            SortField::CausalCoupling,
             SortField::KccScore,
             SortField::CausalLag,
             SortField::CausalDg,
@@ -1067,12 +1067,12 @@ mod tests {
     #[test]
     fn causal_sort_key_driver_default_priorities_match_contract() {
         // Per M1 contract §6.B, CausalDriverView priorities (descending):
-        //   TransferEntropy > KccScore > CausalLag > SpikeAttributionCount
+        //   CausalCoupling > KccScore > CausalLag > SpikeAttributionCount
         let key = CausalSortKey::driver_default();
         assert_eq!(
             key.priorities,
             vec![
-                SortField::TransferEntropy,
+                SortField::CausalCoupling,
                 SortField::KccScore,
                 SortField::CausalLag,
                 SortField::SpikeAttributionCount,

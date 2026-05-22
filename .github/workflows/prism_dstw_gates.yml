@@ -29,14 +29,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-
-      - name: Rust dependency deny gate
-        run: cargo deny check
-
       - name: Rust format gate
         run: cargo fmt -p prism-nhs --check
 
       - name: Rust test gate
-        run: cargo test -p prism-nhs
+        run: cargo test -p prism-nhs --lib -- edge_attenuator

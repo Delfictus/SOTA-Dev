@@ -75,6 +75,7 @@ fn run_structure(topology_path: &str, n_steps: usize) -> Result<StructureResult>
         end_temp: 300.0,
         ramp_steps: 0,
         hold_steps: n_steps as i32,
+        cold_hold_steps: 0,
         current_step: 0,
     };
 

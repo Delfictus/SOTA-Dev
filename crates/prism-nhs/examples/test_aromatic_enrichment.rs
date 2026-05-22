@@ -40,6 +40,9 @@ fn main() -> Result<()> {
         uv_burst_duration: 20,
         scan_wavelengths: vec![280.0],
         wavelength_dwell_steps: 200,
+        ramp_down_steps: 0,
+        cold_return_steps: 0,
+        stepped_holds: Vec::new(),
     };
 
     let context = CudaContext::new(0)?;

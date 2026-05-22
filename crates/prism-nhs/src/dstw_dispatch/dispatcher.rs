@@ -6,12 +6,11 @@ use serde_json::{Map, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::handshake::{
-    PRISMExecutionRequest, PRISMExecutionResponse, RESPONSE_SCHEMA_TAG,
-    VariantExecutionResponse,
+    PRISMExecutionRequest, PRISMExecutionResponse, VariantExecutionResponse, RESPONSE_SCHEMA_TAG,
 };
 use super::projection::{
-    project_variant, project_variant_with_topology, ProjectionConfig,
-    TopologyProjectionContext, VariantPoint, WTTensorPack,
+    project_variant, project_variant_with_topology, ProjectionConfig, TopologyProjectionContext,
+    VariantPoint, WTTensorPack,
 };
 use super::sidechain_tables::AminoAcid;
 
@@ -35,9 +34,20 @@ impl VariantDispatchConfig {
 #[derive(Debug)]
 pub enum DispatchError {
     SchemaMismatch(String),
-    UnknownVariant { target: String, variant: String, reason: String },
-    NonFinite { target: String, variant: String, channel: &'static str },
-    ChainHashMismatch { declared: String, observed: String },
+    UnknownVariant {
+        target: String,
+        variant: String,
+        reason: String,
+    },
+    NonFinite {
+        target: String,
+        variant: String,
+        channel: &'static str,
+    },
+    ChainHashMismatch {
+        declared: String,
+        observed: String,
+    },
     Internal(anyhow::Error),
 }
 
@@ -45,14 +55,16 @@ impl std::fmt::Display for DispatchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DispatchError::SchemaMismatch(m) => write!(f, "schema mismatch: {m}"),
-            DispatchError::UnknownVariant { target, variant, reason } => write!(
-                f,
-                "unknown variant ({target}, {variant}): {reason}"
-            ),
-            DispatchError::NonFinite { target, variant, channel } => write!(
-                f,
-                "non-finite {channel} for variant ({target}, {variant})"
-            ),
+            DispatchError::UnknownVariant {
+                target,
+                variant,
+                reason,
+            } => write!(f, "unknown variant ({target}, {variant}): {reason}"),
+            DispatchError::NonFinite {
+                target,
+                variant,
+                channel,
+            } => write!(f, "non-finite {channel} for variant ({target}, {variant})"),
             DispatchError::ChainHashMismatch { declared, observed } => write!(
                 f,
                 "blake3 chain mismatch: declared {declared}, observed {observed}"
@@ -106,10 +118,21 @@ fn epoch_to_civil(secs: u64) -> (i64, u32, u32, u32, u32, u32) {
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { (mp + 3) as u32 } else { (mp - 9) as u32 };
+    let m = if mp < 10 {
+        (mp + 3) as u32
+    } else {
+        (mp - 9) as u32
+    };
     let year = y + (if m <= 2 { 1 } else { 0 });
     let time = secs % secs_in_day;
-    (year, m, d, (time / 3600) as u32, ((time % 3600) / 60) as u32, (time % 60) as u32)
+    (
+        year,
+        m,
+        d,
+        (time / 3600) as u32,
+        ((time % 3600) / 60) as u32,
+        (time % 60) as u32,
+    )
 }
 
 /// Compute the blake3 hex of the canonical JSON of a request.  Returns
@@ -139,15 +162,12 @@ pub fn dispatch_variant_batch_with_topology(
     config: &VariantDispatchConfig,
     topology: Option<&TopologyProjectionContext>,
 ) -> Result<PRISMExecutionResponse, DispatchError> {
-    request
-        .validate()
-        .map_err(DispatchError::SchemaMismatch)?;
-    config
-        .validate()
-        .map_err(DispatchError::SchemaMismatch)?;
+    request.validate().map_err(DispatchError::SchemaMismatch)?;
+    config.validate().map_err(DispatchError::SchemaMismatch)?;
     wt.validate().map_err(DispatchError::SchemaMismatch)?;
 
-    let mut variants_resp: Vec<VariantExecutionResponse> = Vec::with_capacity(request.variants.len());
+    let mut variants_resp: Vec<VariantExecutionResponse> =
+        Vec::with_capacity(request.variants.len());
     for v in &request.variants {
         let wt_aa = parse_one(&v.wildtype_aa).map_err(|e| DispatchError::UnknownVariant {
             target: v.target.clone(),
@@ -311,7 +331,10 @@ mod tests {
         let l17a = &resp.variants[0];
         let w42a = &resp.variants[1];
         assert!(l17a.converged);
-        assert!(!w42a.converged, "W→A volume drop should fail rigid-backbone");
+        assert!(
+            !w42a.converged,
+            "W→A volume drop should fail rigid-backbone"
+        );
         // Sigma must strictly inflate on non-convergence.
         assert!(w42a.sigma_delta_P_active > l17a.sigma_delta_P_active);
     }

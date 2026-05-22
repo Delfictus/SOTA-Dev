@@ -8,11 +8,8 @@ use serde::{Deserialize, Serialize};
 /// MUST equal `(delta_P_active, delta_P_lock, delta_P_ensemble)` on every
 /// variant request.  The vectorial-only contract is asserted by the
 /// `validate` method on `PRISMExecutionRequest`.
-pub const REQUIRED_DELTA_CHANNELS: [&str; 3] = [
-    "delta_P_active",
-    "delta_P_lock",
-    "delta_P_ensemble",
-];
+pub const REQUIRED_DELTA_CHANNELS: [&str; 3] =
+    ["delta_P_active", "delta_P_lock", "delta_P_ensemble"];
 
 /// Scalar inputs DSTW has banned from the variant bridge.  Defence in
 /// depth — these are checked at the wire even though DSTW's Pydantic
@@ -50,7 +47,10 @@ pub struct VariantExecutionRequest {
 }
 
 fn default_requested_channels() -> Vec<String> {
-    REQUIRED_DELTA_CHANNELS.iter().map(|s| s.to_string()).collect()
+    REQUIRED_DELTA_CHANNELS
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -215,6 +215,9 @@ mod tests {
     fn response_schema_tag_is_pinned() {
         let mut req = ok_request(vec![ok_variant()]);
         req.expected_response_schema = "rogue".to_string();
-        assert!(req.validate().unwrap_err().contains("expected_response_schema"));
+        assert!(req
+            .validate()
+            .unwrap_err()
+            .contains("expected_response_schema"));
     }
 }

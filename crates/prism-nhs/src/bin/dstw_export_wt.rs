@@ -65,7 +65,7 @@ use std::{
 #[derive(Parser, Debug)]
 #[command(
     name = "dstw_export_wt",
-    about = "Export PRISM-4D WT prime-run results into the DSTW WTPhysicalProfileResponse schema.",
+    about = "Export PRISM-4D WT prime-run results into the DSTW WTPhysicalProfileResponse schema."
 )]
 struct Args {
     /// Path to <base>.binding_sites.json from the engine's WT prime run.
@@ -244,11 +244,10 @@ struct ExporterProvenance {
 // ---------------------------------------------------------------------------
 
 fn load_binding_sites(path: &Path) -> Result<PrismThermPayload> {
-    let file = File::open(path)
-        .with_context(|| format!("open {}", path.display()))?;
+    let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let reader = BufReader::new(file);
-    let envelope: BindingSitesEnvelope = serde_json::from_reader(reader)
-        .with_context(|| format!("parse {}", path.display()))?;
+    let envelope: BindingSitesEnvelope =
+        serde_json::from_reader(reader).with_context(|| format!("parse {}", path.display()))?;
     envelope.prism_therm.ok_or_else(|| {
         anyhow!(
             "{}: file is missing the `prism_therm` payload; was this run \
@@ -385,7 +384,11 @@ fn epoch_to_civil(secs: u64) -> (i64, u32, u32, u32, u32, u32) {
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
     let mp = (5 * doy + 2) / 153; // [0, 11]
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { (mp + 3) as u32 } else { (mp - 9) as u32 };
+    let m = if mp < 10 {
+        (mp + 3) as u32
+    } else {
+        (mp - 9) as u32
+    };
     let year = y + (if m <= 2 { 1 } else { 0 });
     let time = secs % secs_in_day;
     let hour = (time / 3600) as u32;
@@ -499,8 +502,7 @@ fn write_json(response: &WTPhysicalProfileResponse, out: &Path) -> Result<()> {
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let file = File::create(out)
-        .with_context(|| format!("create {}", out.display()))?;
+    let file = File::create(out).with_context(|| format!("create {}", out.display()))?;
     serde_json::to_writer_pretty(file, response)
         .with_context(|| format!("write {}", out.display()))?;
     // Also emit the provenance sidecar next to the manifest.
@@ -548,8 +550,7 @@ fn write_parquet(response: &WTPhysicalProfileResponse, out: &Path) -> Result<()>
     ];
     let batch = RecordBatch::try_new(schema.clone(), columns)
         .context("RecordBatch::try_new for WT physics")?;
-    let file = File::create(out)
-        .with_context(|| format!("create {}", out.display()))?;
+    let file = File::create(out).with_context(|| format!("create {}", out.display()))?;
     let props = WriterProperties::builder()
         .set_compression(Compression::ZSTD(ZstdLevel::try_new(3)?))
         .build();
@@ -573,15 +574,10 @@ fn main() -> Result<()> {
         );
     }
     let payload = load_binding_sites(&args.binding_sites)?;
-    let (mut per_residue, sites_consumed, tide_rows_consumed) = aggregate_per_residue(
-        &payload,
-        args.residue_index_lo,
-        args.residue_index_hi,
-    );
-    let hydration_status = populate_hydration_variance(
-        &mut per_residue,
-        args.spike_arrow.as_deref(),
-    )?;
+    let (mut per_residue, sites_consumed, tide_rows_consumed) =
+        aggregate_per_residue(&payload, args.residue_index_lo, args.residue_index_hi);
+    let hydration_status =
+        populate_hydration_variance(&mut per_residue, args.spike_arrow.as_deref())?;
     let response = build_response(
         &args,
         &payload,
@@ -614,11 +610,7 @@ fn main() -> Result<()> {
 mod tests {
     use super::*;
 
-    fn make_site(
-        site_id: i32,
-        asym: f32,
-        tide: Vec<TideResidue>,
-    ) -> PrismThermSite {
+    fn make_site(site_id: i32, asym: f32, tide: Vec<TideResidue>) -> PrismThermSite {
         PrismThermSite {
             site_id,
             asymmetry_score: asym,
@@ -649,8 +641,7 @@ mod tests {
             ],
             site_results: vec![],
         };
-        let (per_residue, sites_consumed, tide_rows) =
-            aggregate_per_residue(&payload, 1, 20);
+        let (per_residue, sites_consumed, tide_rows) = aggregate_per_residue(&payload, 1, 20);
         assert_eq!(sites_consumed, 2);
         assert_eq!(tide_rows, 2);
         let acc = per_residue.get(&10).expect("residue 10 must be present");

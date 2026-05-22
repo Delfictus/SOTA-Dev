@@ -92,6 +92,7 @@ fn main() -> Result<()> {
         end_temp: 300.0,
         ramp_steps: 0,
         hold_steps: 100000,
+        cold_hold_steps: 0,
         current_step: 0,
     })?;
 

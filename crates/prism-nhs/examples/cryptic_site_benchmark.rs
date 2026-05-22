@@ -88,6 +88,7 @@ fn benchmark_structure(topology_path: &Path) -> Result<BenchmarkResult> {
             end_temp: TEMP_END,
             ramp_steps: RAMP_STEPS,
             hold_steps: STEPS_PER_RUN - RAMP_STEPS,
+            cold_hold_steps: 0,
             current_step: 0,
         })?;
 
