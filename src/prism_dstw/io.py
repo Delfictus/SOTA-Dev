@@ -7,7 +7,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence, cast
 
 import polars as pl
 import pyarrow as pa
@@ -23,6 +23,7 @@ from .propagation_ledger import (
 
 
 ROW_GROUP_SIZE = 100_000
+ParquetCompression = Literal["lz4", "uncompressed", "snappy", "gzip", "brotli", "zstd"]
 RESERVED_METADATA_KEYS = {
     "created_by",
     "generator_script",
@@ -169,7 +170,7 @@ def _write_frame(
     output_path: Path,
     *,
     metadata: dict[str, str],
-    compression: str,
+    compression: ParquetCompression,
 ) -> None:
     if isinstance(frame, pl.LazyFrame):
         frame.sink_parquet(
@@ -180,7 +181,7 @@ def _write_frame(
             metadata=metadata,
         )
         return
-    dataframe = pl.from_arrow(frame) if isinstance(frame, pa.Table) else frame
+    dataframe: pl.DataFrame = cast(pl.DataFrame, pl.from_arrow(frame)) if isinstance(frame, pa.Table) else frame
     dataframe.write_parquet(
         output_path,
         compression=compression,
@@ -207,7 +208,7 @@ def write_provenance_parquet(
     ledger_gate_status: dict[str, bool] | None = None,
     provenance: ParquetProvenance | None = None,
     repo_root: Path | None = None,
-    compression: str = "zstd",
+    compression: ParquetCompression = "zstd",
 ) -> Path:
     resolved_provenance = _resolve_provenance(
         provenance=provenance,

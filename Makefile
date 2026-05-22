@@ -1,5 +1,5 @@
 PYTHON ?= python3
-MYPY ?= .venv/bin/python -m mypy
+MYPY ?= $(PYTHON) -m mypy
 
 .PHONY: gate-phase0
 

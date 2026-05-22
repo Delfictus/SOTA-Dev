@@ -21,6 +21,7 @@ AnalogId = NewType("AnalogId", str)
 MotifClass = NewType("MotifClass", str)
 ScaffoldHash = NewType("ScaffoldHash", str)
 ConformerEnsembleURI = NewType("ConformerEnsembleURI", str)
+ScaffoldIdx = NewType("ScaffoldIdx", int)
 VoxelIdx = NewType("VoxelIdx", int)
 
 TransferEntropy = NewType("TransferEntropy", float)
@@ -75,4 +76,3 @@ class PerturbedEdge:
     delta_hc_perturbed: HysteresisEnthalpy
     u_pose_te: PoseUncertainty
     u_pose_hc: PoseUncertainty
-
