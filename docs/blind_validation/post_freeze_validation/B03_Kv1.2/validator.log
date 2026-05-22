@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: Kv1.2 ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B03_Kv1.2/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B03_Kv1.2/prep/3LUT_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B03_Kv1.2
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 36  KCC residues: 326
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 0.79 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 22 proposals
+  p2rank...
+  p2rank: 1 proposals
+
+[4] Processing 2 holo references...
+
+  [2R9R] Kv1.2-Kv2.1 paddle chimera + beta subunit (TM lipids) — PROVISIONAL
+    RMSD=0.43Å  seqid=1.00  qchain=A  hchain=A
+    Ligands: [('A', 1001, 'NAP'), ('B', 500, 'PGW'), ('B', 501, 'PGW'), ('B', 502, 'PGW'), ('B', 503, 'PGW'), ('B', 504, 'PGW'), ('B', 505, 'PGW'), ('B', 506, 'PGW'), ('B', 507, 'PGW'), ('B', 508, 'PGW'), ('B', 509, 'PGW'), ('B', 510, 'PGW'), ('B', 511, 'PGW'), ('B', 512, 'PGW'), ('B', 513, 'PGW'), ('B', 514, 'PGW'), ('B', 515, 'PGW'), ('G', 1001, 'NAP'), ('H', 500, 'PGW')]
+
+  [2A79] Full Kv1.2 + Kvbeta2 (NAP in regulatory domain) — PROVISIONAL
+    RMSD=0.14Å  seqid=1.00  qchain=A  hchain=A
+    Ligands: [('A', 1001, 'NAP')]
+
+[5] Computing SR@K...
+  PRISM     SR@1=0.100  SR@5=0.100
+  fpocket   SR@1=0.100  SR@5=0.100
+  p2rank    SR@1=0.100  SR@5=0.100
+
+[6] Running LORO blinded validation...
+  20 LORO tests | 2 blinded rediscoveries
+
+[7] Collapsing site families...
+  30 sites → 1 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B03_Kv1.2
+
+  prism_site_vs_ligand_shells.csv  (600 rows)
+  baseline_vs_ligand_shells.csv    (460 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (1 rows)
+  blinded_loro.csv                 (20 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: Kv1.2 ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B03_Kv1.2
+  PRISM SR@1=0.100  SR@5=0.100  LORO_blinded=2/20
+  fpocket SR@1=0.100  SR@5=0.100
+  p2rank  SR@1=0.100  SR@5=0.100

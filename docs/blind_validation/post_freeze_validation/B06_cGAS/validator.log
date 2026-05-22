@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: cGAS ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B06_cGAS/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B06_cGAS/prep/4KM5_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B06_cGAS
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 51  KCC residues: 362
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 1.52 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 31 proposals
+  p2rank...
+  p2rank: 10 proposals
+
+[4] Processing 2 holo references...
+
+  [4O67] Human cGAS + cGAMP enzymatic product (1SY, MW 674 Da)
+    RMSD=1.86Å  seqid=0.96  qchain=A  hchain=A
+    Ligands: [('A', 601, '1SY'), ('B', 1101, '1SY')]
+
+  [5V8N] Human cGAS + high-affinity inhibitor (8ZP)
+    RMSD=1.91Å  seqid=0.99  qchain=A  hchain=A
+    Ligands: [('A', 602, '8ZP'), ('B', 602, '8ZP')]
+
+[5] Computing SR@K...
+  PRISM     SR@1=0.500  SR@5=0.500
+  fpocket   SR@1=0.000  SR@5=0.000
+  p2rank    SR@1=0.500  SR@5=0.500
+
+[6] Running LORO blinded validation...
+  4 LORO tests | 2 blinded rediscoveries
+
+[7] Collapsing site families...
+  30 sites → 8 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B06_cGAS
+
+  prism_site_vs_ligand_shells.csv  (120 rows)
+  baseline_vs_ligand_shells.csv    (164 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (8 rows)
+  blinded_loro.csv                 (4 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: cGAS ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B06_cGAS
+  PRISM SR@1=0.500  SR@5=0.500  LORO_blinded=2/4
+  fpocket SR@1=0.000  SR@5=0.000
+  p2rank  SR@1=0.500  SR@5=0.500

@@ -1,0 +1,3 @@
+withheld_holo,ligand_key,ligand_resname,trained_sites_n,status,best_good_trained_site,best_good_trained_rank,best_good_trained_dist,best_any_good_rank
+4LDE,4LDE|A|1401|P0G,P0G,0,WITHHELD_ONLY_NEW_SITE,,,,0.1919117122888565
+4LDE,4LDE|A|1403|1WV,1WV,0,WITHHELD_ONLY_NEW_SITE,,,,0.10601982474327087

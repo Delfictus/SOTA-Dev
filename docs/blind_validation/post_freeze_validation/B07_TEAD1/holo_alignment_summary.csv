@@ -1,0 +1,3 @@
+pdb,holo_chain,query_chain,rmsd_A,seq_identity,n_ligands,status,note
+3KYS,A,A,0.0,1.0,2,OK,TEAD1 + P1L palmitate covalent at Cys344 — original pre-strip holo
+5OAQ,A,A,0.96,0.816,1,OK,TEAD4 + myristate (MYR) at equivalent palmitate pocket

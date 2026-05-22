@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: ADRB2 ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B10_ADRB2/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B10_ADRB2/prep/2RH1_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B10_ADRB2
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 62  KCC residues: 442
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 0.59 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 35 proposals
+  p2rank...
+  p2rank: 8 proposals
+
+[4] Processing 2 holo references...
+
+  [3SN6] beta2-AR + Gs + BI167107 agonist (P0G) — active state orthosteric
+    RMSD=27.18Å  seqid=0.98  qchain=A  hchain=R
+    [SKIP] SKIPPED_QUALITY_GATE
+
+  [4LDE] beta2-AR + BI167107 (P0G) + nanobody — active state orthosteric
+    RMSD=3.77Å  seqid=0.61  qchain=A  hchain=A
+    Ligands: [('A', 1401, 'P0G'), ('A', 1403, '1WV')]
+
+[5] Computing SR@K...
+  PRISM     SR@1=1.000  SR@5=1.000
+  fpocket   SR@1=0.000  SR@5=0.500
+  p2rank    SR@1=0.500  SR@5=0.500
+
+[6] Running LORO blinded validation...
+  2 LORO tests | 0 blinded rediscoveries
+
+[7] Collapsing site families...
+  30 sites → 9 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B10_ADRB2
+
+  prism_site_vs_ligand_shells.csv  (60 rows)
+  baseline_vs_ligand_shells.csv    (86 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (9 rows)
+  blinded_loro.csv                 (2 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: ADRB2 ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B10_ADRB2
+  PRISM SR@1=1.000  SR@5=1.000  LORO_blinded=0/2
+  fpocket SR@1=0.000  SR@5=0.500
+  p2rank  SR@1=0.500  SR@5=0.500

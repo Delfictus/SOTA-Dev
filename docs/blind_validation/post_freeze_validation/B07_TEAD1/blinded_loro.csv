@@ -1,0 +1,4 @@
+withheld_holo,ligand_key,ligand_resname,trained_sites_n,status,best_good_trained_site,best_good_trained_rank,best_good_trained_dist,best_any_good_rank
+3KYS,3KYS|A|344|P1L,P1L,0,WITHHELD_ONLY_NEW_SITE,,,,0.2561686038970947
+3KYS,3KYS|C|344|P1L,P1L,0,FAIL,,,,
+5OAQ,5OAQ|A|502|MYR,MYR,5,TRAINED_SITE_NEAR_WITHHELD,,,,

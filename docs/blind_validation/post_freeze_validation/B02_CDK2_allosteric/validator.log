@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: CDK2_allosteric ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B02_CDK2_allosteric/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B02_CDK2_allosteric/prep/1HCL_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B02_CDK2_allosteric
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 30  KCC residues: 294
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 1.04 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 30 proposals
+  p2rank...
+  p2rank: 3 proposals
+
+[4] Processing 2 holo references...
+
+  [3PXZ] CDK2 + JWS648 allosteric inhibitor (JWS) + ANS probe (2AN)
+    RMSD=2.31Å  seqid=0.97  qchain=A  hchain=A
+    Ligands: [('A', 299, '2AN'), ('A', 300, '2AN'), ('A', 301, 'JWS')]
+
+  [4GCJ] CDK2 + RC-3-89 inhibitor (X64) — binding subsite TBD
+    RMSD=2.01Å  seqid=0.97  qchain=A  hchain=A
+    Ligands: [('A', 305, 'X64')]
+
+[5] Computing SR@K...
+  PRISM     SR@1=1.000  SR@5=1.000
+  fpocket   SR@1=0.000  SR@5=0.750
+  p2rank    SR@1=0.500  SR@5=0.500
+
+[6] Running LORO blinded validation...
+  4 LORO tests | 2 blinded rediscoveries
+
+[7] Collapsing site families...
+  30 sites → 8 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B02_CDK2_allosteric
+
+  prism_site_vs_ligand_shells.csv  (120 rows)
+  baseline_vs_ligand_shells.csv    (132 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (8 rows)
+  blinded_loro.csv                 (4 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: CDK2_allosteric ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B02_CDK2_allosteric
+  PRISM SR@1=1.000  SR@5=1.000  LORO_blinded=2/4
+  fpocket SR@1=0.000  SR@5=0.750
+  p2rank  SR@1=0.500  SR@5=0.500

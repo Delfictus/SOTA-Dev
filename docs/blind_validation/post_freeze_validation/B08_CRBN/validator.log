@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: CRBN ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B08_CRBN/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B08_CRBN/prep/4TZ4_chainC_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B08_CRBN
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 38  KCC residues: 361
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 1.30 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 31 proposals
+  p2rank...
+  p2rank: 5 proposals
+
+[4] Processing 2 holo references...
+
+  [4CI3] DDB1-CRBN + pomalidomide (Y70, chain B = CRBN)
+    RMSD=1.47Å  seqid=0.85  qchain=C  hchain=B
+    Ligands: [('B', 1429, 'Y70')]
+
+  [5FQD] DDB1-CRBN + lenalidomide (LVY, chain B = CRBN)
+    RMSD=2.16Å  seqid=0.94  qchain=C  hchain=B
+    Ligands: [('B', 1438, 'LVY'), ('E', 1438, 'LVY')]
+
+[5] Computing SR@K...
+  PRISM     SR@1=0.667  SR@5=0.667
+  fpocket   SR@1=0.000  SR@5=0.667
+  p2rank    SR@1=0.667  SR@5=0.667
+
+[6] Running LORO blinded validation...
+  3 LORO tests | 2 blinded rediscoveries
+
+[7] Collapsing site families...
+  30 sites → 12 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B08_CRBN
+
+  prism_site_vs_ligand_shells.csv  (90 rows)
+  baseline_vs_ligand_shells.csv    (108 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (12 rows)
+  blinded_loro.csv                 (3 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: CRBN ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B08_CRBN
+  PRISM SR@1=0.667  SR@5=0.667  LORO_blinded=2/3
+  fpocket SR@1=0.000  SR@5=0.667
+  p2rank  SR@1=0.667  SR@5=0.667

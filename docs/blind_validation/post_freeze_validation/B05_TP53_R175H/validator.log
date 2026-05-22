@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: TP53_apo ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B05_TP53_R175H/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B05_TP53_R175H/prep/2OCJ_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B05_TP53_R175H
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 27  KCC residues: 194
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 0.82 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 12 proposals
+  p2rank...
+  p2rank: 2 proposals
+
+[4] Processing 2 holo references...
+
+  [3ZME] p53 Y220C + compound 23 — PROVISIONAL: different pocket (Y220C not L1/H2)
+    RMSD=0.55Å  seqid=0.97  qchain=A  hchain=A
+    Ligands: [('A', 1291, 'QC5'), ('B', 1292, 'QC5')]
+
+  [4AGQ] p53 Y220C + compound 3 — PROVISIONAL: different pocket (Y220C not L1/H2)
+    RMSD=0.55Å  seqid=0.97  qchain=A  hchain=A
+    Ligands: [('A', 1291, 'P96'), ('B', 1290, 'P96')]
+
+[5] Computing SR@K...
+  PRISM     SR@1=0.500  SR@5=0.500
+  fpocket   SR@1=0.000  SR@5=0.500
+  p2rank    SR@1=0.000  SR@5=0.000
+
+[6] Running LORO blinded validation...
+  4 LORO tests | 2 blinded rediscoveries
+
+[7] Collapsing site families...
+  27 sites → 5 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B05_TP53_R175H
+
+  prism_site_vs_ligand_shells.csv  (108 rows)
+  baseline_vs_ligand_shells.csv    (56 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (5 rows)
+  blinded_loro.csv                 (4 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: TP53_apo ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B05_TP53_R175H
+  PRISM SR@1=0.500  SR@5=0.500  LORO_blinded=2/4
+  fpocket SR@1=0.000  SR@5=0.500
+  p2rank  SR@1=0.000  SR@5=0.000

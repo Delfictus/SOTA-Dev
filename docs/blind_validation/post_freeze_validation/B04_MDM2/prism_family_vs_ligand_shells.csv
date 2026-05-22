@@ -1,0 +1,4 @@
+family_id,sites,n_sites,rep_site,n_ligand_instances,n_reference_pdbs,reference_pdbs,best_min_dist_A,max_jaccard_8A,max_intersection_8A
+FAM_01,2505,1,2505,1,1,4ODF,3.568,0.4651,20
+FAM_02,505,1,505,1,1,4ODF,3.568,0.3333,15
+FAM_03,6505,1,6505,1,1,4ODF,3.568,0.4545,20

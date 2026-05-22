@@ -1,0 +1,3 @@
+pdb,holo_chain,query_chain,rmsd_A,seq_identity,n_ligands,status,note
+2R9R,A,A,0.43,1.0,19,OK,Kv1.2-Kv2.1 paddle chimera + beta subunit (TM lipids) — PROVISIONAL
+2A79,A,A,0.14,1.0,1,OK,Full Kv1.2 + Kvbeta2 (NAP in regulatory domain) — PROVISIONAL

@@ -1,0 +1,3 @@
+pdb,holo_chain,query_chain,rmsd_A,seq_identity,n_ligands,status,note
+3PXZ,A,A,2.31,0.974,3,OK,CDK2 + JWS648 allosteric inhibitor (JWS) + ANS probe (2AN)
+4GCJ,A,A,2.01,0.967,1,OK,CDK2 + RC-3-89 inhibitor (X64) — binding subsite TBD

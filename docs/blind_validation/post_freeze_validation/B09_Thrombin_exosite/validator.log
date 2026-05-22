@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: Thrombin_exosite ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B09_Thrombin_exosite/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B09_Thrombin_exosite/prep/1PPB_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B09_Thrombin_exosite
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 30  KCC residues: 231
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 1.02 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 14 proposals
+  p2rank...
+  p2rank: 4 proposals
+
+[4] Processing 2 holo references...
+
+  [1HAH] Thrombin heavy chain H + hirugen at exosite I (chain I TYS)
+    RMSD=0.85Å  seqid=1.00  qchain=H  hchain=H
+    Ligands: [('I', 63, 'TYS')]
+
+  [3BEF] Thrombin + PAR1 extracellular fragment at exosite I
+    RMSD=0.61Å  seqid=0.98  qchain=H  hchain=B
+    [SKIP] no ligands (heavy atoms >= 6)
+
+[5] Computing SR@K...
+  PRISM     SR@1=0.000  SR@5=0.000
+  fpocket   SR@1=0.000  SR@5=0.000
+  p2rank    SR@1=0.000  SR@5=0.000
+
+[6] Running LORO blinded validation...
+  1 LORO tests | 0 blinded rediscoveries
+
+[7] Collapsing site families...
+  30 sites → 0 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B09_Thrombin_exosite
+
+  prism_site_vs_ligand_shells.csv  (30 rows)
+  baseline_vs_ligand_shells.csv    (18 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (0 rows)
+  blinded_loro.csv                 (1 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: Thrombin_exosite ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B09_Thrombin_exosite
+  PRISM SR@1=0.000  SR@5=0.000  LORO_blinded=0/1
+  fpocket SR@1=0.000  SR@5=0.000
+  p2rank  SR@1=0.000  SR@5=0.000

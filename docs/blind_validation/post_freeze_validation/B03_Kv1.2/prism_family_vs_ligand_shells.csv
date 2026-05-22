@@ -1,0 +1,2 @@
+family_id,sites,n_sites,rep_site,n_ligand_instances,n_reference_pdbs,reference_pdbs,best_min_dist_A,max_jaccard_8A,max_intersection_8A
+FAM_01,0 1520 1521 1522 3 3001 3518 3522 4,9,3,2,2,2A79 2R9R,2.617,0.3419,40

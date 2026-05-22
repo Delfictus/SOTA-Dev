@@ -1,0 +1,13 @@
+method,K,ligand_instances,strict_hits,Strict_SR@K,practical_hits,Practical_SR@K,exploratory_hits,Exploratory_SR@K,hits,SR@K
+PRISM,1,4,2,0.5,2,0.5,2,0.5,2,0.5
+PRISM,3,4,2,0.5,2,0.5,2,0.5,2,0.5
+PRISM,5,4,2,0.5,2,0.5,2,0.5,2,0.5
+PRISM,10,4,2,0.5,2,0.5,2,0.5,2,0.5
+fpocket,1,4,0,0.0,0,0.0,0,0.0,0,0.0
+fpocket,3,4,1,0.25,1,0.25,1,0.25,1,0.25
+fpocket,5,4,2,0.5,2,0.5,2,0.5,2,0.5
+fpocket,10,4,2,0.5,2,0.5,2,0.5,2,0.5
+p2rank,1,4,0,0.0,0,0.0,0,0.0,0,0.0
+p2rank,3,4,0,0.0,0,0.0,0,0.0,0,0.0
+p2rank,5,4,0,0.0,0,0.0,0,0.0,0,0.0
+p2rank,10,4,0,0.0,0,0.0,0,0.0,0,0.0

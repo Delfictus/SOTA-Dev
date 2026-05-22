@@ -1,0 +1,6 @@
+family_id,sites,n_sites,rep_site,n_ligand_instances,n_reference_pdbs,reference_pdbs,best_min_dist_A,max_jaccard_8A,max_intersection_8A
+FAM_01,10,1,10,1,1,3KYS,0.754,0.4151,22
+FAM_02,4007,1,4007,1,1,3KYS,0.754,0.1806,13
+FAM_03,4512,1,4512,1,1,3KYS,0.754,0.2581,16
+FAM_04,512,1,512,1,1,3KYS,0.754,0.2121,14
+FAM_05,7,1,7,1,1,3KYS,0.754,0.1467,11

@@ -1,0 +1,3 @@
+pdb,holo_chain,query_chain,rmsd_A,seq_identity,n_ligands,status,note
+6OIM,A,A,0.68,0.862,2,OK,"KRAS G12C + sotorasib (AMG510, MOV) SW2 covalent — RAS family SW2 reference"
+7RPZ,A,A,0.84,0.857,2,OK,KRAS G12D + MRTX1133 (6IC) SW2 non-covalent — RAS family SW2 reference

@@ -1,0 +1,4 @@
+withheld_holo,ligand_key,ligand_resname,trained_sites_n,status,best_good_trained_site,best_good_trained_rank,best_good_trained_dist,best_any_good_rank
+4CI3,4CI3|B|1429|Y70,Y70,1,BLINDED_REDISCOVERY,4,0.2256896197795868,2.777,0.19048653542995453
+5FQD,5FQD|B|1438|LVY,LVY,12,BLINDED_REDISCOVERY,4,0.2256896197795868,2.876,0.2256896197795868
+5FQD,5FQD|E|1438|LVY,LVY,12,TRAINED_SITE_NEAR_WITHHELD,,,,

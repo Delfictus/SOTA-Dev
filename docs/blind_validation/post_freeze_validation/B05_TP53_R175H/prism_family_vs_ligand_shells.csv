@@ -1,0 +1,6 @@
+family_id,sites,n_sites,rep_site,n_ligand_instances,n_reference_pdbs,reference_pdbs,best_min_dist_A,max_jaccard_8A,max_intersection_8A
+FAM_01,3005 4509 508 509 512,5,4509,2,2,3ZME 4AGQ,2.353,0.5,17
+FAM_03,1519,1,1519,1,1,3ZME,3.167,0.1136,10
+FAM_05,3002,1,3002,1,1,3ZME,3.167,0.0638,6
+FAM_02,1518,1,1518,1,1,3ZME,3.286,0.0449,4
+FAM_04,1520,1,1520,1,1,3ZME,3.286,0.0426,4

@@ -1,0 +1,3 @@
+pdb,holo_chain,query_chain,rmsd_A,seq_identity,n_ligands,status,note
+4O67,A,A,1.86,0.956,2,OK,"Human cGAS + cGAMP enzymatic product (1SY, MW 674 Da)"
+5V8N,A,A,1.91,0.989,2,OK,Human cGAS + high-affinity inhibitor (8ZP)

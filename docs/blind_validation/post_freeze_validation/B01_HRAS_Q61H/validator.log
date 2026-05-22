@@ -1,0 +1,56 @@
+
+=== PRISM Publication Baseline Validator: HRAS_Q61H ===
+  run_dir:   /mnt/storage/prism-outputs/blind_validation/B01_HRAS_Q61H/run
+  query_pdb: /mnt/storage/prism-outputs/blind_validation/B01_HRAS_Q61H/prep/4L9S_clean.pdb
+  outdir:    /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B01_HRAS_Q61H
+  max_rank:  10
+
+[1] Loading PRISM run data...
+  Sites: 10  KCC residues: 159
+
+[2] Parsing query PDB...
+  Auto-detected topology offset: 0 (mean CA Δ = 0.72 Å)
+
+[3] Running baseline tools...
+  fpocket...
+  fpocket: 7 proposals
+  p2rank...
+  p2rank: 1 proposals
+
+[4] Processing 2 holo references...
+
+  [6OIM] KRAS G12C + sotorasib (AMG510, MOV) SW2 covalent — RAS family SW2 reference
+    RMSD=0.68Å  seqid=0.86  qchain=A  hchain=A
+    Ligands: [('A', 302, 'GDP'), ('A', 303, 'MOV')]
+
+  [7RPZ] KRAS G12D + MRTX1133 (6IC) SW2 non-covalent — RAS family SW2 reference
+    RMSD=0.84Å  seqid=0.86  qchain=A  hchain=A
+    Ligands: [('A', 201, 'GDP'), ('A', 202, '6IC')]
+
+[5] Computing SR@K...
+  PRISM     SR@1=1.000  SR@5=1.000
+  fpocket   SR@1=0.750  SR@5=1.000
+  p2rank    SR@1=0.500  SR@5=0.500
+
+[6] Running LORO blinded validation...
+  4 LORO tests | 4 blinded rediscoveries
+
+[7] Collapsing site families...
+  10 sites → 1 families
+
+[8] Writing outputs to /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B01_HRAS_Q61H
+
+  prism_site_vs_ligand_shells.csv  (40 rows)
+  baseline_vs_ligand_shells.csv    (32 rows)
+  sr_at_k_comparison.csv
+  prism_family_vs_ligand_shells.csv (1 rows)
+  blinded_loro.csv                 (4 rows)
+  holo_alignment_summary.csv       (2 rows)
+  validation_report.md
+  pymol_overlay.pml
+
+=== DONE: HRAS_Q61H ===
+  Outdir: /home/diddy/Desktop/Prism4D-bio/docs/blind_validation/post_freeze_validation/B01_HRAS_Q61H
+  PRISM SR@1=1.000  SR@5=1.000  LORO_blinded=4/4
+  fpocket SR@1=0.750  SR@5=1.000
+  p2rank  SR@1=0.500  SR@5=0.500

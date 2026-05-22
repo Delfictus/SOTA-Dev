@@ -1,0 +1,2 @@
+family_id,sites,n_sites,rep_site,n_ligand_instances,n_reference_pdbs,reference_pdbs,best_min_dist_A,max_jaccard_8A,max_intersection_8A
+FAM_01,2007 3 4 5 7,5,4,4,2,6OIM 7RPZ,1.505,0.551,27

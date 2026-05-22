@@ -1,0 +1,292 @@
+generated_utc=2026-05-13T21:08:08Z
+hostname=Prism4D
+user=diddy
+pwd=/home/diddy/Desktop/Prism4D-bio
+
+git_head=c8b09678c5e90f2eb46cee25b53a92e698807a19
+
+git_status:
+ M .codex/review/context.txt
+ M .codex/review/pre-commit.diff
+ M .codex/review/pre-commit.diffstat
+ M Cargo.lock
+ M Cargo.toml
+ M scripts/prism_spike_watcher.py
+?? .claude/scheduled_tasks.lock
+?? .codex/.gitignore
+?? .codex/CURRENT_PHASE.txt
+?? .codex/GLOBAL_CONTEXT.txt
+?? .figvenv/
+?? .prism_orchestration/ACTIVE_TICKETS.md
+?? .prism_orchestration/AGENT_INBOX/
+?? .prism_orchestration/AGENT_OUTBOX/
+?? .prism_orchestration/AGENT_REGISTRY.md
+?? .prism_orchestration/APPROVALS/
+?? .prism_orchestration/BASELINE.yaml
+?? .prism_orchestration/CHUNK_THROUGHPUT_BOTTLENECK_REPORT.md
+?? .prism_orchestration/CHUNK_THROUGHPUT_DIAG/
+?? .prism_orchestration/DASHBOARD.md
+?? .prism_orchestration/EVENTS.ndjson
+?? .prism_orchestration/EVIDENCE_INDEX_FIX/
+?? .prism_orchestration/F1_PARENT_SWITCH_EXECUTION_TICKET.md
+?? .prism_orchestration/GEAR_OVERRIDE_MITIGATION_PLAN.md
+?? .prism_orchestration/GHOST_LATTICE_EVENT_VECTOR_UNROLL8_SMOKE/
+?? .prism_orchestration/GHOST_LATTICE_LIVE_SMOKE/
+?? .prism_orchestration/GHOST_LATTICE_LIVE_SMOKE_RERUN/
+?? .prism_orchestration/GHOST_LATTICE_S3_FULL_SMOKE/
+?? .prism_orchestration/GHOST_LATTICE_S3_FULL_SMOKE_REPRO_20260509_140654/
+?? .prism_orchestration/GHOST_LATTICE_S3_PARTIAL_SMOKE/
+?? .prism_orchestration/GHOST_LATTICE_S3_UNROLL500_SMOKE/
+?? .prism_orchestration/GHOST_LATTICE_S3_UNROLL8_SMOKE/
+?? .prism_orchestration/GHOST_LATTICE_WHILE_BYPASS_SMOKE/
+?? .prism_orchestration/GHOST_LATTICE_WHILE_SMOKE/
+?? .prism_orchestration/GHOST_NATIVE_SPATIAL_SMOKE_20260508_090636/
+?? .prism_orchestration/GHOST_PHASE_LATTICE_4D_REPLACEMENT_REPORT/
+?? .prism_orchestration/LOCKS.yaml
+?? .prism_orchestration/M1_2_23_V2_SMOKE/
+?? .prism_orchestration/M1_2_23_V2_SMOKE_v2/
+?? .prism_orchestration/M1_2_24_ADJUDICATION_AUDIT_20260508_011225Z/
+?? .prism_orchestration/M1_2_24_FIX_SMOKE/
+?? .prism_orchestration/M1_2_24_REPRO/
+?? .prism_orchestration/M1_2_24_V2_SEGFAULT_ROOT_CAUSE_20260508_004816Z/
+?? .prism_orchestration/M1_2_25_ADJUDICATION_AUDIT_20260508_014522Z/
+?? .prism_orchestration/M1_2_25_SIGNAL_BEARING_20260508_014449/
+?? .prism_orchestration/M1_2_25_SIGNAL_BEARING_20260508_015345/
+?? .prism_orchestration/M1_2_26_HRDB_AUDIT_20260508_042005Z/
+?? .prism_orchestration/M1_2_26_HRDB_RUN_A_BASELINE_20260508_033903/
+?? .prism_orchestration/M1_2_26_HRDB_RUN_A_BASELINE_20260508_034547/
+?? .prism_orchestration/M1_2_26_HRDB_RUN_B_UV_12_5_20260508_040737/
+?? .prism_orchestration/M1_2_26_HRDB_RUN_C_V2_UV_12_5_20260508_041949/
+?? .prism_orchestration/M1_2_26_HRDB_RUN_D_BURSTS_NEVER_20260508_044003/
+?? .prism_orchestration/M1_2_26_UV_TO_MAR_KL_COUPLING_AUDIT_20260508_043645Z/
+?? .prism_orchestration/MD_ONLY_EVIDENCE/
+?? .prism_orchestration/MD_ONLY_EVIDENCE_REPORT.md
+?? .prism_orchestration/PATHB_GHOST_EVIDENCE_SCANNER_REPORT.md
+?? .prism_orchestration/PATHB_MATERIALIZATION_REPORT.md
+?? .prism_orchestration/PATHB_MATERIALIZER_SKELETON_REPORT.md
+?? .prism_orchestration/PATHB_MATERIALIZER_V2_REPORT.md
+?? .prism_orchestration/PATH_A_8STREAM_PRODUCTION_PROFILE_PLAN.md
+?? .prism_orchestration/PATH_A_BASELINE.md
+?? .prism_orchestration/PHASE_A_FULL_PASS_INPUT_AUDIT.md
+?? .prism_orchestration/PHASE_A_GHOST_NATIVE_SPATIAL_FULL_PASS_REPORT.md
+?? .prism_orchestration/PHASE_A_V2_CAPTURE_WINDOW_SWEEP_REPORT.md
+?? .prism_orchestration/POST_CHUNK_LOOP_TEARDOWN_STALL_REPORT.md
+?? .prism_orchestration/POST_MD_CONSENSUS_FIX/
+?? .prism_orchestration/POST_MD_CONSENSUS_STREAM_ERROR_REPORT.md
+?? .prism_orchestration/R4_F1_RUNTIME_VALIDATION.md
+?? .prism_orchestration/RUNBOOK.yaml
+?? .prism_orchestration/SITEMANIFEST_CENTROIDMANIFOLD_IMPLEMENTATION_REPORT.md
+?? .prism_orchestration/STATE.yaml
+?? .prism_orchestration/STREAM5_SFA_KERNEL_FAILURE_REPORT.md
+?? .prism_orchestration/TRIGGERS.yaml
+?? .prism_orchestration/WHILE_BOUNDED_MICROLOOP_EXECUTION_TICKET.md
+?? .prism_orchestration/router_state.txt
+?? .prism_orchestration/templates/claude_review.md
+?? .prism_orchestration/templates/codex_ticket.md
+?? 0.6
+?? 4lpk_clean.atom_to_residue.json
+?? ams_trajectory_extractor.py
+?? brute_force_live_parser.py
+?? build_pharma_campaign.py
+?? causal_preflight.py
+?? crates/prism-mlfeature-derive/
+?? crates/prism-nhs/tests/mlfeature_compile_fail.rs
+?? crates/prism-nhs/tests/mlfeature_compile_fail/
+?? crates/prism-spike-shipper/
+?? data/targets/1nkp_myc_dna.json
+?? data/targets/1nkp_myc_dna.json.atom_to_residue.json
+?? data/targets/1nkp_myc_dna.json.residue_map.json
+?? data/targets/4lpk.json
+?? data/targets/4lpk.json.atom_to_residue.json
+?? data/targets/4lpk.json.residue_map.json
+?? data/targets/7c8r_dimer_hmr.atom_to_residue.json
+?? data/targets/7c8r_dimer_hmr.residue_map.json
+?? data/targets/mpro_monomer.atom_to_residue.json
+?? data/targets/mpro_monomer.residue_map.json
+?? data/targets/mpro_monomer.topology.json
+?? docs/ASC_OMNIDIRECTIONAL_IMPLEMENTATION_PLAN.md
+?? docs/DAG_FOUNDATION_IMPLEMENTATION_PLAN.md
+?? docs/F1_PARENT_SWITCH_IMPLEMENTATION_PLAN.md
+?? docs/F2_ASYNC_IO_EVIDENCE_PLANE_PLAN.md
+?? docs/M1_2_5B_REVERSIBILITY_AUDIT.md
+?? docs/M1_DIFFERENTIAL_PROTOCOL.md
+?? docs/PHASE_MANIFOLD_CLUSTERING_IMPLEMENTATION_PLAN.md
+?? docs/SELF_CLOCKING_CONTROL_PLANE_PLAN.md
+?? docs/SITE_MATERIALIZATION_IMPLEMENTATION_PLAN.md
+?? docs/SO3_TMA_ASYNC_LOAD_PLAN.md
+?? docs/V4_SECTION8_SKELETON.md
+?? docs/VALIDATION_COHERENCE_IMPLEMENTATION_PLAN.md
+?? docs/WHILE_NODE_IMPLEMENTATION_PLAN.md
+?? docs/blind_validation/BASELINE_FAIRNESS_PROTOCOL.md
+?? docs/blind_validation/BIOTECH_DILIGENCE_OUTPUT_SPEC.md
+?? docs/blind_validation/DECOY_AND_NULL_CONTROL_PROTOCOL.md
+?? docs/blind_validation/FIGURE_GENERATION_PLAN.md
+?? docs/blind_validation/GO_NO_GO_READINESS_SCORECARD.md
+?? docs/blind_validation/HARD_NEGATIVE_PROTOCOL.md
+?? docs/blind_validation/LAST10_METHOD_LOCK.md
+?? docs/blind_validation/LEAKAGE_THREAT_MODEL.md
+?? docs/blind_validation/METHOD_DRIFT_AND_CONFLICT_REPORT.md
+?? docs/blind_validation/NONPROVISIONAL_EVIDENCE_PRESERVATION_MAP.md
+?? docs/blind_validation/PIPELINE_DISCOVERY_REPORT.md
+?? docs/blind_validation/POST_FREEZE_VALIDATION_PROTOCOL.md
+?? docs/blind_validation/PREDICTION_FREEZE_PROTOCOL.md
+?? docs/blind_validation/PREPRINT_PATENT_ALIGNMENT_MATRIX.md
+?? docs/blind_validation/PRE_FREEZE_LEAKAGE_SCAN_PROTOCOL.md
+?? docs/blind_validation/PRISM4D_BLIND_VALIDATION_AUDIT_SCHEMA.md
+?? docs/blind_validation/PRISM4D_BLIND_VALIDATION_CHECKLIST.md
+?? docs/blind_validation/PRISM4D_BLIND_VALIDATION_COMMAND_TEMPLATES.md
+?? docs/blind_validation/PRISM4D_BLIND_VALIDATION_FILE_MAP.md
+?? docs/blind_validation/PRISM4D_BLIND_VALIDATION_RUNBOOK.md
+?? docs/blind_validation/REPORTING_LANGUAGE_GUIDE.md
+?? docs/blind_validation/STATISTICAL_ANALYSIS_PLAN.md
+?? docs/blind_validation/STRUCTURAL_VISUALIZATION_RUNBOOK.md
+?? docs/blind_validation/TARGET_SELECTION_PROTOCOL.md
+?? docs/blind_validation/frozen_predictions/
+?? docs/blind_validation/post_freeze_validation/
+?? extract_violation_telemetry.py
+?? forensic_no_baseline_dependency_audit_20260512T232708Z/
+?? freeze_kv31_validation_artifact.sh
+?? generate_kv31_publication_figures.sh
+?? json
+?? kcc_threshold
+?? kv31_PRISM_ligand_clean_overlay.png
+?? kv31_PRISM_vs_baselines_clean_overlay.png
+?? kv31_baseline_raw/
+?? kv31_baseline_scored/
+?? kv31_blinded_baseline_validation/
+?? kv31_clean_publication_overlay.png
+?? kv31_external_validation/
+?? kv31_family_validation/
+?? kv31_leakage_forensics/
+?? kv31_publication_figures_20260512T230059Z/
+?? kv31_publication_figures_20260512T230310Z/
+?? kv31_validation_frozen_20260512T215852Z.tar.gz
+?? kv31_validation_frozen_20260512T215852Z/
+?? p2rank_2.5.1.tar.gz
+?? p2rank_2.5.1/
+?? prepped_20260510_0108
+?? prism_analysis_code_index.txt
+?? prism_kv31_external_validation.py
+?? prism_kv31_family_validation.py
+?? prism_kv31_leakage_forensics.bad2.py
+?? prism_kv31_leakage_forensics.broken.py
+?? prism_kv31_leakage_forensics.py
+?? prism_kv31_score_baselines.py
+?? prism_publication_rigor_audit.py
+?? prism_publication_rigor_audit_20260513T070000Z/
+?? prism_publication_rigor_audit_20260513T070747Z/
+?? prism_relational_audit.py
+?? prism_script_inventory.txt
+?? prism_strict_null_controls.py
+?? prism_strict_null_controls_20260513T072740Z/
+?? re
+?? references/
+?? rmsd[1]
+?? scipy.sparse.csr_matrix
+?? scripts/dossier_full.py
+?? scripts/phase_manifold_ranker.py
+?? scripts/prism-launch-safe-codex-fanout.sh
+?? scripts/prism-orchestrator-router.sh
+?? scripts/prism-orchestrator-status.sh
+?? scripts/prism-orchestrator-watch.sh
+?? scripts/production/run_pharma_campaign.sh
+?? scripts/quarantine/4obe_top_site_designer.pml
+?? scripts/quarantine/aggregate_site_tags.py
+?? scripts/quarantine/align_6p8y_to_6oim.py
+?? scripts/quarantine/audit_compute_kras_holo_pockets.py
+?? scripts/quarantine/fill_prism_manifold_residues.py
+?? scripts/quarantine/ghost_v2_native_spatial_probe.py
+?? scripts/quarantine/m1_2_25_audit_driver.py
+?? scripts/quarantine/m1_v4_postflight_check.py
+?? scripts/quarantine/prism-aggregate-sites.py
+?? scripts/quarantine/prism_manifold_shell_validator.py
+?? scripts/quarantine/prism_pub_baseline_validator.py
+?? scripts/quarantine/reranker_v4_six_pillar_manifold.py
+?? scripts/quarantine/run_6oim.sh
+?? scripts/quarantine/run_blind_validation_sequential.sh
+?? scripts/quarantine/run_phase_a_v2_sweep.sh
+?? scripts/quarantine/run_ranker.sh
+?? scripts/quarantine/site2_pymol_render.py
+?? scripts/quarantine/validate_v2_7c8r.py
+?? scripts/validate.pml
+?? scripts/validate_adagrasib.pml
+?? scripts/validate_apo_holo.py
+?? scripts/validate_chainC_aligned.py
+?? scripts/validate_distal.pml
+?? scripts/validate_kras_residue_overlap.py
+?? sys
+?? temporal_corr_threshold.
+
+python:
+Python 3.12.3
+
+fpocket:
+***** POCKET HUNTING BEGINS ***** 
+! Invalid pdb name given.
+
+:||: [1mfpocket 4.0[0m :||:
+        
+[1mMandatory parameters[0m : 
+	fpocket -f --file pdb or cif file                                      
+	[ fpocket -F --fileList fileList ]                                  
+
+
+[1mOptional output parameters[0m
+	-x --calculate_interaction_grids	: Specify this flag if you want fpocket to     
+						  calculate VdW and Coulomb grids for each pocket
+	-d --pocket_descr_stdout		: Put this flag if you want to write fpocket
+						  descriptors to the standard output
+
+
+[1mOptional input parameters[0m
+	-l --model_number (int)			: Number of Model to analyze.	
+	-y --topology_file (string)		: File name of a topology file (Amber prmtop).	
+	-r --custom_ligand (string)		: String specifying a ligand like: 
+						  residuenumber:residuename:chain_code (ie. 1224:PU8:A).	
+	-P --custom_pocket (string)		: String specifying a pocket like: 
+						  residuenumber1:insertion_code1('-' if empty):chain_code1.residuenumber2:insertion_code2:chain_code2 (ie. 138:-:A.139:-:A).	
+	-u --min_n_explicit_pocket (int)	: If explicit pocket provided, minimum number 
+						  of atoms of an alpha sphere that have to be in the selected pocket.	
+	-a --chain_as_ligand (char)		: Character specifying a chain as a ligand	
+
+
+[1mOptional pocket detection parameters[0m (default parameters)           
+	-m --min_alpha_size (float)		: Minimum radius of an alpha-sphere.	(3.4)
+	-M --max_alpha_size (float)		: Maximum radius of an alpha-sphere.	(6.2)
+	-D --clustering_distance (float)	: Distance threshold for clustering algorithm	(2.4)
+	-C --clustering_method (char)		: Specify the clustering method wanted for     
+						  grouping voronoi vertices together (s)
+						  s : single linkage clustering
+						  m : complete linkage clustering
+						  a : average linkage clustering 
+						  c : centroid linkage clustering
+	-e --clustering_measure (char)		: Specify the distance measure for clustering	(e) 
+						  e : euclidean distance
+						  b : Manhattan distance
+	-i --min_spheres_per_pocket (int)	: Minimum number of a-sphere per pocket.	(15)
+	-p --ratio_apol_spheres_pocket (float)	: Minimum proportion of apolar sphere in       
+						  a pocket (remove otherwise) (0.0)
+	-A --number_apol_asph_pocket (int)	: Minimum number of apolar neighbor for        
+						  an a-sphere to be considered as apolar.   (3)
+	-v --iterations_volume_mc (integer)	: Number of Monte-Carlo iteration for the      
+						  calculation of each pocket volume.(300)
+	-c --drop_chains (char)			: Name of the chains to be deleted before pocket detection,      
+						  able to delete up to (20) chains (ie : -c A,B,E)
+	-k --keep_chains (char)			: Name of the chains to be kept before pocket detection,      
+						  able to keep up to (20) chains (ie : -k A,B,C,E)
+	-a --chain_as_ligand (char)		: consider this chain as a ligand explicitly (i.e. -a D)
+	-w --write_mode (char)			: Writing mode to be used after pocket detection,      
+						  d -> default (same format outpout as input)
+						  b or both -> both pdb and mmcif | p or pdb ->pdb | m or cif or mmcif-> mmcif
+
+[1mFor more information: http://fpocket.sourceforge.net[0m
+***** POCKET HUNTING ENDS ***** 
+
+p2rank:
+P2Rank 2.5.1
+
+Home: /opt/p2rank
+JVM: OpenJDK 64-Bit Server VM 21.0.10+7-Ubuntu-124.04 Ubuntu
+OS: Linux (Version: 6.14.0-37-generic, Arch: amd64)
+CPUs: 24
+Max Memory: 2 GiB
