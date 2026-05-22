@@ -1,0 +1,29 @@
+[Unit]
+Description=PRISM one-shot deep archive and verified local prune
+Documentation=https://github.com/Delfictus/SOTA-Dev
+After=network-online.target prism-teacher-corpus-shipper.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=diddy
+Group=diddy
+Environment=HOME=/home/diddy
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/diddy/.local/bin
+Environment=PRISM_DEEP_ARCHIVE_BUCKET=prism-deep-archive-20260516
+Environment=PRISM_DEEP_ARCHIVE_TRANSFERS=64
+Environment=PRISM_DEEP_ARCHIVE_CHECKERS=64
+Environment=PRISM_DEEP_ARCHIVE_UPLOAD_CONCURRENCY=8
+WorkingDirectory=/home/diddy/Desktop/Prism4D-bio
+ExecStart=/home/diddy/Desktop/Prism4D-bio/scripts/prism-r2-sync/deep_archive_prune.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=prism-deep-archive-prune
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+MemoryMax=8G
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,49 @@
+[Unit]
+Description=PRISM Teacher Corpus Shipper - verified spike dump to Cloudflare R2
+Documentation=https://github.com/Delfictus/SOTA-Dev
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=diddy
+Group=diddy
+
+# Production corpus lane. This intentionally does not use the legacy Python
+# watcher and does not mix TB-scale teacher corpus evidence into dev/tmp routes.
+ExecStart=/opt/prism/bin/prism-spike-shipper \
+  --no-default-watch-dirs \
+  --route /mnt/storage/prism-outputs/teacher-corpus=teacher-corpus/raw-spikes/v1 \
+  --spike-bucket prism-teacher-spikes-20260516 \
+  --archive-bucket prism-archive \
+  --archive-prefix teacher-corpus/raw-spike-archive \
+  --retroactive \
+  --concurrency 64 \
+  --upload-concurrency 64 \
+  --validation-concurrency 16 \
+  --disk-root /mnt/storage \
+  --parquet-cache-dir /mnt/storage/prism-outputs/.spike-shipper-parquet-cache \
+  --evict-verified-local-after-upload
+
+Restart=on-failure
+RestartSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=prism-teacher-corpus-shipper
+
+EnvironmentFile=/home/diddy/.config/prism/r2.env
+Environment=HOME=/home/diddy
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/diddy/.local/bin
+WorkingDirectory=/home/diddy/Desktop/Prism4D-bio
+
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+MemoryMax=16G
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
