@@ -10,7 +10,9 @@ import hashlib
 import json
 import math
 import random
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -149,6 +151,61 @@ class ActionSpace:
     action_base_features: Tensor | None = None
     action_atom_features: Tensor | None = None
     action_atom_mask: Tensor | None = None
+    action_rows: tuple[dict[str, object], ...] = tuple()
+
+
+@dataclass(frozen=True)
+class AssemblyHistoryStep:
+    """One real growth operation in a variable-length trajectory."""
+
+    step: int
+    synthon_id: str
+    exit_atom_idx: int
+    action_idx: int
+    node_count: int
+
+
+@dataclass(frozen=True)
+class AssembledState:
+    """Current product graph state fed back into the policy at the next step."""
+
+    scaffold: ScaffoldGraph
+    data: Data
+    exit_node_idx: int
+    history: tuple[AssemblyHistoryStep, ...]
+    last_growth_action_idx: int | None
+    canonical_smiles: str
+    anchor_id: str
+    coordinates_json: str
+    score_atom_offset: int
+    survivor_lookup_smiles: str | None
+
+
+@dataclass(frozen=True)
+class RustAssemblyProduct:
+    """Product topology and coordinates returned by the Rust Z-matrix assembler."""
+
+    fragment_coordinates: Tensor
+    product_coordinates: Tensor
+    product_bonds: tuple[tuple[int, int], ...]
+    assembly_mode: str
+
+
+@dataclass(frozen=True)
+class MultiStepRollout:
+    """Policy samples and product states for a multi-step GFlowNet trajectory."""
+
+    forward_outputs: tuple[Any, ...]
+    terminal_states: tuple[AssembledState, ...]
+    terminal_actions: Tensor
+    history_actions: Tensor
+    forward_log_probs: Tensor
+    backward_log_probs: Tensor
+    trajectory_lengths: Tensor
+    trajectory_mask: Tensor
+    assembly_histories: tuple[tuple[AssemblyHistoryStep, ...], ...]
+    assembled_state_node_count_mean: float
+    node_count_events: tuple[tuple[int, int, int, int], ...]
 
 
 def parse_args() -> argparse.Namespace:
@@ -354,6 +411,21 @@ def selected_forward_log_probs(log_probs: Tensor, actions: Tensor) -> Tensor:
     if actions.ndim != 1 or int(actions.shape[0]) != int(log_probs.shape[0]):
         raise ValueError("actions must have shape [batch_size]")
     return log_probs.gather(1, actions.unsqueeze(1)).squeeze(1)
+
+
+def reward_targets_for_policy_output(action_space: ActionSpace, log_probs: Tensor) -> Tensor:
+    """Expand supervised warm-start targets, appending a zero-probability STOP lane when present."""
+
+    if log_probs.ndim != 2:
+        raise ValueError("log_probs must have shape [batch_size, num_actions]")
+    target = action_space.reward_targets
+    action_count = int(action_space.valid_mask.shape[0])
+    if int(log_probs.shape[1]) == action_count:
+        return target.unsqueeze(0).expand_as(log_probs)
+    if int(log_probs.shape[1]) == action_count + 1:
+        target_with_stop = torch.cat([target, target.new_zeros(1)], dim=0)
+        return target_with_stop.unsqueeze(0).expand_as(log_probs)
+    raise ValueError("policy output action dimension does not match action space")
 
 
 def compute_effective_reward_tensor(
@@ -1028,6 +1100,7 @@ def load_action_space(paths: TrainingPaths, embedding_dim: int, *, base_feature_
         action_base_features=action_base_features,
         action_atom_features=action_atom_features,
         action_atom_mask=action_atom_mask,
+        action_rows=tuple(table.to_dicts()),
     )
 
 
@@ -1236,6 +1309,9 @@ def attach_exit_ray_adjustments(
         exit_ray_adjustments=tensor,
         action_phase_features=action_phase_features,
         action_base_features=action_space.action_base_features,
+        action_atom_features=action_space.action_atom_features,
+        action_atom_mask=action_space.action_atom_mask,
+        action_rows=tuple(enriched_table.to_dicts()),
     )
 
 
@@ -1263,7 +1339,741 @@ def _coordinates_from_row(row: Mapping[str, object]) -> np.ndarray | None:
         return None
     if coords.ndim != 2 or coords.shape[1] != 3:
         return None
+    if not bool(np.isfinite(coords).all()):
+        return None
     return coords
+
+
+def _tensor_to_coordinates_json(xyz: Tensor) -> str:
+    rows = xyz.detach().cpu().to(dtype=torch.float32).tolist()
+    return json.dumps([[float(value) for value in row] for row in rows], separators=(",", ":"))
+
+
+def action_row(action_space: ActionSpace, action_idx: int) -> Mapping[str, object]:
+    if action_space.action_rows:
+        if action_idx < 0 or action_idx >= len(action_space.action_rows):
+            raise ValueError("action_idx must reference a real growth action")
+        return action_space.action_rows[int(action_idx)]
+    if action_idx < 0 or action_idx >= action_space.table.height:
+        raise ValueError("action_idx must reference a real growth action")
+    return cast(dict[str, object], action_space.table.row(int(action_idx), named=True))
+
+
+def _state_node_count(state: AssembledState) -> int:
+    return int(cast(Tensor, state.data.x_base).shape[0])
+
+
+def initial_assembled_state(graph: ScaffoldGraph) -> AssembledState:
+    data = graph.data.clone()
+    coordinates = _tensor_to_coordinates_json(cast(Tensor, data.xyz))
+    return AssembledState(
+        scaffold=graph,
+        data=data,
+        exit_node_idx=graph.exit_node_idx,
+        history=tuple(),
+        last_growth_action_idx=None,
+        canonical_smiles=graph.scaffold_id,
+        anchor_id=graph.scaffold_id,
+        coordinates_json=coordinates,
+        score_atom_offset=graph.retained_atom_count,
+        survivor_lookup_smiles=None,
+    )
+
+
+def _fragment_offset_from_row(row: Mapping[str, object], coords: np.ndarray | None, fallback_scaffold_atoms: int) -> int:
+    if coords is None or int(coords.shape[0]) == 0:
+        return 0
+    total_atoms = int(coords.shape[0])
+    atoms_scored = numeric_value(row.get("n_heavy_atoms"), 0.0)
+    if atoms_scored <= 0.0:
+        atoms_scored = numeric_value(row.get("population_consensus_atoms_scored"), 0.0)
+    if atoms_scored > 0.0:
+        return max(0, min(total_atoms - 1, total_atoms - int(atoms_scored)))
+    return max(0, min(total_atoms - 1, fallback_scaffold_atoms))
+
+
+def _resize_feature_rows(features: Tensor, *, row_count: int, feature_dim: int) -> Tensor:
+    if features.ndim != 2:
+        raise ValueError("features must have shape [num_atoms, feature_dim]")
+    if int(features.shape[1]) < feature_dim:
+        pad = features.new_zeros((int(features.shape[0]), feature_dim - int(features.shape[1])))
+        features = torch.cat([features, pad], dim=1)
+    elif int(features.shape[1]) > feature_dim:
+        features = features[:, :feature_dim]
+    if int(features.shape[0]) == row_count:
+        return features
+    if int(features.shape[0]) > row_count:
+        return features[:row_count]
+    pad_rows = features.new_zeros((row_count - int(features.shape[0]), feature_dim))
+    return torch.cat([features, pad_rows], dim=0)
+
+
+def _action_fragment_features(action_space: ActionSpace, action_idx: int, *, feature_dim: int) -> Tensor:
+    features: Tensor
+    if action_space.action_atom_features is not None and action_space.action_atom_mask is not None:
+        atom_features = action_space.action_atom_features[int(action_idx)]
+        atom_mask = action_space.action_atom_mask[int(action_idx)]
+        selected = atom_features[atom_mask]
+        features = selected.clone() if int(selected.shape[0]) > 0 else atom_features[:1].clone()
+    elif action_space.action_base_features is not None:
+        features = action_space.action_base_features[int(action_idx)].unsqueeze(0).clone()
+    else:
+        features = torch.zeros((1, feature_dim), dtype=torch.float32)
+    return _resize_feature_rows(features.to(dtype=torch.float32), row_count=max(1, int(features.shape[0])), feature_dim=feature_dim)
+
+
+def _action_phase_features(action_space: ActionSpace, action_idx: int, *, atom_count: int, phase_dim: int) -> Tensor:
+    if action_space.action_phase_features is not None:
+        phase = action_space.action_phase_features[int(action_idx)].to(dtype=torch.float32)
+        if int(phase.shape[1]) < phase_dim:
+            phase = torch.cat([phase, phase.new_zeros((5, phase_dim - int(phase.shape[1])))], dim=1)
+        elif int(phase.shape[1]) > phase_dim:
+            phase = phase[:, :phase_dim]
+    else:
+        phase = torch.zeros((5, phase_dim), dtype=torch.float32)
+        if phase_dim >= 1:
+            phase[:, -1] = 1.0
+    return phase.unsqueeze(0).expand(atom_count, -1, -1).clone()
+
+
+def _fragment_coordinates(
+    *,
+    row: Mapping[str, object],
+    current_xyz: Tensor,
+    exit_node_idx: int,
+    fragment_atoms: int,
+    fallback_scaffold_atoms: int,
+) -> Tensor:
+    coords = _coordinates_from_row(row)
+    if coords is not None:
+        offset = _fragment_offset_from_row(row, coords, fallback_scaffold_atoms)
+        fragment = torch.from_numpy(coords[offset:].astype(np.float32, copy=False))
+        if int(fragment.shape[0]) >= fragment_atoms:
+            return fragment[:fragment_atoms].clone()
+    exit_xyz = current_xyz[exit_node_idx].to(dtype=torch.float32)
+    rows: list[Tensor] = []
+    for atom_idx in range(fragment_atoms):
+        rows.append(exit_xyz + torch.tensor([1.45 * float(atom_idx + 1), 0.35 * float(atom_idx % 3), 0.0]))
+    return torch.stack(rows, dim=0)
+
+
+def _finite_xyz_rows(tensor: Tensor, *, label: str) -> list[list[float]]:
+    values = tensor.detach().cpu().to(dtype=torch.float32)
+    if values.ndim != 2 or int(values.shape[1]) != 3:
+        raise ValueError(f"{label} must have shape [N, 3]")
+    if int(values.shape[0]) == 0:
+        raise ValueError(f"{label} must contain at least one atom")
+    if not bool(torch.isfinite(values).all().item()):
+        raise ValueError(f"{label} contains non-finite coordinates")
+    return [[float(component) for component in row] for row in values.tolist()]
+
+
+def _perpendicular_unit(axis: Tensor) -> Tensor:
+    axis = _unit_vector(axis.to(dtype=torch.float32), torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32))
+    candidate = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32)
+    if float(torch.abs(torch.dot(axis, candidate)).item()) > 0.85:
+        candidate = torch.tensor([0.0, 1.0, 0.0], dtype=torch.float32)
+    perpendicular = torch.cross(axis, candidate, dim=0)
+    return _unit_vector(perpendicular, torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32))
+
+
+def _scaffold_zmatrix_reference_points(current_xyz: Tensor, exit_node_idx: int) -> tuple[Tensor, Tensor, Tensor]:
+    product_xyz = current_xyz.detach().to(dtype=torch.float32)
+    if product_xyz.ndim != 2 or int(product_xyz.shape[1]) != 3:
+        raise ValueError("current_xyz must have shape [N, 3]")
+    if not bool(torch.isfinite(product_xyz).all().item()):
+        raise ValueError("current_xyz contains non-finite coordinates")
+    exit_idx = int(exit_node_idx)
+    if exit_idx < 0 or exit_idx >= int(product_xyz.shape[0]):
+        raise ValueError("exit_node_idx is outside current_xyz")
+    exit_xyz = product_xyz[exit_idx]
+    other_indices = [idx for idx in range(int(product_xyz.shape[0])) if idx != exit_idx]
+    if other_indices:
+        distances = torch.linalg.vector_norm(product_xyz[other_indices] - exit_xyz.unsqueeze(0), dim=1)
+        nearest = int(other_indices[int(torch.argmin(distances).item())])
+        ref1 = product_xyz[nearest]
+    else:
+        ref1 = exit_xyz - torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32)
+    axis = exit_xyz - ref1
+    perpendicular = _perpendicular_unit(axis)
+    ref2 = ref1 + perpendicular
+    return exit_xyz, ref1, ref2
+
+
+def _undirected_bonds_from_edge_index(edge_index: Tensor, edge_attr: Tensor) -> list[list[int]]:
+    edges = edge_index.detach().cpu().to(dtype=torch.long)
+    attrs = edge_attr.detach().cpu().to(dtype=torch.float32)
+    bonds: set[tuple[int, int]] = set()
+    if edges.ndim != 2 or int(edges.shape[0]) != 2:
+        raise ValueError("edge_index must have shape [2, E]")
+    if attrs.ndim != 2 or int(attrs.shape[0]) != int(edges.shape[1]):
+        raise ValueError("edge_attr must have one row per edge")
+    for edge_idx in range(int(edges.shape[1])):
+        bond_order = float(attrs[edge_idx, 1].item()) * 3.0 if int(attrs.shape[1]) > 1 else 1.0
+        if bond_order <= 0.25:
+            continue
+        lhs = int(edges[0, edge_idx].item())
+        rhs = int(edges[1, edge_idx].item())
+        if lhs == rhs:
+            continue
+        bonds.add((min(lhs, rhs), max(lhs, rhs)))
+    return [[lhs, rhs] for lhs, rhs in sorted(bonds)]
+
+
+def _ensure_connected_fragment_bonds(fragment_bonds: set[tuple[int, int]], fragment_xyz: Tensor) -> None:
+    atom_count = int(fragment_xyz.shape[0])
+    if atom_count <= 1:
+        return
+    connected: set[int] = {0}
+    remaining: set[int] = set(range(1, atom_count))
+    while remaining:
+        best_pair: tuple[int, int] | None = None
+        best_distance = float("inf")
+        for lhs in connected:
+            lhs_xyz = fragment_xyz[lhs]
+            for rhs in remaining:
+                distance = float(torch.linalg.vector_norm(fragment_xyz[rhs] - lhs_xyz).item())
+                if distance < best_distance:
+                    best_distance = distance
+                    best_pair = (lhs, rhs)
+        if best_pair is None:
+            break
+        lhs, rhs = best_pair
+        fragment_bonds.add((min(lhs, rhs), max(lhs, rhs)))
+        connected.add(rhs)
+        remaining.remove(rhs)
+
+
+def _fragment_bonds_from_geometry(fragment_xyz: Tensor, fragment_features: Tensor) -> list[list[int]]:
+    """Infer covalent fragment topology from conformer geometry and atom features."""
+
+    xyz = fragment_xyz.detach().to(dtype=torch.float32)
+    features = fragment_features.detach().to(dtype=torch.float32)
+    if xyz.ndim != 2 or int(xyz.shape[1]) != 3:
+        raise ValueError("fragment_xyz must have shape [N, 3]")
+    if features.ndim != 2 or int(features.shape[0]) != int(xyz.shape[0]):
+        raise ValueError("fragment_features must have one row per fragment atom")
+    periodic_table = Chem.GetPeriodicTable()
+    bonds: set[tuple[int, int]] = set()
+    atom_count = int(xyz.shape[0])
+    for lhs in range(atom_count):
+        lhs_atomic = _atomic_num_from_features(features[lhs])
+        lhs_radius = float(periodic_table.GetRcovalent(lhs_atomic))
+        for rhs in range(lhs + 1, atom_count):
+            rhs_atomic = _atomic_num_from_features(features[rhs])
+            rhs_radius = float(periodic_table.GetRcovalent(rhs_atomic))
+            distance = float(torch.linalg.vector_norm(xyz[rhs] - xyz[lhs]).item())
+            threshold = max(0.75, 1.25 * (lhs_radius + rhs_radius) + 0.20)
+            if distance <= threshold:
+                bonds.add((lhs, rhs))
+    _ensure_connected_fragment_bonds(bonds, xyz)
+    return [[lhs, rhs] for lhs, rhs in sorted(bonds)]
+
+
+def ensure_kinematic_assemble_binary() -> Path:
+    binary = REPO_ROOT / "target/release/kinematic_assemble"
+    if binary.is_file():
+        return binary
+    print(
+        "rust_kinematic_assembly_preflight status=building binary=kinematic_assemble",
+        flush=True,
+    )
+    completed = subprocess.run(
+        ["cargo", "build", "--release", "-p", "prism-forge", "--bin", "kinematic_assemble"],
+        cwd=REPO_ROOT,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "failed to build Rust kinematic assembly binary "
+            f"returncode={completed.returncode} stderr={completed.stderr.strip()}"
+        )
+    if not binary.is_file():
+        raise RuntimeError(f"Rust kinematic assembly build completed but binary is missing: {binary}")
+    print(
+        "rust_kinematic_assembly_preflight status=ready binary=kinematic_assemble",
+        flush=True,
+    )
+    return binary
+
+
+def rust_zmatrix_assemble_product(
+    fragment_xyz: Tensor,
+    *,
+    fragment_bonds: Sequence[Sequence[int]],
+    current_xyz: Tensor,
+    current_edge_index: Tensor,
+    current_edge_attr: Tensor,
+    exit_node_idx: int,
+) -> RustAssemblyProduct:
+    """Assemble a product graph through the Rust Z-matrix subprocess."""
+
+    binary = ensure_kinematic_assemble_binary()
+    fragment = fragment_xyz.detach().to(dtype=torch.float32)
+    _finite_xyz_rows(fragment, label="fragment_xyz")
+    exit_xyz, ref1, ref2 = _scaffold_zmatrix_reference_points(current_xyz, int(exit_node_idx))
+    scaffold_coordinates = _finite_xyz_rows(current_xyz, label="current_xyz")
+    request = {
+        "requests": [
+            {
+                "trajectory_id": "growth-000000",
+                "scaffold_coordinates": scaffold_coordinates,
+                "scaffold_bonds": _undirected_bonds_from_edge_index(current_edge_index, current_edge_attr),
+                "scaffold_exit_atom_index": int(exit_node_idx),
+                "scaffold_exit_atom": [float(value) for value in exit_xyz.tolist()],
+                "scaffold_reference_atom_1": [float(value) for value in ref1.tolist()],
+                "scaffold_reference_atom_2": [float(value) for value in ref2.tolist()],
+                "fragment_coordinates": _finite_xyz_rows(fragment, label="fragment_xyz"),
+                "fragment_bonds": [[int(lhs), int(rhs)] for lhs, rhs in fragment_bonds],
+                "bond_length_a": 1.45,
+                "bond_angle_deg": 109.5,
+                "dihedral_deg": 180.0,
+                "hybridization_model": "sp3_default",
+            }
+        ]
+    }
+    scratch = REPO_ROOT / ".scratch/kinematic_assembly"
+    scratch.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="zmatrix_", dir=scratch) as tmpdir:
+        request_path = Path(tmpdir) / "request.json"
+        response_path = Path(tmpdir) / "response.json"
+        request_path.write_text(json.dumps(request, separators=(",", ":")), encoding="utf-8")
+        completed = subprocess.run(
+            [str(binary), "--input", str(request_path), "--output", str(response_path)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                "Rust kinematic assembly failed "
+                f"returncode={completed.returncode} stderr={completed.stderr.strip()}"
+            )
+        decoded = json.loads(response_path.read_text(encoding="utf-8"))
+    responses = decoded.get("responses") if isinstance(decoded, dict) else None
+    if not isinstance(responses, list) or len(responses) != 1:
+        raise RuntimeError("Rust kinematic assembly emitted invalid response envelope")
+    response = responses[0]
+    if not isinstance(response, dict) or response.get("assembly_mode") != "rust_zmatrix_subprocess":
+        raise RuntimeError("Rust kinematic assembly did not report rust_zmatrix_subprocess mode")
+    transformed = torch.tensor(response.get("coordinates"), dtype=torch.float32)
+    product_coordinates = torch.tensor(response.get("product_coordinates"), dtype=torch.float32)
+    raw_bonds = response.get("product_bonds")
+    if transformed.ndim != 2 or int(transformed.shape[1]) != 3 or int(transformed.shape[0]) != int(fragment.shape[0]):
+        raise RuntimeError("Rust kinematic assembly emitted coordinates with an unexpected shape")
+    if product_coordinates.ndim != 2 or int(product_coordinates.shape[1]) != 3:
+        raise RuntimeError("Rust kinematic assembly emitted product coordinates with an unexpected shape")
+    if int(product_coordinates.shape[0]) != len(scaffold_coordinates) + int(fragment.shape[0]):
+        raise RuntimeError("Rust kinematic assembly product atom count does not match scaffold + fragment")
+    if not bool(torch.isfinite(transformed).all().item()) or not bool(torch.isfinite(product_coordinates).all().item()):
+        raise RuntimeError("Rust kinematic assembly emitted non-finite coordinates")
+    if not isinstance(raw_bonds, list):
+        raise RuntimeError("Rust kinematic assembly emitted invalid product bond list")
+    product_bonds: list[tuple[int, int]] = []
+    for item in raw_bonds:
+        if not isinstance(item, list) or len(item) != 2:
+            raise RuntimeError("Rust kinematic assembly emitted malformed product bond")
+        product_bonds.append((int(item[0]), int(item[1])))
+    print(
+        "rust_kinematic_assembly_applied "
+        f"mode=rust_zmatrix_subprocess atoms={int(transformed.shape[0])} "
+        f"product_atoms={int(product_coordinates.shape[0])} product_bonds={len(product_bonds)} "
+        "z_matrix_active=true",
+        flush=True,
+    )
+    return RustAssemblyProduct(
+        fragment_coordinates=transformed,
+        product_coordinates=product_coordinates,
+        product_bonds=tuple(product_bonds),
+        assembly_mode="rust_zmatrix_subprocess",
+    )
+
+
+def rust_zmatrix_attach_fragment(fragment_xyz: Tensor, *, current_xyz: Tensor, exit_node_idx: int) -> Tensor:
+    """Compatibility wrapper returning only Rust-assembled fragment coordinates."""
+
+    product = rust_zmatrix_assemble_product(
+        fragment_xyz,
+        fragment_bonds=_fragment_bonds_from_geometry(
+            fragment_xyz,
+            torch.zeros((int(fragment_xyz.shape[0]), 12), dtype=torch.float32),
+        ),
+        current_xyz=current_xyz,
+        current_edge_index=torch.empty((2, 0), dtype=torch.long),
+        current_edge_attr=torch.empty((0, 6), dtype=torch.float32),
+        exit_node_idx=exit_node_idx,
+    )
+    return product.fragment_coordinates
+
+
+def _unit_vector(vector: Tensor, fallback: Tensor) -> Tensor:
+    norm = torch.linalg.vector_norm(vector)
+    if float(norm.item()) <= 1.0e-6:
+        fallback_norm = torch.linalg.vector_norm(fallback).clamp_min(1.0e-6)
+        return cast(Tensor, fallback / fallback_norm)
+    return cast(Tensor, vector / norm)
+
+
+def _rotation_between_vectors(source: Tensor, target: Tensor) -> Tensor:
+    source_u = _unit_vector(source, torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32))
+    target_u = _unit_vector(target, torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32))
+    dot = torch.dot(source_u, target_u).clamp(-1.0, 1.0)
+    if float(dot.item()) > 1.0 - 1.0e-6:
+        return torch.eye(3, dtype=torch.float32)
+    if float(dot.item()) < -1.0 + 1.0e-6:
+        axis = torch.cross(source_u, torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32), dim=0)
+        if float(torch.linalg.vector_norm(axis).item()) <= 1.0e-6:
+            axis = torch.cross(source_u, torch.tensor([0.0, 1.0, 0.0], dtype=torch.float32), dim=0)
+        axis = _unit_vector(axis, torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32))
+        return -torch.eye(3, dtype=torch.float32) + 2.0 * torch.outer(axis, axis)
+    axis = torch.cross(source_u, target_u, dim=0)
+    skew = torch.tensor(
+        [
+            [0.0, -float(axis[2].item()), float(axis[1].item())],
+            [float(axis[2].item()), 0.0, -float(axis[0].item())],
+            [-float(axis[1].item()), float(axis[0].item()), 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    return torch.eye(3, dtype=torch.float32) + skew + skew.matmul(skew) * (1.0 / (1.0 + float(dot.item())))
+
+
+def transform_fragment_to_exit(fragment_xyz: Tensor, *, current_xyz: Tensor, exit_node_idx: int) -> Tensor:
+    """Rigidly place a fragment at the current product exit vector for the next growth step."""
+
+    if fragment_xyz.ndim != 2 or int(fragment_xyz.shape[1]) != 3:
+        raise ValueError("fragment_xyz must have shape [N_fragment, 3]")
+    if int(fragment_xyz.shape[0]) == 0:
+        raise ValueError("fragment_xyz must contain at least one atom")
+    product_xyz = current_xyz.detach().to(dtype=torch.float32)
+    fragment = fragment_xyz.detach().to(dtype=torch.float32)
+    exit_xyz = product_xyz[int(exit_node_idx)]
+    centroid = product_xyz.mean(dim=0)
+    target_dir = _unit_vector(exit_xyz - centroid, torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32))
+    if int(fragment.shape[0]) > 1:
+        source_dir = fragment[-1] - fragment[0]
+        bond_length = float(torch.linalg.vector_norm(fragment[1] - fragment[0]).clamp(1.1, 1.8).item())
+    else:
+        source_dir = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32)
+        bond_length = 1.45
+    rotation = _rotation_between_vectors(source_dir, target_dir)
+    centered = fragment - fragment[0].unsqueeze(0)
+    transformed = centered.matmul(rotation.transpose(0, 1))
+    return transformed + (exit_xyz + target_dir * bond_length).unsqueeze(0)
+
+
+def _edge_attr_for_pair(xyz: Tensor, lhs: int, rhs: int, exit_node_idx: int, edge_dim: int) -> Tensor:
+    lhs_xyz = xyz[lhs]
+    rhs_xyz = xyz[rhs]
+    vector = rhs_xyz - lhs_xyz
+    distance = torch.linalg.vector_norm(vector).clamp_min(1.0e-6)
+    exit_vector = lhs_xyz - xyz[exit_node_idx]
+    denom = distance * torch.linalg.vector_norm(exit_vector).clamp_min(1.0e-6)
+    alignment = torch.dot(vector, exit_vector) / denom
+    values = [float(distance.item()) / 5.0, 1.0 / 3.0, 0.0, 0.0, 0.0, float(alignment.item())]
+    if len(values) < edge_dim:
+        values.extend([0.0] * (edge_dim - len(values)))
+    return torch.tensor(values[:edge_dim], dtype=torch.float32)
+
+
+def _append_growth_edges(
+    *,
+    current_edge_index: Tensor,
+    current_edge_attr: Tensor,
+    current_active_mask: Tensor,
+    xyz: Tensor,
+    old_exit_idx: int,
+    first_new_idx: int,
+    new_atom_count: int,
+) -> tuple[Tensor, Tensor, Tensor]:
+    edge_pairs: list[tuple[int, int]] = [(old_exit_idx, first_new_idx), (first_new_idx, old_exit_idx)]
+    for offset in range(new_atom_count - 1):
+        lhs = first_new_idx + offset
+        rhs = lhs + 1
+        edge_pairs.extend([(lhs, rhs), (rhs, lhs)])
+    edge_dim = int(current_edge_attr.shape[1])
+    new_edge_index = torch.tensor(edge_pairs, dtype=torch.long).t().contiguous()
+    new_edge_attr = torch.stack(
+        [_edge_attr_for_pair(xyz, lhs, rhs, old_exit_idx, edge_dim) for lhs, rhs in edge_pairs],
+        dim=0,
+    )
+    new_active = torch.zeros((len(edge_pairs),), dtype=torch.bool)
+    return (
+        torch.cat([current_edge_index, new_edge_index], dim=1),
+        torch.cat([current_edge_attr, new_edge_attr], dim=0),
+        torch.cat([current_active_mask, new_active], dim=0),
+    )
+
+
+def _edge_tensors_from_rust_product_bonds(
+    *,
+    product_bonds: Sequence[tuple[int, int]],
+    current_edge_index: Tensor,
+    current_edge_attr: Tensor,
+    current_active_mask: Tensor,
+    xyz: Tensor,
+    old_exit_idx: int,
+) -> tuple[Tensor, Tensor, Tensor]:
+    old_edges = current_edge_index.detach().to(dtype=torch.long)
+    old_attrs = current_edge_attr.detach().to(dtype=torch.float32)
+    old_mask = current_active_mask.detach().to(dtype=torch.bool)
+    attr_by_direction: dict[tuple[int, int], tuple[Tensor, bool]] = {}
+    for edge_idx in range(int(old_edges.shape[1])):
+        lhs = int(old_edges[0, edge_idx].item())
+        rhs = int(old_edges[1, edge_idx].item())
+        attr_by_direction[(lhs, rhs)] = (old_attrs[edge_idx].clone(), bool(old_mask[edge_idx].item()))
+
+    edge_pairs: list[tuple[int, int]] = []
+    edge_attrs: list[Tensor] = []
+    active_values: list[bool] = []
+    edge_dim = int(current_edge_attr.shape[1])
+    atom_count = int(xyz.shape[0])
+    seen: set[tuple[int, int]] = set()
+    for lhs_raw, rhs_raw in product_bonds:
+        lhs = int(lhs_raw)
+        rhs = int(rhs_raw)
+        if lhs == rhs or lhs < 0 or rhs < 0 or lhs >= atom_count or rhs >= atom_count:
+            continue
+        for src, dst in ((lhs, rhs), (rhs, lhs)):
+            if (src, dst) in seen:
+                continue
+            seen.add((src, dst))
+            stored = attr_by_direction.get((src, dst))
+            if stored is not None:
+                attr, active = stored
+            else:
+                attr = _edge_attr_for_pair(xyz, src, dst, old_exit_idx, edge_dim)
+                active = False
+            edge_pairs.append((src, dst))
+            edge_attrs.append(attr)
+            active_values.append(active)
+
+    if not edge_pairs:
+        return (
+            torch.empty((2, 0), dtype=torch.long),
+            torch.empty((0, edge_dim), dtype=torch.float32),
+            torch.empty((0,), dtype=torch.bool),
+        )
+    return (
+        torch.tensor(edge_pairs, dtype=torch.long).t().contiguous(),
+        torch.stack(edge_attrs, dim=0),
+        torch.tensor(active_values, dtype=torch.bool),
+    )
+
+
+def fallback_history_chain_smiles(atom_count: int, history: Sequence[AssemblyHistoryStep]) -> str:
+    rw_mol = Chem.RWMol()
+    count = max(1, min(256, int(atom_count)))
+    anchors_by_node = {min(count - 1, step.node_count - 1): step for step in history}
+    for atom_idx in range(count):
+        atom = Chem.Atom(6)
+        matching_step = anchors_by_node.get(atom_idx)
+        if matching_step is not None:
+            atom.SetAtomMapNum(int(matching_step.action_idx) + 1)
+        rw_mol.AddAtom(atom)
+        if atom_idx > 0:
+            rw_mol.AddBond(atom_idx - 1, atom_idx, Chem.BondType.SINGLE)
+    return str(Chem.MolToSmiles(rw_mol.GetMol(), canonical=True))
+
+
+def _atomic_num_from_features(features: Tensor) -> int:
+    if int(features.shape[0]) == 0:
+        return 6
+    raw_atomic_num = int(round(float(features[0].item()) * 100.0))
+    return raw_atomic_num if 1 <= raw_atomic_num <= 118 else 6
+
+
+def canonical_smiles_from_product_graph(data: Data, history: Sequence[AssemblyHistoryStep]) -> str:
+    """Create a connected RDKit-canonical identity for the current assembled graph."""
+
+    x_base = cast(Tensor, data.x_base).detach().cpu()
+    edge_index = cast(Tensor, data.edge_index).detach().cpu()
+    edge_attr = cast(Tensor, data.edge_attr).detach().cpu()
+    rw_mol = Chem.RWMol()
+    anchors_by_node = {min(int(x_base.shape[0]) - 1, step.node_count - 1): step for step in history}
+    for row_idx in range(int(x_base.shape[0])):
+        atom = Chem.Atom(_atomic_num_from_features(x_base[row_idx]))
+        matching_step = anchors_by_node.get(row_idx)
+        if matching_step is not None:
+            atom.SetAtomMapNum(int(matching_step.action_idx) + 1)
+        rw_mol.AddAtom(atom)
+    added: set[tuple[int, int]] = set()
+    for edge_idx in range(int(edge_index.shape[1])):
+        lhs = int(edge_index[0, edge_idx].item())
+        rhs = int(edge_index[1, edge_idx].item())
+        if lhs == rhs:
+            continue
+        pair = (min(lhs, rhs), max(lhs, rhs))
+        if pair in added:
+            continue
+        bond_order = float(edge_attr[edge_idx, 1].item()) * 3.0 if int(edge_attr.shape[1]) > 1 else 1.0
+        if bond_order <= 0.25:
+            continue
+        bond_type = Chem.BondType.SINGLE
+        if bond_order > 2.5:
+            bond_type = Chem.BondType.TRIPLE
+        elif bond_order > 1.5:
+            bond_type = Chem.BondType.DOUBLE
+        try:
+            rw_mol.AddBond(pair[0], pair[1], bond_type)
+        except RuntimeError:
+            continue
+        added.add(pair)
+    mol = rw_mol.GetMol()
+    try:
+        smiles = Chem.MolToSmiles(mol, canonical=True)
+        if smiles and "." not in smiles:
+            return str(smiles)
+    except (ValueError, RuntimeError):
+        pass
+    return fallback_history_chain_smiles(int(x_base.shape[0]), history)
+
+
+def grow_state_with_action(
+    state: AssembledState,
+    *,
+    action_space: ActionSpace,
+    action_idx: int,
+    step: int,
+) -> AssembledState:
+    row = action_row(action_space, int(action_idx))
+    current_x_base = cast(Tensor, state.data.x_base).detach().clone()
+    current_x_phase = cast(Tensor, state.data.x_phase).detach().clone()
+    current_xyz = cast(Tensor, state.data.xyz).detach().clone()
+    base_dim = int(current_x_base.shape[1])
+    phase_dim = int(current_x_phase.shape[2])
+    fragment_features = _action_fragment_features(action_space, int(action_idx), feature_dim=base_dim)
+    fragment_atoms = max(1, int(fragment_features.shape[0]))
+    raw_fragment_xyz = _fragment_coordinates(
+        row=row,
+        current_xyz=current_xyz,
+        exit_node_idx=state.exit_node_idx,
+        fragment_atoms=fragment_atoms,
+        fallback_scaffold_atoms=state.scaffold.retained_atom_count,
+    )
+    rust_product = rust_zmatrix_assemble_product(
+        raw_fragment_xyz,
+        fragment_bonds=_fragment_bonds_from_geometry(raw_fragment_xyz, fragment_features),
+        current_xyz=current_xyz,
+        current_edge_index=cast(Tensor, state.data.edge_index).detach().clone(),
+        current_edge_attr=cast(Tensor, state.data.edge_attr).detach().clone(),
+        exit_node_idx=state.exit_node_idx,
+    )
+    fragment_xyz = rust_product.fragment_coordinates
+    fragment_features = _resize_feature_rows(fragment_features, row_count=int(fragment_xyz.shape[0]), feature_dim=base_dim)
+    if base_dim > 10:
+        current_x_base[:, 10] = 0.0
+        fragment_features[:, 10] = 0.0
+        fragment_features[-1, 10] = 1.0
+    fragment_phase = _action_phase_features(
+        action_space,
+        int(action_idx),
+        atom_count=int(fragment_features.shape[0]),
+        phase_dim=phase_dim,
+    )
+    first_new_idx = int(current_x_base.shape[0])
+    xyz = rust_product.product_coordinates
+    edge_index, edge_attr, active_mask = _edge_tensors_from_rust_product_bonds(
+        product_bonds=rust_product.product_bonds,
+        current_edge_index=cast(Tensor, state.data.edge_index).detach().clone(),
+        current_edge_attr=cast(Tensor, state.data.edge_attr).detach().clone(),
+        current_active_mask=cast(Tensor, state.data.active_dendrite_mask).detach().clone(),
+        xyz=xyz,
+        old_exit_idx=state.exit_node_idx,
+    )
+    x_base = torch.cat([current_x_base, fragment_features], dim=0)
+    x_phase = torch.cat([current_x_phase, fragment_phase], dim=0)
+    data = Data(
+        x_base=x_base,
+        x_phase=x_phase,
+        xyz=xyz,
+        edge_index=edge_index,
+        edge_attr=edge_attr,
+        active_dendrite_mask=active_mask,
+        num_nodes=int(x_base.shape[0]),
+    )
+    survivor_smiles = row.get("survivor_smiles")
+    survivor_lookup_smiles = str(survivor_smiles if isinstance(survivor_smiles, str) else row.get("canonical_smiles") or "")
+    anchor_id = str(row.get("anchor_id") or survivor_lookup_smiles or state.anchor_id)
+    history_step = AssemblyHistoryStep(
+        step=int(step),
+        synthon_id=anchor_id,
+        exit_atom_idx=state.exit_node_idx,
+        action_idx=int(action_idx),
+        node_count=int(x_base.shape[0]),
+    )
+    product_history = (*state.history, history_step)
+    canonical_smiles = canonical_smiles_from_product_graph(data, product_history)
+    return AssembledState(
+        scaffold=state.scaffold,
+        data=data,
+        exit_node_idx=int(x_base.shape[0]) - 1,
+        history=product_history,
+        last_growth_action_idx=int(action_idx),
+        canonical_smiles=canonical_smiles,
+        anchor_id=anchor_id,
+        coordinates_json=_tensor_to_coordinates_json(xyz),
+        score_atom_offset=state.scaffold.retained_atom_count,
+        survivor_lookup_smiles=survivor_lookup_smiles,
+    )
+
+
+def rollout_forward_action_mask(
+    action_space: ActionSpace,
+    *,
+    active_rows: Tensor,
+    step: int,
+    max_steps: int,
+) -> Tensor:
+    if active_rows.ndim != 1 or active_rows.dtype != torch.bool:
+        raise ValueError("active_rows must be a bool tensor with shape [batch_size]")
+    if not bool(action_space.valid_mask.any().item()):
+        raise ValueError("rollout requires at least one valid growth action")
+    batch_size = int(active_rows.shape[0])
+    action_count = int(action_space.valid_mask.shape[0])
+    action_mask = action_space.valid_mask.unsqueeze(0).expand(batch_size, -1).clone()
+    stop_mask = torch.zeros((batch_size, 1), dtype=torch.bool)
+    if max_steps > 1 and step > 0:
+        stop_mask[active_rows] = True
+    if max_steps > 1 and step == max_steps - 1:
+        action_mask[active_rows] = False
+        stop_mask[active_rows] = True
+    action_mask[~active_rows] = False
+    stop_mask[~active_rows] = True
+    mask = torch.cat([action_mask, stop_mask], dim=1)
+    dead_rows = ~mask.any(dim=1)
+    if bool(dead_rows.any().item()):
+        mask[dead_rows, action_count] = True
+    return mask
+
+
+def apply_stop_horizon_prior(output: Any, forward_mask: Tensor, *, action_count: int, step: int, max_steps: int) -> Any:
+    """Make the learned STOP head selectable under large action spaces without replacing it."""
+
+    if max_steps <= 1 or step <= 0 or step >= max_steps - 1:
+        return output
+    if int(output.forward_logits.shape[1]) != action_count + 1:
+        return output
+    stop_valid = forward_mask[:, action_count]
+    if not bool(stop_valid.any().item()):
+        return output
+    adjusted_logits = output.forward_logits.clone()
+    # With tens of thousands of synthons, an untrained one-logit STOP head has
+    # vanishing sampling mass. A horizon prior keeps termination exploratory
+    # while the STOP logit remains the learned row-specific component.
+    adjusted_logits[stop_valid, action_count] += math.log(float(max(2, action_count)))
+    floor = torch.finfo(adjusted_logits.dtype).min
+    adjusted_log_probs = torch.log_softmax(adjusted_logits.masked_fill(~forward_mask, floor), dim=1)
+    return replace(
+        output,
+        forward_logits=adjusted_logits,
+        forward_log_probs=adjusted_log_probs,
+        forward_probs=adjusted_log_probs.exp(),
+    )
 
 
 def product_fiber_batch_telemetry(
@@ -1298,6 +2108,52 @@ def product_fiber_batch_telemetry(
         n_scaffold = min(graph.retained_atom_count, coords.shape[0])
         fiber_lookup.lookup_product_fiber(
             cast(Tensor, graph.data.x_phase),
+            coords,
+            n_scaffold=n_scaffold,
+        )
+        stats_rows.append(fiber_lookup.field_stats_for_coordinates(coords, n_scaffold=n_scaffold))
+        synthon_atoms += max(0, int(coords.shape[0]) - n_scaffold)
+        estimated += 1
+    return {
+        "product_fiber_method": "full_thermodynamic_field_stack" if isinstance(fiber_lookup, ThermodynamicFieldStack) else "direct_signal_grid_lookup",
+        "product_fiber_products": estimated,
+        "product_fiber_synthon_atoms": synthon_atoms,
+        "shear_mean": _mean([row["sigma_shear_mean"] for row in stats_rows]),
+        "hysteresis_mean": _mean([row["hysteresis_mean"] for row in stats_rows]),
+        "pathway_voxels_occupied": _mean([row["pathway_voxels_occupied"] for row in stats_rows]),
+        "pathway_neighborhood_contacts": _mean([row["pathway_neighborhood_contacts"] for row in stats_rows]),
+    }
+
+
+def product_fiber_state_telemetry(
+    *,
+    states: Sequence[AssembledState],
+    fiber_lookup: FieldLookup | None,
+) -> dict[str, int | str | float]:
+    """Compute product-fiber telemetry from assembled multi-step product coordinates."""
+
+    if fiber_lookup is None:
+        return {
+            "product_fiber_method": "unavailable",
+            "product_fiber_products": 0,
+            "product_fiber_synthon_atoms": 0,
+            "shear_mean": 0.0,
+            "hysteresis_mean": 0.0,
+            "reversibility_mean": 1.0,
+            "pathway_voxels_occupied": 0.0,
+            "pathway_neighborhood_contacts": 0.0,
+            "consensus_complement_bonus": 0.0,
+        }
+    synthon_atoms = 0
+    estimated = 0
+    stats_rows: list[dict[str, float]] = []
+    for state in states:
+        coords = _coordinates_from_row({"coordinates_json": state.coordinates_json})
+        if coords is None:
+            continue
+        n_scaffold = min(state.scaffold.retained_atom_count, coords.shape[0])
+        fiber_lookup.lookup_product_fiber(
+            cast(Tensor, state.scaffold.data.x_phase),
             coords,
             n_scaffold=n_scaffold,
         )
@@ -1541,11 +2397,40 @@ def forward_policy(
     action_space: ActionSpace,
     batch_size: int,
     selected_graphs: Sequence[ScaffoldGraph] | None = None,
+    state_graphs: Sequence[AssembledState] | None = None,
+    forward_action_mask: Tensor | None = None,
 ) -> tuple[Any, Batch, Tensor]:
-    batch, exit_indices = clone_graph_batch(graph, batch_size, selected_graphs)
-    forward_mask = action_space.valid_mask.unsqueeze(0).expand(batch_size, -1)
+    if state_graphs is None:
+        batch, exit_indices = clone_graph_batch(graph, batch_size, selected_graphs)
+    else:
+        if len(state_graphs) != batch_size:
+            raise ValueError("state_graphs length must equal batch_size")
+        batch = Batch.from_data_list([state.data.clone() for state in state_graphs])
+        ptr = cast(Tensor, batch.ptr)
+        exit_offsets = torch.tensor([state.exit_node_idx for state in state_graphs], dtype=torch.long)
+        exit_indices = ptr[:-1].to(dtype=torch.long) + exit_offsets
+    base_forward_mask = action_space.valid_mask.unsqueeze(0).expand(batch_size, -1)
+    if forward_action_mask is None:
+        forward_mask = base_forward_mask
+    else:
+        action_count = int(action_space.valid_mask.shape[0])
+        if forward_action_mask.ndim != 2 or int(forward_action_mask.shape[0]) != batch_size:
+            raise ValueError("forward_action_mask must have shape [batch_size, num_actions]")
+        if forward_action_mask.dtype != torch.bool:
+            raise TypeError("forward_action_mask must have dtype torch.bool")
+        if int(forward_action_mask.shape[1]) == action_count:
+            forward_mask = base_forward_mask & forward_action_mask
+        elif int(forward_action_mask.shape[1]) == action_count + 1:
+            stop_column = forward_action_mask[:, action_count:]
+            forward_mask = torch.cat([base_forward_mask & forward_action_mask[:, :action_count], stop_column], dim=1)
+        else:
+            raise ValueError("forward_action_mask width must match action count or action count + STOP")
     if action_space.exit_ray_adjustments is not None:
-        ray_finite = torch.isfinite(action_space.exit_ray_adjustments).unsqueeze(0).expand_as(forward_mask)
+        ray_base = torch.isfinite(action_space.exit_ray_adjustments).unsqueeze(0).expand(batch_size, -1)
+        if int(forward_mask.shape[1]) == int(ray_base.shape[1]) + 1:
+            ray_finite = torch.cat([ray_base, torch.ones((batch_size, 1), dtype=torch.bool)], dim=1)
+        else:
+            ray_finite = ray_base.expand_as(forward_mask)
         row_mask = forward_mask & ray_finite
         dead_rows = ~row_mask.any(dim=1)
         if bool(dead_rows.any().item()):
@@ -1573,9 +2458,13 @@ def forward_policy(
         policy_kwargs["action_atom_mask"] = action_space.action_atom_mask
     output = model(**policy_kwargs)
     if action_space.exit_ray_adjustments is not None:
-        adjustments = action_space.exit_ray_adjustments.to(dtype=output.forward_logits.dtype).unsqueeze(0).expand_as(
-            output.forward_logits
+        base_adjustments = action_space.exit_ray_adjustments.to(dtype=output.forward_logits.dtype).unsqueeze(0).expand(
+            batch_size, -1
         )
+        if int(output.forward_logits.shape[1]) == int(base_adjustments.shape[1]) + 1:
+            adjustments = torch.cat([base_adjustments, base_adjustments.new_zeros((batch_size, 1))], dim=1)
+        else:
+            adjustments = base_adjustments.expand_as(output.forward_logits)
         adjusted_logits = output.forward_logits + adjustments
         floor = torch.finfo(adjusted_logits.dtype).min
         adjusted_log_probs = torch.log_softmax(adjusted_logits.masked_fill(~forward_mask, floor), dim=1)
@@ -1586,6 +2475,121 @@ def forward_policy(
             forward_probs=adjusted_log_probs.exp(),
         )
     return output, batch, exit_indices
+
+
+def sample_multistep_rollout(
+    *,
+    model: torch.nn.Module,
+    scaffold_pool: Sequence[ScaffoldGraph],
+    action_space: ActionSpace,
+    selected_graphs: Sequence[ScaffoldGraph],
+    batch_size: int,
+    max_steps: int,
+    sampling_temperature: float,
+) -> MultiStepRollout:
+    """Sample a variable-length trajectory where each step consumes the prior product graph."""
+
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    if len(selected_graphs) != batch_size:
+        raise ValueError("selected_graphs length must equal batch_size")
+    step_count = max(1, int(max_steps))
+    stop_action_idx = int(action_space.valid_mask.shape[0])
+    states = [initial_assembled_state(graph) for graph in selected_graphs]
+    active = torch.ones((batch_size,), dtype=torch.bool)
+    trajectory_lengths = torch.zeros((batch_size,), dtype=torch.long)
+    history_actions = torch.full((batch_size, step_count), stop_action_idx, dtype=torch.long)
+    forward_outputs: list[Any] = []
+    forward_steps: list[Tensor] = []
+    backward_steps: list[Tensor] = []
+    mask_steps: list[Tensor] = []
+    node_count_events: list[tuple[int, int, int, int]] = []
+
+    for step in range(step_count):
+        step_active = active.clone()
+        forward_mask = rollout_forward_action_mask(
+            action_space,
+            active_rows=step_active,
+            step=step,
+            max_steps=step_count,
+        )
+        output, _, _ = forward_policy(
+            model,
+            scaffold_pool,
+            action_space,
+            batch_size,
+            selected_graphs=selected_graphs,
+            state_graphs=states,
+            forward_action_mask=forward_mask,
+        )
+        output = apply_stop_horizon_prior(
+            output,
+            forward_mask,
+            action_count=stop_action_idx,
+            step=step,
+            max_steps=step_count,
+        )
+        actions_step = sample_actions_per_row(
+            output.forward_log_probs,
+            forward_mask,
+            min(sampling_temperature, 1.0) if bool(forward_mask[:, stop_action_idx].any().item()) else sampling_temperature,
+            require_unique=False,
+        )
+        history_actions[:, step] = actions_step
+        forward_selected = selected_forward_log_probs(output.forward_log_probs, actions_step)
+        backward_selected = output.backward_log_probs[:, 0]
+        forward_steps.append(torch.where(step_active, forward_selected, torch.zeros_like(forward_selected)))
+        backward_steps.append(torch.where(step_active, backward_selected, torch.zeros_like(backward_selected)))
+        mask_steps.append(step_active)
+        forward_outputs.append(output)
+
+        next_states = list(states)
+        for row_idx, action_idx_value in enumerate(actions_step.tolist()):
+            if not bool(step_active[row_idx].item()):
+                continue
+            action_idx = int(action_idx_value)
+            if action_idx == stop_action_idx:
+                active[row_idx] = False
+                if int(trajectory_lengths[row_idx].item()) == 0:
+                    trajectory_lengths[row_idx] = step + 1
+                continue
+            before_count = _state_node_count(states[row_idx])
+            grown_state = grow_state_with_action(
+                states[row_idx],
+                action_space=action_space,
+                action_idx=action_idx,
+                step=step,
+            )
+            after_count = _state_node_count(grown_state)
+            node_count_events.append((row_idx, step, before_count, after_count))
+            next_states[row_idx] = grown_state
+        states = next_states
+
+    still_active = trajectory_lengths == 0
+    if bool(still_active.any().item()):
+        trajectory_lengths[still_active] = step_count
+    trajectory_mask = torch.stack(mask_steps, dim=1)
+    terminal_actions = torch.tensor(
+        [
+            stop_action_idx if state.last_growth_action_idx is None else int(state.last_growth_action_idx)
+            for state in states
+        ],
+        dtype=torch.long,
+    )
+    node_counts = [_state_node_count(state) for state in states]
+    return MultiStepRollout(
+        forward_outputs=tuple(forward_outputs),
+        terminal_states=tuple(states),
+        terminal_actions=terminal_actions,
+        history_actions=history_actions,
+        forward_log_probs=torch.stack(forward_steps, dim=1),
+        backward_log_probs=torch.stack(backward_steps, dim=1),
+        trajectory_lengths=trajectory_lengths,
+        trajectory_mask=trajectory_mask,
+        assembly_histories=tuple(state.history for state in states),
+        assembled_state_node_count_mean=float(sum(node_counts) / len(node_counts)) if node_counts else 0.0,
+        node_count_events=tuple(node_count_events),
+    )
 
 
 def proposals_for_actions(action_space: ActionSpace, actions: Sequence[int]) -> list[OracleProposal]:
@@ -1612,6 +2616,29 @@ def proposals_for_actions(action_space: ActionSpace, actions: Sequence[int]) -> 
                 canonical_smiles=str(canonical_smiles),
                 trajectory_id=f"tb-{batch_idx:06d}",
                 coordinates_json=coordinates,
+                score_atom_offset=score_atom_offset,
+            )
+        )
+    return proposals
+
+
+def proposals_for_terminal_states(states: Sequence[AssembledState], *, oracle_mode: str) -> list[OracleProposal]:
+    proposals: list[OracleProposal] = []
+    for batch_idx, state in enumerate(states):
+        if state.last_growth_action_idx is None:
+            raise RuntimeError("terminal state has no growth action before STOP")
+        canonical_smiles = state.canonical_smiles
+        score_atom_offset = state.score_atom_offset
+        if oracle_mode == "survivor_lookup":
+            canonical_smiles = state.survivor_lookup_smiles or canonical_smiles
+        elif oracle_mode == "live_signal_grid":
+            score_atom_offset = 0
+        proposals.append(
+            OracleProposal(
+                anchor_id=state.anchor_id,
+                canonical_smiles=canonical_smiles,
+                trajectory_id=f"tb-{batch_idx:06d}",
+                coordinates_json=state.coordinates_json,
                 score_atom_offset=score_atom_offset,
             )
         )
@@ -1836,6 +2863,13 @@ async def train() -> None:
     args = parse_args()
     if bool(args.live_scoring):
         args.oracle_mode = "live_signal_grid"
+    if int(args.max_trajectory_steps) > 1 and str(args.oracle_mode) == "survivor_lookup":
+        args.oracle_mode = "live_signal_grid"
+        print(
+            "oracle_mode_auto_selected "
+            "reason=multi_step_rollout_requires_live_scoring selected=live_signal_grid",
+            flush=True,
+        )
     telemetry_handle = None
     original_stdout = sys.stdout
     original_stderr = sys.stderr
@@ -2080,7 +3114,7 @@ async def train() -> None:
             selected_graphs=selected_graphs,
         )
         log_probs = output.forward_log_probs
-        target = action_space.reward_targets.unsqueeze(0).expand_as(log_probs)
+        target = reward_targets_for_policy_output(action_space, log_probs)
         loss = -(target * log_probs).sum(dim=1).mean()
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -2143,28 +3177,25 @@ async def train() -> None:
             router=entropy_router,
             active_variant=str(args.active_variant),
         )
-        output, _, _ = forward_policy(
-            model,
-            scaffold_pool,
-            action_space,
-            int(args.batch_size),
-            selected_graphs=selected_graphs,
-        )
         progress = 0.0 if int(args.epochs) <= 1 else float(epoch - 1) / float(int(args.epochs) - 1)
         sampling_temperature = 5.0 - (4.90 * progress)
-        actions_tensor = sample_actions_per_row(
-            output.forward_log_probs,
-            action_space.valid_mask,
-            sampling_temperature,
-        )
-        actions = [int(value) for value in actions_tensor.tolist()]
-        product_fiber_metrics = product_fiber_batch_telemetry(
+        rollout = sample_multistep_rollout(
+            model=model,
+            scaffold_pool=scaffold_pool,
             action_space=action_space,
-            actions=actions,
             selected_graphs=selected_graphs,
+            batch_size=int(args.batch_size),
+            max_steps=int(args.max_trajectory_steps),
+            sampling_temperature=sampling_temperature,
+        )
+        output = rollout.forward_outputs[-1]
+        actions_tensor = rollout.terminal_actions
+        actions = [int(value) for value in actions_tensor.tolist()]
+        product_fiber_metrics = product_fiber_state_telemetry(
+            states=rollout.terminal_states,
             fiber_lookup=fiber_lookup,
         )
-        proposals = proposals_for_actions(action_space, actions)
+        proposals = proposals_for_terminal_states(rollout.terminal_states, oracle_mode=str(args.oracle_mode))
         reaction_classes = reaction_classes_for_actions(action_space, actions)
         oracle_result = await oracle.score_batch(proposals)
         rewards = oracle_result.rewards
@@ -2210,16 +3241,18 @@ async def train() -> None:
             + diversity_bonus
             + float(args.lock_geo_intrinsic_bonus) * lock_intrinsic
         ).clamp_min(1.0e-8)
-        forward_selected = selected_forward_log_probs(output.forward_log_probs, actions_tensor).unsqueeze(1)
-        backward_selected = output.backward_log_probs[:, 0].unsqueeze(1)
         tb = tb_loss(
             output.log_z,
-            forward_selected,
-            backward_selected,
+            rollout.forward_log_probs,
+            rollout.backward_log_probs,
             effective_rewards,
+            trajectory_mask=rollout.trajectory_mask,
         )
-        target = action_space.reward_targets.unsqueeze(0).expand_as(output.forward_log_probs)
-        policy_aux_loss = -(target * output.forward_log_probs).sum(dim=1).mean()
+        policy_aux_terms = []
+        for step_output in rollout.forward_outputs:
+            target = reward_targets_for_policy_output(action_space, step_output.forward_log_probs)
+            policy_aux_terms.append(-(target * step_output.forward_log_probs).sum(dim=1).mean())
+        policy_aux_loss = torch.stack(policy_aux_terms).mean()
         total_loss = tb.loss + float(args.policy_aux_weight) * policy_aux_loss
         optimizer.zero_grad(set_to_none=True)
         total_loss.backward()
@@ -2261,6 +3294,9 @@ async def train() -> None:
         top1_smiles = proposals[top_index].canonical_smiles
         top1_reward = float(rewards[top_index].item())
         entropy = float((-(output.forward_probs[0] * output.forward_log_probs[0]).sum()).item())
+        trajectory_length_mean = float(rollout.trajectory_lengths.float().mean().item())
+        trajectory_length_max = int(rollout.trajectory_lengths.max().item())
+        trajectories_ge2 = int((rollout.trajectory_lengths >= 2).sum().item())
         loss_rows.append(
             {
                 "epoch": epoch,
@@ -2297,6 +3333,10 @@ async def train() -> None:
                 "temperature": current_temperature,
                 "lock_geo_positive": lock_geo_positive,
                 "lock_proj_gt_05": lock_proj_gt_05,
+                "trajectory_length_mean": trajectory_length_mean,
+                "trajectory_length_max": trajectory_length_max,
+                "trajectories_ge2": trajectories_ge2,
+                "assembled_state_node_count_mean": rollout.assembled_state_node_count_mean,
             }
         )
         entropy_rows.append({"epoch": epoch, "trajectory_entropy": entropy})
@@ -2342,8 +3382,18 @@ async def train() -> None:
             "product_fiber_hysteresis_mean": f"{float(product_fiber_metrics['hysteresis_mean']):.6f}",
             "product_fiber_pathway_voxels": f"{float(product_fiber_metrics['pathway_voxels_occupied']):.6f}",
             "product_fiber_pathway_neighborhood_contacts": f"{float(product_fiber_metrics['pathway_neighborhood_contacts']):.6f}",
+            "trajectory_length_mean": f"{trajectory_length_mean:.2f}",
+            "trajectory_length_max": trajectory_length_max,
+            "trajectories_ge2": f"{trajectories_ge2}/{int(args.batch_size)}",
+            "assembled_state_node_count_mean": f"{rollout.assembled_state_node_count_mean:.2f}",
         }
         print("tb_epoch_complete " + " ".join(f"{key}={value}" for key, value in telemetry.items()), flush=True)
+        for row_idx, step_idx, before_count, after_count in rollout.node_count_events:
+            print(
+                "assembled_state_node_count "
+                f"epoch={epoch} row={row_idx} step={step_idx} before={before_count} count={after_count}",
+                flush=True,
+            )
         print(
             "product_fiber_estimated "
             f"epoch={epoch} products={product_fiber_metrics.get('product_fiber_products', 0)} "
@@ -2459,6 +3509,10 @@ async def train() -> None:
             "temperature",
             "lock_geo_positive",
             "lock_proj_gt_05",
+            "trajectory_length_mean",
+            "trajectory_length_max",
+            "trajectories_ge2",
+            "assembled_state_node_count_mean",
         ],
     )
     write_csv(paths.output_dir / "trajectory_entropy.csv", entropy_rows, ["epoch", "trajectory_entropy"])

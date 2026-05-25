@@ -190,6 +190,112 @@ def test_live_signal_grid_oracle_batch_contains_coordinates() -> None:
     assert batch.get_column("coordinates_json").to_list() == ["[[0.0,0.0,0.0]]"]
 
 
+def test_live_signal_grid_oracle_allows_duplicate_live_identities() -> None:
+    oracle = LiveSignalGridOracle(max_batch_size=2)
+    proposals = [
+        OracleProposal(
+            anchor_id="a0",
+            canonical_smiles="CC",
+            trajectory_id="t0",
+            coordinates_json="[[0.0,0.0,0.0]]",
+        ),
+        OracleProposal(
+            anchor_id="a1",
+            canonical_smiles="CC",
+            trajectory_id="t1",
+            coordinates_json="[[1.0,0.0,0.0]]",
+        ),
+    ]
+
+    batch = oracle.prepare_batch(proposals)
+
+    assert batch.get_column("canonical_smiles").to_list() == ["CC", "CC"]
+
+
+def _live_reward_frame(*, trajectory_ids: list[str], smiles: list[str] | None = None) -> pl.DataFrame:
+    count = len(trajectory_ids)
+    canonical = smiles if smiles is not None else [f"C{i}" for i in range(count)]
+    return pl.DataFrame(
+        {
+            "trajectory_id": trajectory_ids,
+            "anchor_id": [f"a{i}" for i in range(count)],
+            "canonical_smiles": canonical,
+            "reward": [1.0 for _ in range(count)],
+            "pi_complement": [1.0 for _ in range(count)],
+            "adjusted_pi_clash": [0.0 for _ in range(count)],
+            "pi_clash_pocket": [0.0 for _ in range(count)],
+            "pi_clash_lock": [0.0 for _ in range(count)],
+            "pi_clash_lock_cold_hold": [0.0 for _ in range(count)],
+            "pi_clash_lock_ramp_up": [0.0 for _ in range(count)],
+            "pi_clash_lock_warm_hold": [0.0 for _ in range(count)],
+            "pi_clash_lock_ramp_down": [0.0 for _ in range(count)],
+            "pi_clash_lock_cold_return": [0.0 for _ in range(count)],
+            "lock_geometry_score": [0.0 for _ in range(count)],
+            "lock_geometry_atom_count": [0.0 for _ in range(count)],
+            "lock_voxel_indices_json": ["[]" for _ in range(count)],
+            "lock_occupancy_cold_hold": [0.0 for _ in range(count)],
+            "lock_occupancy_ramp_up": [1.0 for _ in range(count)],
+            "lock_occupancy_warm_hold": [0.0 for _ in range(count)],
+            "lock_occupancy_ramp_down": [0.5 for _ in range(count)],
+            "lock_occupancy_cold_return": [0.0 for _ in range(count)],
+            "intracellular_penetration_depth_angstrom": [0.0 for _ in range(count)],
+            "lock_steric_volume_angstrom3": [0.0 for _ in range(count)],
+            "cryptic_bonus": [0.0 for _ in range(count)],
+            "consensus_complement_bonus": [0.0 for _ in range(count)],
+            "pathway_voxels": [0 for _ in range(count)],
+            "void_atom_count": [0 for _ in range(count)],
+            "lock_phase_provenance": ["PHASE_RESOLVED" for _ in range(count)],
+            "survival_tier": ["live_signal_grid" for _ in range(count)],
+            "selected_dihedral_deg": [0.0 for _ in range(count)],
+            "reward_components_json": ["{}" for _ in range(count)],
+            "oracle_valid": [True for _ in range(count)],
+        }
+    )
+
+
+def test_live_signal_grid_oracle_rejects_reordered_duplicate_reward_rows() -> None:
+    oracle = LiveSignalGridOracle(max_batch_size=2)
+    proposals = [
+        OracleProposal(anchor_id="a0", canonical_smiles="CC", trajectory_id="t0", coordinates_json="[[0,0,0]]"),
+        OracleProposal(anchor_id="a1", canonical_smiles="CC", trajectory_id="t1", coordinates_json="[[1,0,0]]"),
+    ]
+    rewards = _live_reward_frame(trajectory_ids=["t1", "t0"], smiles=["CC", "CC"])
+
+    try:
+        oracle.validate_rewards(
+            proposals=proposals,
+            rewards_df=rewards,
+            oracle_latency_ms=1.0,
+            rust_scoring_time_ms=1.0,
+            parquet_write_ms=1.0,
+            parquet_read_ms=1.0,
+        )
+    except RustOracleError as exc:
+        assert "trajectory_id" in str(exc)
+    else:
+        raise AssertionError("live oracle accepted reordered duplicate reward rows")
+
+
+def test_live_signal_grid_oracle_validates_duplicate_rewards_by_trajectory_id() -> None:
+    oracle = LiveSignalGridOracle(max_batch_size=2)
+    proposals = [
+        OracleProposal(anchor_id="a0", canonical_smiles="CC", trajectory_id="t0", coordinates_json="[[0,0,0]]"),
+        OracleProposal(anchor_id="a1", canonical_smiles="CC", trajectory_id="t1", coordinates_json="[[1,0,0]]"),
+    ]
+    rewards = _live_reward_frame(trajectory_ids=["t0", "t1"], smiles=["CC", "CC"])
+
+    telemetry = oracle.validate_rewards(
+        proposals=proposals,
+        rewards_df=rewards,
+        oracle_latency_ms=1.0,
+        rust_scoring_time_ms=1.0,
+        parquet_write_ms=1.0,
+        parquet_read_ms=1.0,
+    )
+
+    assert telemetry.duplicate_smiles_count == 1
+
+
 def test_live_signal_grid_oracle_command_includes_survivor_reference() -> None:
     oracle = LiveSignalGridOracle(max_batch_size=2)
 

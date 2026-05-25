@@ -369,6 +369,12 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
     def prepare_batch(self, proposals: Sequence[OracleProposal]) -> pl.DataFrame:
         """Create a live-scoring batch with mandatory atom coordinates."""
 
+        if len(proposals) == 0:
+            raise RustOracleError("empty oracle batch")
+        if len(proposals) > self.max_batch_size:
+            raise RustOracleError(
+                f"oracle batch size {len(proposals)} exceeds max_batch_size {self.max_batch_size}"
+            )
         missing_or_invalid: list[str] = []
         for proposal in proposals:
             if not proposal.coordinates_json:
@@ -394,7 +400,57 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
                 "score_atom_offset that leaves at least one atom to score; "
                 f"invalid={missing_or_invalid[:5]}"
             )
-        return super().prepare_batch(proposals)
+        return pl.DataFrame(
+            {
+                "trajectory_id": [proposal.trajectory_id for proposal in proposals],
+                "anchor_id": [proposal.anchor_id for proposal in proposals],
+                "canonical_smiles": [proposal.canonical_smiles for proposal in proposals],
+                "coordinates_json": [proposal.coordinates_json or "" for proposal in proposals],
+                "score_atom_offset": [int(proposal.score_atom_offset) for proposal in proposals],
+            }
+        )
+
+    def validate_rewards(
+        self,
+        *,
+        proposals: Sequence[OracleProposal],
+        rewards_df: pl.DataFrame,
+        oracle_latency_ms: float,
+        rust_scoring_time_ms: float,
+        parquet_write_ms: float,
+        parquet_read_ms: float,
+    ) -> OracleTelemetry:
+        """Validate live-scoring rows while allowing duplicate product identities."""
+
+        if "trajectory_id" not in rewards_df.columns:
+            raise RustOracleError("live oracle rewards missing trajectory_id column")
+        expected_trajectory_ids = [proposal.trajectory_id for proposal in proposals]
+        observed_trajectory_ids = [str(value) for value in rewards_df.get_column("trajectory_id").to_list()]
+        if observed_trajectory_ids != expected_trajectory_ids:
+            raise RustOracleError(
+                "live oracle reward rows are not aligned by trajectory_id; "
+                f"expected_head={expected_trajectory_ids[:8]} observed_head={observed_trajectory_ids[:8]}"
+            )
+        telemetry = super().validate_rewards(
+            proposals=proposals,
+            rewards_df=deduplicate_live_reward_identities(rewards_df),
+            oracle_latency_ms=oracle_latency_ms,
+            rust_scoring_time_ms=rust_scoring_time_ms,
+            parquet_write_ms=parquet_write_ms,
+            parquet_read_ms=parquet_read_ms,
+        )
+        duplicate_count = rewards_df.height - rewards_df.select("canonical_smiles").unique().height
+        return OracleTelemetry(
+            oracle_batch_size=telemetry.oracle_batch_size,
+            oracle_latency_ms=telemetry.oracle_latency_ms,
+            rust_scoring_time_ms=telemetry.rust_scoring_time_ms,
+            parquet_write_ms=telemetry.parquet_write_ms,
+            parquet_read_ms=telemetry.parquet_read_ms,
+            reward_mean=telemetry.reward_mean,
+            reward_std=telemetry.reward_std,
+            invalid_reward_count=telemetry.invalid_reward_count,
+            duplicate_smiles_count=duplicate_count,
+        )
 
     async def invoke_rust(self) -> float:
         """Run the Rust scorer in live signal-grid mode."""
@@ -461,6 +517,21 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
 
 
 BatchedRustOracle = SurvivorCorpusOracle
+
+
+def deduplicate_live_reward_identities(rewards_df: pl.DataFrame) -> pl.DataFrame:
+    """Return a validation-only view with unique IDs for duplicate live rows."""
+
+    if "canonical_smiles" not in rewards_df.columns:
+        return rewards_df
+    seen: dict[str, int] = {}
+    identifiers: list[str] = []
+    for value in rewards_df.get_column("canonical_smiles").to_list():
+        base = str(value)
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        identifiers.append(base if count == 0 else f"{base}__live_duplicate_{count}")
+    return rewards_df.with_columns(pl.Series("canonical_smiles", identifiers))
 
 
 def parse_live_coordinates_json(raw: str) -> list[tuple[float, float, float]]:

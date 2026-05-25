@@ -14,7 +14,7 @@ echo "[2/7] Rust tests..."
 cargo test -p prism-forge --release || { echo "FAIL: rust tests"; FAIL=1; }
 
 echo "[3/7] Rust release build..."
-cargo build --release -p prism-forge --bin oracle_scorer --bin vspace_pruner || { echo "FAIL: build"; FAIL=1; }
+cargo build --release -p prism-forge --bin oracle_scorer --bin vspace_pruner --bin kinematic_assemble || { echo "FAIL: build"; FAIL=1; }
 
 echo "[4/7] mypy strict..."
 PYTHONPATH=src python3 -m mypy --strict \

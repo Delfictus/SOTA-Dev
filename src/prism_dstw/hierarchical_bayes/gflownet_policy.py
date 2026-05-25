@@ -529,6 +529,11 @@ class FiberBundleGFlowNetPolicy(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, max_backward_actions),
         )
+        self.stop_mlp = nn.Sequential(
+            nn.Linear(embedding_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
         self.log_z = nn.Parameter(torch.zeros(()))
         prepared_embeddings = anchor_embeddings.detach().clone().to(dtype=torch.float32)
         if learn_anchor_embeddings:
@@ -572,9 +577,13 @@ class FiberBundleGFlowNetPolicy(nn.Module):
         phase_global_embeddings = _scatter_mean(orthogonal_output.h_fiber, batch_index, batch_size)
         exit_embeddings = node_embeddings.index_select(0, exit_node_indices)
         query_embeddings = self.query_mlp(torch.cat([exit_embeddings, graph_embeddings, phase_global_embeddings], dim=1))
-        forward_logits = query_embeddings.matmul(self.anchor_embeddings.transpose(0, 1)) / math.sqrt(
+        anchor_logits = query_embeddings.matmul(self.anchor_embeddings.transpose(0, 1)) / math.sqrt(
             float(self.embedding_dim)
         )
+        if int(forward_action_mask.shape[1]) == self.num_anchors + 1:
+            forward_logits = torch.cat([anchor_logits, self.stop_mlp(query_embeddings)], dim=1)
+        else:
+            forward_logits = anchor_logits
         _validate_mask("forward_action_mask", forward_action_mask, forward_logits.shape)
         if int(backward_action_mask.shape[1]) > self.max_backward_actions:
             raise ValueError("backward_action_mask exceeds max_backward_actions")
@@ -707,6 +716,11 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
             nn.Linear(resolved_embedding_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, max_backward_actions),
+        )
+        self.stop_mlp = nn.Sequential(
+            nn.Linear(resolved_embedding_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
         )
         self.log_z = nn.Parameter(torch.zeros(()))
         prepared_embeddings = anchor_embeddings.detach().clone().to(dtype=torch.float32)
@@ -918,9 +932,13 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
                 )
             )
             action_embeddings = action_embeddings + action_field_embeddings
-        forward_logits = action_context_embeddings.matmul(action_embeddings.transpose(0, 1)) / math.sqrt(
+        anchor_logits = action_context_embeddings.matmul(action_embeddings.transpose(0, 1)) / math.sqrt(
             float(self.embedding_dim)
         )
+        if int(forward_action_mask.shape[1]) == self.num_anchors + 1:
+            forward_logits = torch.cat([anchor_logits, self.stop_mlp(action_context_embeddings)], dim=1)
+        else:
+            forward_logits = anchor_logits
         _validate_mask("forward_action_mask", forward_action_mask, forward_logits.shape)
         if int(backward_action_mask.shape[1]) > self.max_backward_actions:
             raise ValueError("backward_action_mask exceeds max_backward_actions")
