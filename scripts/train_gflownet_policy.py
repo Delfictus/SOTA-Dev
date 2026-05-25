@@ -1078,6 +1078,7 @@ async def train() -> None:
     checkpoint_dir = Path(args.checkpoint_dir)
     if not checkpoint_dir.is_absolute():
         checkpoint_dir = REPO_ROOT / checkpoint_dir
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     if args.resume is not None:
         resume_path = Path(args.resume)
         checkpoint = torch.load(resume_path, map_location="cpu", weights_only=False)
@@ -1328,7 +1329,8 @@ async def train() -> None:
 
     model_path = Path(args.output_policy)
     if not model_path.is_absolute():
-        model_path = paths.output_dir / model_path
+        model_path = paths.output_dir / model_path if model_path.parent == Path(".") else REPO_ROOT / model_path
+    model_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "model_state_dict": model.state_dict(),
