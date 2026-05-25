@@ -1,0 +1,73 @@
+{
+  "package": "PRISM_TRACK_A_GFLOWNET_V1_INFERENCE",
+  "phase": "7_failure_mode_audit",
+  "generated_at_utc": "2026-05-25T09:37:39Z",
+  "findings": {
+    "mode_collapse": {
+      "status": "PASS",
+      "evidence": "top anchor share = 0.04%",
+      "next_action": "\u2014"
+    },
+    "cryptic_only_reward_hack": {
+      "status": "PASS",
+      "evidence": "cryptic-only candidate share = 0.00%",
+      "next_action": "\u2014"
+    },
+    "tiny_fragment_exploit": {
+      "status": "PASS",
+      "evidence": "<12 heavy-atom share among filtered = 0.00%",
+      "next_action": "\u2014"
+    },
+    "policy_reward_correlation": {
+      "status": "WARN",
+      "evidence": "Spearman rho(logprob, reward) = -0.014",
+      "next_action": "verify policy is targeting reward \u2014 check training curve"
+    },
+    "pose_sensitivity": {
+      "status": "INFO",
+      "evidence": "Rust oracle_scorer is SMILES-keyed lookup \u2014 pose_sensitivity = 0 by construction",
+      "next_action": "to measure pose variance, rescore with physics-based oracle (out of v1 scope)"
+    },
+    "training_set_memorization": {
+      "status": "INFO",
+      "evidence": "top-100 \u2229 survivors = 0.0% (expected ~100% \u2014 policy samples from anchor-resolved survivor SMILES)",
+      "next_action": "for de novo generation, swap action space from anchor\u2192survivor lookup to atom-level construction"
+    },
+    "top100_duplicate_collapse": {
+      "status": "PASS",
+      "evidence": "top-100 unique SMILES = 100/100",
+      "next_action": "\u2014"
+    },
+    "action_family_imbalance_top100": {
+      "status": "PASS",
+      "evidence": "max anchor share in top-100 = 1.0%",
+      "next_action": "\u2014"
+    },
+    "production_medchem_triage": {
+      "status": "PASS",
+      "evidence": "PAINS pass=100.0%, BRENK pass=86.0%, oral pass=100.0%",
+      "next_action": "\u2014"
+    },
+    "biased_agonism_verification": {
+      "status": "WARN",
+      "evidence": "biased_agonism_confirmed_top50=37/50; top100=48/100 at pi_clash_lock>0.5; lock-specific pi_clash field is present",
+      "next_action": "rescore top-50 with lock-specific Rust oracle channel before dossier promotion"
+    },
+    "invalid_chemistry_rate": {
+      "status": "PASS",
+      "evidence": "invalid-status share = 0.00%",
+      "next_action": "\u2014"
+    },
+    "uncertainty_concentration": {
+      "status": "INFO",
+      "evidence": "median reward_cv = 0.000 (0 expected with deterministic backend)",
+      "next_action": "non-deterministic backend (physics-based) required to surface real uncertainty"
+    }
+  },
+  "summary": {
+    "pass": 7,
+    "warn": 2,
+    "fail": 0,
+    "info": 3
+  }
+}

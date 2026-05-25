@@ -103,18 +103,22 @@ def sample_once(
 ) -> dict[str, torch.Tensor | list]:
     """Run one forward pass + temperature sample of size `batch_size`."""
     output, _, _ = T.forward_policy(model, graph, action_space, batch_size)
-    # output.forward_probs has shape [batch_size, n_actions] with row-wise
-    # softmax already applied; mask out invalid actions then temperature-
-    # tempered renormalize, then sample.
-    valid_mask = action_space.valid_mask.to(dtype=torch.float32)
-    probs = output.forward_probs * valid_mask  # broadcast
-    # Per-row temperature-tempered probabilities.
-    sampling = probs.clamp_min(1.0e-12).pow(1.0 / max(temperature, 1.0e-3))
-    sampling = sampling * valid_mask
-    sampling = sampling / sampling.sum(dim=1, keepdim=True).clamp_min(1.0e-12)
-    actions_tensor = torch.multinomial(
-        sampling, num_samples=1, replacement=True, generator=generator
-    ).squeeze(1)
+    valid_mask = action_space.valid_mask
+    logits = output.forward_log_probs.detach().clone()
+    logits = logits.masked_fill(~valid_mask.unsqueeze(0), -torch.inf)
+    sampling = torch.softmax(logits / max(temperature, 1.0e-3), dim=1)
+    invalid_rows = (~torch.isfinite(sampling).all(dim=1)) | (sampling.sum(dim=1) <= 0.0)
+    if bool(invalid_rows.any()):
+        fallback = valid_mask.to(dtype=torch.float32).unsqueeze(0).expand_as(sampling)
+        fallback = fallback / fallback.sum(dim=1, keepdim=True).clamp_min(1.0e-12)
+        sampling[invalid_rows] = fallback[invalid_rows]
+    actions_tensor = T.sample_actions_per_row(
+        output.forward_log_probs,
+        action_space.valid_mask,
+        temperature,
+        require_unique=False,
+        generator=generator,
+    )
     # Per-trajectory entropy of the post-temperature distribution.
     entropy = -(sampling * sampling.clamp_min(1.0e-12).log()).sum(dim=1)
     row_idx = torch.arange(batch_size)

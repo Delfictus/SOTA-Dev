@@ -1,0 +1,345 @@
+{
+  "bald_ranking": true,
+  "dispatch_count": 37,
+  "dispatches": [
+    {
+      "bald_information_value": 0.05942241296525831,
+      "candidate_id": "cand_045_f6b84612",
+      "canonical_smiles": "c1ccc(Cn2cc3c(n2)CNCC3)cc1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_045_f6b84612.sh",
+      "lock_geometry_score": 2.338073055040958,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_045_f6b84612.sdf"
+    },
+    {
+      "bald_information_value": 0.05941639559012084,
+      "candidate_id": "cand_049_7c00e645",
+      "canonical_smiles": "CCCOc1ccc2c(c1)CC[C@]1(CCNC1)O2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_049_7c00e645.sh",
+      "lock_geometry_score": 2.338700897320506,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_049_7c00e645.sdf"
+    },
+    {
+      "bald_information_value": 0.05491937559879654,
+      "candidate_id": "cand_015_a926ca3a",
+      "canonical_smiles": "NC[C@@H]1CCc2c(Cc3ccco3)csc2C1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_015_a926ca3a.sh",
+      "lock_geometry_score": 2.823176977027605,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_015_a926ca3a.sdf"
+    },
+    {
+      "bald_information_value": 0.05473349369713594,
+      "candidate_id": "cand_028_a4c26cd3",
+      "canonical_smiles": "CC[C@@H]1CO[C@@H](c2cc3ccccc3o2)CN1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_028_a4c26cd3.sh",
+      "lock_geometry_score": 2.8440968523313512,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_028_a4c26cd3.sdf"
+    },
+    {
+      "bald_information_value": 0.054394953785497455,
+      "candidate_id": "cand_048_242671d5",
+      "canonical_smiles": "Cn1c(C(C)(C)C)nc2c1CC[C@@H](CN)C2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_048_242671d5.sh",
+      "lock_geometry_score": 2.8824274163064767,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_048_242671d5.sdf"
+    },
+    {
+      "bald_information_value": 0.0515150568777403,
+      "candidate_id": "cand_046_f825d318",
+      "canonical_smiles": "Cc1nc(=O)[nH]c(-c2ccc(CCN)cc2)c1C",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_046_f825d318.sh",
+      "lock_geometry_score": 3.2220900286810723,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_046_f825d318.sdf"
+    },
+    {
+      "bald_information_value": 0.05030088247673364,
+      "candidate_id": "cand_044_80daf92c",
+      "canonical_smiles": "N#CCCCn1ccc2ccc(Cl)cc2c1=O",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_044_80daf92c.sh",
+      "lock_geometry_score": 3.3736976571702675,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_044_80daf92c.sdf"
+    },
+    {
+      "bald_information_value": 0.04455836157395118,
+      "candidate_id": "cand_043_6e65b5c5",
+      "canonical_smiles": "N#Cc1ccc(CCC2OCCCO2)cc1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_043_6e65b5c5.sh",
+      "lock_geometry_score": 4.179929221819027,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_043_6e65b5c5.sdf"
+    },
+    {
+      "bald_information_value": 0.03790951292944872,
+      "candidate_id": "cand_032_11226fd1",
+      "canonical_smiles": "C[C@@H](N)C(=O)N[C@@H]1CCCc2ccccc21",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_032_11226fd1.sh",
+      "lock_geometry_score": 5.3773319577102185,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_032_11226fd1.sdf"
+    },
+    {
+      "bald_information_value": 0.03630142732137643,
+      "candidate_id": "cand_050_37903469",
+      "canonical_smiles": "Cn1c(C(=O)CCN)cc2c(F)cccc21",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_050_37903469.sh",
+      "lock_geometry_score": 5.727507437866659,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_050_37903469.sdf"
+    },
+    {
+      "bald_information_value": 0.03551924149126291,
+      "candidate_id": "cand_047_a9a91374",
+      "canonical_smiles": "Nc1cnc2nc(-c3ccc(F)c(F)c3)[nH]c2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_047_a9a91374.sh",
+      "lock_geometry_score": 5.908642081497789,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_047_a9a91374.sdf"
+    },
+    {
+      "bald_information_value": 0.035478952436727336,
+      "candidate_id": "cand_029_aa2820e2",
+      "canonical_smiles": "N[C@H]1CCN(C[C@H]2CC=CCC2)C1=O",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_029_aa2820e2.sh",
+      "lock_geometry_score": 5.918177088513456,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_029_aa2820e2.sdf"
+    },
+    {
+      "bald_information_value": 0.03414994837793896,
+      "candidate_id": "cand_019_da26ffed",
+      "canonical_smiles": "Cc1c(N)cccc1NC(=O)NC(C)C",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_019_da26ffed.sh",
+      "lock_geometry_score": 6.244697120626139,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_019_da26ffed.sdf"
+    },
+    {
+      "bald_information_value": 0.03384640572755503,
+      "candidate_id": "cand_018_ed9b4f47",
+      "canonical_smiles": "N#CCCOc1ccc2c(c1)CCC2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_018_ed9b4f47.sh",
+      "lock_geometry_score": 6.322704619054365,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_018_ed9b4f47.sdf"
+    },
+    {
+      "bald_information_value": 0.031119185339492556,
+      "candidate_id": "cand_031_1a1e3494",
+      "canonical_smiles": "Cc1ccc(C(=N)N)cc1C[C@@H]1CN(C)CCN1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_031_1a1e3494.sh",
+      "lock_geometry_score": 7.088991595435079,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_031_1a1e3494.sdf"
+    },
+    {
+      "bald_information_value": 0.03043566230256573,
+      "candidate_id": "cand_017_1e4c4af0",
+      "canonical_smiles": "O=C(NC1CC1)c1cc(-c2ccn[nH]2)ccc1F",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_017_1e4c4af0.sh",
+      "lock_geometry_score": 7.301788842090151,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_017_1e4c4af0.sdf"
+    },
+    {
+      "bald_information_value": 0.030122288258143035,
+      "candidate_id": "cand_016_bb93779b",
+      "canonical_smiles": "Cc1oc2cc([C@H](O)CCN)ccc2c1C",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_016_bb93779b.sh",
+      "lock_geometry_score": 7.40247802349203,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_016_bb93779b.sdf"
+    },
+    {
+      "bald_information_value": 0.02840499656035528,
+      "candidate_id": "cand_027_8a42bd85",
+      "canonical_smiles": "N[C@@H]1CCCN(C(=O)CC2CCCC2)C1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_027_8a42bd85.sh",
+      "lock_geometry_score": 7.992551709344381,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_027_8a42bd85.sdf"
+    },
+    {
+      "bald_information_value": 0.028322522042905633,
+      "candidate_id": "cand_010_3abc9861",
+      "canonical_smiles": "Cc1nc2c([nH]1)CC[C@@H](C[C@H](C)N)C2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_010_3abc9861.sh",
+      "lock_geometry_score": 8.022643513934886,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_010_3abc9861.sdf"
+    },
+    {
+      "bald_information_value": 0.028322522042905633,
+      "candidate_id": "cand_011_a2e0d0c7",
+      "canonical_smiles": "Cc1cc(C)c2cc([C@H]3CNCCO3)[nH]c2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_011_a2e0d0c7.sh",
+      "lock_geometry_score": 8.022643513934886,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_011_a2e0d0c7.sdf"
+    },
+    {
+      "bald_information_value": 0.027852257655871352,
+      "candidate_id": "cand_026_bccbe017",
+      "canonical_smiles": "N#Cc1cc(NC(=O)C2CCC2)ccc1Cl",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_026_bccbe017.sh",
+      "lock_geometry_score": 8.197547296485611,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_026_bccbe017.sdf"
+    },
+    {
+      "bald_information_value": 0.02751581079321689,
+      "candidate_id": "cand_024_a81f6bf1",
+      "canonical_smiles": "CC(C)[C@@H](CN)c1ccc2c(c1)OCCCO2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_024_a81f6bf1.sh",
+      "lock_geometry_score": 8.326262827501518,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_024_a81f6bf1.sdf"
+    },
+    {
+      "bald_information_value": 0.02578455205513071,
+      "candidate_id": "cand_021_3245a15b",
+      "canonical_smiles": "NC[C@H]1CN(Cc2ccccc2)C(=O)CO1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_021_3245a15b.sh",
+      "lock_geometry_score": 9.040525648826526,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_021_3245a15b.sdf"
+    },
+    {
+      "bald_information_value": 0.025062398007884682,
+      "candidate_id": "cand_014_9e3ef5b9",
+      "canonical_smiles": "N#CCc1ccccc1C(=O)NC1CCCC1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_014_9e3ef5b9.sh",
+      "lock_geometry_score": 9.367045680939208,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_014_9e3ef5b9.sdf"
+    },
+    {
+      "bald_information_value": 0.024190150088988612,
+      "candidate_id": "cand_023_7a8b55b3",
+      "canonical_smiles": "C[C@@H](N)C(=O)c1ccc2c(c1)N(C)CC2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_023_7a8b55b3.sh",
+      "lock_geometry_score": 9.786967352905508,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_023_7a8b55b3.sdf"
+    },
+    {
+      "bald_information_value": 0.02352351620698082,
+      "candidate_id": "cand_020_8349e315",
+      "canonical_smiles": "C[C@@H]1CO[C@@H](c2ccc(C#N)cc2)CN1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_020_8349e315.sh",
+      "lock_geometry_score": 10.128558144940923,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_020_8349e315.sdf"
+    },
+    {
+      "bald_information_value": 0.023288634393366946,
+      "candidate_id": "cand_009_8d410c6b",
+      "canonical_smiles": "N#Cc1ccc(OC[C@H]2CCCNC2)c(F)c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_009_8d410c6b.sh",
+      "lock_geometry_score": 10.25350411425065,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_009_8d410c6b.sdf"
+    },
+    {
+      "bald_information_value": 0.023127945047056765,
+      "candidate_id": "cand_012_c222aaf9",
+      "canonical_smiles": "Cc1ccc(-c2cc(N)no2)c(C)c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_012_c222aaf9.sh",
+      "lock_geometry_score": 10.340424535951646,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_012_c222aaf9.sdf"
+    },
+    {
+      "bald_information_value": 0.021122146358276445,
+      "candidate_id": "cand_013_cbe6f0c4",
+      "canonical_smiles": "NCC[C@H]1CCCN2c3ccccc3CC[C@H]12",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_013_cbe6f0c4.sh",
+      "lock_geometry_score": 11.53518187792194,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_013_cbe6f0c4.sdf"
+    },
+    {
+      "bald_information_value": 0.021013439229523246,
+      "candidate_id": "cand_006_dd51dde9",
+      "canonical_smiles": "C[C@H](Sc1ccc(N)cc1F)C(=O)N(C)C",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_006_dd51dde9.sh",
+      "lock_geometry_score": 11.606370793176158,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_006_dd51dde9.sdf"
+    },
+    {
+      "bald_information_value": 0.01865003266548854,
+      "candidate_id": "cand_005_89f6c911",
+      "canonical_smiles": "CC(C)c1ccc(-c2cc(C#N)nc(=O)[nH]2)cc1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_005_89f6c911.sh",
+      "lock_geometry_score": 13.35710163965162,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_005_89f6c911.sdf"
+    },
+    {
+      "bald_information_value": 0.018493886132920793,
+      "candidate_id": "cand_008_52715819",
+      "canonical_smiles": "Cn1ncc2c(-c3ccc(CN)cc3)cccc21",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_008_52715819.sh",
+      "lock_geometry_score": 13.48838598704334,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_008_52715819.sdf"
+    },
+    {
+      "bald_information_value": 0.018024927385672428,
+      "candidate_id": "cand_007_5ca33feb",
+      "canonical_smiles": "C[C@H]1Oc2ccc(/C=C/CN)cc2N(C)C1=O",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_007_5ca33feb.sh",
+      "lock_geometry_score": 13.896244101282564,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_007_5ca33feb.sdf"
+    },
+    {
+      "bald_information_value": 0.01751976451979047,
+      "candidate_id": "cand_003_275f00c8",
+      "canonical_smiles": "COc1ccc([C@@]2(C)C[C@@H]2CN)cc1F",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_003_275f00c8.sh",
+      "lock_geometry_score": 14.359837393273017,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_003_275f00c8.sdf"
+    },
+    {
+      "bald_information_value": 0.014877461058865145,
+      "candidate_id": "cand_004_e0655e69",
+      "canonical_smiles": "NC[C@@H](c1ccc2c(c1)CCCC2)N1CCCC1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_004_e0655e69.sh",
+      "lock_geometry_score": 17.294246171997294,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_004_e0655e69.sdf"
+    },
+    {
+      "bald_information_value": 0.014367252719275032,
+      "candidate_id": "cand_002_eab21d87",
+      "canonical_smiles": "C[C@@H](N)Cc1ccc(N2CCCC2)nc1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_002_eab21d87.sh",
+      "lock_geometry_score": 17.984514649391123,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_002_eab21d87.sdf"
+    },
+    {
+      "bald_information_value": 0.009262045427560796,
+      "candidate_id": "cand_001_ff1b9183",
+      "canonical_smiles": "CNCc1ncc(-c2ccc3c(c2)CCCO3)[nH]1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/launch/launch-n10-validate-cand_001_ff1b9183.sh",
+      "lock_geometry_score": 29.061708305714117,
+      "sdf": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gpu_dispatch/sdf/cand_001_ff1b9183.sdf"
+    }
+  ],
+  "generated_at_utc": "2026-05-25T09:38:46.387597+00:00",
+  "lock_positive_only": true,
+  "profiles": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/candidate_dossiers_epoch019.parquet",
+  "protocol": "ccns_5phase",
+  "replicas": 10,
+  "schema_version": "PRISM.gpu_dispatch.tripartite.v1"
+}

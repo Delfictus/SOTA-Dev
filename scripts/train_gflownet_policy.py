@@ -39,7 +39,11 @@ from prism_dstw.orchestration.rust_reward_oracle import (
     OracleProposal,
     telemetry_to_dict,
 )
-from prism_dstw.scoring.tripartite_bias_scorer import compute_tripartite_bias
+from prism_dstw.scoring.tripartite_bias_scorer import (
+    TripartiteBiasScore,
+    compute_reward_v2,
+    compute_tripartite_bias,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -198,6 +202,153 @@ def numeric_value(value: object, default: float = 0.0) -> float:
         return float(str(value))
     except ValueError:
         return default
+
+
+def sample_actions_per_row(
+    log_probs: Tensor,
+    valid_mask: Tensor,
+    temperature: float,
+    *,
+    require_unique: bool = True,
+    generator: torch.Generator | None = None,
+) -> Tensor:
+    """Sample one action from each row's own action distribution."""
+
+    if log_probs.ndim != 2:
+        raise ValueError("log_probs must have shape [batch_size, num_actions]")
+    batch_size, num_actions = int(log_probs.shape[0]), int(log_probs.shape[1])
+    if valid_mask.ndim == 1:
+        if int(valid_mask.shape[0]) != num_actions:
+            raise ValueError("valid_mask length must match num_actions")
+        mask = valid_mask.unsqueeze(0).expand(batch_size, num_actions)
+    elif valid_mask.ndim == 2:
+        if tuple(valid_mask.shape) != tuple(log_probs.shape):
+            raise ValueError("2D valid_mask must match log_probs shape")
+        mask = valid_mask
+    else:
+        raise ValueError("valid_mask must be 1D or 2D")
+
+    masked_logits = log_probs.detach().clone()
+    masked_logits = masked_logits.masked_fill(~mask, -torch.inf)
+    probs = torch.softmax(masked_logits / max(temperature, 1.0e-3), dim=1)
+    invalid_rows = (~torch.isfinite(probs).all(dim=1)) | (probs.sum(dim=1) <= 0.0)
+    if bool(invalid_rows.any()):
+        fallback = mask.to(dtype=torch.float32)
+        fallback = fallback / fallback.sum(dim=1, keepdim=True).clamp_min(1.0e-12)
+        probs[invalid_rows] = fallback[invalid_rows]
+    actions = torch.multinomial(probs, num_samples=1, replacement=True, generator=generator).squeeze(1)
+    if not require_unique:
+        return actions
+
+    used: set[int] = set()
+    repaired: list[int] = []
+    for row_idx, raw_action in enumerate(actions.tolist()):
+        action = int(raw_action)
+        if action in used:
+            row_probs = probs[row_idx].clone()
+            for used_action in used:
+                row_probs[used_action] = 0.0
+            row_sum = row_probs.sum()
+            if float(row_sum.item()) > 0.0:
+                row_probs = row_probs / row_sum
+                action = int(torch.multinomial(row_probs, num_samples=1, replacement=True, generator=generator).item())
+        repaired.append(action)
+        used.add(action)
+    return torch.tensor(repaired, dtype=torch.long, device=log_probs.device)
+
+
+def selected_forward_log_probs(log_probs: Tensor, actions: Tensor) -> Tensor:
+    """Gather log-probs from the same row that produced each action."""
+
+    if log_probs.ndim != 2:
+        raise ValueError("log_probs must have shape [batch_size, num_actions]")
+    if actions.ndim != 1 or int(actions.shape[0]) != int(log_probs.shape[0]):
+        raise ValueError("actions must have shape [batch_size]")
+    return log_probs.gather(1, actions.unsqueeze(1)).squeeze(1)
+
+
+def compute_effective_reward_tensor(
+    *,
+    reward_version: str,
+    oracle_rows: Sequence[Mapping[str, object]],
+    raw_rewards: Tensor,
+    tripartite_scores: Sequence[TripartiteBiasScore],
+    consensus_bonus_weight: float,
+) -> tuple[Tensor, dict[str, float]]:
+    """Compute the terminal reward tensor selected by the reward-version flag."""
+
+    if len(oracle_rows) != int(raw_rewards.shape[0]):
+        raise ValueError("oracle_rows length must match raw_rewards")
+    if len(tripartite_scores) != len(oracle_rows):
+        raise ValueError("tripartite_scores length must match oracle_rows")
+
+    version = reward_version.strip().lower()
+    effective_values: list[float] = []
+    base_values: list[float] = []
+    consensus_values: list[float] = []
+    complement_values: list[float] = []
+    clash_values: list[float] = []
+
+    for index, row in enumerate(oracle_rows):
+        pi_complement = numeric_value(row.get("pi_complement"), 0.0)
+        pi_clash_pocket = numeric_value(row.get("pi_clash_pocket"), 0.0)
+        lock_geometry = numeric_value(row.get("lock_geometry_score", row.get("pi_clash_lock", 0.0)), 0.0)
+        sigma_shear = numeric_value(row.get("sigma_shear"), 0.0)
+        consensus_bonus = numeric_value(row.get("consensus_complement_bonus"), 0.0)
+        complement_values.append(pi_complement)
+        clash_values.append(pi_clash_pocket)
+        consensus_values.append(consensus_bonus)
+
+        if version == "v1_base":
+            base_reward = float(raw_rewards[index].item())
+            effective = base_reward
+        elif version == "v2_tripartite":
+            base_reward = compute_reward_v2(row, tripartite_scores[index])
+            effective = base_reward
+        elif version in {"v3_consensus", "v3_consensus_grid", "v3_population_consensus"}:
+            base_reward = (
+                pi_complement
+                - pi_clash_pocket
+                + lock_geometry
+                - math.log1p(max(sigma_shear, 0.0))
+            )
+            effective = base_reward + consensus_bonus_weight * consensus_bonus
+        else:
+            base_reward = float(raw_rewards[index].item())
+            effective = base_reward
+
+        base_values.append(base_reward)
+        effective_values.append(max(effective, 1.0e-8))
+
+    effective_rewards = torch.tensor(
+        effective_values,
+        dtype=raw_rewards.dtype,
+        device=raw_rewards.device,
+    )
+    metrics = {
+        "effective_reward_mean": _mean(effective_values),
+        "effective_reward_std": _std(effective_values),
+        "reward_base_mean": _mean(base_values),
+        "consensus_bonus_mean": _mean(consensus_values),
+        "consensus_bonus_std": _std(consensus_values),
+        "pi_complement_std": _std(complement_values),
+        "pi_clash_pocket_std": _std(clash_values),
+    }
+    return effective_rewards, metrics
+
+
+def _mean(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    return float(sum(values) / float(len(values)))
+
+
+def _std(values: Sequence[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = _mean(values)
+    variance = sum((value - mean) ** 2 for value in values) / float(len(values))
+    return math.sqrt(variance)
 
 
 def removed_fragment_atoms(mol: Chem.Mol, registry_path: Path, fragment_id: str = "FRAG-A") -> set[int]:
@@ -899,6 +1050,8 @@ def save_training_checkpoint(
 async def train() -> None:
     args = parse_args()
     telemetry_handle = None
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
     if args.telemetry_log is not None:
         telemetry_path = Path(args.telemetry_log)
         if not telemetry_path.is_absolute():
@@ -1134,13 +1287,11 @@ async def train() -> None:
         )
         progress = 0.0 if int(args.epochs) <= 1 else float(epoch - 1) / float(int(args.epochs) - 1)
         sampling_temperature = 5.0 - (4.90 * progress)
-        sampling_logits = output.forward_log_probs[0].detach().clone()
-        sampling_logits = sampling_logits.masked_fill(~action_space.valid_mask, -torch.inf)
-        sampling_probs = torch.softmax(sampling_logits / max(sampling_temperature, 1.0e-3), dim=0)
-        if (not bool(torch.isfinite(sampling_probs).all())) or float(sampling_probs.sum().item()) <= 0.0:
-            sampling_probs = action_space.valid_mask.to(dtype=torch.float32)
-            sampling_probs = sampling_probs / sampling_probs.sum().clamp_min(1.0e-12)
-        actions_tensor = torch.multinomial(sampling_probs, int(args.batch_size), replacement=False)
+        actions_tensor = sample_actions_per_row(
+            output.forward_log_probs,
+            action_space.valid_mask,
+            sampling_temperature,
+        )
         actions = [int(value) for value in actions_tensor.tolist()]
         proposals = proposals_for_actions(action_space, actions)
         reaction_classes = reaction_classes_for_actions(action_space, actions)
@@ -1159,7 +1310,14 @@ async def train() -> None:
             oracle_rows=oracle_result.rows,
             fiber_bundle=oracle_result.fiber_bundle,
         )
-        scaled_rewards = rewards * float(args.reward_scale)
+        versioned_rewards, reward_component_metrics = compute_effective_reward_tensor(
+            reward_version=str(args.reward_version),
+            oracle_rows=oracle_row_dicts,
+            raw_rewards=rewards,
+            tripartite_scores=tripartite_scores,
+            consensus_bonus_weight=float(args.consensus_bonus_weight),
+        )
+        scaled_rewards = versioned_rewards * float(args.reward_scale)
         current_temperature = compute_adaptive_temperature(scaled_rewards, target_entropy=2.0)
         tempered_rewards = (scaled_rewards / current_temperature).clamp_min(1.0e-8)
         proposal_smiles = [proposal.canonical_smiles for proposal in proposals]
@@ -1177,8 +1335,7 @@ async def train() -> None:
             + diversity_bonus
             + float(args.lock_geo_intrinsic_bonus) * lock_intrinsic
         ).clamp_min(1.0e-8)
-        row_indices = torch.arange(int(args.batch_size), dtype=torch.long)
-        forward_selected = output.forward_log_probs[row_indices, actions_tensor].unsqueeze(1)
+        forward_selected = selected_forward_log_probs(output.forward_log_probs, actions_tensor).unsqueeze(1)
         backward_selected = output.backward_log_probs[:, 0].unsqueeze(1)
         tb = tb_loss(
             output.log_z,
@@ -1203,6 +1360,8 @@ async def train() -> None:
         reward_p95 = float(torch.quantile(rewards, 0.95).item())
         reward_max = float(rewards.max().item())
         scaled_reward_mean = float(scaled_rewards.mean().item())
+        effective_reward_mean = float(versioned_rewards.mean().item())
+        effective_reward_std = float(versioned_rewards.std(unbiased=False).item())
         top_reward_seen = max(top_reward_seen, reward_max)
         previous_unique_count = len(generated_smiles)
         for proposal in proposals:
@@ -1244,6 +1403,12 @@ async def train() -> None:
                 "reward_max": reward_max,
                 "scaled_reward_mean": scaled_reward_mean,
                 "reward_p95": reward_p95,
+                "effective_reward_mean": effective_reward_mean,
+                "effective_reward_std": effective_reward_std,
+                "consensus_bonus_mean": reward_component_metrics["consensus_bonus_mean"],
+                "consensus_bonus_std": reward_component_metrics["consensus_bonus_std"],
+                "pi_complement_std": reward_component_metrics["pi_complement_std"],
+                "pi_clash_pocket_std": reward_component_metrics["pi_clash_pocket_std"],
                 "top_reward_seen": top_reward_seen,
                 "unique_smiles_generated": len(generated_smiles),
                 "diversity_bonus_mean": float(diversity_bonus.mean().item()),
@@ -1264,6 +1429,9 @@ async def train() -> None:
             "reward_std": f"{reward_std:.6f}",
             "reward_max": f"{reward_max:.6f}",
             "scaled_reward_mean": f"{scaled_reward_mean:.6f}",
+            "effective_reward_mean": f"{effective_reward_mean:.6f}",
+            "effective_reward_std": f"{effective_reward_std:.6f}",
+            "consensus_bonus_mean": f"{reward_component_metrics['consensus_bonus_mean']:.6f}",
             "temperature": f"{current_temperature:.6f}",
             "lr_policy": f"{lr_policy:.8f}",
             "lr_logZ": f"{lr_log_z:.8f}",
@@ -1281,6 +1449,14 @@ async def train() -> None:
             "lock_proj_gt_05": f"{lock_proj_gt_05}/{int(args.batch_size)}",
         }
         print("tb_epoch_complete " + " ".join(f"{key}={value}" for key, value in telemetry.items()), flush=True)
+        print(
+            "reward_component_variance "
+            f"epoch={epoch} "
+            f"pi_complement_std={reward_component_metrics['pi_complement_std']:.6f} "
+            f"pi_clash_pocket_std={reward_component_metrics['pi_clash_pocket_std']:.6f} "
+            f"consensus_bonus_std={reward_component_metrics['consensus_bonus_std']:.6f}",
+            flush=True,
+        )
         print(
             "lock_positive_rate "
             f"epoch={epoch} lock_geo_positive={lock_geo_positive}/{int(args.batch_size)} "
@@ -1362,6 +1538,12 @@ async def train() -> None:
             "reward_max",
             "scaled_reward_mean",
             "reward_p95",
+            "effective_reward_mean",
+            "effective_reward_std",
+            "consensus_bonus_mean",
+            "consensus_bonus_std",
+            "pi_complement_std",
+            "pi_clash_pocket_std",
             "top_reward_seen",
             "unique_smiles_generated",
             "diversity_bonus_mean",
@@ -1464,6 +1646,8 @@ async def train() -> None:
         f"validation_status={validation['validation_status']} model={model_path}"
     )
     if telemetry_handle is not None:
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
         telemetry_handle.close()
 
 

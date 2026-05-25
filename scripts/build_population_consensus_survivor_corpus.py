@@ -85,7 +85,37 @@ def load_consensus_field(path: Path) -> dict[int, dict[str, float | str | bool]]
     }
 
 
-def consensus_score(coordinates_json: str, spec: GridSpec, field: dict[int, dict[str, float | str | bool]]) -> dict[str, float]:
+def neighboring_voxel_indices(voxel_idx: int, spec: GridSpec, radius: int = 2) -> list[int]:
+    """Return a small voxel neighborhood around an atom center."""
+
+    plane = spec.nx * spec.ny
+    iz = voxel_idx // plane
+    rem = voxel_idx % plane
+    iy = rem // spec.nx
+    ix = rem % spec.nx
+    neighbors: list[int] = []
+    for dz in range(-radius, radius + 1):
+        nz = iz + dz
+        if nz < 0 or nz >= spec.nz:
+            continue
+        for dy in range(-radius, radius + 1):
+            ny = iy + dy
+            if ny < 0 or ny >= spec.ny:
+                continue
+            for dx in range(-radius, radius + 1):
+                nx = ix + dx
+                if nx < 0 or nx >= spec.nx:
+                    continue
+                neighbors.append(int(nz * plane + ny * spec.nx + nx))
+    return neighbors
+
+
+def consensus_score(
+    coordinates_json: str,
+    spec: GridSpec,
+    field: dict[int, dict[str, float | str | bool]],
+    neighborhood_cache: dict[int, tuple[float, bool]],
+) -> dict[str, float]:
     coords = json.loads(coordinates_json)
     if not isinstance(coords, list):
         return {"bonus": 0.0, "liability": 0.0, "atoms_scored": 0.0}
@@ -98,18 +128,31 @@ def consensus_score(coordinates_json: str, spec: GridSpec, field: dict[int, dict
         voxel_idx = voxel_idx_for_coord([float(coord[0]), float(coord[1]), float(coord[2])], spec)
         if voxel_idx is None:
             continue
-        voxel = field.get(voxel_idx)
-        if voxel is None:
+        if voxel_idx not in neighborhood_cache:
+            activated_bonus = 0.0
+            disputed = False
+            for neighbor in neighboring_voxel_indices(voxel_idx, spec):
+                voxel = field.get(neighbor)
+                if voxel is None:
+                    continue
+                disputed = disputed or bool(voxel["disputed"])
+                if str(voxel["variance_class"]) == "thermally_activated":
+                    activated_bonus = max(activated_bonus, 1.0 + float(voxel["bonus"]))
+            neighborhood_cache[voxel_idx] = (activated_bonus, disputed)
+        activated_bonus, disputed = neighborhood_cache[voxel_idx]
+        if voxel_idx not in field and activated_bonus <= 0.0:
             continue
         scored += 1
-        klass = str(voxel["variance_class"])
-        if klass == "thermally_activated":
-            complement += 1.0 + float(voxel["bonus"])
-        elif klass == "stable_occupied":
-            liability += 1.0 * float(voxel["penalty"])
-        elif klass == "thermally_destabilized":
-            liability += 0.5 * float(voxel["penalty"])
-        if bool(voxel["disputed"]):
+        if activated_bonus > 0.0:
+            complement += activated_bonus
+        center_voxel = field.get(voxel_idx)
+        if center_voxel is not None:
+            klass = str(center_voxel["variance_class"])
+            if klass == "stable_occupied":
+                liability += 1.0 * float(center_voxel["penalty"])
+            elif klass == "thermally_destabilized":
+                liability += 0.5 * float(center_voxel["penalty"])
+        if disputed:
             liability += 0.1
     fit = complement / max(liability + scored * 0.05, 1.0)
     return {"bonus": max(0.0, min(fit, 3.0)), "liability": liability, "atoms_scored": float(scored)}
@@ -127,11 +170,13 @@ def main() -> int:
         .collect()
     )
     rows = cast(list[dict[str, object]], selected.to_dicts())
-    scores = [consensus_score(str(row.get("coordinates_json", "[]")), spec, field) for row in rows]
+    neighborhood_cache: dict[int, tuple[float, bool]] = {}
+    scores = [consensus_score(str(row.get("coordinates_json", "[]")), spec, field, neighborhood_cache) for row in rows]
     bonus_values = [score["bonus"] for score in scores]
     liability_values = [score["liability"] for score in scores]
     atoms_scored = [score["atoms_scored"] for score in scores]
     output = selected.with_columns(
+        pl.Series("consensus_complement_bonus", bonus_values),
         pl.Series("population_consensus_bonus", bonus_values),
         pl.Series("population_consensus_liability", liability_values),
         pl.Series("population_consensus_atoms_scored", atoms_scored),

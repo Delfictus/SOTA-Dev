@@ -1,0 +1,13 @@
+{
+  "candidate_count": 50,
+  "confidence_counts": {
+    "L1": 50
+  },
+  "epistemic_note": "L1-L3 are static/proxy confidence tags. They do not represent GPU MD confirmation.",
+  "generated_at_utc": "2026-05-25T09:38:38.550359+00:00",
+  "input": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gflownet_top100_full_pgx_epoch019.parquet",
+  "lock_positive": 37,
+  "output_dir": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/candidate_dossiers",
+  "profile_parquet": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/candidate_dossiers_epoch019.parquet",
+  "schema_version": "PRISM.candidate_dossiers.tripartite.v1"
+}

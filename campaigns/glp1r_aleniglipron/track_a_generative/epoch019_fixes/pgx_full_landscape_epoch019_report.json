@@ -1,0 +1,236 @@
+{
+  "schema_version": "PRISM.pgx_full_landscape.v1",
+  "generated_at_utc": "2026-05-25T09:38:29.895627+00:00",
+  "status": "PASS",
+  "candidate_count": 100,
+  "variant_count": 22,
+  "tier1_variant_count": 7,
+  "liability_scale": 63.985,
+  "pgx_tier1_worst_case_mean": 1.0,
+  "pgx_tier1_worst_case_ge_085_count": 100,
+  "population_coverage_pct_mean": 100.0,
+  "ancestry": {
+    "EUR": {
+      "mean_resilience": 0.9773673516520884,
+      "coverage_ge_085": 100
+    },
+    "AFR": {
+      "mean_resilience": 0.9859754914563829,
+      "coverage_ge_085": 100
+    },
+    "EAS": {
+      "mean_resilience": 0.9967622928507689,
+      "coverage_ge_085": 100
+    },
+    "SAS": {
+      "mean_resilience": 0.9840122876810052,
+      "coverage_ge_085": 100
+    },
+    "AMR": {
+      "mean_resilience": 0.9817775120580399,
+      "coverage_ge_085": 100
+    }
+  },
+  "variants": {
+    "A316T": {
+      "tier": 2,
+      "provenance": "MD_SIMULATED",
+      "epistemic_confidence": "L5",
+      "mean_resilience": 0.3686476655474307,
+      "classification_counts": {
+        "VULNERABLE": 100
+      }
+    },
+    "G168S": {
+      "tier": 1,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "P7L": {
+      "tier": 1,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L3",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "R131Q": {
+      "tier": 1,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.000472542877342,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "T149M": {
+      "tier": 3,
+      "provenance": "MD_SIMULATED",
+      "epistemic_confidence": "L5",
+      "mean_resilience": 0.36851674637540327,
+      "classification_counts": {
+        "VULNERABLE": 100
+      }
+    },
+    "R421W": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "D344E": {
+      "tier": 1,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "F260L": {
+      "tier": 1,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L3",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "L141P": {
+      "tier": 1,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L3",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "P356L": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0001575142924473,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "R190Q": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L1",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "Y291C": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "I357R": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 0.9989893075094255,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "S333C": {
+      "tier": 1,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "R380C": {
+      "tier": 2,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L1",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "C226R": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0005546994553287,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "R227H": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0000796755027543,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "L232R": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 0.999922161210307,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "W297R": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "L305R": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 1.0,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "V349M": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 0.9992222179907868,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    },
+    "F380L": {
+      "tier": 3,
+      "provenance": "PERTURBATION_PROJECTED",
+      "epistemic_confidence": "L2",
+      "mean_resilience": 0.999922161210307,
+      "classification_counts": {
+        "IMMUNE": 100
+      }
+    }
+  },
+  "output": "campaigns/glp1r_aleniglipron/track_a_generative/epoch019_fixes/gflownet_top100_full_pgx_epoch019.parquet",
+  "epistemic_note": "Resilience values are L2/L3 projected variant-field deltas except A316T/T149M L5 grid inputs; they are not wet-lab efficacy."
+}

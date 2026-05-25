@@ -247,6 +247,7 @@ class BatchedRustOracle:
             "intracellular_penetration_depth_angstrom",
             "lock_steric_volume_angstrom3",
             "cryptic_bonus",
+            "consensus_complement_bonus",
             "survival_tier",
             "selected_dihedral_deg",
             "reward_components_json",

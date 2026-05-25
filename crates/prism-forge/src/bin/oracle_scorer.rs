@@ -57,6 +57,7 @@ struct SurvivorReward {
     intracellular_penetration_depth_angstrom: f64,
     lock_steric_volume_angstrom3: f64,
     cryptic_bonus: f64,
+    consensus_complement_bonus: f64,
     survival_tier: String,
     selected_dihedral_deg: f64,
     lock_proxy_method: String,
@@ -87,6 +88,7 @@ struct RewardRow {
     intracellular_penetration_depth_angstrom: f64,
     lock_steric_volume_angstrom3: f64,
     cryptic_bonus: f64,
+    consensus_complement_bonus: f64,
     survival_tier: String,
     selected_dihedral_deg: f64,
     reward_components_json: String,
@@ -128,6 +130,7 @@ fn main() -> Result<()> {
                 intracellular_penetration_depth_angstrom: 0.0,
                 lock_steric_volume_angstrom3: 0.0,
                 cryptic_bonus: 0.0,
+                consensus_complement_bonus: 0.0,
                 survival_tier: "invalid_missing_survivor".to_owned(),
                 selected_dihedral_deg: f64::NAN,
                 reward_components_json: json!({
@@ -156,6 +159,7 @@ fn main() -> Result<()> {
             intracellular_penetration_depth_angstrom: reward.intracellular_penetration_depth_angstrom,
             lock_steric_volume_angstrom3: reward.lock_steric_volume_angstrom3,
             cryptic_bonus: reward.cryptic_bonus,
+            consensus_complement_bonus: reward.consensus_complement_bonus,
             survival_tier: reward.survival_tier.clone(),
             selected_dihedral_deg: reward.selected_dihedral_deg,
             reward_components_json: json!({
@@ -182,6 +186,7 @@ fn main() -> Result<()> {
                 "lock_steric_volume_angstrom3": reward.lock_steric_volume_angstrom3,
                 "lock_proxy_method": reward.lock_proxy_method,
                 "cryptic_bonus": reward.cryptic_bonus,
+                "consensus_complement_bonus": reward.consensus_complement_bonus,
                 "survival_tier": reward.survival_tier,
                 "selected_dihedral_deg": reward.selected_dihedral_deg
             })
@@ -278,6 +283,9 @@ fn load_survivors(path: &Path, lock_mask: Option<&LockRegionMask>) -> Result<Vec
         let complements = f64_column(&batch, "fragment_pi_complement")?;
         let clashes = f64_column(&batch, "fragment_pi_clash_adjusted")?;
         let cryptic = f64_column(&batch, "cryptic_bonus")?;
+        let consensus_bonus = optional_f64_column(&batch, "consensus_complement_bonus")
+            .or_else(|| optional_f64_column(&batch, "population_consensus_bonus"))
+            .or_else(|| optional_f64_column(&batch, "population_consensus_bonus_scaled"));
         let tiers = string_column(&batch, "survival_tier")?;
         let dihedrals = f64_column(&batch, "selected_dihedral_deg")?;
         let coordinates = optional_string_column(&batch, "coordinates_json");
@@ -310,6 +318,7 @@ fn load_survivors(path: &Path, lock_mask: Option<&LockRegionMask>) -> Result<Vec
                     .intracellular_penetration_depth_angstrom,
                 lock_steric_volume_angstrom3: lock_proxy.lock_steric_volume_angstrom3,
                 cryptic_bonus: f64_value(cryptic, row_idx)?,
+                consensus_complement_bonus: optional_f64_value(consensus_bonus, row_idx, 0.0),
                 survival_tier: string_value(tiers, row_idx)?,
                 selected_dihedral_deg: f64_value(dihedrals, row_idx)?,
                 lock_proxy_method: lock_proxy.method,
@@ -561,6 +570,11 @@ fn optional_string_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a 
     }
 }
 
+fn optional_f64_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a Float64Array> {
+    let idx = batch.schema().index_of(name).ok()?;
+    batch.column(idx).as_any().downcast_ref::<Float64Array>()
+}
+
 fn f64_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float64Array> {
     column(batch, name)?
         .as_any()
@@ -586,6 +600,13 @@ fn f64_value(array: &Float64Array, row_idx: usize) -> Result<f64> {
         return Err(anyhow!("null f64 at row {row_idx}"));
     }
     Ok(array.value(row_idx))
+}
+
+fn optional_f64_value(array: Option<&Float64Array>, row_idx: usize, default: f64) -> f64 {
+    match array {
+        Some(values) if !values.is_null(row_idx) => values.value(row_idx),
+        _ => default,
+    }
 }
 
 fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
@@ -621,6 +642,7 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         ),
         Field::new("lock_steric_volume_angstrom3", DataType::Float64, false),
         Field::new("cryptic_bonus", DataType::Float64, false),
+        Field::new("consensus_complement_bonus", DataType::Float64, false),
         Field::new("survival_tier", DataType::Utf8, false),
         Field::new("selected_dihedral_deg", DataType::Float64, false),
         Field::new("reward_components_json", DataType::Utf8, false),
@@ -738,6 +760,11 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         )),
         Arc::new(Float64Array::from(
             rows.iter().map(|row| row.cryptic_bonus).collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.consensus_complement_bonus)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(StringArray::from(
             rows.iter()
