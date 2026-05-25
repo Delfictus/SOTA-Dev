@@ -10,15 +10,15 @@ Epistemic scope: this dossier reports PROJECTED candidate prioritization from th
 
 The Track A GFlowNet policy generated and ranked candidates against the PRISM-FORGE O3A/Z-matrix reward oracle. The final audit reports:
 
-- biased agonism candidates confirmed: `{{ biased_agonism_confirmed }}/{{ audited_candidates }}`
+- projected lock-positive candidates: `{{ biased_agonism_confirmed }}/{{ audited_candidates }}`
 - PAINS pass: `{{ pains_pass }}/{{ audited_candidates }}`
 - BRENK pass: `{{ brenk_pass }}/{{ audited_candidates }}`
 - oral descriptor pass: `{{ oral_pass }}/{{ audited_candidates }}`
 - top-100 unique SMILES: `{{ top100_unique_smiles }}`
 
-## 2. Epoch 016 Execution Status
+## 2. Epoch 021 Full-Field Training Status
 
-The Epoch 016 production training command path is implemented and passed a one-epoch functional smoke test, but the local terminal harness terminated longer CPU-bound training processes before the 500-epoch target could complete.
+The Epoch 021 full-field production run used the v4 reward, v2 thermodynamic field stack, dual-channel policy, and hard-zero R&F electronic channel. This section reports the actual completed run, not the earlier Epoch 016 long-run harness state.
 
 | execution metric | value |
 |---|---:|
@@ -156,7 +156,47 @@ Ancestry-stratified projected resilience:
 
 Interpretation boundary: A316T and T149M use materialized MD-derived grids. The remaining variant grids are perturbation-projected from gnomAD frequency, domain, conservation, and functional-assay annotations and must be treated as Phase 3 stratification intelligence, not clinical proof.
 
-## 9. Autonomous Infrastructure Status
+## 9. Full Thermodynamic Field Stack
+
+Epoch 021 expands candidate assessment from the original signal grid into the complete thermodynamic field stack: signal classification, shear stress, hysteresis/reversibility, translation-pathway contact, AM1-BCC electrostatics, and u_pose geometry fragility.
+
+| full-field metric | value |
+|---|---:|
+| status | `{{ full_field_status }}` |
+| candidates assessed | {{ full_field_candidate_count }} |
+| mean shear stress | `{{ full_field_shear_mean }}` |
+| candidates with nonzero shear | {{ full_field_shear_positive_count }} |
+| mean hysteresis | `{{ full_field_hysteresis_mean }}` |
+| mean reversibility | `{{ full_field_reversibility_mean }}` |
+| direct activation-pathway voxel candidates | {{ full_field_pathway_contact_count }} |
+| activation-pathway neighborhood candidates | {{ full_field_pathway_neighborhood_count }} |
+| mean AM1-BCC charge feature magnitude | `{{ full_field_charge_abs_mean }}` |
+| mean u_pose penalty | `{{ full_field_u_pose_mean }}` |
+| u_pose provenance counts | `{{ full_field_u_pose_sources }}` |
+| low-shear, reversible, pathway-contact candidates | {{ full_field_low_shear_reversible_pathway }} |
+
+The shear and hysteresis terms are training signals, not decorative post-hoc metrics. A high-shear candidate is leaning into a mechanically mobile receptor wall; a high-hysteresis candidate occupies a region whose thermal cycle does not return cleanly to baseline. Both liabilities are carried into reward v4 and into the candidate dossiers.
+
+Pathway reporting separates direct occupancy of sparse pathway voxels from neighborhood interaction with the same pathway nodes. The latter is a projected kinetic-control signal with explicit provenance, not a claim that every atom landed exactly inside a pathway voxel.
+
+## 10. Cross-Species Selectivity Prediction
+
+Cross-species selectivity is an L2 structural inference from GLP-1R conservation data. It predicts species-activity pattern, not potency, and is calibrated against Aleniglipron's known Human/NHP selectivity behavior.
+
+| species metric | value |
+|---|---:|
+| status | `{{ species_selectivity_status }}` |
+| mean selectivity score | `{{ species_selectivity_mean }}` |
+| high human-selective candidates (>=0.70) | {{ species_human_selective_count }} |
+| broad/selectivity-low candidates (<=0.35) | {{ species_broad_count }} |
+
+| rank | selectivity | predicted active in | SMILES |
+|---:|---:|---|---|
+{% for row in species_rows -%}
+| {{ row.rank }} | {{ "%.3f"|format(row.score) }} | `{{ row.predicted_active_in }}` | `{{ row.smiles }}` |
+{% endfor %}
+
+## 11. Autonomous Infrastructure Status
 
 Cloudflare and autonomous thermodynamic AI infrastructure were checked without redeploying the Worker.
 
@@ -171,7 +211,7 @@ Cloudflare and autonomous thermodynamic AI infrastructure were checked without r
 
 Infrastructure report: `{{ infra_report_path }}`
 
-## 10. GPU Dispatch Readiness
+## 12. GPU Dispatch Readiness
 
 GPU dispatch status: `{{ gpu_dispatch_status }}`
 
@@ -186,14 +226,14 @@ Dispatch audit: `{{ gpu_dispatch_report_path }}`
 
 These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
 
-## 11. Falsification Gates
+## 13. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 12. Lineage
+## 14. Lineage
 
 - policy checkpoint: `{{ policy_path }}`
 - top-100 candidates: `{{ top100_path }}`

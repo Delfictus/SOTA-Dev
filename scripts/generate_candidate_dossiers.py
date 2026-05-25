@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--output-summary", type=Path, default=None)
     parser.add_argument("--tripartite", action="store_true", default=False)
+    parser.add_argument(
+        "--full-field-stack",
+        action="store_true",
+        default=False,
+        help="Include Epoch 021 shear, hysteresis, pathway, charge, species, and u_pose fields when present.",
+    )
     parser.add_argument("--top-n", type=int, default=50)
     return parser.parse_args()
 
@@ -63,6 +69,8 @@ def main() -> int:
         "profile_parquet": str(profile_path),
         "candidate_count": len(rows),
         "lock_positive": sum(1 for row in rows if float(row["lock_geometry_score"]) > 0.0),
+        "full_field_stack": bool(args.full_field_stack),
+        "full_field_metrics": full_field_report(rows),
         "confidence_counts": confidence_counts(rows),
         "epistemic_note": (
             "L1-L3 are static/proxy confidence tags. They do not represent GPU MD confirmation."
@@ -113,6 +121,18 @@ def profile_for_row(row: Mapping[str, Any], *, rank: int) -> dict[str, Any]:
         "pharmacophore_matches_required": pharmacophore.matches_required,
         "bald_information_value": bald_value,
         "gpu_dispatch_status": "pending" if bias.lock_geometry_score > 0.0 else "not_lock_positive",
+        "sigma_shear_mean": float_value(row.get("sigma_shear_mean", row.get("sigma_shear", 0.0))),
+        "hysteresis_mean": float_value(row.get("hysteresis_mean", row.get("lock_hysteresis_asymmetry", 0.0))),
+        "reversibility_mean": float_value(row.get("reversibility_mean", 1.0)),
+        "pathway_voxels_occupied": float_value(row.get("pathway_voxels_occupied", 0.0)),
+        "pathway_neighborhood_contacts": float_value(row.get("pathway_neighborhood_contacts", 0.0)),
+        "pathway_neighborhood_score_mean": float_value(row.get("pathway_neighborhood_score_mean", 0.0)),
+        "pathway_score_mean": float_value(row.get("pathway_score_mean", 0.0)),
+        "charge_feature_mean": float_value(row.get("charge_feature_mean", 0.0)),
+        "u_pose": float_value(row.get("u_pose", 0.0)),
+        "u_pose_source": str(row.get("u_pose_source", "unknown")),
+        "species_selectivity_score": float_value(row.get("species_selectivity_score", 0.0)),
+        "predicted_active_in": str(row.get("predicted_active_in", "")),
         **medchem,
     }
 
@@ -136,6 +156,16 @@ def markdown_for_profile(row: Mapping[str, Any]) -> str:
         f"- Projected bias score: `{float(row['bias_projection_score']):.4f}`\n"
         f"- Epistemic confidence: `{row['epistemic_confidence']}`\n"
         f"- BALD information value: `{float(row['bald_information_value']):.4f}`\n\n"
+        "## Full Thermodynamic Field Stack\n\n"
+        f"- Shear stress mean: `{float(row['sigma_shear_mean']):.4f}`\n"
+        f"- Hysteresis mean: `{float(row['hysteresis_mean']):.4f}`\n"
+        f"- Reversibility mean: `{float(row['reversibility_mean']):.4f}`\n"
+        f"- Direct activation pathway voxels occupied: `{float(row['pathway_voxels_occupied']):.1f}`\n"
+        f"- Activation pathway-neighborhood contacts: `{float(row['pathway_neighborhood_contacts']):.1f}`\n"
+        f"- AM1-BCC charge feature mean: `{float(row['charge_feature_mean']):.4f}`\n"
+        f"- u_pose penalty: `{float(row['u_pose']):.4f}` ({row['u_pose_source']})\n"
+        f"- Species selectivity score: `{float(row['species_selectivity_score']):.4f}`\n"
+        f"- Predicted active species: `{row['predicted_active_in']}`\n\n"
         "## Med Chem\n\n"
         f"- MW: `{float(row['mw']):.2f}`\n"
         f"- TPSA: `{float(row['tpsa']):.2f}`\n"
@@ -196,6 +226,32 @@ def confidence_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def full_field_report(rows: Sequence[Mapping[str, Any]]) -> dict[str, float | int]:
+    if not rows:
+        return {
+            "mean_shear": 0.0,
+            "mean_hysteresis": 0.0,
+            "mean_reversibility": 0.0,
+            "pathway_contact_count": 0,
+            "mean_u_pose": 0.0,
+            "mean_species_selectivity": 0.0,
+        }
+    n_rows = float(len(rows))
+    return {
+        "mean_shear": sum(float(row["sigma_shear_mean"]) for row in rows) / n_rows,
+        "mean_hysteresis": sum(float(row["hysteresis_mean"]) for row in rows) / n_rows,
+        "mean_reversibility": sum(float(row["reversibility_mean"]) for row in rows) / n_rows,
+        "pathway_contact_count": sum(
+            1
+            for row in rows
+            if float(row["pathway_voxels_occupied"]) > 0.0
+            or float(row["pathway_neighborhood_contacts"]) > 0.0
+        ),
+        "mean_u_pose": sum(float(row["u_pose"]) for row in rows) / n_rows,
+        "mean_species_selectivity": sum(float(row["species_selectivity_score"]) for row in rows) / n_rows,
+    }
+
+
 def summary_markdown(rows: Sequence[Mapping[str, Any]], report: Mapping[str, Any]) -> str:
     lines = [
         "# M3 Candidate Summary",
@@ -215,6 +271,29 @@ def summary_markdown(rows: Sequence[Mapping[str, Any]], report: Mapping[str, Any
                 lock=float(row["lock_geometry_score"]),
                 projection=float(row["bias_projection_score"]),
                 confidence=str(row["epistemic_confidence"]),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Full Field Stack",
+            "",
+            "| rank | shear | hysteresis | reversibility | direct pathway | pathway neighborhood | charge mean | u_pose | species selectivity |",
+            "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for row in rows[:50]:
+        lines.append(
+            "| {rank} | {shear:.3f} | {hyst:.4f} | {rev:.3f} | {path:.1f} | {neighborhood:.1f} | {charge:.4f} | {upose:.3f} | {species:.3f} |".format(
+                rank=int(row["rank"]),
+                shear=float(row["sigma_shear_mean"]),
+                hyst=float(row["hysteresis_mean"]),
+                rev=float(row["reversibility_mean"]),
+                path=float(row["pathway_voxels_occupied"]),
+                neighborhood=float(row["pathway_neighborhood_contacts"]),
+                charge=float(row["charge_feature_mean"]),
+                upose=float(row["u_pose"]),
+                species=float(row["species_selectivity_score"]),
             )
         )
     lines.extend(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,6 +83,11 @@ class SurvivorCorpusOracle:
     def __post_init__(self) -> None:
         if self.max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
+        if self.batch_path == DEFAULT_BATCH_PATH and self.reward_path == DEFAULT_REWARD_PATH:
+            run_id = f"{os.getpid()}_{id(self):x}"
+            scratch_dir = DEFAULT_BATCH_PATH.parent / "oracle_runs" / run_id
+            self.batch_path = scratch_dir / "oracle_batch.parquet"
+            self.reward_path = scratch_dir / "oracle_rewards.parquet"
 
     async def score_batch(self, proposals: Sequence[OracleProposal]) -> OracleBatchResult:
         """Score a batch of molecular proposals through the Rust oracle."""
@@ -283,8 +289,16 @@ class SurvivorCorpusOracle:
         if missing:
             raise RustOracleError(f"Rust oracle rewards missing columns: {sorted(missing)}")
         if rewards_df.height != len(proposals):
+            observed = (
+                rewards_df.select("canonical_smiles").head(8).to_series().to_list()
+                if "canonical_smiles" in rewards_df.columns
+                else []
+            )
+            expected = [proposal.canonical_smiles for proposal in proposals[:8]]
             raise RustOracleError(
-                f"batch size mismatch: sent {len(proposals)}, received {rewards_df.height}"
+                f"batch size mismatch: sent {len(proposals)}, received {rewards_df.height}; "
+                f"batch_path={self.batch_path} reward_path={self.reward_path} "
+                f"expected_head={expected} observed_head={observed}"
             )
         duplicate_smiles_count = rewards_df.height - rewards_df.select("canonical_smiles").unique().height
         if duplicate_smiles_count > 0:

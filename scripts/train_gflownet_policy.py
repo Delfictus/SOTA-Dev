@@ -44,7 +44,7 @@ from prism_dstw.orchestration.rust_reward_oracle import (
     telemetry_to_dict,
 )
 from prism_dstw.scoring.exit_atom_ray_cast import ExitAtomRayCaster
-from prism_dstw.scoring.product_fiber_lookup import SignalGridFiberLookup
+from prism_dstw.scoring.product_fiber_lookup import SignalGridFiberLookup, ThermodynamicFieldStack
 from prism_dstw.scoring.tripartite_bias_scorer import (
     TripartiteBiasScore,
     compute_reward_v2,
@@ -61,6 +61,7 @@ DEFAULT_DANU_SDF = TRACK_A_DIR / "conformers/DANU-PARENT_6XOX_o3a.sdf"
 DEFAULT_SCAFFOLD_POOL = (DEFAULT_LIGAND_SDF, DEFAULT_ORFOR_SDF, DEFAULT_DANU_SDF)
 DEFAULT_ANCHORS = TRACK_A_DIR / "enamine_115k_synthons_3d.parquet"
 DEFAULT_SURVIVORS = TRACK_A_DIR / "vspace_survivors_full_scale.parquet"
+DEFAULT_POPULATION_CONSENSUS_SURVIVORS = TRACK_A_DIR / "vspace_survivors_population_consensus_action_corpus.parquet"
 DEFAULT_RESIDUE_PHASE = N80_DIR / "residue_phase_tensor.parquet"
 DEFAULT_INTERFEROMETRIC = N80_DIR / "interferometric_differential.parquet"
 DEFAULT_TOPOLOGY = REPO_ROOT / "04_TOPOLOGIES/glp1r_6XOX_HOLO_ALENI.topology.json"
@@ -69,9 +70,47 @@ DEFAULT_FRAGMENT_REGISTRY = (
 )
 DEFAULT_PHASE3_PGX_MANIFEST = REPO_ROOT / "campaigns/glp1r_aleniglipron/Phase3_PGx_Exclusion_Manifest.json"
 DEFAULT_GRID_MAPPING = REPO_ROOT / "campaigns/glp1r_aleniglipron/track_0_manual_emulation/grid_coordinate_mapping.json"
+DEFAULT_POPULATION_CONSENSUS_GRID = TRACK_A_DIR / "signal_grid_population_consensus.parquet"
+DEFAULT_SHEAR_STRESS = N80_DIR / "shear_stress_field.parquet"
+DEFAULT_HYSTERESIS_TENSOR = N80_DIR / "hysteresis_tensor.parquet"
+DEFAULT_TRANSLATION_PATHWAY = N80_DIR / "translation_pathway_nodes.parquet"
+DEFAULT_CROSS_SPECIES = TRACK_A_DIR / "population_pgx/source/GLP1R_cross_species_conservation.csv"
 DEFAULT_OUTPUT_DIR = TRACK_A_DIR
 PHASES = ("cold_hold", "ramp_up", "warm_hold", "ramp_down", "cold_return")
 PHASE_LABELS = ("Cold Hold", "Ramp Up", "Warm Hold", "Ramp Down", "Cold Return")
+FieldLookup = SignalGridFiberLookup | ThermodynamicFieldStack
+
+
+def resolve_survivor_corpus_for_reward(
+    *,
+    requested_survivors: Path,
+    reward_version: str,
+    signal_grid: Path | None,
+) -> Path:
+    """Select the survivor corpus that matches the requested reward semantics.
+
+    The WT/full-scale corpus is still the default for legacy v1/v2 runs. For
+    population-consensus and full-field training, silently using that default
+    erases the consensus component even when the signal grid is the consensus
+    grid. When the caller leaves ``--survivors`` at the default, switch to the
+    consensus action corpus if it is present.
+    """
+
+    requested = Path(requested_survivors)
+    version = reward_version.strip().lower()
+    signal_grid_name = "" if signal_grid is None else Path(signal_grid).name.lower()
+    default_like = (
+        requested == DEFAULT_SURVIVORS
+        or requested.name == DEFAULT_SURVIVORS.name
+    )
+    consensus_reward = (
+        version.startswith("v3")
+        or version.startswith("v4")
+        or "consensus" in signal_grid_name
+    )
+    if default_like and consensus_reward and DEFAULT_POPULATION_CONSENSUS_SURVIVORS.exists():
+        return DEFAULT_POPULATION_CONSENSUS_SURVIVORS
+    return requested
 
 
 @dataclass(frozen=True)
@@ -106,6 +145,9 @@ class ActionSpace:
     reward_targets: Tensor
     exit_ray_adjustments: Tensor | None = None
     action_phase_features: Tensor | None = None
+    action_base_features: Tensor | None = None
+    action_atom_features: Tensor | None = None
+    action_atom_mask: Tensor | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -153,8 +195,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--synthon-parquet", type=Path, default=None)
     parser.add_argument("--signal-grid", type=Path, default=None)
     parser.add_argument("--grid-coordinate-mapping", type=Path, default=DEFAULT_GRID_MAPPING)
+    parser.add_argument(
+        "--field-stack-version",
+        choices=("v1", "v2"),
+        default="v1",
+        help="v1 uses [5,8]/12D features; v2 uses the full [5,12]/13D thermodynamic field stack.",
+    )
     parser.add_argument("--disable-exit-ray-masks", action="store_true", default=False)
     parser.add_argument("--shear-stress", type=Path, default=None)
+    parser.add_argument("--hysteresis-tensor", type=Path, default=None)
+    parser.add_argument("--translation-pathway", type=Path, default=None)
+    parser.add_argument("--cross-species", type=Path, default=None)
     parser.add_argument("--checkpoint-dir", type=Path, default=REPO_ROOT / ".scratch/checkpoints")
     parser.add_argument("--checkpoint-interval", type=int, default=50)
     parser.add_argument("--output-policy", type=Path, default=TRACK_A_DIR / "gflownet_policy_v1.pt")
@@ -312,16 +363,42 @@ def compute_effective_reward_tensor(
     consensus_values: list[float] = []
     complement_values: list[float] = []
     clash_values: list[float] = []
+    shear_values: list[float] = []
+    hysteresis_values: list[float] = []
+    reversibility_values: list[float] = []
+    pathway_direct_values: list[float] = []
+    pathway_neighborhood_values: list[float] = []
+    pathway_score_values: list[float] = []
+    pose_values: list[float] = []
+    charge_values: list[float] = []
 
     for index, row in enumerate(oracle_rows):
         pi_complement = numeric_value(row.get("pi_complement"), 0.0)
         pi_clash_pocket = numeric_value(row.get("pi_clash_pocket"), 0.0)
         lock_geometry = numeric_value(row.get("lock_geometry_score", row.get("pi_clash_lock", 0.0)), 0.0)
-        sigma_shear = numeric_value(row.get("sigma_shear"), 0.0)
-        consensus_bonus = numeric_value(row.get("consensus_complement_bonus"), 0.0)
+        sigma_shear = numeric_value(row.get("sigma_shear_mean", row.get("sigma_shear")), 0.0)
+        hysteresis_mean = numeric_value(row.get("hysteresis_mean"), 0.0)
+        reversibility_mean = numeric_value(row.get("reversibility_mean"), 1.0)
+        pathway_voxels = numeric_value(row.get("pathway_voxels_occupied"), 0.0)
+        pathway_neighborhood = numeric_value(row.get("pathway_neighborhood_contacts"), 0.0)
+        pathway_score = numeric_value(row.get("pathway_score_mean"), 0.0)
+        u_pose = numeric_value(row.get("u_pose"), 0.0)
+        consensus_bonus = numeric_value(
+            row.get("consensus_complement_bonus", row.get("population_consensus_bonus")),
+            0.0,
+        )
+        charge_feature = numeric_value(row.get("charge_feature_mean"), 0.0)
         complement_values.append(pi_complement)
         clash_values.append(pi_clash_pocket)
         consensus_values.append(consensus_bonus)
+        shear_values.append(sigma_shear)
+        hysteresis_values.append(hysteresis_mean)
+        reversibility_values.append(reversibility_mean)
+        pathway_direct_values.append(pathway_voxels)
+        pathway_neighborhood_values.append(pathway_neighborhood)
+        pathway_score_values.append(pathway_score)
+        pose_values.append(u_pose)
+        charge_values.append(charge_feature)
 
         if version == "v1_base":
             base_reward = float(raw_rewards[index].item())
@@ -337,12 +414,41 @@ def compute_effective_reward_tensor(
                 - math.log1p(max(sigma_shear, 0.0))
             )
             effective = base_reward + consensus_bonus_weight * consensus_bonus
+        elif version in {"v4_full_field", "v4_thermodynamic_field", "v4_full_stack"}:
+            base_reward = (
+                pi_complement
+                - pi_clash_pocket
+                + lock_geometry
+                + tripartite_scores[index].bias_projection_score
+            )
+            shear_penalty = math.log1p(max(sigma_shear, 0.0))
+            hysteresis_penalty = max(0.0, 1.0 - max(0.0, min(1.0, reversibility_mean)))
+            pathway_bonus = (
+                0.5 * max(pathway_voxels, 0.0)
+                + 0.1 * max(pathway_neighborhood, 0.0)
+                + max(pathway_score, 0.0)
+            )
+            effective = (
+                base_reward
+                + consensus_bonus_weight * consensus_bonus
+                - shear_penalty
+                - hysteresis_penalty
+                + pathway_bonus
+                - max(u_pose, 0.0)
+            )
         else:
             base_reward = float(raw_rewards[index].item())
             effective = base_reward
 
         base_values.append(base_reward)
-        effective_values.append(max(effective, 1.0e-8))
+        effective_values.append(effective)
+
+    if version in {"v4_full_field", "v4_thermodynamic_field", "v4_full_stack"} and effective_values:
+        min_effective = min(effective_values)
+        if min_effective <= 0.0:
+            effective_values = [value - min_effective + 1.0e-6 for value in effective_values]
+    else:
+        effective_values = [max(value, 1.0e-8) for value in effective_values]
 
     effective_rewards = torch.tensor(
         effective_values,
@@ -357,6 +463,14 @@ def compute_effective_reward_tensor(
         "consensus_bonus_std": _std(consensus_values),
         "pi_complement_std": _std(complement_values),
         "pi_clash_pocket_std": _std(clash_values),
+        "shear_mean": _mean(shear_values),
+        "hysteresis_mean": _mean(hysteresis_values),
+        "reversibility_mean": _mean(reversibility_values),
+        "pathway_voxels_occupied": _mean(pathway_direct_values),
+        "pathway_neighborhood_contacts": _mean(pathway_neighborhood_values),
+        "pathway_score_mean": _mean(pathway_score_values),
+        "u_pose_mean": _mean(pose_values),
+        "charge_feature_mean": _mean(charge_values),
     }
     return effective_rewards, metrics
 
@@ -563,9 +677,9 @@ def load_phase_feature_maps(paths: TrainingPaths, condition_id: str = "glp1r_6XO
     return feature_map
 
 
-def atom_base_features(atom: Chem.Atom, partial_charge: float, is_exit: bool) -> list[float]:
+def atom_base_features(atom: Chem.Atom, partial_charge: float, is_exit: bool, *, field_stack_version: str = "v1") -> list[float]:
     hybridization = atom.GetHybridization()
-    return [
+    features = [
         atom.GetAtomicNum() / 100.0,
         atom.GetTotalDegree() / 6.0,
         atom.GetFormalCharge() / 4.0,
@@ -579,6 +693,12 @@ def atom_base_features(atom: Chem.Atom, partial_charge: float, is_exit: bool) ->
         1.0 if is_exit else 0.0,
         1.0,
     ]
+    if field_stack_version == "v2":
+        # Dedicated AM1-BCC/NAGL charge lane. The legacy charge lane at index 9
+        # is retained for checkpoint compatibility; v2 exposes the explicit
+        # electronic feature at x_base[:, 12] as required by the field stack.
+        features.append(partial_charge)
+    return features
 
 
 def atom_partial_charge(mol: Chem.Mol, atom_idx: int) -> float:
@@ -662,7 +782,35 @@ def build_edges(
     return edge_index, torch.tensor(edge_attr, dtype=torch.float32), torch.tensor(active_mask, dtype=torch.bool)
 
 
-def build_scaffold_graph(paths: TrainingPaths, ligand_sdf: Path | None = None) -> ScaffoldGraph:
+def extend_phase_matrix(
+    phase_matrix: Sequence[Sequence[float]],
+    *,
+    target_dim: int,
+    field_fiber: np.ndarray | None = None,
+) -> list[list[float]]:
+    """Resize residue phase features and append field-stack lanes when available."""
+
+    extended: list[list[float]] = []
+    for phase_index, row in enumerate(phase_matrix):
+        values = [float(value) for value in row[:target_dim]]
+        if len(values) < target_dim:
+            field_tail = (
+                [float(value) for value in field_fiber[phase_index, 8:12]]
+                if field_fiber is not None and field_fiber.shape == (5, 12)
+                else [0.0, 0.0, 0.0, 1.0]
+            )
+            values.extend(field_tail[: max(0, target_dim - len(values))])
+        extended.append(values[:target_dim])
+    return extended
+
+
+def build_scaffold_graph(
+    paths: TrainingPaths,
+    ligand_sdf: Path | None = None,
+    *,
+    field_stack_version: str = "v1",
+    fiber_lookup: FieldLookup | None = None,
+) -> ScaffoldGraph:
     scaffold_sdf = Path(ligand_sdf) if ligand_sdf is not None else paths.ligand_sdf
     mol = read_first_mol(scaffold_sdf)
     if scaffold_sdf.name.startswith("ALENI-"):
@@ -680,13 +828,36 @@ def build_scaffold_graph(paths: TrainingPaths, ligand_sdf: Path | None = None) -
     x_base: list[list[float]] = []
     x_phase: list[list[list[float]]] = []
     xyz_rows: list[list[float]] = []
-    zero_phase = [[0.0] * 8 for _ in PHASES]
+    target_phase_dim = 12 if field_stack_version == "v2" else 8
+    zero_phase = [[0.0] * target_phase_dim for _ in PHASES]
+    if target_phase_dim >= 12:
+        for row in zero_phase:
+            row[11] = 1.0
     for old_idx in retained_original_indices:
         atom = mol.GetAtomWithIdx(old_idx)
         xyz = list(conf.GetAtomPosition(old_idx))
         residue_idx = nearest_residue_idx(xyz, ca_coordinates)
-        x_base.append(atom_base_features(atom, atom_partial_charge(mol, old_idx), old_idx == exit_original_idx))
-        x_phase.append(phase_maps.get(residue_idx, zero_phase))
+        partial_charge = atom_partial_charge(mol, old_idx)
+        x_base.append(
+            atom_base_features(
+                atom,
+                partial_charge,
+                old_idx == exit_original_idx,
+                field_stack_version=field_stack_version,
+            )
+        )
+        field_fiber = (
+            fiber_lookup.lookup_atom_fiber(np.array(xyz, dtype=np.float32))
+            if field_stack_version == "v2" and fiber_lookup is not None
+            else None
+        )
+        x_phase.append(
+            extend_phase_matrix(
+                phase_maps.get(residue_idx, zero_phase),
+                target_dim=target_phase_dim,
+                field_fiber=field_fiber,
+            )
+        )
         xyz_rows.append([float(value) for value in xyz])
     edge_index, edge_attr, active_mask = build_edges(mol, retained_original_indices, old_to_new, exit_original_idx)
     data = Data(
@@ -710,8 +881,22 @@ def build_scaffold_graph(paths: TrainingPaths, ligand_sdf: Path | None = None) -
     )
 
 
-def build_scaffold_pool(paths: TrainingPaths, scaffold_sdfs: Sequence[Path]) -> tuple[ScaffoldGraph, ...]:
-    graphs = tuple(build_scaffold_graph(paths, path) for path in scaffold_sdfs)
+def build_scaffold_pool(
+    paths: TrainingPaths,
+    scaffold_sdfs: Sequence[Path],
+    *,
+    field_stack_version: str = "v1",
+    fiber_lookup: FieldLookup | None = None,
+) -> tuple[ScaffoldGraph, ...]:
+    graphs = tuple(
+        build_scaffold_graph(
+            paths,
+            path,
+            field_stack_version=field_stack_version,
+            fiber_lookup=fiber_lookup,
+        )
+        for path in scaffold_sdfs
+    )
     if not graphs:
         raise RuntimeError("empty scaffold pool")
     reference = graphs[0]
@@ -733,24 +918,35 @@ def build_scaffold_pool(paths: TrainingPaths, scaffold_sdfs: Sequence[Path]) -> 
     return graphs
 
 
-def load_action_space(paths: TrainingPaths, embedding_dim: int) -> ActionSpace:
+def load_action_space(paths: TrainingPaths, embedding_dim: int, *, base_feature_dim: int = 13) -> ActionSpace:
     anchors = normalize_anchor_table(pl.read_parquet(paths.anchors))
     survivor_source = pl.read_parquet(paths.survivors)
     if "coordinates_json" not in survivor_source.columns:
         survivor_source = survivor_source.with_columns(pl.lit("").alias("coordinates_json"))
+    aggregations = [
+        pl.col("score").first().alias("oracle_reward"),
+        pl.col("canonical_smiles").first().alias("survivor_smiles"),
+        pl.col("synthon_b_id").first().alias("synthon_b_id"),
+        pl.col("product_id").first().alias("product_id"),
+        pl.col("coordinates_json").first().alias("coordinates_json"),
+        pl.col("selected_dihedral_deg").first().alias("selected_dihedral_deg"),
+        pl.col("survival_tier").first().alias("survival_tier"),
+    ]
+    for column in ("rotamers_evaluated", "best_rotamer_rank", "n_surviving_rotamers"):
+        if column in survivor_source.columns:
+            aggregations.append(pl.col(column).first().alias(column))
+    for column in (
+        "consensus_complement_bonus",
+        "population_consensus_bonus",
+        "population_consensus_bonus_scaled",
+    ):
+        if column in survivor_source.columns:
+            aggregations.append(pl.col(column).first().alias(column))
     survivors = (
         survivor_source
         .sort("score", descending=True)
         .group_by("anchor_id")
-        .agg(
-            pl.col("score").first().alias("oracle_reward"),
-            pl.col("canonical_smiles").first().alias("survivor_smiles"),
-            pl.col("synthon_b_id").first().alias("synthon_b_id"),
-            pl.col("product_id").first().alias("product_id"),
-            pl.col("coordinates_json").first().alias("coordinates_json"),
-            pl.col("selected_dihedral_deg").first().alias("selected_dihedral_deg"),
-            pl.col("survival_tier").first().alias("survival_tier"),
-        )
+        .agg(aggregations)
     )
     table = anchors.join(survivors, on="anchor_id", how="left").with_columns(
         (
@@ -764,10 +960,42 @@ def load_action_space(paths: TrainingPaths, embedding_dim: int) -> ActionSpace:
         .sort("oracle_reward", descending=True)
         .unique(subset=["survivor_smiles"], keep="first")
     )
+    table = table.with_columns(
+        pl.struct(table.columns).map_elements(pose_penalty_from_row, return_dtype=pl.Float64).alias("u_pose"),
+        pl.struct(table.columns).map_elements(pose_penalty_source_from_row, return_dtype=pl.String).alias("u_pose_source"),
+        pl.col("partial_charge_mean_abs").fill_null(0.0).alias("charge_feature_mean"),
+    )
+    pose_source_counts = {
+        str(row["u_pose_source"]): int(row["count"])
+        for row in table.get_column("u_pose_source").value_counts().to_dicts()
+    }
+    print(f"u_pose_provenance counts={json.dumps(pose_source_counts, sort_keys=True)}", flush=True)
     valid_count = int(table.get_column("action_valid").sum())
     if valid_count < 100:
         raise RuntimeError(f"too few valid oracle-scored actions: {valid_count}")
     embeddings = anchor_embeddings_from_table(table, embedding_dim)
+    action_base_features = action_base_features_from_table(table, base_feature_dim=base_feature_dim)
+    charge_nonzero = int((action_base_features[:, -1].abs() > 0.0).sum().item()) if action_base_features.numel() else 0
+    action_atom_features, action_atom_mask = action_atom_features_from_table(table, base_feature_dim=base_feature_dim)
+    atom_charge_nonzero = (
+        int(((action_atom_features[:, :, -1].abs() > 0.0) & action_atom_mask).sum().item())
+        if action_atom_features.numel()
+        else 0
+    )
+    atom_count = int(action_atom_mask.sum().item()) if action_atom_mask.numel() else 0
+    print(
+        "action_product_base_features_initialized "
+        f"shape={list(action_base_features.shape)} charge_nonzero={charge_nonzero}/{action_base_features.shape[0]} "
+        "charge_source=am1bcc_partial_charges_json",
+        flush=True,
+    )
+    print(
+        "action_product_atom_features_initialized "
+        f"shape={list(action_atom_features.shape)} atom_mask_count={atom_count} "
+        f"charge_nonzero={atom_charge_nonzero}/{atom_count} "
+        "charge_source=am1bcc_partial_charges_json",
+        flush=True,
+    )
     valid_mask = torch.tensor(table.get_column("action_valid").to_list(), dtype=torch.bool)
     reward_values = torch.tensor(
         [float(value or 0.0) for value in table.get_column("oracle_reward").to_list()],
@@ -776,7 +1004,41 @@ def load_action_space(paths: TrainingPaths, embedding_dim: int) -> ActionSpace:
     reward_logits = reward_values.clone()
     reward_logits = reward_logits.masked_fill(~valid_mask, torch.finfo(torch.float32).min)
     reward_targets = torch.softmax(reward_logits / 0.08, dim=0)
-    return ActionSpace(table=table, anchor_embeddings=embeddings, valid_mask=valid_mask, reward_targets=reward_targets)
+    return ActionSpace(
+        table=table,
+        anchor_embeddings=embeddings,
+        valid_mask=valid_mask,
+        reward_targets=reward_targets,
+        action_base_features=action_base_features,
+        action_atom_features=action_atom_features,
+        action_atom_mask=action_atom_mask,
+    )
+
+
+def pose_penalty_from_row(row: Mapping[str, object]) -> float:
+    """Compute u_pose from rotamer survival count, or a rank proxy when absent."""
+
+    n_surviving = numeric_value(row.get("n_surviving_rotamers"), 0.0)
+    if n_surviving > 0.0:
+        surviving = max(1.0, min(6.0, n_surviving))
+        return float(-math.log(surviving / 6.0))
+    best_rank = numeric_value(row.get("best_rotamer_rank"), 0.0)
+    if best_rank > 0.0:
+        # The full survivor schema lacks n_surviving_rotamers. A late-winning
+        # best rotamer means pose sensitivity, so convert rank 1..6 to a
+        # conservative survivor-count proxy 6..1 with explicit source tagging.
+        surviving_proxy = max(1.0, min(6.0, 7.0 - best_rank))
+        return float(-math.log(surviving_proxy / 6.0))
+    evaluated = numeric_value(row.get("rotamers_evaluated"), 6.0)
+    return float(-math.log(max(1.0, min(6.0, evaluated)) / 6.0))
+
+
+def pose_penalty_source_from_row(row: Mapping[str, object]) -> str:
+    if numeric_value(row.get("n_surviving_rotamers"), 0.0) > 0.0:
+        return "n_surviving_rotamers"
+    if numeric_value(row.get("best_rotamer_rank"), 0.0) > 0.0:
+        return "best_rotamer_rank_proxy"
+    return "rotamers_evaluated_proxy"
 
 
 def build_signal_fiber_lookup(signal_grid: Path | None, grid_mapping: Path) -> SignalGridFiberLookup | None:
@@ -802,16 +1064,65 @@ def build_signal_fiber_lookup(signal_grid: Path | None, grid_mapping: Path) -> S
     return lookup
 
 
+def build_field_lookup(
+    *,
+    field_stack_version: str,
+    signal_grid: Path | None,
+    grid_mapping: Path,
+    shear_stress: Path | None,
+    hysteresis_tensor: Path | None,
+    translation_pathway: Path | None,
+    cross_species: Path | None,
+) -> FieldLookup | None:
+    """Create either the legacy signal lookup or the full thermodynamic stack."""
+
+    version = field_stack_version.strip().lower()
+    if version == "v1":
+        return build_signal_fiber_lookup(signal_grid, grid_mapping)
+    resolved_grid = resolve_track_a_path(signal_grid, DEFAULT_POPULATION_CONSENSUS_GRID)
+    resolved_mapping = resolve_track_a_path(grid_mapping, DEFAULT_GRID_MAPPING)
+    resolved_shear = resolve_track_a_path(shear_stress, DEFAULT_SHEAR_STRESS)
+    resolved_hysteresis = resolve_track_a_path(hysteresis_tensor, DEFAULT_HYSTERESIS_TENSOR)
+    resolved_pathway = resolve_track_a_path(translation_pathway, DEFAULT_TRANSLATION_PATHWAY)
+    resolved_cross_species = resolve_track_a_path(cross_species, DEFAULT_CROSS_SPECIES) if cross_species is not None else DEFAULT_CROSS_SPECIES
+    required = {
+        "signal_grid": resolved_grid,
+        "grid_mapping": resolved_mapping,
+        "shear_stress": resolved_shear,
+        "hysteresis_tensor": resolved_hysteresis,
+        "translation_pathway": resolved_pathway,
+    }
+    missing = {name: path for name, path in required.items() if not path.is_file()}
+    if missing:
+        raise RuntimeError(f"field-stack v2 missing inputs: {missing}")
+    lookup = ThermodynamicFieldStack(
+        resolved_grid,
+        resolved_mapping,
+        shear_stress_path=resolved_shear,
+        hysteresis_tensor_path=resolved_hysteresis,
+        translation_pathway_path=resolved_pathway,
+        cross_species_path=resolved_cross_species if resolved_cross_species.is_file() else None,
+    )
+    print(
+        "thermodynamic_field_stack_initialized "
+        f"version=v2 signal_grid={resolved_grid} shear={resolved_shear} "
+        f"hysteresis={resolved_hysteresis} pathway={resolved_pathway} "
+        f"voxels={len(lookup.field)} pathway_voxels={len(lookup.pathway_voxels)}",
+        flush=True,
+    )
+    return lookup
+
+
 def attach_exit_ray_adjustments(
     action_space: ActionSpace,
     *,
     reference_graph: ScaffoldGraph,
-    fiber_lookup: SignalGridFiberLookup | None,
+    fiber_lookup: FieldLookup | None,
     enabled: bool,
 ) -> ActionSpace:
     """Attach action-specific steric logit adjustments from product coordinates."""
 
-    if not enabled or fiber_lookup is None or "coordinates_json" not in action_space.table.columns:
+    if fiber_lookup is None or "coordinates_json" not in action_space.table.columns:
         return action_space
     ray_caster = ExitAtomRayCaster(fiber_lookup)
     n_scaffold = reference_graph.retained_atom_count
@@ -820,19 +1131,42 @@ def attach_exit_ray_adjustments(
         (action_space.table.height, 5, reference_graph.phase_feature_dim),
         dtype=torch.float32,
     )
+    sigma_shear_values: list[float] = []
+    hysteresis_values: list[float] = []
+    reversibility_values: list[float] = []
+    pathway_counts: list[float] = []
+    pathway_neighborhood_counts: list[float] = []
+    pathway_neighborhood_scores: list[float] = []
+    pathway_scores: list[float] = []
+    species_conservation_scores: list[float] = []
+    field_consensus_values: list[float] = []
     scored = 0
     conditioned = 0
     for row in action_space.table.iter_rows(named=True):
         coords = _coordinates_from_row(row)
         if coords is None or coords.shape[0] <= n_scaffold:
             adjustments.append(0.0)
+            stats = _zero_action_field_stats()
+            sigma_shear_values.append(stats["sigma_shear_mean"])
+            hysteresis_values.append(stats["hysteresis_mean"])
+            reversibility_values.append(stats["reversibility_mean"])
+            pathway_counts.append(stats["pathway_voxels_occupied"])
+            pathway_neighborhood_counts.append(stats["pathway_neighborhood_contacts"])
+            pathway_neighborhood_scores.append(stats["pathway_neighborhood_score_mean"])
+            pathway_scores.append(stats["pathway_score_mean"])
+            species_conservation_scores.append(stats["species_conservation_score_mean"])
+            field_consensus_values.append(stats["field_consensus_complement_bonus"])
             continue
         scaffold_xyz = coords[:n_scaffold]
         synthon_xyz = coords[n_scaffold:]
         centroid = scaffold_xyz.mean(axis=0)
         distances = np.linalg.norm(synthon_xyz - centroid, axis=1)
         distal = synthon_xyz[int(np.argmax(distances))]
-        mask_value = float(ray_caster.compute_exit_masks(np.array([distal], dtype=np.float32), centroid)[0].item())
+        mask_value = (
+            float(ray_caster.compute_exit_masks(np.array([distal], dtype=np.float32), centroid)[0].item())
+            if enabled
+            else 0.0
+        )
         adjustments.append(mask_value)
         product_fiber = fiber_lookup.lookup_product_fiber(
             cast(Tensor, reference_graph.data.x_phase),
@@ -840,6 +1174,16 @@ def attach_exit_ray_adjustments(
             n_scaffold=n_scaffold,
         )
         action_phase_features[len(adjustments) - 1] = product_fiber[n_scaffold:].mean(dim=0)
+        stats = fiber_lookup.field_stats_for_coordinates(coords, n_scaffold=n_scaffold)
+        sigma_shear_values.append(stats["sigma_shear_mean"])
+        hysteresis_values.append(stats["hysteresis_mean"])
+        reversibility_values.append(stats["reversibility_mean"])
+        pathway_counts.append(stats["pathway_voxels_occupied"])
+        pathway_neighborhood_counts.append(stats["pathway_neighborhood_contacts"])
+        pathway_neighborhood_scores.append(stats["pathway_neighborhood_score_mean"])
+        pathway_scores.append(stats["pathway_score_mean"])
+        species_conservation_scores.append(stats["species_conservation_score_mean"])
+        field_consensus_values.append(stats["consensus_complement_bonus"])
         scored += 1
         conditioned += 1
     tensor = torch.tensor(adjustments, dtype=torch.float32)
@@ -857,14 +1201,40 @@ def attach_exit_ray_adjustments(
         f"shape={list(action_phase_features.shape)}",
         flush=True,
     )
+    enriched_table = action_space.table.with_columns(
+        pl.Series("sigma_shear_mean", sigma_shear_values),
+        pl.Series("hysteresis_mean", hysteresis_values),
+        pl.Series("reversibility_mean", reversibility_values),
+        pl.Series("pathway_voxels_occupied", pathway_counts),
+        pl.Series("pathway_neighborhood_contacts", pathway_neighborhood_counts),
+        pl.Series("pathway_neighborhood_score_mean", pathway_neighborhood_scores),
+        pl.Series("pathway_score_mean", pathway_scores),
+        pl.Series("species_conservation_score_mean", species_conservation_scores),
+        pl.Series("field_consensus_complement_bonus", field_consensus_values),
+    )
     return ActionSpace(
-        table=action_space.table,
+        table=enriched_table,
         anchor_embeddings=action_space.anchor_embeddings,
         valid_mask=action_space.valid_mask,
         reward_targets=action_space.reward_targets,
         exit_ray_adjustments=tensor,
         action_phase_features=action_phase_features,
+        action_base_features=action_space.action_base_features,
     )
+
+
+def _zero_action_field_stats() -> dict[str, float]:
+    return {
+        "sigma_shear_mean": 0.0,
+        "hysteresis_mean": 0.0,
+        "reversibility_mean": 1.0,
+        "pathway_voxels_occupied": 0.0,
+        "pathway_neighborhood_contacts": 0.0,
+        "pathway_neighborhood_score_mean": 0.0,
+        "pathway_score_mean": 0.0,
+        "species_conservation_score_mean": 1.0,
+        "field_consensus_complement_bonus": 0.0,
+    }
 
 
 def _coordinates_from_row(row: Mapping[str, object]) -> np.ndarray | None:
@@ -885,15 +1255,22 @@ def product_fiber_batch_telemetry(
     action_space: ActionSpace,
     actions: Sequence[int],
     selected_graphs: Sequence[ScaffoldGraph],
-    fiber_lookup: SignalGridFiberLookup | None,
-) -> dict[str, int | str]:
+    fiber_lookup: FieldLookup | None,
+) -> dict[str, int | str | float]:
     """Compute direct product fiber tensors for selected terminal products."""
 
     if fiber_lookup is None:
-        return {"product_fiber_method": "unavailable", "product_fiber_synthon_atoms": 0}
+        return {
+            "product_fiber_method": "unavailable",
+            "product_fiber_synthon_atoms": 0,
+            "shear_mean": 0.0,
+            "hysteresis_mean": 0.0,
+            "pathway_voxels_occupied": 0.0,
+        }
     rows = action_space.table.to_dicts()
     synthon_atoms = 0
     estimated = 0
+    stats_rows: list[dict[str, float]] = []
     for action_idx, graph in zip(actions, selected_graphs, strict=True):
         coords = _coordinates_from_row(rows[int(action_idx)])
         if coords is None:
@@ -904,12 +1281,17 @@ def product_fiber_batch_telemetry(
             coords,
             n_scaffold=n_scaffold,
         )
+        stats_rows.append(fiber_lookup.field_stats_for_coordinates(coords, n_scaffold=n_scaffold))
         synthon_atoms += max(0, int(coords.shape[0]) - n_scaffold)
         estimated += 1
     return {
-        "product_fiber_method": "direct_signal_grid_lookup",
+        "product_fiber_method": "full_thermodynamic_field_stack" if isinstance(fiber_lookup, ThermodynamicFieldStack) else "direct_signal_grid_lookup",
         "product_fiber_products": estimated,
         "product_fiber_synthon_atoms": synthon_atoms,
+        "shear_mean": _mean([row["sigma_shear_mean"] for row in stats_rows]),
+        "hysteresis_mean": _mean([row["hysteresis_mean"] for row in stats_rows]),
+        "pathway_voxels_occupied": _mean([row["pathway_voxels_occupied"] for row in stats_rows]),
+        "pathway_neighborhood_contacts": _mean([row["pathway_neighborhood_contacts"] for row in stats_rows]),
     }
 
 
@@ -933,6 +1315,16 @@ def normalize_anchor_table(anchors: pl.DataFrame) -> pl.DataFrame:
         table = table.with_columns(pl.lit(0.0).alias("formal_charge"))
     if "molecular_weight" not in table.columns:
         table = table.with_columns(pl.lit(0.0).alias("molecular_weight"))
+    if "partial_charges_json" in table.columns and "partial_charge_mean_abs" not in table.columns:
+        charge_stats = [_partial_charge_stats(raw) for raw in table.get_column("partial_charges_json").to_list()]
+        table = table.with_columns(
+            pl.Series("partial_charge_mean_abs", [stats["mean_abs"] for stats in charge_stats]),
+            pl.Series("partial_charge_sum", [stats["sum"] for stats in charge_stats]),
+            pl.Series("partial_charge_span", [stats["span"] for stats in charge_stats]),
+        )
+    for column in ("partial_charge_mean_abs", "partial_charge_sum", "partial_charge_span"):
+        if column not in table.columns:
+            table = table.with_columns(pl.lit(0.0).alias(column))
     required = {"anchor_id", "canonical_smiles", "generation_status"}
     missing = required.difference(table.columns)
     if missing:
@@ -945,6 +1337,9 @@ def anchor_embeddings_from_table(table: pl.DataFrame, embedding_dim: int) -> Ten
         "n_heavy_atoms",
         "molecular_weight",
         "formal_charge",
+        "partial_charge_mean_abs",
+        "partial_charge_sum",
+        "partial_charge_span",
         "steric_volume_A3",
         "bbox_x_A",
         "bbox_y_A",
@@ -972,6 +1367,122 @@ def anchor_embeddings_from_table(table: pl.DataFrame, embedding_dim: int) -> Ten
     repeats = math.ceil(embedding_dim / int(normalized.shape[1]))
     expanded = normalized.repeat(1, repeats)[:, :embedding_dim]
     return expanded
+
+
+def action_base_features_from_table(table: pl.DataFrame, base_feature_dim: int = 13) -> Tensor:
+    """Build action-conditioned product atom features aligned to ``x_base``.
+
+    Synthon atoms do not exist in the current scaffold graph until an action is
+    selected. This per-action tensor carries the candidate product's synthon
+    atom summary, including AM1-BCC/NAGL charge statistics in the same final
+    slot used by v2 node features, into anchor attention before sampling.
+    """
+
+    rows: list[list[float]] = []
+    for row in table.to_dicts():
+        features = [0.0] * base_feature_dim
+        features[0] = numeric_value(row.get("n_heavy_atoms"), 0.0)
+        if base_feature_dim > 1:
+            features[1] = numeric_value(row.get("formal_charge"), 0.0)
+        if base_feature_dim > 2:
+            features[2] = numeric_value(row.get("partial_charge_sum"), 0.0)
+        if base_feature_dim > 3:
+            features[3] = numeric_value(row.get("partial_charge_span"), 0.0)
+        features[-1] = numeric_value(row.get("partial_charge_mean_abs", row.get("charge_feature_mean")), 0.0)
+        rows.append(features)
+    tensor = torch.tensor(rows, dtype=torch.float32)
+    if tensor.numel() == 0:
+        return tensor
+    if base_feature_dim > 1:
+        scaled = tensor[:, :-1]
+        mean = scaled.mean(dim=0, keepdim=True)
+        std = scaled.std(dim=0, keepdim=True).clamp_min(1.0e-6)
+        tensor[:, :-1] = (scaled - mean) / std
+    return tensor
+
+
+def action_atom_features_from_table(table: pl.DataFrame, base_feature_dim: int = 13) -> tuple[Tensor, Tensor]:
+    """Build per-action atom features from synthon conformer atoms and AM1-BCC charges."""
+
+    parsed_rows: list[list[dict[str, object]]] = []
+    max_atoms = 1
+    for row in table.to_dicts():
+        parsed_atoms: list[dict[str, object]] = []
+        parsed_charges: list[object] = []
+        raw_charges = row.get("partial_charges_json")
+        if isinstance(raw_charges, str) and raw_charges.strip():
+            try:
+                raw_parsed_charges = json.loads(raw_charges)
+            except json.JSONDecodeError:
+                raw_parsed_charges = []
+            if isinstance(raw_parsed_charges, list):
+                parsed_charges = raw_parsed_charges
+        raw_atoms = row.get("conformer_atoms_json")
+        if isinstance(raw_atoms, str) and raw_atoms.strip():
+            try:
+                raw_parsed = json.loads(raw_atoms)
+            except json.JSONDecodeError:
+                raw_parsed = []
+            if isinstance(raw_parsed, list):
+                parsed_atoms = [item for item in raw_parsed if isinstance(item, dict)]
+        if not parsed_atoms:
+            parsed_atoms = [
+                {"atomic_num": 0, "partial_charge": value}
+                for value in parsed_charges
+            ]
+        else:
+            for atom_index, atom in enumerate(parsed_atoms):
+                if "partial_charge" not in atom and atom_index < len(parsed_charges):
+                    atom["partial_charge"] = parsed_charges[atom_index]
+        parsed_rows.append(parsed_atoms)
+        max_atoms = max(max_atoms, len(parsed_atoms))
+
+    features = torch.zeros((len(parsed_rows), max_atoms, base_feature_dim), dtype=torch.float32)
+    mask = torch.zeros((len(parsed_rows), max_atoms), dtype=torch.bool)
+    periodic_table = Chem.GetPeriodicTable()
+    for row_idx, atoms in enumerate(parsed_rows):
+        for atom_idx, atom in enumerate(atoms):
+            if atom_idx >= max_atoms:
+                break
+            atomic_num = int(numeric_value(atom.get("atomic_num"), 0.0))
+            partial_charge = numeric_value(atom.get("partial_charge"), 0.0)
+            if atomic_num > 0:
+                features[row_idx, atom_idx, 0] = atomic_num / 100.0
+                features[row_idx, atom_idx, 8] = float(periodic_table.GetAtomicWeight(atomic_num)) / 250.0
+            features[row_idx, atom_idx, 9] = partial_charge
+            if base_feature_dim > 10:
+                features[row_idx, atom_idx, 10] = 0.0
+            if base_feature_dim > 11:
+                features[row_idx, atom_idx, 11] = 1.0
+            features[row_idx, atom_idx, -1] = partial_charge
+            mask[row_idx, atom_idx] = True
+    return features, mask
+
+
+def _partial_charge_stats(raw: object) -> dict[str, float]:
+    if not isinstance(raw, str) or not raw:
+        return {"mean_abs": 0.0, "sum": 0.0, "span": 0.0}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {"mean_abs": 0.0, "sum": 0.0, "span": 0.0}
+    if not isinstance(parsed, list):
+        return {"mean_abs": 0.0, "sum": 0.0, "span": 0.0}
+    values: list[float] = []
+    for value in parsed:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            values.append(number)
+    if not values:
+        return {"mean_abs": 0.0, "sum": 0.0, "span": 0.0}
+    return {
+        "mean_abs": sum(abs(value) for value in values) / len(values),
+        "sum": sum(values),
+        "span": max(values) - min(values),
+    }
 
 
 def clone_graph_batch(
@@ -1030,6 +1541,12 @@ def forward_policy(
     }
     if isinstance(model, FieldConditionedDualChannelGFlowNetPolicy) and action_space.action_phase_features is not None:
         policy_kwargs["action_phase_features"] = action_space.action_phase_features
+    if isinstance(model, FieldConditionedDualChannelGFlowNetPolicy) and action_space.action_base_features is not None:
+        policy_kwargs["action_base_features"] = action_space.action_base_features
+    if isinstance(model, FieldConditionedDualChannelGFlowNetPolicy) and action_space.action_atom_features is not None:
+        policy_kwargs["action_atom_features"] = action_space.action_atom_features
+    if isinstance(model, FieldConditionedDualChannelGFlowNetPolicy) and action_space.action_atom_mask is not None:
+        policy_kwargs["action_atom_mask"] = action_space.action_atom_mask
     output = model(**policy_kwargs)
     if action_space.exit_ray_adjustments is not None:
         adjustments = action_space.exit_ray_adjustments.to(dtype=output.forward_logits.dtype).unsqueeze(0).expand_as(
@@ -1077,6 +1594,49 @@ def reaction_classes_for_actions(action_space: ActionSpace, actions: Sequence[in
         else:
             reaction_classes.append("unknown_reaction_class")
     return reaction_classes
+
+
+def enrich_oracle_rows_with_action_fields(
+    action_space: ActionSpace,
+    actions: Sequence[int],
+    oracle_rows: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    """Merge selected action-level field-stack metrics into oracle result rows."""
+
+    table_rows = action_space.table.to_dicts()
+    enriched: list[dict[str, object]] = []
+    passthrough_columns = (
+        "sigma_shear_mean",
+        "hysteresis_mean",
+        "reversibility_mean",
+        "pathway_voxels_occupied",
+        "pathway_neighborhood_contacts",
+        "pathway_neighborhood_score_mean",
+        "pathway_score_mean",
+        "species_conservation_score_mean",
+        "field_consensus_complement_bonus",
+        "charge_feature_mean",
+        "u_pose",
+        "u_pose_source",
+    )
+    for action_idx, row in zip(actions, oracle_rows, strict=True):
+        merged = dict(row)
+        action_row = table_rows[int(action_idx)]
+        for column in passthrough_columns:
+            if column in action_row:
+                merged[column] = action_row[column]
+        if "consensus_complement_bonus" not in merged or numeric_value(merged.get("consensus_complement_bonus"), 0.0) == 0.0:
+            merged["consensus_complement_bonus"] = (
+                action_row.get("consensus_complement_bonus")
+                or action_row.get("population_consensus_bonus")
+                or action_row.get("population_consensus_bonus_scaled")
+                or action_row.get("field_consensus_complement_bonus")
+                or merged.get("consensus_complement_bonus", 0.0)
+            )
+        if "sigma_shear" not in merged:
+            merged["sigma_shear"] = action_row.get("sigma_shear_mean", 0.0)
+        enriched.append(merged)
+    return enriched
 
 
 def select_scaffold_graphs(
@@ -1252,10 +1812,22 @@ async def train() -> None:
     torch.set_num_interop_threads(max(1, min(4, int(args.torch_threads))))
     set_seed(int(args.seed))
     anchors_path = resolve_track_a_path(cast(Path | None, args.synthon_parquet), Path(args.anchors))
+    survivors_path = resolve_survivor_corpus_for_reward(
+        requested_survivors=Path(args.survivors),
+        reward_version=str(args.reward_version),
+        signal_grid=cast(Path | None, args.signal_grid),
+    )
+    if survivors_path != Path(args.survivors):
+        print(
+            "survivor_corpus_auto_selected "
+            f"requested={Path(args.survivors).as_posix()} selected={survivors_path.as_posix()} "
+            f"reward_version={args.reward_version}",
+            flush=True,
+        )
     paths = TrainingPaths(
         ligand_sdf=Path(args.ligand_sdf),
         anchors=anchors_path,
-        survivors=Path(args.survivors),
+        survivors=survivors_path,
         residue_phase=Path(args.residue_phase),
         interferometric=Path(args.interferometric),
         topology=Path(args.topology),
@@ -1263,8 +1835,22 @@ async def train() -> None:
         output_dir=Path(args.output_dir),
     )
     paths.output_dir.mkdir(parents=True, exist_ok=True)
+    fiber_lookup = build_field_lookup(
+        field_stack_version=str(args.field_stack_version),
+        signal_grid=cast(Path | None, args.signal_grid),
+        grid_mapping=Path(args.grid_coordinate_mapping),
+        shear_stress=cast(Path | None, args.shear_stress),
+        hysteresis_tensor=cast(Path | None, args.hysteresis_tensor),
+        translation_pathway=cast(Path | None, args.translation_pathway),
+        cross_species=cast(Path | None, args.cross_species),
+    )
     scaffold_sdfs = scaffold_paths_from_args(cast(Sequence[Path] | None, args.scaffold_pool), paths.ligand_sdf)
-    scaffold_pool = build_scaffold_pool(paths, scaffold_sdfs)
+    scaffold_pool = build_scaffold_pool(
+        paths,
+        scaffold_sdfs,
+        field_stack_version=str(args.field_stack_version),
+        fiber_lookup=fiber_lookup,
+    )
     reference_graph = scaffold_pool[0]
     entropy_router_enabled = bool(args.entropy_router) and not bool(args.disable_entropy_router) and len(scaffold_pool) > 1
     entropy_router = (
@@ -1282,8 +1868,11 @@ async def train() -> None:
             f"scaffolds={','.join(graph.scaffold_id for graph in scaffold_pool)}",
             flush=True,
         )
-    action_space = load_action_space(paths, int(args.embedding_dim))
-    fiber_lookup = build_signal_fiber_lookup(cast(Path | None, args.signal_grid), Path(args.grid_coordinate_mapping))
+    action_space = load_action_space(
+        paths,
+        int(args.embedding_dim),
+        base_feature_dim=reference_graph.base_feature_dim,
+    )
     action_space = attach_exit_ray_adjustments(
         action_space,
         reference_graph=reference_graph,
@@ -1385,6 +1974,7 @@ async def train() -> None:
         "diversity_beta": float(args.diversity_beta),
         "max_trajectory_steps": int(args.max_trajectory_steps),
         "reward_version": str(args.reward_version),
+        "field_stack_version": str(args.field_stack_version),
         "lock_directional_bias_alpha": float(args.lock_directional_bias_alpha),
         "lock_reaching_synthon_boost": float(args.lock_reaching_synthon_boost),
         "lock_geo_intrinsic_bonus": float(args.lock_geo_intrinsic_bonus),
@@ -1392,6 +1982,9 @@ async def train() -> None:
         "lock_mask": lock_mask.as_posix(),
         "signal_grid": str(args.signal_grid) if args.signal_grid is not None else "",
         "shear_stress": str(args.shear_stress) if args.shear_stress is not None else "",
+        "hysteresis_tensor": str(args.hysteresis_tensor) if args.hysteresis_tensor is not None else "",
+        "translation_pathway": str(args.translation_pathway) if args.translation_pathway is not None else "",
+        "cross_species": str(args.cross_species) if args.cross_species is not None else "",
         "rust_oracle_reward_authority": True,
         "uses_pyg_batch": True,
         "dense_adjacency": False,
@@ -1525,7 +2118,11 @@ async def train() -> None:
         reaction_classes = reaction_classes_for_actions(action_space, actions)
         oracle_result = await oracle.score_batch(proposals)
         rewards = oracle_result.rewards
-        oracle_row_dicts = cast(list[dict[str, object]], oracle_result.rows.to_dicts())
+        oracle_row_dicts = enrich_oracle_rows_with_action_fields(
+            action_space,
+            actions,
+            cast(list[dict[str, object]], oracle_result.rows.to_dicts()),
+        )
         tripartite_scores = [compute_tripartite_bias(row) for row in oracle_row_dicts]
         lock_geo_positive = sum(1 for score in tripartite_scores if score.lock_geometry_score > 0.0)
         lock_proj_gt_05 = sum(1 for score in tripartite_scores if score.bias_projection_score > 0.5)
@@ -1637,6 +2234,13 @@ async def train() -> None:
                 "consensus_bonus_std": reward_component_metrics["consensus_bonus_std"],
                 "pi_complement_std": reward_component_metrics["pi_complement_std"],
                 "pi_clash_pocket_std": reward_component_metrics["pi_clash_pocket_std"],
+                "shear_mean": reward_component_metrics["shear_mean"],
+                "hysteresis_mean": reward_component_metrics["hysteresis_mean"],
+                "pathway_voxels_occupied": reward_component_metrics["pathway_voxels_occupied"],
+                "pathway_neighborhood_contacts": reward_component_metrics["pathway_neighborhood_contacts"],
+                "pathway_score_mean": reward_component_metrics["pathway_score_mean"],
+                "charge_feature_mean": reward_component_metrics["charge_feature_mean"],
+                "u_pose_mean": reward_component_metrics["u_pose_mean"],
                 "top_reward_seen": top_reward_seen,
                 "unique_smiles_generated": len(generated_smiles),
                 "diversity_bonus_mean": float(diversity_bonus.mean().item()),
@@ -1660,6 +2264,13 @@ async def train() -> None:
             "effective_reward_mean": f"{effective_reward_mean:.6f}",
             "effective_reward_std": f"{effective_reward_std:.6f}",
             "consensus_bonus_mean": f"{reward_component_metrics['consensus_bonus_mean']:.6f}",
+            "shear_mean": f"{reward_component_metrics['shear_mean']:.6f}",
+            "hysteresis_mean": f"{reward_component_metrics['hysteresis_mean']:.6f}",
+            "pathway_voxels_occupied": f"{reward_component_metrics['pathway_voxels_occupied']:.6f}",
+            "pathway_neighborhood_contacts": f"{reward_component_metrics['pathway_neighborhood_contacts']:.6f}",
+            "pathway_score_mean": f"{reward_component_metrics['pathway_score_mean']:.6f}",
+            "charge_feature_mean": f"{reward_component_metrics['charge_feature_mean']:.6f}",
+            "u_pose_mean": f"{reward_component_metrics['u_pose_mean']:.6f}",
             "temperature": f"{current_temperature:.6f}",
             "lr_policy": f"{lr_policy:.8f}",
             "lr_logZ": f"{lr_log_z:.8f}",
@@ -1677,6 +2288,10 @@ async def train() -> None:
             "lock_proj_gt_05": f"{lock_proj_gt_05}/{int(args.batch_size)}",
             "product_fiber_method": product_fiber_metrics["product_fiber_method"],
             "product_fiber_synthon_atoms": product_fiber_metrics["product_fiber_synthon_atoms"],
+            "product_fiber_shear_mean": f"{float(product_fiber_metrics['shear_mean']):.6f}",
+            "product_fiber_hysteresis_mean": f"{float(product_fiber_metrics['hysteresis_mean']):.6f}",
+            "product_fiber_pathway_voxels": f"{float(product_fiber_metrics['pathway_voxels_occupied']):.6f}",
+            "product_fiber_pathway_neighborhood_contacts": f"{float(product_fiber_metrics['pathway_neighborhood_contacts']):.6f}",
         }
         print("tb_epoch_complete " + " ".join(f"{key}={value}" for key, value in telemetry.items()), flush=True)
         print(
@@ -1781,6 +2396,13 @@ async def train() -> None:
             "consensus_bonus_std",
             "pi_complement_std",
             "pi_clash_pocket_std",
+            "shear_mean",
+            "hysteresis_mean",
+            "pathway_voxels_occupied",
+            "pathway_neighborhood_contacts",
+            "pathway_score_mean",
+            "charge_feature_mean",
+            "u_pose_mean",
             "top_reward_seen",
             "unique_smiles_generated",
             "diversity_bonus_mean",

@@ -37,11 +37,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tripartite", action="store_true", default=False)
     parser.add_argument("--medchem-filters", action="store_true", default=False)
     parser.add_argument("--pharmacophore-check", action="store_true", default=False)
+    parser.add_argument(
+        "--shear-threshold",
+        type=float,
+        default=5.0,
+        help="Full-field audit threshold for sigma_shear_mean.",
+    )
+    parser.add_argument(
+        "--hysteresis-threshold",
+        type=float,
+        default=0.3,
+        help="Full-field audit threshold for hysteresis_mean.",
+    )
     parser.add_argument("--output", type=Path, default=OUT_JSON)
     parser.add_argument("--output-md", type=Path, default=OUT_MD)
     parser.add_argument("--output-matrix", type=Path, default=OUT_MATRIX)
     parser.add_argument("--output-medchem", type=Path, default=OUT_MEDCHEM)
     return parser.parse_args()
+
+
+def _numeric_column(frame: pl.DataFrame, column: str) -> pl.Series | None:
+    if column not in frame.columns:
+        return None
+    try:
+        return frame.get_column(column).cast(pl.Float64, strict=False)
+    except Exception:
+        return None
 
 
 def _sa_score(mol: Chem.Mol) -> float:
@@ -268,6 +289,75 @@ def main() -> int:
             "evidence": f"max anchor share in top-100 = {top_anchor_in_top100*100:.1f}%",
             "next_action": "—" if status == "PASS" else "tighten per-anchor cap in Phase 6",
         }
+
+    # --- Epoch 021 full thermodynamic field-stack audit ---
+    if not top100.is_empty():
+        full_field_required = {
+            "sigma_shear_mean": "mechanical shear stress",
+            "hysteresis_mean": "cycle hysteresis / Coulombic inefficiency",
+            "reversibility_mean": "cycle reversibility",
+            "pathway_voxels_occupied": "direct activation pathway voxel contact",
+            "charge_feature_mean": "AM1-BCC charge feature",
+            "u_pose": "rotamer pose penalty",
+        }
+        missing = [column for column in full_field_required if column not in top100.columns]
+        if missing:
+            findings["full_field_stack_columns"] = {
+                "status": "FAIL",
+                "evidence": f"missing columns: {', '.join(missing)}",
+                "next_action": "rerun sampling with --field-stack-version v2 and v4 reward component propagation",
+            }
+        else:
+            shear = _numeric_column(top100, "sigma_shear_mean")
+            hysteresis = _numeric_column(top100, "hysteresis_mean")
+            reversibility = _numeric_column(top100, "reversibility_mean")
+            pathway = _numeric_column(top100, "pathway_voxels_occupied")
+            pathway_neighborhood = _numeric_column(top100, "pathway_neighborhood_contacts")
+            charge = _numeric_column(top100, "charge_feature_mean")
+            u_pose = _numeric_column(top100, "u_pose")
+            assert shear is not None
+            assert hysteresis is not None
+            assert reversibility is not None
+            assert pathway is not None
+            assert charge is not None
+            assert u_pose is not None
+            if pathway_neighborhood is None:
+                pathway_neighborhood = pl.Series("_zero_pathway_neighborhood", [0.0] * top100.height)
+
+            low_shear_high_rev = top100.with_columns(
+                shear.alias("_audit_shear"),
+                hysteresis.alias("_audit_hysteresis"),
+                reversibility.alias("_audit_reversibility"),
+                pathway.alias("_audit_pathway"),
+                pathway_neighborhood.alias("_audit_pathway_neighborhood"),
+            ).filter(
+                (pl.col("_audit_shear") <= float(args.shear_threshold))
+                & (pl.col("_audit_hysteresis") <= float(args.hysteresis_threshold))
+                & (pl.col("_audit_reversibility") >= 0.7)
+                & ((pl.col("_audit_pathway") > 0) | (pl.col("_audit_pathway_neighborhood") > 0))
+            )
+            findings["full_field_stack_runtime"] = {
+                "status": "PASS" if float(shear.max() or 0.0) > 0.0 and float(charge.abs().max() or 0.0) > 0.0 else "FAIL",
+                "evidence": (
+                    f"shear_mean={float(shear.mean() or 0.0):.4f}, "
+                    f"hysteresis_mean={float(hysteresis.mean() or 0.0):.4f}, "
+                    f"reversibility_mean={float(reversibility.mean() or 0.0):.4f}, "
+                    f"direct_pathway_candidates={top100.filter(pathway > 0).height}/{top100.height}, "
+                    f"pathway_neighborhood_candidates={top100.filter(pathway_neighborhood > 0).height}/{top100.height}, "
+                    f"charge_abs_mean={float(charge.abs().mean() or 0.0):.4f}, "
+                    f"u_pose_mean={float(u_pose.mean() or 0.0):.4f}"
+                ),
+                "next_action": "—",
+            }
+            findings["full_field_low_shear_reversible_pathway"] = {
+                "status": "PASS" if low_shear_high_rev.height >= 10 else "WARN",
+                "evidence": (
+                    f"candidates with shear<={args.shear_threshold}, "
+                    f"hysteresis<={args.hysteresis_threshold}, reversibility>=0.7, "
+                    f"direct_or_neighborhood_pathway>0: {low_shear_high_rev.height}/{top100.height}"
+                ),
+                "next_action": "—" if low_shear_high_rev.height >= 10 else "review thresholds or keep ranking explicit in M3 dossier",
+            }
 
     medchem_df, medchem_metrics = medchem_audit(top100)
     if not medchem_df.is_empty():

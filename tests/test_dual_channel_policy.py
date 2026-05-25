@@ -122,3 +122,52 @@ def test_action_phase_features_condition_logits() -> None:
     assert out_neutral.action_field_embeddings is not None
     assert out_enriched.action_field_embeddings is not None
     assert not torch.allclose(out_neutral.forward_logits, out_enriched.forward_logits)
+
+
+def test_action_base_charge_features_condition_logits() -> None:
+    policy = _policy().eval()
+    x, x_phase, edge_index, edge_attr, active, batch = _graph()
+    common = {
+        "x_base": x,
+        "x_phase": x_phase,
+        "edge_index": edge_index,
+        "edge_attr": edge_attr,
+        "active_dendrite_mask": active,
+        "batch_index": batch,
+        "exit_node_indices": torch.tensor([0]),
+        "forward_action_mask": torch.ones(1, 6, dtype=torch.bool),
+        "backward_action_mask": torch.ones(1, 1, dtype=torch.bool),
+    }
+    neutral = torch.zeros(6, 4)
+    charged = neutral.clone()
+    charged[2, -1] = 2.5
+    out_neutral = policy(**common, action_base_features=neutral)
+    out_charged = policy(**common, action_base_features=charged)
+    assert out_charged.action_base_embeddings is not None
+    assert not torch.allclose(out_neutral.forward_logits, out_charged.forward_logits)
+
+
+def test_action_atom_charge_features_condition_logits() -> None:
+    policy = _policy().eval()
+    x, x_phase, edge_index, edge_attr, active, batch = _graph()
+    common = {
+        "x_base": x,
+        "x_phase": x_phase,
+        "edge_index": edge_index,
+        "edge_attr": edge_attr,
+        "active_dendrite_mask": active,
+        "batch_index": batch,
+        "exit_node_indices": torch.tensor([0]),
+        "forward_action_mask": torch.ones(1, 6, dtype=torch.bool),
+        "backward_action_mask": torch.ones(1, 1, dtype=torch.bool),
+    }
+    neutral_atoms = torch.zeros(6, 3, 4)
+    charged_atoms = neutral_atoms.clone()
+    charged_atoms[4, :, -1] = torch.tensor([0.3, -0.5, 0.8])
+    atom_mask = torch.ones(6, 3, dtype=torch.bool)
+
+    out_neutral = policy(**common, action_atom_features=neutral_atoms, action_atom_mask=atom_mask)
+    out_charged = policy(**common, action_atom_features=charged_atoms, action_atom_mask=atom_mask)
+
+    assert out_charged.action_atom_embeddings is not None
+    assert not torch.allclose(out_neutral.forward_logits, out_charged.forward_logits)

@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from prism_dstw.scoring.product_fiber_lookup import SignalGridFiberLookup
+from prism_dstw.scoring.product_fiber_lookup import SignalGridFiberLookup, ThermodynamicFieldStack
 
 
 class FieldConditioner:
@@ -17,7 +17,7 @@ class FieldConditioner:
         scaffold_phase: Tensor,
         scaffold_xyz: Tensor,
         *,
-        fiber_lookup: SignalGridFiberLookup | None = None,
+        fiber_lookup: SignalGridFiberLookup | ThermodynamicFieldStack | None = None,
     ) -> None:
         if scaffold_phase.ndim != 3:
             raise ValueError("scaffold_phase must have shape [N_scaffold, 5, D]")

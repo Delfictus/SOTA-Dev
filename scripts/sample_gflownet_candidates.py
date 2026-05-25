@@ -141,6 +141,18 @@ def sample_once(
                     row.get("fragment_attachment_atom_idx", -1),
                 ),
                 "selected_dihedral_deg": row.get("selected_dihedral_deg", float("nan")),
+                "sigma_shear_mean": row.get("sigma_shear_mean", 0.0),
+                "hysteresis_mean": row.get("hysteresis_mean", 0.0),
+                "reversibility_mean": row.get("reversibility_mean", 1.0),
+                "pathway_voxels_occupied": row.get("pathway_voxels_occupied", 0.0),
+                "pathway_neighborhood_contacts": row.get("pathway_neighborhood_contacts", 0.0),
+                "pathway_neighborhood_score_mean": row.get("pathway_neighborhood_score_mean", 0.0),
+                "pathway_score_mean": row.get("pathway_score_mean", 0.0),
+                "species_conservation_score_mean": row.get("species_conservation_score_mean", 1.0),
+                "field_consensus_complement_bonus": row.get("field_consensus_complement_bonus", 0.0),
+                "charge_feature_mean": row.get("charge_feature_mean", 0.0),
+                "u_pose": row.get("u_pose", 0.0),
+                "u_pose_source": row.get("u_pose_source", "unknown"),
             }
         )
     return {
@@ -163,6 +175,11 @@ def main() -> int:
     ap.add_argument("--survivors", type=Path, default=None)
     ap.add_argument("--signal-grid", type=Path, default=None)
     ap.add_argument("--grid-coordinate-mapping", type=Path, default=T.DEFAULT_GRID_MAPPING)
+    ap.add_argument("--field-stack-version", choices=("auto", "v1", "v2"), default="auto")
+    ap.add_argument("--shear-stress", type=Path, default=None)
+    ap.add_argument("--hysteresis-tensor", type=Path, default=None)
+    ap.add_argument("--translation-pathway", type=Path, default=None)
+    ap.add_argument("--cross-species", type=Path, default=None)
     ap.add_argument("--disable-exit-ray-masks", action="store_true", default=False)
     ap.add_argument("--lock-mask", type=Path, default=TRACK_A / "lock_region_mask.json")
     ap.add_argument("--temperatures", type=str, default="")
@@ -177,27 +194,7 @@ def main() -> int:
     if not model_path.is_file():
         hard_fail(f"model missing: {model_path}")
 
-    paths = build_paths(args)
-    paths.output_dir.mkdir(parents=True, exist_ok=True)
-    scaffold_sdfs = T.scaffold_paths_from_args(args.scaffold_pool, paths.ligand_sdf)
-    scaffold_pool = T.build_scaffold_pool(paths, scaffold_sdfs)
-    graph: "T.ScaffoldGraph | Sequence[T.ScaffoldGraph]" = scaffold_pool if len(scaffold_pool) > 1 else scaffold_pool[0]
-    reference_graph = scaffold_pool[0]
     cfg = json.loads((TRACK_A / "gflownet_training_config.json").read_text())
-    # Trainer argparse defaults (must match the values used at training time —
-    # see scripts/train_gflownet_policy.py:91-92). The trainer's saved
-    # `config` blob does not record these explicitly.
-    hidden_dim    = 96
-    embedding_dim = 64
-    action_space = T.load_action_space(paths, embedding_dim)
-    fiber_lookup = T.build_signal_fiber_lookup(args.signal_grid, args.grid_coordinate_mapping)
-    action_space = T.attach_exit_ray_adjustments(
-        action_space,
-        reference_graph=reference_graph,
-        fiber_lookup=fiber_lookup,
-        enabled=not bool(args.disable_exit_ray_masks),
-    )
-    action_rows = action_space.table.to_dicts()
     ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
     if isinstance(ckpt, dict):
         if isinstance(ckpt.get("config"), dict):
@@ -205,6 +202,67 @@ def main() -> int:
         state_dict = ckpt.get("model_state_dict") or ckpt.get("state_dict") or ckpt
     else:
         state_dict = ckpt
+    paths = build_paths(args)
+    selected_survivors = T.resolve_survivor_corpus_for_reward(
+        requested_survivors=paths.survivors,
+        reward_version=str(cfg.get("reward_version", "")),
+        signal_grid=args.signal_grid or Path(str(cfg.get("signal_grid", ""))),
+    )
+    if selected_survivors != paths.survivors:
+        print(
+            "sampler_survivor_corpus_auto_selected "
+            f"requested={paths.survivors.as_posix()} selected={selected_survivors.as_posix()}",
+            flush=True,
+        )
+        paths = T.TrainingPaths(
+            ligand_sdf=paths.ligand_sdf,
+            anchors=paths.anchors,
+            survivors=selected_survivors,
+            residue_phase=paths.residue_phase,
+            interferometric=paths.interferometric,
+            topology=paths.topology,
+            fragment_registry=paths.fragment_registry,
+            output_dir=paths.output_dir,
+        )
+    paths.output_dir.mkdir(parents=True, exist_ok=True)
+    field_stack_version = str(args.field_stack_version)
+    if field_stack_version == "auto":
+        field_stack_version = str(cfg.get("field_stack_version", "v1"))
+    fiber_lookup = T.build_field_lookup(
+        field_stack_version=field_stack_version,
+        signal_grid=args.signal_grid,
+        grid_mapping=args.grid_coordinate_mapping,
+        shear_stress=args.shear_stress,
+        hysteresis_tensor=args.hysteresis_tensor,
+        translation_pathway=args.translation_pathway,
+        cross_species=args.cross_species,
+    )
+    scaffold_sdfs = T.scaffold_paths_from_args(args.scaffold_pool, paths.ligand_sdf)
+    scaffold_pool = T.build_scaffold_pool(
+        paths,
+        scaffold_sdfs,
+        field_stack_version=field_stack_version,
+        fiber_lookup=fiber_lookup,
+    )
+    graph: "T.ScaffoldGraph | Sequence[T.ScaffoldGraph]" = scaffold_pool if len(scaffold_pool) > 1 else scaffold_pool[0]
+    reference_graph = scaffold_pool[0]
+    # Trainer argparse defaults (must match the values used at training time —
+    # see scripts/train_gflownet_policy.py:91-92). The trainer's saved
+    # `config` blob does not record these explicitly.
+    hidden_dim    = 96
+    embedding_dim = 64
+    action_space = T.load_action_space(
+        paths,
+        embedding_dim,
+        base_feature_dim=reference_graph.base_feature_dim,
+    )
+    action_space = T.attach_exit_ray_adjustments(
+        action_space,
+        reference_graph=reference_graph,
+        fiber_lookup=fiber_lookup,
+        enabled=not bool(args.disable_exit_ray_masks),
+    )
+    action_rows = action_space.table.to_dicts()
     architecture = str(cfg.get("architecture", "FiberBundleGFlowNetPolicy"))
     if architecture == "FieldConditionedDualChannelGFlowNetPolicy" or bool(cfg.get("dual_channel", False)):
         model = FieldConditionedDualChannelGFlowNetPolicy(
@@ -285,6 +343,18 @@ def main() -> int:
                     "canonical_smiles":     str(proposal["canonical_smiles"]),
                     "sampled_attachment_site": proposal["attachment_atom_idx"],
                     "sampled_dihedral_deg": float(proposal["selected_dihedral_deg"]),
+                    "sigma_shear_mean":      float(proposal["sigma_shear_mean"]),
+                    "hysteresis_mean":       float(proposal["hysteresis_mean"]),
+                    "reversibility_mean":    float(proposal["reversibility_mean"]),
+                    "pathway_voxels_occupied": float(proposal["pathway_voxels_occupied"]),
+                    "pathway_neighborhood_contacts": float(proposal["pathway_neighborhood_contacts"]),
+                    "pathway_neighborhood_score_mean": float(proposal["pathway_neighborhood_score_mean"]),
+                    "pathway_score_mean":    float(proposal["pathway_score_mean"]),
+                    "species_conservation_score_mean": float(proposal.get("species_conservation_score_mean", 1.0)),
+                    "field_consensus_complement_bonus": float(proposal["field_consensus_complement_bonus"]),
+                    "charge_feature_mean":   float(proposal["charge_feature_mean"]),
+                    "u_pose":                float(proposal["u_pose"]),
+                    "u_pose_source":         str(proposal["u_pose_source"]),
                     "policy_logprob":       float(payload["logprob"][i]),
                     "backward_logprob":     float(payload["blogprob"][i]),
                     "trajectory_entropy":   float(payload["entropy"][i]),
@@ -310,6 +380,18 @@ def main() -> int:
             pl.col("temperature").alias("sampling_temperature"),
             pl.col("regime").alias("sampling_regime"),
             pl.col("sampled_dihedral_deg"),
+            pl.col("sigma_shear_mean"),
+            pl.col("hysteresis_mean"),
+            pl.col("reversibility_mean"),
+            pl.col("pathway_voxels_occupied"),
+            pl.col("pathway_neighborhood_contacts"),
+            pl.col("pathway_neighborhood_score_mean"),
+            pl.col("pathway_score_mean"),
+            pl.col("species_conservation_score_mean"),
+            pl.col("field_consensus_complement_bonus"),
+            pl.col("charge_feature_mean"),
+            pl.col("u_pose"),
+            pl.col("u_pose_source"),
             pl.col("policy_logprob"),
             pl.col("trajectory_entropy"),
         )

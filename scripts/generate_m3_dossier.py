@@ -50,6 +50,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cross-scaffold", action="store_true", default=False)
     parser.add_argument("--pgx-resilience", action="store_true", default=False)
     parser.add_argument("--bald-ranking", action="store_true", default=False)
+    parser.add_argument("--full-field-stack", action="store_true", default=False)
+    parser.add_argument("--species-selectivity", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -362,6 +364,120 @@ def population_pgx_context(report_path: Path, manifest_path: Path, consensus_pat
     return context
 
 
+def full_field_context(top100_path: Path) -> dict[str, object]:
+    context: dict[str, object] = {
+        "full_field_status": "unavailable",
+        "full_field_candidate_count": 0,
+        "full_field_shear_mean": None,
+        "full_field_shear_positive_count": 0,
+        "full_field_hysteresis_mean": None,
+        "full_field_reversibility_mean": None,
+        "full_field_pathway_contact_count": 0,
+        "full_field_pathway_neighborhood_count": 0,
+        "full_field_charge_abs_mean": None,
+        "full_field_u_pose_mean": None,
+        "full_field_u_pose_sources": "{}",
+        "full_field_low_shear_reversible_pathway": 0,
+        "species_selectivity_status": "unavailable",
+        "species_selectivity_mean": None,
+        "species_human_selective_count": 0,
+        "species_broad_count": 0,
+        "species_rows": [],
+    }
+    if not top100_path.is_file():
+        return context
+    frame = pl.read_parquet(top100_path)
+    context["full_field_candidate_count"] = frame.height
+
+    def maybe_series(column: str) -> pl.Series | None:
+        if column not in frame.columns:
+            return None
+        return frame.get_column(column).cast(pl.Float64, strict=False)
+
+    shear = maybe_series("sigma_shear_mean")
+    hysteresis = maybe_series("hysteresis_mean")
+    reversibility = maybe_series("reversibility_mean")
+    pathway = maybe_series("pathway_voxels_occupied")
+    pathway_neighborhood = maybe_series("pathway_neighborhood_contacts")
+    charge = maybe_series("charge_feature_mean")
+    u_pose = maybe_series("u_pose")
+    if all(series is not None for series in [shear, hysteresis, reversibility, pathway, charge, u_pose]):
+        assert shear is not None
+        assert hysteresis is not None
+        assert reversibility is not None
+        assert pathway is not None
+        assert charge is not None
+        assert u_pose is not None
+        context.update(
+            {
+                "full_field_status": "complete",
+                "full_field_shear_mean": numeric(shear.mean()),
+                "full_field_shear_positive_count": int(frame.filter(shear > 0).height),
+                "full_field_hysteresis_mean": numeric(hysteresis.mean()),
+                "full_field_reversibility_mean": numeric(reversibility.mean()),
+                "full_field_pathway_contact_count": int(frame.filter(pathway > 0).height),
+                "full_field_pathway_neighborhood_count": (
+                    int(frame.filter(pathway_neighborhood > 0).height)
+                    if pathway_neighborhood is not None
+                    else 0
+                ),
+                "full_field_charge_abs_mean": numeric(charge.abs().mean()),
+                "full_field_u_pose_mean": numeric(u_pose.mean()),
+                "full_field_u_pose_sources": (
+                    json.dumps(
+                        {
+                            str(row["u_pose_source"]): int(row["count"])
+                            for row in frame.get_column("u_pose_source").value_counts().to_dicts()
+                        },
+                        sort_keys=True,
+                    )
+                    if "u_pose_source" in frame.columns
+                    else "{}"
+                ),
+                "full_field_low_shear_reversible_pathway": int(
+                    frame.with_columns(
+                        shear.alias("_shear"),
+                        hysteresis.alias("_hysteresis"),
+                        reversibility.alias("_reversibility"),
+                        pathway.alias("_pathway"),
+                        (pathway_neighborhood if pathway_neighborhood is not None else pl.Series("_pathway_neighborhood", [0.0] * frame.height)).alias("_pathway_neighborhood"),
+                    )
+                    .filter(
+                        (pl.col("_shear") <= 5.0)
+                        & (pl.col("_hysteresis") <= 0.3)
+                        & (pl.col("_reversibility") >= 0.7)
+                        & ((pl.col("_pathway") > 0) | (pl.col("_pathway_neighborhood") > 0))
+                    )
+                    .height
+                ),
+            }
+        )
+
+    species = maybe_series("species_selectivity_score")
+    if species is not None:
+        species_rows = []
+        rows = frame.sort("species_selectivity_score", descending=True).head(5).to_dicts()
+        for row in rows:
+            species_rows.append(
+                {
+                    "rank": integer(row.get("rank"), 0),
+                    "smiles": str(row.get("canonical_smiles", row.get("smiles", ""))),
+                    "score": numeric(row.get("species_selectivity_score")),
+                    "predicted_active_in": str(row.get("predicted_active_in", "")),
+                }
+            )
+        context.update(
+            {
+                "species_selectivity_status": "complete",
+                "species_selectivity_mean": numeric(species.mean()),
+                "species_human_selective_count": int(frame.filter(species >= 0.7).height),
+                "species_broad_count": int(frame.filter(species <= 0.35).height),
+                "species_rows": species_rows,
+            }
+        )
+    return context
+
+
 def gpu_dispatch_context(path: Path) -> dict[str, object]:
     if not path.is_file():
         return {
@@ -397,11 +513,15 @@ def training_context(path: Path) -> dict[str, object]:
             "epoch016_report_path": path.as_posix(),
         }
     report = load_json(path)
+    status = str(report.get("validation_status", report.get("status", "unknown")))
+    completed_epochs = integer(report.get("completed_epochs", report.get("completed_epochs_observed")))
+    target_epochs = integer(report.get("target_epochs"), completed_epochs if completed_epochs else 500)
+    failure_mode = str(report.get("failure_mode", "none" if status == "PASS" else "unreported"))
     return {
-        "epoch016_training_status": str(report.get("status", "unknown")),
-        "epoch016_completed_epochs": integer(report.get("completed_epochs_observed")),
-        "epoch016_target_epochs": integer(report.get("target_epochs"), 500),
-        "epoch016_failure_mode": str(report.get("failure_mode", "none")),
+        "epoch016_training_status": status,
+        "epoch016_completed_epochs": completed_epochs,
+        "epoch016_target_epochs": target_epochs,
+        "epoch016_failure_mode": failure_mode,
         "epoch016_report_path": path.as_posix(),
     }
 
@@ -448,6 +568,7 @@ def render(args: argparse.Namespace) -> str:
     context.update(infra_context(args.infra_report))
     context.update(population_pgx_context(args.population_pgx_report, args.variant_manifest, args.consensus_report))
     context.update(gpu_dispatch_context(args.gpu_dispatch_report))
+    context.update(full_field_context(args.top100))
     env = Environment(
         loader=FileSystemLoader(str(args.template.parent)),
         undefined=StrictUndefined,

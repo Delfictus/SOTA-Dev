@@ -59,6 +59,8 @@ class DualChannelPolicyOutput:
     exit_embeddings: Tensor
     action_context_embeddings: Tensor
     action_field_embeddings: Tensor | None
+    action_base_embeddings: Tensor | None
+    action_atom_embeddings: Tensor | None
     channel_gate: Tensor
     forward_logits: Tensor
     forward_log_probs: Tensor
@@ -691,6 +693,16 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
             nn.SiLU(),
             nn.Linear(resolved_embedding_dim, resolved_embedding_dim),
         )
+        self.action_base_projection = nn.Sequential(
+            nn.Linear(int(resolved_node_feature_dim), hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, resolved_embedding_dim),
+        )
+        self.action_atom_projection = nn.Sequential(
+            nn.Linear(int(resolved_node_feature_dim), hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, resolved_embedding_dim),
+        )
         self.backward_head = nn.Sequential(
             nn.Linear(resolved_embedding_dim, hidden_dim),
             nn.SiLU(),
@@ -813,6 +825,9 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         forward_action_mask: Tensor,
         backward_action_mask: Tensor,
         action_phase_features: Tensor | None = None,
+        action_base_features: Tensor | None = None,
+        action_atom_features: Tensor | None = None,
+        action_atom_mask: Tensor | None = None,
     ) -> DualChannelPolicyOutput:
         if node_features is None:
             if x_base is None:
@@ -850,6 +865,40 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         )
         action_embeddings: Tensor = self.anchor_embeddings
         action_field_embeddings: Tensor | None = None
+        action_base_embeddings: Tensor | None = None
+        action_atom_embeddings: Tensor | None = None
+        if action_base_features is not None:
+            if action_base_features.ndim != 2:
+                raise ValueError("action_base_features must have shape [num_anchors, node_feature_dim]")
+            if int(action_base_features.shape[0]) != self.num_anchors:
+                raise ValueError("action_base_features row count must match num_anchors")
+            if int(action_base_features.shape[1]) != int(node_features.shape[1]):
+                raise ValueError("action_base_features width must match node feature dimension")
+            action_base_embeddings = self.action_base_projection(action_base_features.to(dtype=node_features.dtype))
+            action_embeddings = action_embeddings + action_base_embeddings
+        if action_atom_features is not None:
+            if action_atom_mask is None:
+                raise ValueError("action_atom_mask is required when action_atom_features are provided")
+            if action_atom_features.ndim != 3:
+                raise ValueError("action_atom_features must have shape [num_anchors, max_atoms, node_feature_dim]")
+            if int(action_atom_features.shape[0]) != self.num_anchors:
+                raise ValueError("action_atom_features row count must match num_anchors")
+            if int(action_atom_features.shape[2]) != int(node_features.shape[1]):
+                raise ValueError("action_atom_features width must match node feature dimension")
+            if action_atom_mask.shape != action_atom_features.shape[:2]:
+                raise ValueError("action_atom_mask must have shape [num_anchors, max_atoms]")
+            if action_atom_mask.dtype != torch.bool:
+                raise TypeError("action_atom_mask must have dtype bool")
+            atom_features = action_atom_features.to(dtype=node_features.dtype)
+            flat_atom_embeddings = self.action_atom_projection(atom_features.reshape(-1, int(atom_features.shape[-1])))
+            atom_embeddings = flat_atom_embeddings.reshape(
+                int(atom_features.shape[0]),
+                int(atom_features.shape[1]),
+                self.embedding_dim,
+            )
+            atom_weights = action_atom_mask.to(dtype=node_features.dtype).unsqueeze(-1)
+            action_atom_embeddings = (atom_embeddings * atom_weights).sum(dim=1) / atom_weights.sum(dim=1).clamp_min(1.0)
+            action_embeddings = action_embeddings + action_atom_embeddings
         if action_phase_features is not None:
             if self.phase_embedder is None:
                 raise ValueError("action_phase_features require phase_feature_dim")
@@ -889,6 +938,8 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
             exit_embeddings=exit_embeddings,
             action_context_embeddings=action_context_embeddings,
             action_field_embeddings=action_field_embeddings,
+            action_base_embeddings=action_base_embeddings,
+            action_atom_embeddings=action_atom_embeddings,
             channel_gate=channel_gate,
             forward_logits=forward_logits,
             forward_log_probs=forward_log_probs,
