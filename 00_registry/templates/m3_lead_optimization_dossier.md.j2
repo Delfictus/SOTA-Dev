@@ -116,7 +116,47 @@ WT projection parity repair:
 PGx cross-screening remains deferred until validated variant grids and a non-collapsing coordinate scoring path are available.
 {% endif %}
 
-## 8. Autonomous Infrastructure Status
+## 8. Population Pharmacogenomic Intelligence
+
+Epoch 018 extends PGx assessment from the two-variant screen to the supplied GLP-1R population variant landscape. The population grid is a projected thermodynamic consensus over WT plus Tier 1/2 variants, with every non-MD perturbation labeled as projected evidence rather than wet-lab efficacy.
+
+| population PGx field | value |
+|---|---:|
+| status | `{{ population_pgx_status }}` |
+| variants mapped | {{ population_variant_count }} |
+| Tier 1 variants | {{ population_tier1_count }} |
+| Tier 2 variants | {{ population_tier2_count }} |
+| Tier 3 documented variants | {{ population_tier3_count }} |
+| consensus thermally activated voxels | {{ population_consensus_activated }} |
+| Tier 1 worst-case mean | `{{ population_tier1_worst_mean }}` |
+| candidates with Tier 1 worst-case >= 0.85 | {{ population_tier1_ge085_count }} |
+| mean population coverage at >=0.85 | `{{ population_coverage_mean }}` |
+
+Lineage:
+
+- variant perturbation manifest: `{{ population_variant_manifest_path }}`
+- consensus grid report: `{{ population_consensus_report_path }}`
+- full-landscape PGx report: `{{ population_pgx_report_path }}`
+
+Tier 1 source landscape:
+
+| variant | global MAF | domain | provenance | confidence |
+|---|---:|---|---|---|
+{% for row in population_tier1_rows -%}
+| {{ row.mutation }} | {{ "%.4f"|format(row.maf) }} | {{ row.domain }} | {{ row.provenance }} | {{ row.confidence }} |
+{% endfor %}
+
+Ancestry-stratified projected resilience:
+
+| ancestry | mean resilience | candidates >=0.85 |
+|---|---:|---:|
+{% for row in population_ancestry_rows -%}
+| {{ row.ancestry }} | `{{ row.mean_resilience }}` | {{ row.coverage_ge_085 }} |
+{% endfor %}
+
+Interpretation boundary: A316T and T149M use materialized MD-derived grids. The remaining variant grids are perturbation-projected from gnomAD frequency, domain, conservation, and functional-assay annotations and must be treated as Phase 3 stratification intelligence, not clinical proof.
+
+## 9. Autonomous Infrastructure Status
 
 Cloudflare and autonomous thermodynamic AI infrastructure were checked without redeploying the Worker.
 
@@ -131,7 +171,7 @@ Cloudflare and autonomous thermodynamic AI infrastructure were checked without r
 
 Infrastructure report: `{{ infra_report_path }}`
 
-## 9. GPU Dispatch Readiness
+## 10. GPU Dispatch Readiness
 
 GPU dispatch status: `{{ gpu_dispatch_status }}`
 
@@ -146,14 +186,14 @@ Dispatch audit: `{{ gpu_dispatch_report_path }}`
 
 These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
 
-## 10. Falsification Gates
+## 11. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 11. Lineage
+## 12. Lineage
 
 - policy checkpoint: `{{ policy_path }}`
 - top-100 candidates: `{{ top100_path }}`

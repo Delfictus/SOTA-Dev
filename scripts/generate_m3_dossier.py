@@ -37,6 +37,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pgx-report", type=Path, default=TRACK_A / "gflownet_top_100_pgx_screened_report.json")
     parser.add_argument("--parity-report", type=Path, default=TRACK_A / "wt_projection_parity_report.json")
     parser.add_argument("--infra-report", type=Path, default=TRACK_A / "autonomous_infra_status_epoch017.json")
+    parser.add_argument("--population-pgx-report", type=Path, default=CAMPAIGN_DIR / "pgx_full_landscape_report.json")
+    parser.add_argument("--variant-manifest", type=Path, default=TRACK_A / "population_pgx/variant_perturbation_manifest.json")
+    parser.add_argument("--consensus-report", type=Path, default=TRACK_A / "population_pgx/population_consensus_grid_report.json")
     parser.add_argument("--gpu-dispatch-report", type=Path, default=TRACK_A / "gpu_dispatch_audit_report.json")
     parser.add_argument("--plan", type=Path, default=TRACK_A / "vspace_38b_dendritic_plan.json")
     parser.add_argument("--competitor-scaffold-manifest", type=Path, default=TRACK_A / "competitor_scaffold_o3a_manifest.json")
@@ -294,6 +297,71 @@ def infra_context(path: Path) -> dict[str, object]:
     }
 
 
+def population_pgx_context(report_path: Path, manifest_path: Path, consensus_path: Path) -> dict[str, object]:
+    context: dict[str, object] = {
+        "population_pgx_status": "unavailable",
+        "population_pgx_report_path": report_path.as_posix(),
+        "population_variant_count": 0,
+        "population_tier1_count": 0,
+        "population_tier2_count": 0,
+        "population_tier3_count": 0,
+        "population_tier1_worst_mean": None,
+        "population_tier1_ge085_count": 0,
+        "population_coverage_mean": None,
+        "population_ancestry_rows": [],
+        "population_tier1_rows": [],
+        "population_consensus_status": "unavailable",
+        "population_consensus_activated": 0,
+        "population_consensus_report_path": consensus_path.as_posix(),
+        "population_variant_manifest_path": manifest_path.as_posix(),
+    }
+    if manifest_path.is_file():
+        manifest = load_json(manifest_path)
+        variants = cast(list[JsonObject], manifest.get("variants", []))
+        context["population_variant_count"] = len(variants)
+        context["population_tier1_count"] = len([variant for variant in variants if integer(variant.get("tier")) == 1])
+        context["population_tier2_count"] = len([variant for variant in variants if integer(variant.get("tier")) == 2])
+        context["population_tier3_count"] = len([variant for variant in variants if integer(variant.get("tier")) == 3])
+        tier1_rows = []
+        for variant in variants:
+            if integer(variant.get("tier")) == 1:
+                tier1_rows.append(
+                    {
+                        "mutation": str(variant.get("mutation", "")),
+                        "maf": numeric(variant.get("maf_global")),
+                        "domain": str(variant.get("domain", "")),
+                        "confidence": str(variant.get("epistemic_confidence", "")),
+                        "provenance": str(variant.get("provenance", "")),
+                    }
+                )
+        context["population_tier1_rows"] = tier1_rows
+    if consensus_path.is_file():
+        consensus = load_json(consensus_path)
+        global_context = cast(JsonObject, consensus.get("global", {}))
+        context["population_consensus_status"] = str(consensus.get("status", "unknown"))
+        context["population_consensus_activated"] = integer(global_context.get("thermally_activated_voxels"))
+    if report_path.is_file():
+        report = load_json(report_path)
+        context["population_pgx_status"] = str(report.get("status", "unknown"))
+        context["population_tier1_worst_mean"] = report.get("pgx_tier1_worst_case_mean")
+        context["population_tier1_ge085_count"] = integer(report.get("pgx_tier1_worst_case_ge_085_count"))
+        context["population_coverage_mean"] = report.get("population_coverage_pct_mean")
+        ancestry_rows = []
+        raw_ancestry = report.get("ancestry", {})
+        if isinstance(raw_ancestry, dict):
+            for ancestry, payload in raw_ancestry.items():
+                if isinstance(payload, dict):
+                    ancestry_rows.append(
+                        {
+                            "ancestry": str(ancestry),
+                            "mean_resilience": payload.get("mean_resilience"),
+                            "coverage_ge_085": integer(payload.get("coverage_ge_085")),
+                        }
+                    )
+        context["population_ancestry_rows"] = ancestry_rows
+    return context
+
+
 def gpu_dispatch_context(path: Path) -> dict[str, object]:
     if not path.is_file():
         return {
@@ -305,13 +373,17 @@ def gpu_dispatch_context(path: Path) -> dict[str, object]:
             "gpu_dispatch_ready_count": 0,
         }
     report = load_json(path)
+    dispatch_count = integer(report.get("dispatch_count"))
+    dispatches = report.get("dispatches", [])
+    if dispatch_count == 0 and isinstance(dispatches, list):
+        dispatch_count = len(dispatches)
     return {
         "gpu_dispatch_status": str(report.get("status", "complete")),
         "gpu_dispatch_report_path": path.as_posix(),
-        "gpu_dispatch_count": integer(report.get("dispatch_count")),
+        "gpu_dispatch_count": dispatch_count,
         "gpu_dispatch_corrected_count": integer(report.get("corrected_script_count")),
         "gpu_dispatch_high_priority_count": integer(report.get("high_priority_count")),
-        "gpu_dispatch_ready_count": integer(report.get("dispatch_ready_count")),
+        "gpu_dispatch_ready_count": integer(report.get("dispatch_ready_count"), dispatch_count),
     }
 
 
@@ -374,6 +446,7 @@ def render(args: argparse.Namespace) -> str:
     context.update(pgx_context(args.pgx_report))
     context.update(parity_context(args.parity_report))
     context.update(infra_context(args.infra_report))
+    context.update(population_pgx_context(args.population_pgx_report, args.variant_manifest, args.consensus_report))
     context.update(gpu_dispatch_context(args.gpu_dispatch_report))
     env = Environment(
         loader=FileSystemLoader(str(args.template.parent)),

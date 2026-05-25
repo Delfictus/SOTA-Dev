@@ -82,7 +82,7 @@ def build_paths(args: argparse.Namespace) -> "T.TrainingPaths":
     return T.TrainingPaths(
         ligand_sdf       = T.DEFAULT_LIGAND_SDF,
         anchors          = resolve_track_a_path(args.synthon_parquet, T.DEFAULT_ANCHORS),
-        survivors        = T.DEFAULT_SURVIVORS,
+        survivors        = resolve_track_a_path(args.survivors, T.DEFAULT_SURVIVORS),
         residue_phase    = T.DEFAULT_RESIDUE_PHASE,
         interferometric  = T.DEFAULT_INTERFEROMETRIC,
         topology         = T.DEFAULT_TOPOLOGY,
@@ -153,6 +153,7 @@ def main() -> int:
     ap.add_argument("--policy", type=Path, default=MODEL_PATH)
     ap.add_argument("--scaffold-pool", type=Path, action="append", default=None)
     ap.add_argument("--synthon-parquet", type=Path, default=None)
+    ap.add_argument("--survivors", type=Path, default=None)
     ap.add_argument("--signal-grid", type=Path, default=None)
     ap.add_argument("--lock-mask", type=Path, default=TRACK_A / "lock_region_mask.json")
     ap.add_argument("--temperatures", type=str, default="")
@@ -297,7 +298,7 @@ def main() -> int:
             "--rewards",
             str(oracle_rewards),
             "--survivors",
-            str(TRACK_A / "vspace_survivors_full_scale.parquet"),
+            str(paths.survivors),
             "--lock-mask",
             str(resolve_track_a_path(args.lock_mask, TRACK_A / "lock_region_mask.json")),
         ],

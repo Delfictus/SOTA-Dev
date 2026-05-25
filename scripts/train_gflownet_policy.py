@@ -117,6 +117,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lock-directional-bias-alpha", type=float, default=2.0)
     parser.add_argument("--lock-reaching-synthon-boost", type=float, default=2.0)
     parser.add_argument("--lock-geo-intrinsic-bonus", type=float, default=0.0)
+    parser.add_argument(
+        "--consensus-bonus-weight",
+        type=float,
+        default=0.0,
+        help="Recorded weight for population-consensus survivor-corpus shaping.",
+    )
     parser.add_argument("--lock-mask", type=Path, default=TRACK_A_DIR / "lock_region_mask.json")
     parser.add_argument("--synthon-parquet", type=Path, default=None)
     parser.add_argument("--signal-grid", type=Path, default=None)
@@ -1007,6 +1013,7 @@ async def train() -> None:
         "lock_directional_bias_alpha": float(args.lock_directional_bias_alpha),
         "lock_reaching_synthon_boost": float(args.lock_reaching_synthon_boost),
         "lock_geo_intrinsic_bonus": float(args.lock_geo_intrinsic_bonus),
+        "consensus_bonus_weight": float(args.consensus_bonus_weight),
         "lock_mask": lock_mask.as_posix(),
         "signal_grid": str(args.signal_grid) if args.signal_grid is not None else "",
         "shear_stress": str(args.shear_stress) if args.shear_stress is not None else "",

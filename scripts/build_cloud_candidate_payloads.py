@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,15 @@ TOP100 = TRACK_A / "gflownet_top_100_candidates.parquet"
 OUT_DIR = TRACK_A / "cloud_payloads"
 SQL_PATH = OUT_DIR / "gflownet_candidates_top100.sql"
 VECTOR_PATH = OUT_DIR / "gflownet_candidates_top100_vectors.ndjson"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--candidates", type=Path, default=TOP100)
+    parser.add_argument("--sql-output", type=Path, default=SQL_PATH)
+    parser.add_argument("--vector-output", type=Path, default=VECTOR_PATH)
+    parser.add_argument("--training-epoch", type=int, default=500)
+    return parser.parse_args()
 
 
 def sql_quote(value: object) -> str:
@@ -63,9 +73,19 @@ def deterministic_vector(smiles: str, row: dict[str, Any], dimensions: int = 768
     return [round(value / norm, 8) for value in vector]
 
 
+def numeric(row: dict[str, Any], key: str, default: float = 0.0) -> float:
+    value = row.get(key)
+    if value is None:
+        return default
+    parsed = float(value)
+    return parsed if math.isfinite(parsed) else default
+
+
 def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    df = pl.scan_parquet(TOP100).collect()
+    args = parse_args()
+    args.sql_output.parent.mkdir(parents=True, exist_ok=True)
+    args.vector_output.parent.mkdir(parents=True, exist_ok=True)
+    df = pl.scan_parquet(args.candidates).collect()
     rows = df.to_dicts()
     schema_sql = """
 DROP TABLE IF EXISTS gflownet_candidates;
@@ -83,6 +103,12 @@ CREATE TABLE gflownet_candidates (
     synthon_b_id TEXT,
     training_epoch INTEGER,
     sampling_temperature REAL,
+    bias_projection_score REAL,
+    epistemic_confidence TEXT,
+    pgx_tier1_worst_case REAL,
+    pgx_tier1_mean REAL,
+    pgx_population_coverage_pct REAL,
+    pgx_ancestry_parity REAL,
     embedding_method TEXT,
     audit_status TEXT DEFAULT 'pending',
     created_at TEXT DEFAULT (datetime('now'))
@@ -91,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_gflownet_candidates_reward ON gflownet_candidates
 CREATE INDEX IF NOT EXISTS idx_gflownet_candidates_audit ON gflownet_candidates(audit_status);
 """
     statements = [schema_sql.strip()]
-    with VECTOR_PATH.open("w", encoding="utf-8") as vector_handle:
+    with args.vector_output.open("w", encoding="utf-8") as vector_handle:
         for row in rows:
             smiles = str(row["canonical_smiles"])
             cid = candidate_id(smiles)
@@ -107,8 +133,14 @@ CREATE INDEX IF NOT EXISTS idx_gflownet_candidates_audit ON gflownet_candidates(
                 "reaction_2": "",
                 "synthon_a_id": str(row.get("anchor_id") or ""),
                 "synthon_b_id": "",
-                "training_epoch": 500,
-                "sampling_temperature": float(row.get("sampling_temperature") or 0.0),
+                "training_epoch": int(args.training_epoch),
+                "sampling_temperature": numeric(row, "sampling_temperature"),
+                "bias_projection_score": numeric(row, "bias_projection_score"),
+                "epistemic_confidence": str(row.get("epistemic_confidence") or "L1"),
+                "pgx_tier1_worst_case": numeric(row, "pgx_tier1_worst_case"),
+                "pgx_tier1_mean": numeric(row, "pgx_tier1_mean"),
+                "pgx_population_coverage_pct": numeric(row, "pgx_population_coverage_pct"),
+                "pgx_ancestry_parity": numeric(row, "pgx_ancestry_parity"),
                 "embedding_method": "deterministic_feature_hash_projection_v0",
                 "audit_status": "pending",
             }
@@ -116,7 +148,9 @@ CREATE INDEX IF NOT EXISTS idx_gflownet_candidates_audit ON gflownet_candidates(
                 "INSERT OR REPLACE INTO gflownet_candidates "
                 "(id, smiles, oracle_reward, pi_complement, pi_clash_pocket, pi_clash_lock, cryptic_bonus, "
                 "reaction_1, reaction_2, synthon_a_id, synthon_b_id, training_epoch, "
-                "sampling_temperature, embedding_method, audit_status) VALUES "
+                "sampling_temperature, bias_projection_score, epistemic_confidence, "
+                "pgx_tier1_worst_case, pgx_tier1_mean, pgx_population_coverage_pct, pgx_ancestry_parity, "
+                "embedding_method, audit_status) VALUES "
                 "(" + ", ".join(sql_quote(values[key]) for key in values) + ");"
             )
             vector_handle.write(
@@ -127,6 +161,9 @@ CREATE INDEX IF NOT EXISTS idx_gflownet_candidates_audit ON gflownet_candidates(
                         "metadata": {
                             "smiles": smiles,
                             "reward": float(row["reward"]),
+                            "bias_projection_score": numeric(row, "bias_projection_score"),
+                            "pgx_tier1_worst_case": numeric(row, "pgx_tier1_worst_case"),
+                            "pgx_population_coverage_pct": numeric(row, "pgx_population_coverage_pct"),
                             "reaction_route": "policy_sampled_anchor_lookup",
                             "embedding_method": "deterministic_feature_hash_projection_v0",
                         },
@@ -135,10 +172,10 @@ CREATE INDEX IF NOT EXISTS idx_gflownet_candidates_audit ON gflownet_candidates(
                 )
                 + "\n"
             )
-    SQL_PATH.write_text("\n".join(statements) + "\n", encoding="utf-8")
+    args.sql_output.write_text("\n".join(statements) + "\n", encoding="utf-8")
     print(
         "cloud_payloads_built "
-        f"candidates={len(rows)} sql={SQL_PATH} vector_ndjson={VECTOR_PATH} "
+        f"candidates={len(rows)} sql={args.sql_output} vector_ndjson={args.vector_output} "
         "embedding_method=deterministic_feature_hash_projection_v0"
     )
     return 0
