@@ -21,12 +21,26 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts/quarantine/site_vs_holo_strict.py"
 REPORT = Path("/tmp/wrn_1522_strict.json")
+WRN_DATA_DIR = Path("/mnt/storage/prism-outputs/twin-10-patent/wrn_apo")
+WRN_REQUIRED_FILES = (
+    WRN_DATA_DIR / "artifacts/1_download/6yhr.pdb",
+    WRN_DATA_DIR / "artifacts/1_download/8pfo.pdb",
+    WRN_DATA_DIR / "artifacts/6_rerank/rerank_result.json",
+    WRN_DATA_DIR / "artifacts/3_prep/6yhr.residue_map.json",
+)
 
 
 @pytest.fixture(scope="module")
 def verification_record() -> dict:
     if not SCRIPT.exists():
         pytest.fail(f"missing verification script at {SCRIPT}")
+    missing = [path for path in WRN_REQUIRED_FILES if not path.is_file()]
+    if missing:
+        pytest.skip(
+            "requires WRN strict-validation artifacts: "
+            + ", ".join(str(path) for path in missing)
+        )
+    REPORT.unlink(missing_ok=True)
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "wrn_1522"],
         capture_output=True, text=True, check=False,

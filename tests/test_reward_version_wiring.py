@@ -6,7 +6,9 @@ from prism_dstw.scoring.tripartite_bias_scorer import compute_tripartite_bias
 from scripts.train_gflownet_policy import (
     DEFAULT_POPULATION_CONSENSUS_SURVIVORS,
     DEFAULT_SURVIVORS,
+    action_base_features_from_table,
     action_atom_features_from_table,
+    anchor_embeddings_from_table,
     compute_effective_reward_tensor,
     pose_penalty_from_row,
     pose_penalty_source_from_row,
@@ -65,6 +67,20 @@ def test_v1_base_uses_raw_oracle_reward() -> None:
     assert torch.allclose(reward, raw_rewards)
 
 
+def test_v1_base_sanitizes_non_finite_raw_oracle_reward() -> None:
+    mock_row = {"pi_complement": 1.0}
+    reward, _ = compute_effective_reward_tensor(
+        reward_version="v1_base",
+        oracle_rows=[mock_row],
+        raw_rewards=torch.tensor([float("nan")], dtype=torch.float32),
+        tripartite_scores=[compute_tripartite_bias(mock_row)],
+        consensus_bonus_weight=1.0,
+    )
+
+    assert torch.isfinite(reward).all()
+    assert float(reward.item()) > 0.0
+
+
 def test_v4_full_field_penalizes_shear_hysteresis_and_pose() -> None:
     base_row = {
         "pi_complement": 10.0,
@@ -98,6 +114,51 @@ def test_v4_full_field_penalizes_shear_hysteresis_and_pose() -> None:
     assert metrics["shear_mean"] == 5.0
     assert metrics["pathway_voxels_occupied"] == 0.5
     assert metrics["u_pose_mean"] == 0.75
+
+
+def test_reward_defaults_reject_non_finite_optional_values() -> None:
+    mock_row = {
+        "pi_complement": 5.0,
+        "pi_clash_pocket": 1.0,
+        "sigma_shear": float("nan"),
+        "consensus_complement_bonus": float("inf"),
+        "u_pose": float("-inf"),
+    }
+    rewards, metrics = compute_effective_reward_tensor(
+        reward_version="v4_full_field",
+        oracle_rows=[mock_row],
+        raw_rewards=torch.tensor([1.0], dtype=torch.float32),
+        tripartite_scores=[compute_tripartite_bias(mock_row)],
+        consensus_bonus_weight=1.0,
+    )
+
+    assert torch.isfinite(rewards).all()
+    assert metrics["shear_mean"] == 0.0
+    assert metrics["consensus_bonus_mean"] == 0.0
+    assert metrics["u_pose_mean"] == 0.0
+
+
+def test_reward_accepts_directive_field_name_aliases() -> None:
+    row = {
+        "pi_complement": 5.0,
+        "pi_clash_pocket": 1.0,
+        "shear_stress": 10.0,
+        "hysteresis_score": 0.75,
+        "reversibility": 0.2,
+        "am1bcc_charge": 0.33,
+    }
+    _, metrics = compute_effective_reward_tensor(
+        reward_version="v4_full_field",
+        oracle_rows=[row],
+        raw_rewards=torch.tensor([1.0], dtype=torch.float32),
+        tripartite_scores=[compute_tripartite_bias(row)],
+        consensus_bonus_weight=1.0,
+    )
+
+    assert metrics["shear_mean"] == 10.0
+    assert metrics["hysteresis_mean"] == 0.75
+    assert metrics["reversibility_mean"] == 0.2
+    assert metrics["charge_feature_mean"] == 0.33
 
 
 def test_consensus_reward_auto_selects_population_survivor_corpus() -> None:
@@ -146,3 +207,45 @@ def test_action_atom_features_preserve_per_atom_charge_lane() -> None:
     assert tuple(mask.shape) == (1, 2)
     assert bool(mask.all().item())
     assert torch.allclose(features[0, :, -1], torch.tensor([-0.25, 0.42]))
+
+
+def test_single_row_action_feature_normalization_is_finite() -> None:
+    import polars as pl
+
+    table = pl.DataFrame(
+        {
+            "canonical_smiles": ["CCO"],
+            "n_heavy_atoms": [3.0],
+            "formal_charge": [0.0],
+            "partial_charge_sum": [0.1],
+            "partial_charge_span": [0.2],
+            "partial_charge_mean_abs": [0.15],
+        }
+    )
+
+    anchors = anchor_embeddings_from_table(table, embedding_dim=8)
+    base = action_base_features_from_table(table, base_feature_dim=13)
+
+    assert torch.isfinite(anchors).all()
+    assert torch.isfinite(base).all()
+
+
+def test_empty_action_table_fails_clearly() -> None:
+    import polars as pl
+    import pytest
+
+    table = pl.DataFrame(
+        schema={
+            "canonical_smiles": pl.String,
+            "n_heavy_atoms": pl.Float64,
+            "formal_charge": pl.Float64,
+            "partial_charge_sum": pl.Float64,
+            "partial_charge_span": pl.Float64,
+            "partial_charge_mean_abs": pl.Float64,
+        }
+    )
+
+    with pytest.raises(ValueError, match="action table"):
+        anchor_embeddings_from_table(table, embedding_dim=8)
+    with pytest.raises(ValueError, match="action table"):
+        action_base_features_from_table(table, base_feature_dim=13)

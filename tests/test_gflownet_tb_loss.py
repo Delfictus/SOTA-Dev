@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import cast
 
 import polars as pl
+import pytest
 import torch
 from torch import Tensor
 
@@ -20,6 +21,8 @@ NODE_COUNT = 6
 
 
 def load_calibration_anchor_embeddings(limit: int = 512) -> Tensor:
+    if not CALIBRATION_ANCHORS.is_file():
+        pytest.skip(f"requires calibration anchor artifact: {CALIBRATION_ANCHORS}")
     frame = (
         pl.scan_parquet(CALIBRATION_ANCHORS)
         .filter(pl.col("generation_status") == "ok")

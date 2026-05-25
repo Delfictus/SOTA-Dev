@@ -278,12 +278,15 @@ def mol_atoms(mol: Chem.Mol) -> list[Chem.Atom]:
 def numeric_value(value: object, default: float = 0.0) -> float:
     if value is None:
         return default
+    parsed: float
     if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(str(value))
-    except ValueError:
-        return default
+        parsed = float(value)
+    else:
+        try:
+            parsed = float(str(value))
+        except ValueError:
+            return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def sample_actions_per_row(
@@ -299,6 +302,8 @@ def sample_actions_per_row(
     if log_probs.ndim != 2:
         raise ValueError("log_probs must have shape [batch_size, num_actions]")
     batch_size, num_actions = int(log_probs.shape[0]), int(log_probs.shape[1])
+    if batch_size == 0:
+        raise ValueError("log_probs must contain at least one batch row")
     if valid_mask.ndim == 1:
         if int(valid_mask.shape[0]) != num_actions:
             raise ValueError("valid_mask length must match num_actions")
@@ -309,6 +314,8 @@ def sample_actions_per_row(
         mask = valid_mask
     else:
         raise ValueError("valid_mask must be 1D or 2D")
+    if bool((mask.sum(dim=1) == 0).any()):
+        raise ValueError("valid_mask leaves at least one batch row with zero valid actions")
 
     masked_logits = log_probs.detach().clone()
     masked_logits = masked_logits.masked_fill(~mask, -torch.inf)
@@ -383,9 +390,9 @@ def compute_effective_reward_tensor(
         pi_complement = numeric_value(row.get("pi_complement"), 0.0)
         pi_clash_pocket = numeric_value(row.get("pi_clash_pocket"), 0.0)
         lock_geometry = numeric_value(row.get("lock_geometry_score", row.get("pi_clash_lock", 0.0)), 0.0)
-        sigma_shear = numeric_value(row.get("sigma_shear_mean", row.get("sigma_shear")), 0.0)
-        hysteresis_mean = numeric_value(row.get("hysteresis_mean"), 0.0)
-        reversibility_mean = numeric_value(row.get("reversibility_mean"), 1.0)
+        sigma_shear = numeric_value(row.get("sigma_shear_mean", row.get("sigma_shear", row.get("shear_stress"))), 0.0)
+        hysteresis_mean = numeric_value(row.get("hysteresis_mean", row.get("hysteresis_score")), 0.0)
+        reversibility_mean = numeric_value(row.get("reversibility_mean", row.get("reversibility")), 1.0)
         pathway_voxels = numeric_value(row.get("pathway_voxels_occupied"), 0.0)
         pathway_neighborhood = numeric_value(row.get("pathway_neighborhood_contacts"), 0.0)
         pathway_score = numeric_value(row.get("pathway_score_mean"), 0.0)
@@ -394,7 +401,7 @@ def compute_effective_reward_tensor(
             row.get("consensus_complement_bonus", row.get("population_consensus_bonus")),
             0.0,
         )
-        charge_feature = numeric_value(row.get("charge_feature_mean"), 0.0)
+        charge_feature = numeric_value(row.get("charge_feature_mean", row.get("am1bcc_charge")), 0.0)
         complement_values.append(pi_complement)
         clash_values.append(pi_clash_pocket)
         consensus_values.append(consensus_bonus)
@@ -408,7 +415,7 @@ def compute_effective_reward_tensor(
         charge_values.append(charge_feature)
 
         if version == "v1_base":
-            base_reward = float(raw_rewards[index].item())
+            base_reward = numeric_value(raw_rewards[index].item(), 0.0)
             effective = base_reward
         elif version == "v2_tripartite":
             base_reward = compute_reward_v2(row, tripartite_scores[index])
@@ -444,7 +451,7 @@ def compute_effective_reward_tensor(
                 - max(u_pose, 0.0)
             )
         else:
-            base_reward = float(raw_rewards[index].item())
+            base_reward = numeric_value(raw_rewards[index].item(), 0.0)
             effective = base_reward
 
         base_values.append(base_reward)
@@ -1271,10 +1278,14 @@ def product_fiber_batch_telemetry(
     if fiber_lookup is None:
         return {
             "product_fiber_method": "unavailable",
+            "product_fiber_products": 0,
             "product_fiber_synthon_atoms": 0,
             "shear_mean": 0.0,
             "hysteresis_mean": 0.0,
+            "reversibility_mean": 1.0,
             "pathway_voxels_occupied": 0.0,
+            "pathway_neighborhood_contacts": 0.0,
+            "consensus_complement_bonus": 0.0,
         }
     rows = action_space.table.to_dicts()
     synthon_atoms = 0
@@ -1355,6 +1366,8 @@ def anchor_embeddings_from_table(table: pl.DataFrame, embedding_dim: int) -> Ten
         "bbox_z_A",
         "mmff_energy_kcal_mol",
     ]
+    if table.height == 0:
+        raise ValueError("action table must contain at least one row")
     features: list[list[float]] = []
     for row in table.to_dicts():
         smiles = str(row["canonical_smiles"])
@@ -1371,7 +1384,7 @@ def anchor_embeddings_from_table(table: pl.DataFrame, embedding_dim: int) -> Ten
         features.append(descriptor_values)
     raw = torch.tensor(features, dtype=torch.float32)
     mean = raw.mean(dim=0, keepdim=True)
-    std = raw.std(dim=0, keepdim=True).clamp_min(1.0e-6)
+    std = raw.std(dim=0, keepdim=True, unbiased=False).clamp_min(1.0e-6)
     normalized = (raw - mean) / std
     repeats = math.ceil(embedding_dim / int(normalized.shape[1]))
     expanded = normalized.repeat(1, repeats)[:, :embedding_dim]
@@ -1387,6 +1400,8 @@ def action_base_features_from_table(table: pl.DataFrame, base_feature_dim: int =
     slot used by v2 node features, into anchor attention before sampling.
     """
 
+    if table.height == 0:
+        raise ValueError("action table must contain at least one row")
     rows: list[list[float]] = []
     for row in table.to_dicts():
         features = [0.0] * base_feature_dim
@@ -1405,7 +1420,7 @@ def action_base_features_from_table(table: pl.DataFrame, base_feature_dim: int =
     if base_feature_dim > 1:
         scaled = tensor[:, :-1]
         mean = scaled.mean(dim=0, keepdim=True)
-        std = scaled.std(dim=0, keepdim=True).clamp_min(1.0e-6)
+        std = scaled.std(dim=0, keepdim=True, unbiased=False).clamp_min(1.0e-6)
         tensor[:, :-1] = (scaled - mean) / std
     return tensor
 

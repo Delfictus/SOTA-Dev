@@ -15,7 +15,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-PRISM_ROOT = Path("/home/diddy/Desktop/Prism4D-bio")
+import pytest
+
+PRISM_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_dossier(arrow_path):
@@ -45,10 +47,10 @@ def test_4lpk_regression():
         / "4lpk_clean.topology.spike_events.arrow"
     )
     if not arrow.exists():
-        return True, "4LPK m1_readiness_verify Arrow not present, skipping"
+        pytest.skip("4LPK m1_readiness_verify Arrow not present")
     d, err = run_dossier(arrow)
     if err:
-        return False, f"4LPK run failed: {err[:200]}"
+        pytest.fail(f"4LPK run failed: {err[:200]}")
 
     p = d["pockets"]
     e11_p4 = p[3]["enhancements"]["E11_multi_view_dcc"]
@@ -61,9 +63,7 @@ def test_4lpk_regression():
             e11_p4.get("best_reference_min_prox", 99) < 2.0),
     ]
     failures = [name for name, ok in checks if not ok]
-    if failures:
-        return False, f"4LPK regression failed checks: {failures}"
-    return True, "4LPK regression PASS (P4 BI-2852 hit preserved)"
+    assert not failures, f"4LPK regression failed checks: {failures}"
 
 
 def test_9m3p_reference_populated():
@@ -75,15 +75,14 @@ def test_9m3p_reference_populated():
         "output/**/9m3p*topology.spike_events.arrow"
     ))
     if not candidates:
-        return True, "9M3P substrate not available, skipping"
+        pytest.skip("9M3P substrate not available")
     arrow = max(candidates, key=lambda p: p.stat().st_mtime)
     d, err = run_dossier(arrow)
     if err:
-        return False, f"9M3P run failed: {err[:200]}"
+        pytest.fail(f"9M3P run failed: {err[:200]}")
 
     p = d["pockets"]
-    if not p:
-        return False, "9M3P produced zero pockets"
+    assert p, "9M3P produced zero pockets"
 
     p0_enh = p[0]["enhancements"]
     e1_status = p0_enh["E1_ccns_lifecycle"].get("status")
@@ -95,16 +94,8 @@ def test_9m3p_reference_populated():
         ("e11_not_substrate_only", "Substrate-only" not in e11_gate),
     ]
     failures = [name for name, ok in checks if not ok]
-    if failures:
-        return False, f"9M3P reference-populated check failed: {failures}"
-    return True, "9M3P reference-populated PASS (E11 not substrate-only)"
+    assert not failures, f"9M3P reference-populated check failed: {failures}"
 
 
 if __name__ == "__main__":
-    tests = [test_4lpk_regression, test_9m3p_reference_populated]
-    results = []
-    for t in tests:
-        ok, msg = t()
-        print(f"{'PASS' if ok else 'FAIL'}: {msg}")
-        results.append(ok)
-    sys.exit(0 if all(results) else 1)
+    raise SystemExit(pytest.main([__file__]))

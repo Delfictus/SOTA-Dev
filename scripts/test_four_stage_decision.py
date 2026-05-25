@@ -6,12 +6,19 @@ GTCKL → Therm → Coherence → Localization
 Validates that the localization gate correctly blocks false Therm overrides
 (e.g., 2HNP) while preserving correct overrides (e.g., 1JWP).
 """
-import json, math
+import json, math, sys
 from pathlib import Path
 
-with open('benchmarks/prism4d_bench30/ground_truth/ligand_centroids.json') as f:
+GROUND_TRUTH_PATH = Path("benchmarks/prism4d_bench30/ground_truth/ligand_centroids.json")
+MANIFEST_PATH = Path("benchmarks/prism4d_bench30/benchmark_manifest.json")
+if "pytest" in sys.modules and not (GROUND_TRUTH_PATH.is_file() and MANIFEST_PATH.is_file()):
+    import pytest
+
+    pytest.skip("requires PRISM4D benchmark ground-truth data", allow_module_level=True)
+
+with open(GROUND_TRUTH_PATH) as f:
     gt_raw = json.load(f)
-with open('benchmarks/prism4d_bench30/benchmark_manifest.json') as f:
+with open(MANIFEST_PATH) as f:
     mdata = json.load(f)
 manifest = mdata.get('targets', mdata) if isinstance(mdata, dict) else mdata
 gt_map = {}

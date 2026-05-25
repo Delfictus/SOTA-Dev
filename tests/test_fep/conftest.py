@@ -26,17 +26,26 @@ def fixtures_dir() -> Path:
 
 @pytest.fixture
 def mock_protein_pdb(fixtures_dir: Path) -> str:
-    return str(fixtures_dir / "mock_protein.pdb")
+    path = fixtures_dir / "mock_protein.pdb"
+    if not path.is_file():
+        pytest.skip(f"requires FEP fixture: {path}")
+    return str(path)
 
 
 @pytest.fixture
 def mock_ligand_sdf(fixtures_dir: Path) -> str:
-    return str(fixtures_dir / "mock_ligand.sdf")
+    path = fixtures_dir / "mock_ligand.sdf"
+    if not path.is_file():
+        pytest.skip(f"requires FEP fixture: {path}")
+    return str(path)
 
 
 @pytest.fixture
 def mock_docking_result() -> DockingResult:
-    with open(FIXTURES_DIR / "mock_docking_result.json") as f:
+    path = FIXTURES_DIR / "mock_docking_result.json"
+    if not path.is_file():
+        pytest.skip(f"requires FEP fixture: {path}")
+    with open(path) as f:
         return DockingResult.from_dict(json.load(f))
 
 

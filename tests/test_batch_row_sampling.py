@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import torch
 
 from scripts.train_gflownet_policy import (
@@ -46,3 +47,17 @@ def test_duplicate_repair_still_uses_row_distribution() -> None:
 
     assert int(actions[0].item()) == 0
     assert int(actions[1].item()) == 2
+
+
+def test_all_invalid_action_row_fails_before_multinomial() -> None:
+    fake_logits = torch.zeros((1, 2))
+
+    with pytest.raises(ValueError, match="zero valid actions"):
+        sample_actions_per_row(fake_logits, torch.tensor([False, False]), temperature=1.0)
+
+
+def test_empty_batch_fails_clearly() -> None:
+    fake_logits = torch.empty((0, 3))
+
+    with pytest.raises(ValueError, match="at least one batch row"):
+        sample_actions_per_row(fake_logits, torch.ones(3, dtype=torch.bool), temperature=1.0)
