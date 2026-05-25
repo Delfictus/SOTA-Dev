@@ -29,13 +29,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template", type=Path, default=TEMPLATE)
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--top100", type=Path, default=TRACK_A / "gflownet_top_100_candidates_lockmask_rescored.parquet")
+    parser.add_argument("--candidates", type=Path, default=None, help="Alias for --top100 used by Epoch 016.")
     parser.add_argument("--tripartite-profiles", type=Path, default=TRACK_A / "gflownet_top_50_tripartite_profiles.parquet")
     parser.add_argument("--medchem-audit", type=Path, default=TRACK_A / "gflownet_medchem_audit.parquet")
     parser.add_argument("--candidate-audit", type=Path, default=TRACK_A / "gflownet_candidate_audit.json")
+    parser.add_argument("--pgx-report", type=Path, default=TRACK_A / "gflownet_top_100_pgx_screened_report.json")
+    parser.add_argument("--gpu-dispatch-report", type=Path, default=TRACK_A / "gpu_dispatch_audit_report.json")
     parser.add_argument("--plan", type=Path, default=TRACK_A / "vspace_38b_dendritic_plan.json")
     parser.add_argument("--competitor-scaffold-manifest", type=Path, default=TRACK_A / "competitor_scaffold_o3a_manifest.json")
     parser.add_argument("--phase2d-manifest", type=Path, default=CAMPAIGN_DIR / "phase_2d_variant_grid_manifest.json")
     parser.add_argument("--cbom", type=Path, default=CAMPAIGN_DIR / "PRISM_CBOM_v1.0.json")
+    parser.add_argument("--tripartite", action="store_true", default=False)
+    parser.add_argument("--lock-positive-count", action="store_true", default=False)
+    parser.add_argument("--cross-scaffold", action="store_true", default=False)
+    parser.add_argument("--pgx-resilience", action="store_true", default=False)
+    parser.add_argument("--bald-ranking", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -190,7 +198,64 @@ def tripartite_context(path: Path) -> dict[str, object]:
     }
 
 
+def pgx_context(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {
+            "pgx_status": "deferred",
+            "pgx_report_path": path.as_posix(),
+            "pgx_variants": [],
+            "pgx_worst_case_mean": None,
+            "pgx_immune_or_tolerant": 0,
+            "pgx_epistemic_class": "UNAVAILABLE",
+        }
+    report = load_json(path)
+    variants = []
+    raw_variants = report.get("variants", {})
+    if isinstance(raw_variants, dict):
+        for name, payload in raw_variants.items():
+            if isinstance(payload, dict):
+                variants.append(
+                    {
+                        "name": str(name),
+                        "condition_id": str(payload.get("condition_id", "")),
+                        "lock_preserved_count": integer(payload.get("lock_preserved_count")),
+                        "classification_counts": payload.get("classification_counts", {}),
+                    }
+                )
+    return {
+        "pgx_status": str(report.get("diagnostic_status", "complete")),
+        "pgx_report_path": path.as_posix(),
+        "pgx_variants": variants,
+        "pgx_worst_case_mean": report.get("worst_case_mean"),
+        "pgx_immune_or_tolerant": integer(report.get("immune_or_tolerant_worst_case")),
+        "pgx_epistemic_class": str(report.get("epistemic_class", "PROJECTED")),
+    }
+
+
+def gpu_dispatch_context(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {
+            "gpu_dispatch_status": "deferred",
+            "gpu_dispatch_report_path": path.as_posix(),
+            "gpu_dispatch_count": 0,
+            "gpu_dispatch_corrected_count": 0,
+            "gpu_dispatch_high_priority_count": 0,
+            "gpu_dispatch_ready_count": 0,
+        }
+    report = load_json(path)
+    return {
+        "gpu_dispatch_status": str(report.get("status", "complete")),
+        "gpu_dispatch_report_path": path.as_posix(),
+        "gpu_dispatch_count": integer(report.get("dispatch_count")),
+        "gpu_dispatch_corrected_count": integer(report.get("corrected_script_count")),
+        "gpu_dispatch_high_priority_count": integer(report.get("high_priority_count")),
+        "gpu_dispatch_ready_count": integer(report.get("dispatch_ready_count")),
+    }
+
+
 def render(args: argparse.Namespace) -> str:
+    if args.candidates is not None:
+        args.top100 = args.candidates
     counts = medchem_counts(args.medchem_audit)
     if args.top100.is_file():
         top100_frame = pl.read_parquet(args.top100)
@@ -224,6 +289,8 @@ def render(args: argparse.Namespace) -> str:
     context.update(scaffold_context(args.competitor_scaffold_manifest))
     context.update(variant_grid_context(args.phase2d_manifest))
     context.update(tripartite_context(args.tripartite_profiles))
+    context.update(pgx_context(args.pgx_report))
+    context.update(gpu_dispatch_context(args.gpu_dispatch_report))
     env = Environment(
         loader=FileSystemLoader(str(args.template.parent)),
         undefined=StrictUndefined,

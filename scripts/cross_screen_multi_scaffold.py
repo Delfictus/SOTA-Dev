@@ -23,6 +23,11 @@ SCAFFOLDS = ("ALENI", "ORFOR", "DANU")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--candidates", type=Path, default=None, help="Alias for --input used by Epoch 016.")
+    parser.add_argument("--top-n", type=int, default=None)
+    parser.add_argument("--scaffold-pool", type=Path, action="append", default=None)
+    parser.add_argument("--signal-grid", type=Path, default=None)
+    parser.add_argument("--lock-mask", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     return parser.parse_args()
@@ -30,7 +35,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    profiles = pl.read_parquet(Path(args.input))
+    input_path = Path(args.candidates) if args.candidates is not None else Path(args.input)
+    profiles = pl.read_parquet(input_path)
+    if args.top_n is not None:
+        profiles = profiles.head(int(args.top_n))
     rows = [cross_screen_row(row) for row in profiles.iter_rows(named=True)]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -40,10 +48,13 @@ def main() -> int:
     report = {
         "schema_version": "PRISM.cross_scaffold_screen.v1",
         "generated_at_utc": datetime.now(UTC).isoformat(),
-        "input": str(Path(args.input)),
+        "input": str(input_path),
         "output": str(output),
         "candidate_count": len(rows),
         "n_scaffolds_positive_ge_2": sum(1 for row in rows if int(row["n_scaffolds_positive"]) >= 2),
+        "scaffold_pool": [str(path) for path in (args.scaffold_pool or [])],
+        "signal_grid": str(args.signal_grid) if args.signal_grid is not None else None,
+        "lock_mask": str(args.lock_mask) if args.lock_mask is not None else None,
         "evidence_class": "PROJECTED_PROXY_NO_REDOCK",
         "note": (
             "This file preserves execution plumbing. L5 cross-scaffold evidence still requires "

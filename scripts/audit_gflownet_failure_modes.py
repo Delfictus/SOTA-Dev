@@ -3,6 +3,7 @@
 """Phase 7 — failure-mode audit."""
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from datetime import datetime, timezone
@@ -27,6 +28,20 @@ OUT_MD   = TRACK_A / "gflownet_candidate_audit.md"
 OUT_MATRIX = TRACK_A / "gflownet_failure_mode_matrix.md"
 OUT_MEDCHEM = TRACK_A / "gflownet_medchem_audit.parquet"
 LOCK_CLASH_THRESHOLD = 0.5
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--candidates", type=Path, default=TOP100_PATH)
+    parser.add_argument("--top-n", type=int, default=100)
+    parser.add_argument("--tripartite", action="store_true", default=False)
+    parser.add_argument("--medchem-filters", action="store_true", default=False)
+    parser.add_argument("--pharmacophore-check", action="store_true", default=False)
+    parser.add_argument("--output", type=Path, default=OUT_JSON)
+    parser.add_argument("--output-md", type=Path, default=OUT_MD)
+    parser.add_argument("--output-matrix", type=Path, default=OUT_MATRIX)
+    parser.add_argument("--output-medchem", type=Path, default=OUT_MEDCHEM)
+    return parser.parse_args()
 
 
 def _sa_score(mol: Chem.Mol) -> float:
@@ -152,10 +167,11 @@ def safe_pct(num: float, denom: float) -> float:
 
 
 def main() -> int:
+    args = parse_args()
     samples   = pl.read_parquet(SAMPLES_PATH)   if SAMPLES_PATH.is_file()   else pl.DataFrame()
     consensus = pl.read_parquet(CONSENSUS_PATH) if CONSENSUS_PATH.is_file() else pl.DataFrame()
     filtered  = pl.read_parquet(FILTERED_PATH)  if FILTERED_PATH.is_file()  else pl.DataFrame()
-    top100    = pl.read_parquet(TOP100_PATH)    if TOP100_PATH.is_file()    else pl.DataFrame()
+    top100    = pl.read_parquet(args.candidates).head(int(args.top_n)) if Path(args.candidates).is_file() else pl.DataFrame()
 
     print(f"=== Phase 7 — failure-mode audit ===")
     findings: dict[str, dict] = {}
@@ -255,7 +271,7 @@ def main() -> int:
 
     medchem_df, medchem_metrics = medchem_audit(top100)
     if not medchem_df.is_empty():
-        medchem_df.write_parquet(OUT_MEDCHEM)
+        medchem_df.write_parquet(args.output_medchem)
         total_medchem = max(int(medchem_metrics["total_candidates"]), 1)
         pains_rate = float(medchem_metrics["pains_pass"]) / total_medchem
         brenk_rate = float(medchem_metrics["brenk_pass"]) / total_medchem
@@ -313,7 +329,8 @@ def main() -> int:
             "info":  sum(1 for v in findings.values() if v["status"] == "INFO"),
         },
     }
-    OUT_JSON.write_text(json.dumps(audit, indent=2) + "\n")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(audit, indent=2) + "\n")
 
     md = [
         "# GFlowNet v1 — Failure-Mode Audit",
@@ -329,7 +346,8 @@ def main() -> int:
         md.append(f"- **evidence:** {f['evidence']}")
         md.append(f"- **next action:** {f['next_action']}")
         md.append("")
-    OUT_MD.write_text("\n".join(md) + "\n")
+    args.output_md.parent.mkdir(parents=True, exist_ok=True)
+    args.output_md.write_text("\n".join(md) + "\n")
 
     # Matrix
     matrix_md = [
@@ -340,15 +358,16 @@ def main() -> int:
     ]
     for name, f in findings.items():
         matrix_md.append(f"| {name} | {f['status']} | {f['evidence']} |")
-    OUT_MATRIX.write_text("\n".join(matrix_md) + "\n")
+    args.output_matrix.parent.mkdir(parents=True, exist_ok=True)
+    args.output_matrix.write_text("\n".join(matrix_md) + "\n")
 
     print(f"  PASS={audit['summary']['pass']}  WARN={audit['summary']['warn']}  "
           f"FAIL={audit['summary']['fail']}  INFO={audit['summary']['info']}")
-    print(f"  -> {OUT_JSON}")
-    print(f"  -> {OUT_MD}")
-    print(f"  -> {OUT_MATRIX}")
+    print(f"  -> {args.output}")
+    print(f"  -> {args.output_md}")
+    print(f"  -> {args.output_matrix}")
     if not medchem_df.is_empty():
-        print(f"  -> {OUT_MEDCHEM}")
+        print(f"  -> {args.output_medchem}")
         print(
             "medchem_audit_complete "
             f"total_candidates={medchem_metrics['total_candidates']} "

@@ -30,16 +30,20 @@ DEFAULT_REPORT = TRACK_A / "gflownet_top_50_tripartite_report.json"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--candidates", type=Path, default=None, help="Alias for --input used by Epoch 016.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--profile-parquet", type=Path, default=DEFAULT_PROFILE_PARQUET)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
+    parser.add_argument("--output-summary", type=Path, default=None)
+    parser.add_argument("--tripartite", action="store_true", default=False)
     parser.add_argument("--top-n", type=int, default=50)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    frame = pl.read_parquet(Path(args.input)).head(int(args.top_n))
+    input_path = Path(args.candidates) if args.candidates is not None else Path(args.input)
+    frame = pl.read_parquet(input_path).head(int(args.top_n))
     rows = [profile_for_row(row, rank=index + 1) for index, row in enumerate(frame.iter_rows(named=True))]
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -54,7 +58,7 @@ def main() -> int:
     report = {
         "schema_version": "PRISM.candidate_dossiers.tripartite.v1",
         "generated_at_utc": datetime.now(UTC).isoformat(),
-        "input": str(Path(args.input)),
+        "input": str(input_path),
         "output_dir": str(output_dir),
         "profile_parquet": str(profile_path),
         "candidate_count": len(rows),
@@ -65,6 +69,10 @@ def main() -> int:
         ),
     }
     atomic_write_json(Path(args.report), report)
+    if args.output_summary is not None:
+        summary_path = Path(args.output_summary)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(summary_markdown(rows, report), encoding="utf-8")
     print(
         "candidate_dossiers_generated "
         f"count={len(rows)} lock_positive={report['lock_positive']} "
@@ -186,6 +194,37 @@ def confidence_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
         key = str(row["epistemic_confidence"])
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def summary_markdown(rows: Sequence[Mapping[str, Any]], report: Mapping[str, Any]) -> str:
+    lines = [
+        "# M3 Candidate Summary",
+        "",
+        f"Generated candidates: `{report['candidate_count']}`",
+        f"Corrected lock-positive candidates: `{report['lock_positive']}`",
+        "",
+        "| rank | candidate | reward v2 | lock geometry | projection | confidence |",
+        "|---:|---|---:|---:|---:|---|",
+    ]
+    for row in rows[:50]:
+        lines.append(
+            "| {rank} | `{candidate_id}` | {reward:.3f} | {lock:.3f} | {projection:.3f} | {confidence} |".format(
+                rank=int(row["rank"]),
+                candidate_id=str(row["candidate_id"]),
+                reward=float(row["reward_v2_tripartite"]),
+                lock=float(row["lock_geometry_score"]),
+                projection=float(row["bias_projection_score"]),
+                confidence=str(row["epistemic_confidence"]),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "Epistemic note: projected bias values are inference-layer signals and remain pending GPU MD or wet-lab falsification.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def stable_candidate_id(smiles: str, rank: int) -> str:

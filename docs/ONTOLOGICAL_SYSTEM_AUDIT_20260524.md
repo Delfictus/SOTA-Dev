@@ -509,3 +509,20 @@ risk, but the actual preservation action is not complete until source changes
 are committed and pushed, generated dependency trees are ignored, and large
 artifacts are written to an external artifact store with tracked checksum
 manifests.
+
+## Storage Rescue Addendum
+
+Follow-up preservation work is recorded in
+`docs/STORAGE_RESCUE_STATUS_20260524.md`.
+
+Post-audit status:
+
+```yaml
+source_checkpoint_pushed: a6de31dc
+r2_manifest_prefix: r2:prism-deep-archive-20260516/storage-rescue/Prism4D-bio-20260524T2004PDT
+priority_artifacts_verified_sha256: 4
+priority_artifact_failures: 0
+manifest_upload_check: 29 matching files, 0 differences
+cleanup_performed: false
+cleanup_gate: explicit user approval still required
+```

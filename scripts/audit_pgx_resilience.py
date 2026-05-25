@@ -60,11 +60,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidates", type=Path, default=DEFAULT_CANDIDATES)
     parser.add_argument("--survivors", type=Path, default=DEFAULT_SURVIVORS)
     parser.add_argument("--signal-grid", type=Path, default=DEFAULT_SIGNAL_GRID)
+    parser.add_argument("--wt-grid", type=Path, default=None)
+    parser.add_argument("--variant-grids", type=str, default=None, help="Comma-separated NAME:path mappings.")
+    parser.add_argument("--wt-normalization", type=Path, default=None)
+    parser.add_argument("--use-global-wt-normalization", action="store_true", default=False)
+    parser.add_argument("--lock-mask", type=Path, default=None)
+    parser.add_argument("--tripartite", action="store_true", default=False)
     parser.add_argument("--grid-mapping", type=Path, default=DEFAULT_GRID_MAPPING)
     parser.add_argument("--wt-condition", type=str, default=DEFAULT_WT_CONDITION)
     parser.add_argument("--variant", action="append", default=None, help="Variant mapping as NAME:condition_id")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
+    parser.add_argument("--output-report", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -84,6 +91,49 @@ def parse_variant_args(values: list[str] | None) -> dict[str, str]:
         name, condition_id = value.split(":", 1)
         parsed[name] = condition_id
     return parsed
+
+
+def resolve_data_path(path: Path) -> Path:
+    if path.is_absolute() or path.exists():
+        return path
+    for base in (N80_DIR, TRACK_A, REPO_ROOT):
+        candidate = base / path
+        if candidate.exists():
+            return candidate
+    return path
+
+
+def parse_variant_grid_args(value: str | None) -> dict[str, Path]:
+    if value is None:
+        return {}
+    parsed: dict[str, Path] = {}
+    for item in value.split(","):
+        stripped = item.strip()
+        if not stripped:
+            continue
+        if ":" not in stripped:
+            raise ValueError(f"variant grid must be NAME:path, got {stripped!r}")
+        name, raw_path = stripped.split(":", 1)
+        parsed[name] = resolve_data_path(Path(raw_path))
+    return parsed
+
+
+def infer_condition_id(path: Path, fallback: str) -> str:
+    schema = pl.scan_parquet(path).collect_schema()
+    if "condition_id" not in schema.names():
+        return fallback
+    values = (
+        pl.scan_parquet(path)
+        .select(pl.col("condition_id").unique())
+        .collect()
+        .get_column("condition_id")
+        .to_list()
+    )
+    if len(values) == 1:
+        return str(values[0])
+    if fallback in values:
+        return fallback
+    return str(values[0]) if values else fallback
 
 
 def int_value(value: object) -> int:
@@ -127,12 +177,11 @@ def load_grid_specs(path: Path, condition_ids: list[str]) -> dict[str, GridSpec]
 
 
 def load_field(path: Path, condition_id: str) -> dict[int, FieldVoxel]:
-    frame = (
-        pl.scan_parquet(path)
-        .filter(pl.col("condition_id") == condition_id)
-        .select(["voxel_idx", "variance_class", "hit_count_cold_mean", "hit_count_warm_mean"])
-        .collect()
-    )
+    scan = pl.scan_parquet(path)
+    schema = scan.collect_schema()
+    if "condition_id" in schema.names():
+        scan = scan.filter(pl.col("condition_id") == condition_id)
+    frame = scan.select(["voxel_idx", "variance_class", "hit_count_cold_mean", "hit_count_warm_mean"]).collect()
     if frame.height == 0:
         raise FileNotFoundError(f"signal grid contains no rows for condition_id={condition_id}")
     rows = cast(list[dict[str, object]], frame.to_dicts())
@@ -221,10 +270,23 @@ def classify_resilience(value: float) -> str:
 
 def main() -> int:
     args = parse_args()
+    if args.output_report is not None:
+        args.report = args.output_report
+    wt_grid_path = resolve_data_path(Path(args.wt_grid)) if args.wt_grid is not None else resolve_data_path(Path(args.signal_grid))
+    variant_grid_paths = parse_variant_grid_args(cast(str | None, args.variant_grids))
     variants = parse_variant_args(cast(list[str] | None, args.variant))
+    field_paths: dict[str, Path] = {str(args.wt_condition): wt_grid_path}
+    if variant_grid_paths:
+        variants = {
+            name: infer_condition_id(path, f"glp1r_6XOX_{name}")
+            for name, path in variant_grid_paths.items()
+        }
+        field_paths.update({condition_id: variant_grid_paths[name] for name, condition_id in variants.items()})
+    else:
+        field_paths.update({condition_id: resolve_data_path(Path(args.signal_grid)) for condition_id in variants.values()})
     condition_ids = [str(args.wt_condition), *variants.values()]
     specs = load_grid_specs(Path(args.grid_mapping), condition_ids)
-    fields = {condition_id: load_field(Path(args.signal_grid), condition_id) for condition_id in condition_ids}
+    fields = {condition_id: load_field(field_paths[condition_id], condition_id) for condition_id in condition_ids}
     frame = candidate_rows(Path(args.candidates), Path(args.survivors))
     rows = cast(list[dict[str, object]], frame.to_dicts())
     wt_scores = [
@@ -254,6 +316,7 @@ def main() -> int:
             "epistemic_class": "PROJECTED",
             "diagnostic_status": "WT_PROJECTION_COLLAPSE",
             "scoring_method": "coordinate_field_projection_v1",
+            "variant_grid_source": "observed_embedded_n80_materialized" if variant_grid_paths else "observed_multicondition_n80",
             "generated_at_utc": datetime.now(UTC).isoformat(),
             "candidate_count": result.height,
             "wt_condition": str(args.wt_condition),
@@ -271,6 +334,8 @@ def main() -> int:
             "wt_projection_nonzero": wt_projection_nonzero,
             "wt_atoms_scored_mean": wt_atoms_scored_mean,
             "output": args.output.as_posix(),
+            "wt_grid": wt_grid_path.as_posix(),
+            "variant_grids": {name: path.as_posix() for name, path in variant_grid_paths.items()},
             "notes": [
                 "Variant grid conditions exist, but the current coordinate-field projection collapses WT rewards to <=0.01 for every sampled candidate.",
                 "This is a scoring-path calibration mismatch, not a missing-file condition.",
@@ -359,6 +424,7 @@ def main() -> int:
         "schema_version": "PRISM.pgx_resilience_cross_screen.v1",
         "epistemic_class": "PROJECTED",
         "scoring_method": "coordinate_field_projection_v1",
+        "variant_grid_source": "observed_embedded_n80_materialized" if variant_grid_paths else "observed_multicondition_n80",
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "candidate_count": result.height,
         "wt_condition": str(args.wt_condition),
@@ -367,6 +433,8 @@ def main() -> int:
         "worst_case_min": worst_min,
         "immune_or_tolerant_worst_case": result.filter(pl.col("pgx_overall_class").is_in(["IMMUNE", "TOLERANT"])).height,
         "output": args.output.as_posix(),
+        "wt_grid": wt_grid_path.as_posix(),
+        "variant_grids": {name: path.as_posix() for name, path in variant_grid_paths.items()},
         "notes": [
             "Scores are coordinate-field projections against the protocol-aware signal grid, not new PRISM-4D MD observations.",
             "Candidate coordinates are reused from the O3A/Z-matrix survivor corpus.",

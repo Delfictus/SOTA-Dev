@@ -10,10 +10,11 @@ import hashlib
 import json
 import math
 import random
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence, cast
+from typing import Any, Iterable, Mapping, Sequence, TextIO, cast
 
 import matplotlib
 
@@ -115,6 +116,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reward-version", type=str, default="v2_tripartite")
     parser.add_argument("--lock-directional-bias-alpha", type=float, default=2.0)
     parser.add_argument("--lock-reaching-synthon-boost", type=float, default=2.0)
+    parser.add_argument("--lock-geo-intrinsic-bonus", type=float, default=0.0)
+    parser.add_argument("--lock-mask", type=Path, default=TRACK_A_DIR / "lock_region_mask.json")
+    parser.add_argument("--synthon-parquet", type=Path, default=None)
+    parser.add_argument("--signal-grid", type=Path, default=None)
+    parser.add_argument("--shear-stress", type=Path, default=None)
+    parser.add_argument("--checkpoint-dir", type=Path, default=REPO_ROOT / ".scratch/checkpoints")
+    parser.add_argument("--checkpoint-interval", type=int, default=50)
+    parser.add_argument("--output-policy", type=Path, default=TRACK_A_DIR / "gflownet_policy_v1.pt")
+    parser.add_argument("--telemetry-log", type=Path, default=None)
+    parser.add_argument("--resume", type=Path, default=None)
     parser.add_argument("--torch-threads", type=int, default=4)
     parser.add_argument("--entropy-router", action="store_true", default=True)
     parser.add_argument("--disable-entropy-router", action="store_true", default=False)
@@ -251,13 +262,50 @@ def scaffold_paths_from_args(raw_scaffold_pool: Sequence[Path] | None, ligand_sd
         candidates = (ligand_sdf, *candidates)
     existing: list[Path] = []
     for path in candidates:
-        if not path.is_file():
-            continue
-        if path not in existing:
-            existing.append(path)
+        expanded = sorted(path.glob("*.sdf")) if path.is_dir() else [path]
+        for candidate in expanded:
+            if not candidate.is_file():
+                continue
+            if candidate not in existing:
+                existing.append(candidate)
     if not existing:
         raise RuntimeError("no scaffold SDFs were available for training initialization")
     return tuple(existing)
+
+
+def resolve_track_a_path(path: Path | None, fallback: Path) -> Path:
+    """Resolve directive-style relative paths against cwd and Track A."""
+
+    if path is None:
+        return fallback
+    candidate = Path(path)
+    if candidate.is_absolute() or candidate.exists():
+        return candidate
+    track_candidate = TRACK_A_DIR / candidate
+    if track_candidate.exists():
+        return track_candidate
+    n80_candidate = N80_DIR / candidate
+    if n80_candidate.exists():
+        return n80_candidate
+    return candidate
+
+
+class TelemetryTee:
+    """Write stdout/stderr to both terminal and a telemetry file."""
+
+    def __init__(self, stream: TextIO, handle: TextIO) -> None:
+        self._stream = stream
+        self._handle = handle
+
+    def write(self, data: str) -> int:
+        written = self._stream.write(data)
+        self._handle.write(data)
+        self._handle.flush()
+        return int(written or len(data))
+
+    def flush(self) -> None:
+        self._stream.flush()
+        self._handle.flush()
 
 
 def topology_ca_coordinates(path: Path) -> list[tuple[int, list[float]]]:
@@ -844,12 +892,22 @@ def save_training_checkpoint(
 
 async def train() -> None:
     args = parse_args()
+    telemetry_handle = None
+    if args.telemetry_log is not None:
+        telemetry_path = Path(args.telemetry_log)
+        if not telemetry_path.is_absolute():
+            telemetry_path = REPO_ROOT / telemetry_path
+        telemetry_path.parent.mkdir(parents=True, exist_ok=True)
+        telemetry_handle = telemetry_path.open("a", encoding="utf-8")
+        sys.stdout = TelemetryTee(sys.stdout, telemetry_handle)
+        sys.stderr = TelemetryTee(sys.stderr, telemetry_handle)
     torch.set_num_threads(max(1, int(args.torch_threads)))
     torch.set_num_interop_threads(max(1, min(4, int(args.torch_threads))))
     set_seed(int(args.seed))
+    anchors_path = resolve_track_a_path(cast(Path | None, args.synthon_parquet), Path(args.anchors))
     paths = TrainingPaths(
         ligand_sdf=Path(args.ligand_sdf),
-        anchors=Path(args.anchors),
+        anchors=anchors_path,
         survivors=Path(args.survivors),
         residue_phase=Path(args.residue_phase),
         interferometric=Path(args.interferometric),
@@ -901,7 +959,15 @@ async def train() -> None:
         ]
     )
     tb_loss = TrajectoryBalanceLoss()
-    oracle = BatchedRustOracle(survivor_corpus=paths.survivors, max_batch_size=int(args.batch_size))
+    oracle_args: list[str] = []
+    lock_mask = resolve_track_a_path(cast(Path | None, args.lock_mask), TRACK_A_DIR / "lock_region_mask.json")
+    if lock_mask.is_file():
+        oracle_args.extend(["--lock-mask", str(lock_mask)])
+    oracle = BatchedRustOracle(
+        survivor_corpus=paths.survivors,
+        max_batch_size=int(args.batch_size),
+        extra_args=tuple(oracle_args),
+    )
 
     config = {
         "architecture": "FiberBundleGFlowNetPolicy",
@@ -940,6 +1006,10 @@ async def train() -> None:
         "reward_version": str(args.reward_version),
         "lock_directional_bias_alpha": float(args.lock_directional_bias_alpha),
         "lock_reaching_synthon_boost": float(args.lock_reaching_synthon_boost),
+        "lock_geo_intrinsic_bonus": float(args.lock_geo_intrinsic_bonus),
+        "lock_mask": lock_mask.as_posix(),
+        "signal_grid": str(args.signal_grid) if args.signal_grid is not None else "",
+        "shear_stress": str(args.shear_stress) if args.shear_stress is not None else "",
         "rust_oracle_reward_authority": True,
         "uses_pyg_batch": True,
         "dense_adjacency": False,
@@ -1005,7 +1075,22 @@ async def train() -> None:
     plateau_logged = False
     top_reward_seen = 0.0
     final_epoch = 0
-    checkpoint_dir = REPO_ROOT / ".scratch/checkpoints"
+    checkpoint_dir = Path(args.checkpoint_dir)
+    if not checkpoint_dir.is_absolute():
+        checkpoint_dir = REPO_ROOT / checkpoint_dir
+    if args.resume is not None:
+        resume_path = Path(args.resume)
+        checkpoint = torch.load(resume_path, map_location="cpu", weights_only=False)
+        if not isinstance(checkpoint, dict):
+            raise RuntimeError(f"resume checkpoint must contain a dict: {resume_path}")
+        state_dict = checkpoint.get("model_state_dict")
+        if not isinstance(state_dict, dict):
+            raise RuntimeError(f"resume checkpoint missing model_state_dict: {resume_path}")
+        model.load_state_dict(state_dict)
+        optimizer_state = checkpoint.get("optimizer_state_dict")
+        if isinstance(optimizer_state, dict):
+            optimizer.load_state_dict(optimizer_state)
+        print(f"training_resume checkpoint={resume_path} prior_epoch={checkpoint.get('epoch', 0)}", flush=True)
     for epoch in range(1, int(args.epochs) + 1):
         final_epoch = epoch
         lr_policy = cosine_warmup_lr(
@@ -1075,7 +1160,15 @@ async def train() -> None:
             seen_smiles_counts,
             beta=float(args.diversity_beta),
         )
-        effective_rewards = (tempered_rewards + diversity_bonus).clamp_min(1.0e-8)
+        lock_intrinsic = torch.tensor(
+            [numeric_value(row.get("lock_geometry_score", row.get("pi_clash_lock", 0.0)), 0.0) for row in oracle_row_dicts],
+            dtype=torch.float32,
+        )
+        effective_rewards = (
+            tempered_rewards
+            + diversity_bonus
+            + float(args.lock_geo_intrinsic_bonus) * lock_intrinsic
+        ).clamp_min(1.0e-8)
         row_indices = torch.arange(int(args.batch_size), dtype=torch.long)
         forward_selected = output.forward_log_probs[row_indices, actions_tensor].unsqueeze(1)
         backward_selected = output.backward_log_probs[:, 0].unsqueeze(1)
@@ -1190,7 +1283,7 @@ async def train() -> None:
         if entropy_router is not None and epoch % interval == 0:
             for line in entropy_router.telemetry_lines(active_variant=str(args.active_variant)):
                 print(line, flush=True)
-        if epoch % 50 == 0:
+        if epoch % max(1, int(args.checkpoint_interval)) == 0:
             save_training_checkpoint(
                 checkpoint_dir / f"gflownet_epoch_{epoch:04d}.pt",
                 model=model,
@@ -1233,7 +1326,9 @@ async def train() -> None:
             print(f"training_convergence type=terminal epoch={epoch} reason=reward_collapse", flush=True)
             break
 
-    model_path = paths.output_dir / "gflownet_policy_v1.pt"
+    model_path = Path(args.output_policy)
+    if not model_path.is_absolute():
+        model_path = paths.output_dir / model_path
     torch.save(
         {
             "model_state_dict": model.state_dict(),
@@ -1359,6 +1454,8 @@ async def train() -> None:
         f"dot_smiles_count={dot_smiles_total} top_anchor_share={top_anchor_share:.6f} "
         f"validation_status={validation['validation_status']} model={model_path}"
     )
+    if telemetry_handle is not None:
+        telemetry_handle.close()
 
 
 if __name__ == "__main__":

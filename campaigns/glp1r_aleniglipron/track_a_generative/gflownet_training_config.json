@@ -15,29 +15,94 @@
   "base_feature_dim": 12,
   "phase_feature_dim": 8,
   "edge_feature_dim": 6,
+  "scaffold_pool_strategy": "dstw_entropy_router",
+  "entropy_router_enabled": true,
+  "entropy_router_type": "DSTW_ALIGNED",
+  "active_variant": "WT",
+  "scaffold_pool": [
+    {
+      "scaffold_id": "ALENI-PARENT_6XOX_frame_o3a_relaxed",
+      "ligand_sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf",
+      "retained_atom_count": 96,
+      "exit_node_idx": 0
+    },
+    {
+      "scaffold_id": "ALENI-PARENT_6XOX_translated",
+      "ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/conformers/ALENI-PARENT_6XOX_translated.sdf",
+      "retained_atom_count": 96,
+      "exit_node_idx": 0
+    },
+    {
+      "scaffold_id": "DANU-PARENT_6XOX_o3a",
+      "ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/conformers/DANU-PARENT_6XOX_o3a.sdf",
+      "retained_atom_count": 47,
+      "exit_node_idx": 12
+    },
+    {
+      "scaffold_id": "ORFOR-PARENT_6XOX_o3a",
+      "ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/conformers/ORFOR-PARENT_6XOX_o3a.sdf",
+      "retained_atom_count": 72,
+      "exit_node_idx": 39
+    },
+    {
+      "scaffold_id": "benchmark_DANUGLIPRON_PF06882961",
+      "ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/conformers/benchmark_DANUGLIPRON_PF06882961.sdf",
+      "retained_atom_count": 47,
+      "exit_node_idx": 12
+    },
+    {
+      "scaffold_id": "benchmark_LOTIGLIPRON_PF07081532",
+      "ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/conformers/benchmark_LOTIGLIPRON_PF07081532.sdf",
+      "retained_atom_count": 69,
+      "exit_node_idx": 5
+    },
+    {
+      "scaffold_id": "benchmark_ORFORGLIPRON_LY3502970",
+      "ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/conformers/benchmark_ORFORGLIPRON_LY3502970.sdf",
+      "retained_atom_count": 72,
+      "exit_node_idx": 0
+    }
+  ],
   "valid_action_count": 76493,
   "batch_size": 64,
   "warm_start_epochs": 32,
   "tb_epochs": 500,
   "learning_rate": 0.001,
-  "log_z_learning_rate": 0.05,
+  "log_z_learning_rate": 0.01,
   "learning_rate_floor": 1e-05,
   "log_z_learning_rate_floor": 0.0001,
   "policy_warmup_epochs": 20,
   "log_z_warmup_epochs": 10,
   "reward_scale": 10.0,
-  "policy_aux_weight": 0.2,
+  "policy_aux_weight": 0.0,
   "diversity_beta": 0.5,
+  "max_trajectory_steps": 5,
+  "reward_version": "v2_tripartite",
+  "lock_directional_bias_alpha": 2.0,
+  "lock_reaching_synthon_boost": 2.0,
+  "lock_geo_intrinsic_bonus": 0.0,
+  "lock_mask": "campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json",
+  "signal_grid": "signal_grid_variance_channel.parquet",
+  "shear_stress": "shear_stress_field.parquet",
   "rust_oracle_reward_authority": true,
   "uses_pyg_batch": true,
   "dense_adjacency": false,
   "learn_anchor_embeddings": true,
   "input_sha256": {
     "ligand_sdf": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d",
+    "scaffold_pool": {
+      "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d",
+      "campaigns/glp1r_aleniglipron/track_a_generative/conformers/ALENI-PARENT_6XOX_translated.sdf": "ef57f56243bd05992952ce176dda5231f40f3b6d332ea668d9834ea90d1d3161",
+      "campaigns/glp1r_aleniglipron/track_a_generative/conformers/DANU-PARENT_6XOX_o3a.sdf": "cb813586c5d27988f66fb8ece4164863ce6751922b1ac3bc83b91474f0198086",
+      "campaigns/glp1r_aleniglipron/track_a_generative/conformers/ORFOR-PARENT_6XOX_o3a.sdf": "11ba2a74442ef2042d81c46f712de1e8e775296f4e66a12bd34291ad905efe2b",
+      "campaigns/glp1r_aleniglipron/track_a_generative/conformers/benchmark_DANUGLIPRON_PF06882961.sdf": "84603e91fe516081692256c18214ab197895747647e728aa47570ff301f370c4",
+      "campaigns/glp1r_aleniglipron/track_a_generative/conformers/benchmark_LOTIGLIPRON_PF07081532.sdf": "dc7b9d9d729216601aa755d6eef3ea61d5421e9b3e7ecc2a4cc10a749d4dec74",
+      "campaigns/glp1r_aleniglipron/track_a_generative/conformers/benchmark_ORFORGLIPRON_LY3502970.sdf": "87e4402de20453d0321e6f06803fffde6710f6bdc0001a5da3b5ddd72406cd74"
+    },
     "anchors": "042742f9e1847e5b70bb191b5fa6fa2684ba2e470362ba814ddc16f908951874",
     "survivors": "80834c84283594a817ba8c782eefd55e3edd52105a264d2be1fa1f8a084207de",
     "residue_phase": "0b4c2dfb367b66b917b82527c3b55e87c00d598c15c7ae7eeb3e9b7e2aa0498f",
     "interferometric": "03d7d1fd0bfc144a3db8d3e3c3731e12aad4a8f1e085f8dd2169d06672b93e54"
   },
-  "generated_at_utc": "2026-05-24T23:07:31.462445+00:00"
+  "generated_at_utc": "2026-05-25T05:12:32.704796+00:00"
 }

@@ -21,6 +21,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import polars as pl
@@ -35,6 +36,7 @@ sys.path.insert(0, str(REPO / "src"))
 import scripts.train_gflownet_policy as T  # noqa: E402
 
 from prism_dstw.hierarchical_bayes.gflownet_policy import FiberBundleGFlowNetPolicy  # noqa: E402
+from prism_dstw.scoring.tripartite_bias_scorer import compute_tripartite_bias  # noqa: E402
 
 TRACK_A = REPO / "campaigns/glp1r_aleniglipron/track_a_generative"
 MODEL_PATH = TRACK_A / "gflownet_policy_v1.pt"
@@ -58,13 +60,28 @@ def hard_fail(msg: str) -> None:
     sys.exit(2)
 
 
-def build_paths() -> "T.TrainingPaths":
+def resolve_track_a_path(path: Path | None, fallback: Path) -> Path:
+    if path is None:
+        return fallback
+    candidate = Path(path)
+    if candidate.is_absolute() or candidate.exists():
+        return candidate
+    track_candidate = TRACK_A / candidate
+    if track_candidate.exists():
+        return track_candidate
+    n80_candidate = REPO / "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale" / candidate
+    if n80_candidate.exists():
+        return n80_candidate
+    return candidate
+
+
+def build_paths(args: argparse.Namespace) -> "T.TrainingPaths":
     # Use the trainer's default paths to match the model's training context
     # exactly. Resolved against pre-flight: residue_phase + interferometric
     # live under integrated_spike_events/n80_full_scale/.
     return T.TrainingPaths(
         ligand_sdf       = T.DEFAULT_LIGAND_SDF,
-        anchors          = T.DEFAULT_ANCHORS,
+        anchors          = resolve_track_a_path(args.synthon_parquet, T.DEFAULT_ANCHORS),
         survivors        = T.DEFAULT_SURVIVORS,
         residue_phase    = T.DEFAULT_RESIDUE_PHASE,
         interferometric  = T.DEFAULT_INTERFEROMETRIC,
@@ -77,7 +94,7 @@ def build_paths() -> "T.TrainingPaths":
 @torch.no_grad()
 def sample_once(
     model: FiberBundleGFlowNetPolicy,
-    graph: "T.ScaffoldGraph",
+    graph: "T.ScaffoldGraph | Sequence[T.ScaffoldGraph]",
     action_space: "T.ActionSpace",
     action_rows: list[dict],
     batch_size: int,
@@ -133,16 +150,29 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--seed", type=int, default=20260524)
     ap.add_argument("--num-samples", type=int, default=10_000)
+    ap.add_argument("--policy", type=Path, default=MODEL_PATH)
+    ap.add_argument("--scaffold-pool", type=Path, action="append", default=None)
+    ap.add_argument("--synthon-parquet", type=Path, default=None)
+    ap.add_argument("--signal-grid", type=Path, default=None)
+    ap.add_argument("--lock-mask", type=Path, default=TRACK_A / "lock_region_mask.json")
+    ap.add_argument("--temperatures", type=str, default="")
+    ap.add_argument("--trajectories-per-temperature", type=int, default=None)
+    ap.add_argument("--output", type=Path, default=OUT_TOP500)
+    ap.add_argument("--tripartite-scoring", action="store_true", default=False)
     args = ap.parse_args()
 
     print("=== Phase 2 — multi-temperature policy sampling ===")
-    print(f"  loading model: {MODEL_PATH}")
-    if not MODEL_PATH.is_file():
-        hard_fail(f"model missing: {MODEL_PATH}")
+    model_path = resolve_track_a_path(args.policy, MODEL_PATH)
+    print(f"  loading model: {model_path}")
+    if not model_path.is_file():
+        hard_fail(f"model missing: {model_path}")
 
-    paths = build_paths()
+    paths = build_paths(args)
     paths.output_dir.mkdir(parents=True, exist_ok=True)
-    graph = T.build_scaffold_graph(paths)
+    scaffold_sdfs = T.scaffold_paths_from_args(args.scaffold_pool, paths.ligand_sdf)
+    scaffold_pool = T.build_scaffold_pool(paths, scaffold_sdfs)
+    graph: "T.ScaffoldGraph | Sequence[T.ScaffoldGraph]" = scaffold_pool if len(scaffold_pool) > 1 else scaffold_pool[0]
+    reference_graph = scaffold_pool[0]
     cfg = json.loads((TRACK_A / "gflownet_training_config.json").read_text())
     # Trainer argparse defaults (must match the values used at training time —
     # see scripts/train_gflownet_policy.py:91-92). The trainer's saved
@@ -152,15 +182,15 @@ def main() -> int:
     action_space = T.load_action_space(paths, embedding_dim)
     action_rows = action_space.table.to_dicts()
     model = FiberBundleGFlowNetPolicy(
-        base_feature_dim=graph.base_feature_dim,
-        phase_feature_dim=graph.phase_feature_dim,
-        edge_feature_dim=graph.edge_feature_dim,
+        base_feature_dim=reference_graph.base_feature_dim,
+        phase_feature_dim=reference_graph.phase_feature_dim,
+        edge_feature_dim=reference_graph.edge_feature_dim,
         anchor_embeddings=action_space.anchor_embeddings,
         hidden_dim=hidden_dim,
         embedding_dim=embedding_dim,
         learn_anchor_embeddings=True,
     )
-    ckpt = torch.load(MODEL_PATH, map_location="cpu", weights_only=False)
+    ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
     if isinstance(ckpt, dict):
         state_dict = ckpt.get("model_state_dict") or ckpt.get("state_dict") or ckpt
     else:
@@ -177,11 +207,21 @@ def main() -> int:
 
     rows: list[dict] = []
     t0 = time.perf_counter()
-    base_total = sum(int(r["samples"]) for r in REGIMES)
+    if args.temperatures:
+        temperatures = [float(value.strip()) for value in str(args.temperatures).split(",") if value.strip()]
+        per_temperature = int(args.trajectories_per_temperature or 2000)
+        source_regimes = [
+            {"name": f"T{temperature:g}".replace(".", "p"), "temperature": temperature, "samples": per_temperature}
+            for temperature in temperatures
+        ]
+        args.num_samples = per_temperature * len(source_regimes)
+    else:
+        source_regimes = REGIMES
+    base_total = sum(int(r["samples"]) for r in source_regimes)
     regimes = []
     assigned = 0
-    for idx, regime in enumerate(REGIMES):
-        if idx == len(REGIMES) - 1:
+    for idx, regime in enumerate(source_regimes):
+        if idx == len(source_regimes) - 1:
             samples = int(args.num_samples) - assigned
         else:
             samples = max(1, round(int(args.num_samples) * int(regime["samples"]) / base_total))
@@ -258,6 +298,8 @@ def main() -> int:
             str(oracle_rewards),
             "--survivors",
             str(TRACK_A / "vspace_survivors_full_scale.parquet"),
+            "--lock-mask",
+            str(resolve_track_a_path(args.lock_mask, TRACK_A / "lock_region_mask.json")),
         ],
         cwd=REPO,
         check=True,
@@ -276,6 +318,13 @@ def main() -> int:
     )
     if "lock_geometry_score" not in scored.columns:
         scored = scored.with_columns(pl.col("pi_clash_lock").alias("lock_geometry_score"))
+    if args.tripartite_scoring:
+        tripartite_rows = [compute_tripartite_bias(row) for row in scored.to_dicts()]
+        scored = scored.with_columns(
+            pl.Series("lock_persistence_score", [score.lock_persistence_score for score in tripartite_rows]),
+            pl.Series("bias_projection_score", [score.bias_projection_score for score in tripartite_rows]),
+            pl.Series("epistemic_confidence", [score.epistemic_confidence for score in tripartite_rows]),
+        )
     top500 = scored.head(500)
     biased_pool = scored.filter(pl.col("lock_geometry_score") > LOCK_CLASH_THRESHOLD)
     if biased_pool.height < 100:
@@ -289,9 +338,11 @@ def main() -> int:
     else:
         top100_source = biased_pool.head(100)
     top100 = top100_source.drop("rank").with_row_index("rank", offset=1)
-    top500.write_parquet(OUT_TOP500)
+    output_top500 = resolve_track_a_path(args.output, OUT_TOP500)
+    output_top100 = output_top500.with_name(output_top500.stem.replace("top_500", "top_100") + output_top500.suffix)
+    top500.write_parquet(output_top500)
     top500.write_csv(TRACK_A / "gflownet_top_500_candidates.csv")
-    top100.write_parquet(OUT_TOP100)
+    top100.write_parquet(output_top100)
     top100.write_csv(TRACK_A / "gflownet_top_100_candidates.csv")
     md_rows = [
         "# GFlowNet Top 500 Candidates",

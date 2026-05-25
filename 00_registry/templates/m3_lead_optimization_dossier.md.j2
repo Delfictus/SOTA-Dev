@@ -75,14 +75,45 @@ Lineage:
 | {{ row.rank }} | `{{ row.canonical_smiles }}` | {{ "%.3f"|format(row.reward) }} | {{ "%.3f"|format(row.lock_geometry_score) }} | {{ "%.3f"|format(row.bias_projection_score) }} | {{ row.epistemic_confidence }} | {{ "%.3f"|format(row.pi_clash_pocket) }} | {{ "%.3f"|format(row.pi_complement) }} | {{ row.synthetic_route }} |
 {% endfor %}
 
-## 6. Falsification Gates
+## 6. PGx Resilience Status
+
+PGx status: `{{ pgx_status }}`
+Epistemic class: `{{ pgx_epistemic_class }}`
+Report: `{{ pgx_report_path }}`
+
+{% if pgx_variants %}
+| variant | condition | lock preserved | class counts |
+|---|---|---:|---|
+{% for variant in pgx_variants -%}
+| {{ variant.name }} | `{{ variant.condition_id }}` | {{ variant.lock_preserved_count }} | `{{ variant.classification_counts }}` |
+{% endfor %}
+{% else %}
+PGx cross-screening remains deferred until validated variant grids and a non-collapsing coordinate scoring path are available.
+{% endif %}
+
+## 7. GPU Dispatch Readiness
+
+GPU dispatch status: `{{ gpu_dispatch_status }}`
+
+| dispatch metric | value |
+|---|---:|
+| scripts generated | {{ gpu_dispatch_count }} |
+| dispatch-ready scripts | {{ gpu_dispatch_ready_count }} |
+| corrected engine scripts | {{ gpu_dispatch_corrected_count }} |
+| high-priority BALD jobs | {{ gpu_dispatch_high_priority_count }} |
+
+Dispatch audit: `{{ gpu_dispatch_report_path }}`
+
+These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
+
+## 8. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 7. Lineage
+## 9. Lineage
 
 - policy checkpoint: `{{ policy_path }}`
 - top-100 candidates: `{{ top100_path }}`
