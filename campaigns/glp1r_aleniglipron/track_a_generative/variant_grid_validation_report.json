@@ -1,0 +1,37 @@
+{
+  "generated_at_utc": "2026-05-25T05:12:12.770343+00:00",
+  "overall_status": "PASS",
+  "schema_version": "PRISM.variant_grid_validation.v1",
+  "variants": [
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "differs_from_wt_fraction": 0.1341891818576389,
+      "differs_from_wt_rows": 118722,
+      "nonvoid": 109707,
+      "provenance": "OBSERVED_EMBEDDED_N80_SIGNAL_GRID",
+      "rows": 884736,
+      "schema_matches_wt": true,
+      "validation_status": "PASS",
+      "variant_grid": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_A316T.parquet",
+      "voxel_max": 884735,
+      "voxel_min": 0,
+      "wt_rows": 884736
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "differs_from_wt_fraction": 0.13938960322627314,
+      "differs_from_wt_rows": 123323,
+      "nonvoid": 116897,
+      "provenance": "OBSERVED_EMBEDDED_N80_SIGNAL_GRID",
+      "rows": 884736,
+      "schema_matches_wt": true,
+      "validation_status": "PASS",
+      "variant_grid": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_T149M.parquet",
+      "voxel_max": 884735,
+      "voxel_min": 0,
+      "wt_rows": 884736
+    }
+  ],
+  "wt_condition": "glp1r_6XOX_WT",
+  "wt_grid": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet"
+}

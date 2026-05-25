@@ -11,6 +11,8 @@ Manifest root: `/mnt/storage/prism-rescue-manifests/Prism4D-bio-20260524T2004PDT
 - R2 rescue prefix: `r2:prism-deep-archive-20260516/storage-rescue/Prism4D-bio-20260524T2004PDT`
 - Manifest upload verification: 29 matching files, 0 differences, 0 missing on destination
 - Priority artifact verification: 4 OK, 0 FAIL
+- Secondary runtime artifact upload: 31 `.scratch` files, 707,332,154 bytes
+- Secondary runtime verification: 28 stable files matched by R2 download check; 3 unstable files verified by remote SHA-256
 - Cleanup performed: none
 
 ## Priority Artifacts Verified
@@ -28,6 +30,32 @@ The authoritative R2 verification files are:
 - `/mnt/storage/prism-rescue-manifests/Prism4D-bio-20260524T2004PDT/priority_artifacts.remote_noprogress.sha256`
 
 An earlier verifier attempt using `rclone cat -P` is retained as evidence but is invalid because progress output contaminates stdout in this environment.
+
+## Secondary Runtime Artifacts
+
+Secondary runtime artifacts were uploaded under:
+
+```text
+r2:prism-deep-archive-20260516/storage-rescue/Prism4D-bio-20260524T2004PDT/secondary-runtime-artifacts
+```
+
+The stable subset is verified by:
+
+- `/mnt/storage/prism-rescue-manifests/Prism4D-bio-20260524T2004PDT/secondary-check-reports-stable/r2_secondary_stable_match.txt`
+
+Three files changed locally after upload because a GFlowNet training wrapper restarted during the rescue. Their already-uploaded remote copies were verified directly against the pre-transfer SHA-256 manifest:
+
+```text
+.scratch/epoch016_telemetry.log
+.scratch/oracle_batch.parquet
+.scratch/oracle_rewards.parquet
+```
+
+The authoritative unstable-file verification file is:
+
+- `/mnt/storage/prism-rescue-manifests/Prism4D-bio-20260524T2004PDT/secondary_unstable_remote_verify.tsv`
+
+The restarted GFlowNet trainer and oracle scorer were stopped with SIGTERM, and the follow-up producer scan showed no active `gflownet`, `oracle_scorer`, `vspace`, `ingest`, `am1bcc`, package, or cargo producer.
 
 ## Cleanup Gate
 

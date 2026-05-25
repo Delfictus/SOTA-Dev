@@ -1,0 +1,35 @@
+{
+  "available_conditions": [
+    "glp1r_6XOX_A316T",
+    "glp1r_6XOX_T149M",
+    "glp1r_6XOX_WT",
+    "glp1r_6LN2_WT",
+    "glp1r_6LN2_A316T",
+    "glp1r_6LN2_T149M",
+    "glp1r_5VEX_WT",
+    "glp1r_6X1A_WT"
+  ],
+  "generated_at_utc": "2026-05-25T05:12:12.534551+00:00",
+  "outputs": [
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "nonvoid": 109707,
+      "output": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_A316T.parquet",
+      "provenance": "OBSERVED_EMBEDDED_N80_SIGNAL_GRID",
+      "rows": 884736,
+      "source": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+      "variant": "A316T"
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "nonvoid": 116897,
+      "output": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_T149M.parquet",
+      "provenance": "OBSERVED_EMBEDDED_N80_SIGNAL_GRID",
+      "rows": 884736,
+      "source": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+      "variant": "T149M"
+    }
+  ],
+  "schema_version": "PRISM.variant_grid_materialization.v1",
+  "source": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet"
+}
