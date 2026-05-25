@@ -201,7 +201,7 @@ impl TdaGpu {
 
         if actual_edges == 0 {
             // Empty graph: betti_0 = num_vertices (all disconnected), betti_1 = 0
-            return Ok((num_vertices, 0);
+            return Ok((num_vertices, 0));
         }
 
         // Allocate device memory
@@ -361,7 +361,7 @@ impl TdaGpu {
 
         if actual_edges == 0 {
             // Empty graph: all zeros
-            return Ok((vec![0.0; num_vertices], vec![0.0; num_vertices]);
+            return Ok((vec![0.0; num_vertices], vec![0.0; num_vertices]));
         }
 
         // Allocate device memory

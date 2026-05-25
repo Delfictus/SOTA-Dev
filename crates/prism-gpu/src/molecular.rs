@@ -126,7 +126,7 @@ impl MolecularDynamicsGpu {
                 "num_particles {} exceeds MAX_PARTICLES {}",
                 params.num_particles,
                 MAX_PARTICLES
-            );
+            ));
         }
 
         // Calculate lattice dimensions
@@ -179,7 +179,7 @@ impl MolecularDynamicsGpu {
             });
         }
 
-        log::info!("Initialized {} particles on GPU", particles.len();
+        log::info!("Initialized {} particles on GPU", particles.len());
         Ok(particles)
     }
 

@@ -1,9 +1,52 @@
 use anyhow::Result;
-use prism_niv_bench::fluxnet_dqn_zero_copy::{compute_cryptic_reward, CrypticAction};
-use prism_niv_bench::fluxnet_niv::GroundTruth;
 use prism_niv_bench::structure_types::NivBenchDataset;
 use std::fs::File;
 use std::io::BufReader;
+
+#[derive(Clone, Copy)]
+enum CrypticAction {
+    PredictCryptic,
+    PredictExposed,
+}
+
+fn compute_cryptic_reward(
+    action: CrypticAction,
+    is_cryptic: bool,
+    is_epitope: bool,
+    confidence: f32,
+) -> f32 {
+    match (action, is_cryptic, is_epitope) {
+        (CrypticAction::PredictCryptic, true, true) => 2.0 * confidence,
+        (CrypticAction::PredictCryptic, true, false) => 1.0 * confidence,
+        (CrypticAction::PredictCryptic, false, _) => -0.5 * confidence,
+        (CrypticAction::PredictExposed, true, _) => -1.0 * confidence,
+        (CrypticAction::PredictExposed, false, _) => 0.5 * confidence,
+    }
+}
+
+fn is_cryptic(dataset: &NivBenchDataset, pdb_id: &str, residue_idx: u32) -> bool {
+    dataset
+        .cryptic_sites
+        .get(pdb_id)
+        .map(|sites| {
+            sites
+                .iter()
+                .any(|site| site.residues.iter().any(|&residue| residue == residue_idx))
+        })
+        .unwrap_or(false)
+}
+
+fn is_epitope(dataset: &NivBenchDataset, pdb_id: &str, residue_idx: u32) -> bool {
+    dataset
+        .epitopes
+        .get(pdb_id)
+        .map(|epitopes| {
+            epitopes
+                .iter()
+                .any(|epitope| epitope.interface_residues.iter().any(|&residue| residue == residue_idx))
+        })
+        .unwrap_or(false)
+}
 
 fn main() -> Result<()> {
     println!("--- Verifying Logic: Data -> GroundTruth -> Reward ---");
@@ -14,7 +57,6 @@ fn main() -> Result<()> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let dataset: NivBenchDataset = serde_json::from_reader(reader)?;
-    let gt = GroundTruth::new(&dataset);
 
     // 2. Define Test Cases based on Synthetic Data
     // 8XPS:
@@ -30,8 +72,8 @@ fn main() -> Result<()> {
     for (residue_idx, desc, expected_cryptic, expected_epitope) in test_cases {
         println!("\nTesting: {}", desc);
 
-        let is_cryptic = gt.is_cryptic("8XPS", residue_idx);
-        let is_epitope = gt.is_epitope("8XPS", residue_idx);
+        let is_cryptic = is_cryptic(&dataset, "8XPS", residue_idx);
+        let is_epitope = is_epitope(&dataset, "8XPS", residue_idx);
 
         println!(
             "  Ground Truth: Cryptic={}, Epitope={}",

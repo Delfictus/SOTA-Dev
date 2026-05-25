@@ -117,7 +117,7 @@ impl ThermodynamicGpu {
         if num_vertices == 0 {
             return Err(ThermodynamicError::InvalidParameter(
                 "num_vertices must be > 0".to_string(),
-            );
+            ));
         }
 
         if initial_colors.len() != num_vertices {
@@ -125,17 +125,17 @@ impl ThermodynamicGpu {
                 "initial_colors length {} != num_vertices {}",
                 initial_colors.len(),
                 num_vertices
-            ));
+            )));
         }
 
         if num_replicas == 0 {
             return Err(ThermodynamicError::InvalidParameter(
                 "num_replicas must be > 0".to_string(),
-            );
+            ));
         }
 
         // Count unique colors in initial solution to detect warmstart
-        let mut unique_colors = std::collections::HashSet::new());
+        let mut unique_colors = std::collections::HashSet::new();
         for &color in initial_colors {
             unique_colors.insert(color);
         }
@@ -460,7 +460,7 @@ mod tests {
     fn test_thermodynamic_gpu_triangle() {
         env_logger::try_init().ok();
 
-        let device = Arc::new(CudaContext::new(0).expect("CUDA not available");
+        let device = Arc::new(CudaContext::new(0).expect("CUDA not available"));
         let thermo =
             ThermodynamicGpu::new(device, "target/ptx/thermodynamic.ptx").expect("GPU init failed");
 
@@ -484,7 +484,7 @@ mod tests {
     fn test_thermodynamic_gpu_petersen() {
         env_logger::try_init().ok();
 
-        let device = Arc::new(CudaContext::new(0).expect("CUDA not available");
+        let device = Arc::new(CudaContext::new(0).expect("CUDA not available"));
         let thermo =
             ThermodynamicGpu::new(device, "target/ptx/thermodynamic.ptx").expect("GPU init failed");
 
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(conflicts, 0, "Thermodynamic should produce valid coloring");
 
         // Check that chromatic number is reasonable (should be 3 for Petersen)
-        let max_color = *result.iter().max().unwrap());
+        let max_color = *result.iter().max().unwrap();
         assert!(
             max_color <= 5,
             "Chromatic number should be <= 5 for Petersen (optimal: 3)"
@@ -536,8 +536,8 @@ mod tests {
     fn test_adjacency_to_csr() {
         let device = Arc::new(CudaContext::new(0).unwrap_or_else(|_| {
             panic!("Test requires GPU");
-        });
-        let thermo = ThermodynamicGpu::new(device, "target/ptx/thermodynamic.ptx").unwrap());
+        }));
+        let thermo = ThermodynamicGpu::new(device, "target/ptx/thermodynamic.ptx").unwrap();
 
         let adjacency = vec![vec![1, 2], vec![0, 2], vec![0, 1]];
         let (row_ptr, col_idx) = thermo.adjacency_to_csr(&adjacency, 3);

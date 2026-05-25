@@ -3,10 +3,9 @@
 
 use anyhow::{Context, Result};
 use cudarc::driver::CudaContext;
-use prism_gpu::{MegaFusedBatchGpu, PackedBatch, StructureInput};
+use prism_gpu::{MegaFusedBatchGpu, MegaFusedConfig, PackedBatch, StructureInput};
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
 fn main() -> Result<()> {
     println!("═══════════════════════════════════════════════════");
@@ -31,8 +30,8 @@ fn main() -> Result<()> {
 
     // Initialize GPU
     println!("\nInitializing PRISM-GPU...");
-    let context = Arc::new(CudaContext::new(0)?);
-    let gpu = MegaFusedBatchGpu::new(context, Path::new("target/ptx"))?;
+    let context = CudaContext::new(0)?;
+    let mut gpu = MegaFusedBatchGpu::new(context, Path::new("target/ptx"))?;
 
     println!("  ✓ GPU initialized");
 
@@ -43,15 +42,17 @@ fn main() -> Result<()> {
         ca_indices,
         conservation,
         bfactor,
+        burial: vec![0.5; num_residues],
+        residue_types: vec![0; num_residues],
     };
 
     // Create batch
     let batch = PackedBatch::from_structures(&[structure])?;
 
     println!("\nExtracting features via mega_fused_batch_detection kernel...");
-    let output = gpu.process_batch_detection(&batch)?;
+    let output = gpu.detect_pockets_batch(&batch, &MegaFusedConfig::default())?;
 
-    let features = &output.features[0];
+    let features = &output.structures[0].combined_features;
     println!("  ✓ Extracted {} × 136 features", features.len());
 
     // Save as numpy array
@@ -59,7 +60,7 @@ fn main() -> Result<()> {
     fs::create_dir_all(output_dir)?;
 
     let output_path = format!("{}/6m0j_RESIDUE_TYPES_FIXED.npy", output_dir);
-    save_numpy(&features, &output_path)?;
+    save_numpy(features, 136, &output_path)?;
 
     println!("\n✅ REAL features saved to: {}", output_path);
     println!("═══════════════════════════════════════════════════");

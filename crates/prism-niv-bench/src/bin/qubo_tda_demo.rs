@@ -15,7 +15,7 @@ use prism_niv_bench::{
     qubo_tda_integration::{QuboTdaOptimizer, QuboTdaParams},
     structure_types::NivBenchDataset,
 };
-use std::{fs::File, io::BufReader, sync::Arc, time::Instant};
+use std::{fs::File, io::BufReader, time::Instant};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -39,9 +39,8 @@ fn main() -> Result<()> {
 
     // Initialize CUDA context
     println!("🔧 Initializing CUDA context...");
-    let cuda_context = Arc::new(
-        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?,
-    );
+    let cuda_context =
+        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?;
 
     println!("✅ CUDA initialized: {}", cuda_context.name()?);
 

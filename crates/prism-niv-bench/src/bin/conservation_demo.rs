@@ -15,7 +15,7 @@ use prism_niv_bench::{
     conservation_analysis::{ConservationAnalyzer, ConservationParams, MultipleSequenceAlignment},
     structure_types::NivBenchDataset,
 };
-use std::{fs::File, io::BufReader, sync::Arc, time::Instant};
+use std::{fs::File, io::BufReader, time::Instant};
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -44,9 +44,8 @@ fn main() -> Result<()> {
 
     // Initialize CUDA context
     println!("🔧 Initializing CUDA context...");
-    let cuda_context = Arc::new(
-        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?,
-    );
+    let cuda_context =
+        CudaContext::new(0).map_err(|e| anyhow::anyhow!("Failed to initialize CUDA: {}", e))?;
 
     println!("✅ CUDA initialized: {}", cuda_context.name()?);
 
@@ -352,13 +351,13 @@ fn main() -> Result<()> {
 
 /// Create synthetic multiple sequence alignment for demonstration
 fn create_synthetic_msa(
-    structure: &prism_niv_bench::structure_types::StructureData,
+    structure: &prism_niv_bench::structure_types::ParamyxoStructure,
 ) -> Result<MultipleSequenceAlignment> {
     // Extract reference sequence from structure
     let reference_sequence: String = structure
         .residues
         .iter()
-        .map(|residue| residue.amino_acid.chars().next().unwrap_or('X'))
+        .map(|residue| residue_name_to_one_letter(&residue.name))
         .collect();
 
     // Generate synthetic homologous sequences with realistic variations
@@ -418,12 +417,41 @@ fn create_synthetic_msa(
         sequence_ids.push(format!("homolog_{:02}", i + 1));
     }
 
+    let alignment_length = reference_sequence.len();
+
     Ok(MultipleSequenceAlignment {
         sequences,
         sequence_ids,
         reference_sequence,
-        alignment_length: reference_sequence.len(),
+        alignment_length,
     })
+}
+
+fn residue_name_to_one_letter(name: &str) -> char {
+    match name.trim().to_ascii_uppercase().as_str() {
+        "ALA" => 'A',
+        "ARG" => 'R',
+        "ASN" => 'N',
+        "ASP" => 'D',
+        "CYS" => 'C',
+        "GLN" => 'Q',
+        "GLU" => 'E',
+        "GLY" => 'G',
+        "HIS" => 'H',
+        "ILE" => 'I',
+        "LEU" => 'L',
+        "LYS" => 'K',
+        "MET" => 'M',
+        "PHE" => 'F',
+        "PRO" => 'P',
+        "SER" => 'S',
+        "THR" => 'T',
+        "TRP" => 'W',
+        "TYR" => 'Y',
+        "VAL" => 'V',
+        one if one.len() == 1 => one.chars().next().unwrap_or('X'),
+        _ => 'X',
+    }
 }
 
 #[cfg(test)]

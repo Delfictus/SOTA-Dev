@@ -11,7 +11,10 @@
 //
 // ============================================================================
 
-use cudarc::driver::{DevicePtrMut, CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg, DeviceSlice};
+use cudarc::driver::{
+    CudaContext, CudaFunction, CudaSlice, CudaStream, DeviceRepr, DeviceSlice, LaunchConfig,
+    PushKernelArg, ValidAsZeroBits,
+};
 use cudarc::nvrtc::Ptx;
 use prism_core::PrismError;
 use std::path::Path;
@@ -55,6 +58,9 @@ pub struct FitnessParams {
     pub escape_weight: f32,      // Weight for immune escape component
     pub transmit_weight: f32,    // Weight for transmissibility component
 }
+
+unsafe impl DeviceRepr for FitnessParams {}
+unsafe impl ValidAsZeroBits for FitnessParams {}
 
 impl Default for FitnessParams {
     fn default() -> Self {
@@ -268,7 +274,7 @@ impl ViralEvolutionFitnessGpu {
             return Err(PrismError::gpu(
                 "ve_fitness",
                 format!("PTX not found: {:?}. Run cargo build --features cuda", ptx_path)
-            );
+            ));
         }
 
         let ptx_src = std::fs::read_to_string(&ptx_path)
@@ -287,13 +293,16 @@ impl ViralEvolutionFitnessGpu {
         let batch_combined_kernel = module.load_function("batch_fitness_combined").ok();
 
         log::info!("Viral Evolution Fitness GPU kernels loaded");
-        log::info!("  - DMS escape: {}", dms_escape_kernel.is_some();
-        log::info!("  - Cross-neutralization: {}", cross_neutralization_kernel.is_some();
-        log::info!("  - Stability: {}", stability_kernel.is_some();
-        log::info!("  - Binding: {}", binding_kernel.is_some();
-        log::info!("  - Unified fitness: {}", unified_fitness_kernel.is_some();
-        log::info!("  - Dynamics: {}", dynamics_kernel.is_some();
-        log::info!("  - Batch combined: {}", batch_combined_kernel.is_some();
+        log::info!("  - DMS escape: {}", dms_escape_kernel.is_some());
+        log::info!(
+            "  - Cross-neutralization: {}",
+            cross_neutralization_kernel.is_some()
+        );
+        log::info!("  - Stability: {}", stability_kernel.is_some());
+        log::info!("  - Binding: {}", binding_kernel.is_some());
+        log::info!("  - Unified fitness: {}", unified_fitness_kernel.is_some());
+        log::info!("  - Dynamics: {}", dynamics_kernel.is_some());
+        log::info!("  - Batch combined: {}", batch_combined_kernel.is_some());
 
         Ok(Self {
             context,
@@ -323,17 +332,18 @@ impl ViralEvolutionFitnessGpu {
         const EXPECTED_SIZE: usize = 836 * 201;
 
         if escape_matrix.len() != EXPECTED_SIZE {
-            return Err(PrismError::data(
-                "ve_fitness",
-                format!("Expected {} escape scores, got {}", EXPECTED_SIZE, escape_matrix.len())
-            );
+            return Err(PrismError::validation(format!(
+                "ve_fitness expected {} escape scores, got {}",
+                EXPECTED_SIZE,
+                escape_matrix.len()
+            )));
         }
 
         if antibody_epitopes.len() != 836 {
-            return Err(PrismError::data(
-                "ve_fitness",
-                format!("Expected 836 antibody epitopes, got {}", antibody_epitopes.len())
-            );
+            return Err(PrismError::validation(format!(
+                "ve_fitness expected 836 antibody epitopes, got {}",
+                antibody_epitopes.len()
+            )));
         }
 
         // Upload to GPU global memory
@@ -341,13 +351,13 @@ impl ViralEvolutionFitnessGpu {
         let mut d_escape = self.stream.alloc_zeros::<f32>(EXPECTED_SIZE)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc escape matrix: {}", e)))?;
 
-        self.stream.memcpy_htod(escape_matrix, &mut  &mut d_escape)
+        self.stream.memcpy_htod(escape_matrix, &mut d_escape)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy escape matrix: {}", e)))?;
 
         let mut d_epitopes = self.stream.alloc_zeros::<i32>(836)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc epitopes: {}", e)))?;
 
-        self.stream.memcpy_htod(antibody_epitopes, &mut  &mut d_epitopes)
+        self.stream.memcpy_htod(antibody_epitopes, &mut d_epitopes)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy epitopes: {}", e)))?;
 
         self.buffer_pool.d_escape_matrix = Some(d_escape);
@@ -371,7 +381,7 @@ impl ViralEvolutionFitnessGpu {
         let mut d_immunity = self.stream.alloc_zeros::<f32>(10)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc immunity: {}", e)))?;
 
-        self.stream.memcpy_htod(epitope_immunity, &mut  &mut d_immunity)
+        self.stream.memcpy_htod(epitope_immunity, &mut d_immunity)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy immunity: {}", e)))?;
 
         self.buffer_pool.d_immunity_weights = Some(d_immunity);
@@ -388,7 +398,9 @@ impl ViralEvolutionFitnessGpu {
             .ok_or_else(|| PrismError::gpu("ve_fitness", "DMS escape kernel not loaded"))?;
 
         if !self.dms_data_loaded {
-            return Err(PrismError::config("DMS data not loaded. Call load_dms_data() first.");
+            return Err(PrismError::config(
+                "DMS data not loaded. Call load_dms_data() first.",
+            ));
         }
 
         let n_variants = variants.len();
@@ -411,16 +423,32 @@ impl ViralEvolutionFitnessGpu {
         }
 
         // Copy to GPU
-        let d_muts = self.buffer_pool.d_spike_mutations.as_mut().unwrap());
-        let d_aa = self.buffer_pool.d_mutation_aa.as_mut().unwrap());
-        let d_n_muts = self.buffer_pool.d_n_mutations.as_mut().unwrap());
-        let mut d_escape_out = self.buffer_pool.d_escape_scores.as_mut().unwrap());
+        let d_muts = self
+            .buffer_pool
+            .d_spike_mutations
+            .as_mut()
+            .expect("buffer capacity checked");
+        let d_aa = self
+            .buffer_pool
+            .d_mutation_aa
+            .as_mut()
+            .expect("buffer capacity checked");
+        let d_n_muts = self
+            .buffer_pool
+            .d_n_mutations
+            .as_mut()
+            .expect("buffer capacity checked");
+        let d_escape_out = self
+            .buffer_pool
+            .d_escape_scores
+            .as_mut()
+            .expect("buffer capacity checked");
 
-        d_muts = self.stream.clone_htod(spike_mutations))
+        self.stream.memcpy_htod(&spike_mutations, d_muts)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy mutations: {}", e)))?;
-        d_aa = self.stream.clone_htod(mutation_aa))
+        self.stream.memcpy_htod(&mutation_aa, d_aa)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy aa: {}", e)))?;
-        d_n_muts = self.stream.clone_htod(n_mutations))
+        self.stream.memcpy_htod(&n_mutations, d_n_muts)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy n_muts: {}", e)))?;
 
         // Launch kernel
@@ -468,13 +496,22 @@ impl ViralEvolutionFitnessGpu {
         let d_immunity = self.buffer_pool.d_immunity_weights.as_ref()
             .ok_or_else(|| PrismError::config("Immunity weights not set"))?;
 
-        let d_escape = self.buffer_pool.d_escape_scores.as_ref().unwrap());
-        let mut d_fold_red = self.buffer_pool.d_fold_reduction.as_mut().unwrap());
+        let d_escape = self
+            .buffer_pool
+            .d_escape_scores
+            .as_ref()
+            .expect("buffer capacity checked");
+        let d_fold_red = self
+            .buffer_pool
+            .d_fold_reduction
+            .as_mut()
+            .expect("buffer capacity checked");
 
         // Upload parameters
         let mut d_params = self.stream.alloc_zeros::<FitnessParams>(1)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc params: {}", e)))?;
-        self.stream.memcpy_htod([self.params.clone()], &mut d_params.slice_mut(0..[self.params.clone()].len()))
+        let params = [self.params.clone()];
+        self.stream.memcpy_htod(&params, &mut d_params)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy params: {}", e)))?;
 
         // Launch
@@ -493,7 +530,7 @@ impl ViralEvolutionFitnessGpu {
             builder.arg(&*d_escape);
             builder.arg(&*d_immunity);
             builder.arg(&n_variants_i32);
-            builder.arg(&*d_params);
+            builder.arg(&d_params);
             builder.arg(&mut *d_fold_red);
             builder.launch(launch_config)
                 .map_err(|e| PrismError::gpu("ve_fitness", format!("Launch cross-neut: {}", e)))?;
@@ -588,20 +625,39 @@ impl ViralEvolutionFitnessGpu {
         let mut d_transmit = self.stream.alloc_zeros::<f32>(n_variants)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc: {}", e)))?;
 
-        let mut d_gamma = self.buffer_pool.d_gamma.as_mut().unwrap());
-        let mut d_components = self.buffer_pool.d_fitness_components.as_mut().unwrap());
+        let d_gamma = self
+            .buffer_pool
+            .d_gamma
+            .as_mut()
+            .expect("buffer capacity checked");
+        let d_components = self
+            .buffer_pool
+            .d_fitness_components
+            .as_mut()
+            .expect("buffer capacity checked");
 
         // Copy to GPU
-        self.stream.memcpy_htod(fold_reduction, &mut  &mut d_fold_red)?;
-        self.stream.memcpy_htod(ddg_fold, &mut  &mut d_ddg_fold)?;
-        self.stream.memcpy_htod(ddg_bind, &mut  &mut d_ddg_bind)?;
-        self.stream.memcpy_htod(expression, &mut  &mut d_expression)?;
-        d_transmit = self.stream.clone_htod(transmissibility))?;
+        self.stream
+            .memcpy_htod(fold_reduction, &mut d_fold_red)
+            .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy fold reduction: {}", e)))?;
+        self.stream
+            .memcpy_htod(ddg_fold, &mut d_ddg_fold)
+            .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy ddg fold: {}", e)))?;
+        self.stream
+            .memcpy_htod(ddg_bind, &mut d_ddg_bind)
+            .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy ddg bind: {}", e)))?;
+        self.stream
+            .memcpy_htod(expression, &mut d_expression)
+            .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy expression: {}", e)))?;
+        self.stream
+            .memcpy_htod(&transmissibility, &mut d_transmit)
+            .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy transmissibility: {}", e)))?;
 
         // Upload parameters
         let mut d_params = self.stream.alloc_zeros::<FitnessParams>(1)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc params: {}", e)))?;
-        self.stream.memcpy_htod([self.params.clone()], &mut d_params.slice_mut(0..[self.params.clone()].len()))
+        let params = [self.params.clone()];
+        self.stream.memcpy_htod(&params, &mut d_params)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy params: {}", e)))?;
 
         // Launch
@@ -617,13 +673,13 @@ impl ViralEvolutionFitnessGpu {
 
         unsafe {
             let mut builder = self.stream.launch_builder(func);
-            builder.arg(&*d_fold_red);
-            builder.arg(&*d_ddg_fold);
-            builder.arg(&*d_ddg_bind);
-            builder.arg(&*d_expression);
-            builder.arg(&*d_transmit);
+            builder.arg(&d_fold_red);
+            builder.arg(&d_ddg_fold);
+            builder.arg(&d_ddg_bind);
+            builder.arg(&d_expression);
+            builder.arg(&d_transmit);
             builder.arg(&n_variants_i32);
-            builder.arg(&*d_params);
+            builder.arg(&d_params);
             builder.arg(&mut *d_gamma);
             builder.arg(&mut *d_components);
             builder.launch(launch_config)
@@ -660,17 +716,26 @@ impl ViralEvolutionFitnessGpu {
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc: {}", e)))?;
         let mut d_freq = self.stream.alloc_zeros::<f32>(n_variants)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc: {}", e)))?;
-        let mut d_pred = self.buffer_pool.d_predicted_freq.as_mut().unwrap());
+        let d_pred = self
+            .buffer_pool
+            .d_predicted_freq
+            .as_mut()
+            .expect("buffer capacity checked");
 
         // Upload parameters
         let mut d_params = self.stream.alloc_zeros::<FitnessParams>(1)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Alloc params: {}", e)))?;
-        self.stream.memcpy_htod([self.params.clone()], &mut d_params.slice_mut(0..[self.params.clone()].len()))
+        let params = [self.params.clone()];
+        self.stream.memcpy_htod(&params, &mut d_params)
             .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy params: {}", e)))?;
 
         // Copy data
-        self.stream.memcpy_htod(gamma, &mut  &mut d_gamma)?;
-        d_freq = self.stream.clone_htod(current_freq))?;
+        self.stream
+            .memcpy_htod(gamma, &mut d_gamma)
+            .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy gamma: {}", e)))?;
+        self.stream
+            .memcpy_htod(&current_freq, &mut d_freq)
+            .map_err(|e| PrismError::gpu("ve_fitness", format!("Copy current frequency: {}", e)))?;
 
         // Launch
         let block_size = 256u32;
@@ -685,11 +750,11 @@ impl ViralEvolutionFitnessGpu {
 
         unsafe {
             let mut builder = self.stream.launch_builder(func);
-            builder.arg(&*d_gamma);
-            builder.arg(&*d_freq);
+            builder.arg(&d_gamma);
+            builder.arg(&d_freq);
             builder.arg(&time_horizon_days);
             builder.arg(&n_variants_i32);
-            builder.arg(&*d_params);
+            builder.arg(&d_params);
             builder.arg(&mut *d_pred);
             builder.launch(launch_config)
                 .map_err(|e| PrismError::gpu("ve_fitness", format!("Launch dynamics: {}", e)))?;

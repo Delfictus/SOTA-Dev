@@ -54,3 +54,9 @@ impl From<anyhow::Error> for NivBenchError {
         Self::Parse(err.to_string())
     }
 }
+
+impl From<prism_gpu::thermodynamic::ThermodynamicError> for NivBenchError {
+    fn from(err: prism_gpu::thermodynamic::ThermodynamicError) -> Self {
+        Self::Gpu(err.to_string())
+    }
+}

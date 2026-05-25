@@ -220,7 +220,7 @@ impl PimcGpu {
             "Coupling matrix size mismatch"
         );
 
-        self.coupling_matrix = self.stream.clone_htod(&coupling)
+        self.coupling_matrix = self.stream.clone_htod(coupling)
             .context("Failed to upload coupling matrix")?;
 
         Ok(())
@@ -424,7 +424,7 @@ impl PimcGpu {
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .unwrap());
+            .unwrap();
 
         // Download best replica
         let replicas: Vec<f32> = self.stream.clone_dtoh(&self.replicas)?;
@@ -537,21 +537,21 @@ mod tests {
     #[test]
     #[ignore] // Requires GPU
     fn test_pimc_initialization() {
-        let device = CudaContext::new(0).unwrap());
+        let device = CudaContext::new(0).unwrap();
         let pimc = PimcGpu::new(Arc::new(device), 32, 100);
-        assert!(pimc.is_ok();
+        assert!(pimc.is_ok());
     }
 
     #[test]
     #[ignore] // Requires GPU
     fn test_pimc_evolution() {
         let device = Arc::new(CudaContext::new(0).unwrap());
-        let mut pimc = PimcGpu::new(device, 16, 50).unwrap());
+        let mut pimc = PimcGpu::new(device, 16, 50).unwrap();
 
-        pimc.initialize_random(42).unwrap());
-        pimc.evolve(100).unwrap());
+        pimc.initialize_random(42).unwrap();
+        pimc.evolve(100).unwrap();
 
-        let obs = pimc.get_observables().unwrap());
+        let obs = pimc.get_observables().unwrap();
         assert!(obs.avg_acceptance > 0.0);
     }
 }

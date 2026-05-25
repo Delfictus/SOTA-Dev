@@ -39,7 +39,6 @@ use cudarc::driver::CudaContext;
 use prism_core::PrismError;
 use prism_gpu::{FitnessParams, MegaFusedConfig, MegaFusedGpu};
 use std::path::Path;
-use std::sync::Arc;
 
 pub use prediction::{CycleState, Phase, TimeHorizon, VariantAssessment, VariantPrediction};
 
@@ -64,10 +63,8 @@ impl PRISMVEPredictor {
     /// Initializes GPU context and loads PTX kernels.
     pub fn new() -> Result<Self, PrismError> {
         // Initialize GPU context
-        let context = Arc::new(
-            CudaContext::new(0)
-                .map_err(|e| PrismError::gpu("prism_ve", format!("Init CUDA: {}", e)))?,
-        );
+        let context = CudaContext::new(0)
+            .map_err(|e| PrismError::gpu("prism_ve", format!("Init CUDA: {}", e)))?;
 
         // Load mega_fused kernel (includes Stages 7-8)
         let gpu = MegaFusedGpu::new(context, Path::new("target/ptx"))?;

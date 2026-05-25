@@ -13,6 +13,7 @@ categories = ["science", "bioinformatics"]
 prism-core = { path = "../prism-core" }
 prism-gpu = { path = "../prism-gpu" }
 prism-geometry = { path = "../prism-geometry" }
+cudarc = { workspace = true }
 
 # Data handling
 csv = "1.3"

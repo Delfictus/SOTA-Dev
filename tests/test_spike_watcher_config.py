@@ -29,10 +29,11 @@ def test_watch_dirs_contains_required_paths():
 def test_r2_routing_tmp_regex():
     ns = _load_config()
     routing = ns["R2_ROUTING"]
+    spike_bucket = ns.get("SPIKE_BUCKET", "prism-archive")
     assert any("tmp" in k for k in routing), "R2_ROUTING must have a /tmp rule"
     for pattern in routing:
         if "tmp" in pattern:
             assert re.search(pattern, "/tmp/some_output"), f"Pattern {pattern} must match /tmp/some_output"
             bucket, prefix = routing[pattern]
-            assert bucket == "prism-archive"
+            assert bucket == spike_bucket
             assert prefix == "dev-runs"

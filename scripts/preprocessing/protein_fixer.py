@@ -274,14 +274,24 @@ def fix_protein(
     crystal = _check_crystal_contacts(pdb_path)
 
     if _has_pdbfixer():
-        result = _fix_with_pdbfixer(
-            pdb_path, output_path,
-            add_missing=add_missing,
-            replace_nonstandard=replace_nonstandard,
-            remove_heterogens=remove_heterogens,
-            keep_water=keep_water,
-            ph=ph,
-        )
+        try:
+            result = _fix_with_pdbfixer(
+                pdb_path, output_path,
+                add_missing=add_missing,
+                replace_nonstandard=replace_nonstandard,
+                remove_heterogens=remove_heterogens,
+                keep_water=keep_water,
+                ph=ph,
+            )
+        except Exception as exc:
+            logger.warning("PDBFixer failed; falling back to text-level repair: %s", exc)
+            result = _fix_fallback(
+                pdb_path, output_path,
+                replace_nonstandard=replace_nonstandard,
+                remove_heterogens=remove_heterogens,
+                keep_water=keep_water,
+            )
+            result.warnings.append(f"PDBFixer failed; fallback repair used: {exc}")
     else:
         result = _fix_fallback(
             pdb_path, output_path,

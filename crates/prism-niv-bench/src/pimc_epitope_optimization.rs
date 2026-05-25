@@ -141,6 +141,7 @@ impl PimcEpitopeOptimizer {
             dimensions: structure.residues.len() as i32,
             mc_steps: self.optimization_params.mc_steps as i32,
             beta: 1.0,              // Initial temperature
+            delta_tau: 0.1,         // Imaginary time slice width
             transverse_field: 1.0,  // Quantum tunneling strength
             coupling_strength: 0.5, // Residue-residue coupling
             seed: 42,

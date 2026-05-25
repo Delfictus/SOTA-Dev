@@ -206,7 +206,7 @@ impl LbsGpu {
             .map_err(|e| PrismError::gpu("lbs_surface_accessibility", e.to_string()))?;
         let d_z = self.stream.clone_htod(&z)
             .map_err(|e| PrismError::gpu("lbs_surface_accessibility", e.to_string()))?;
-        let d_r = self.stream.clone_htod(&radii)
+        let d_r = self.stream.clone_htod(radii)
             .map_err(|e| PrismError::gpu("lbs_surface_accessibility", e.to_string()))?;
 
         // Step 1: Count atoms per cell
@@ -377,9 +377,9 @@ impl LbsGpu {
         }
 
         let n = row_ptr.len().saturating_sub(1);
-        let d_row = self.stream.clone_htod(&row_ptr)
+        let d_row = self.stream.clone_htod(row_ptr)
             .map_err(|e| PrismError::gpu("lbs_pocket_clustering", e.to_string()))?;
-        let d_col = self.stream.clone_htod(&col_idx)
+        let d_col = self.stream.clone_htod(col_idx)
             .map_err(|e| PrismError::gpu("lbs_pocket_clustering", e.to_string()))?;
         let mut d_colors = self.stream.alloc_zeros::<i32>(n)
             .map_err(|e| PrismError::gpu("lbs_pocket_clustering", e.to_string()))?;
@@ -420,9 +420,9 @@ impl LbsGpu {
         }
 
         // Upload graph to GPU
-        let d_row = self.stream.clone_htod(&row_ptr)
+        let d_row = self.stream.clone_htod(row_ptr)
             .map_err(|e| PrismError::gpu("jones_plassmann", e.to_string()))?;
-        let d_col = self.stream.clone_htod(&col_idx)
+        let d_col = self.stream.clone_htod(col_idx)
             .map_err(|e| PrismError::gpu("jones_plassmann", e.to_string()))?;
 
         // Initialize colors to -1 (uncolored)
@@ -515,21 +515,21 @@ impl LbsGpu {
             ));
         }
 
-        let d_volume = self.stream.clone_htod(&volume)
+        let d_volume = self.stream.clone_htod(volume)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
         let d_hydro = self.stream.clone_htod(hydrophobicity)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
-        let d_enclosure = self.stream.clone_htod(&enclosure)
+        let d_enclosure = self.stream.clone_htod(enclosure)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
-        let d_depth = self.stream.clone_htod(&depth)
+        let d_depth = self.stream.clone_htod(depth)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
-        let d_hbond = self.stream.clone_htod(&hbond)
+        let d_hbond = self.stream.clone_htod(hbond)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
-        let d_flex = self.stream.clone_htod(&flexibility)
+        let d_flex = self.stream.clone_htod(flexibility)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
         let d_cons = self.stream.clone_htod(conservation)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
-        let d_topo = self.stream.clone_htod(&topology)
+        let d_topo = self.stream.clone_htod(topology)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
         let d_weights = self.stream.clone_htod(&weights)
             .map_err(|e| PrismError::gpu("lbs_druggability_scoring", e.to_string()))?;
@@ -606,7 +606,7 @@ impl LbsGpu {
             .map_err(|e| PrismError::gpu("generate_alpha_spheres", e.to_string()))?;
         let d_atom_z = self.stream.clone_htod(&atom_z)
             .map_err(|e| PrismError::gpu("generate_alpha_spheres", e.to_string()))?;
-        let d_atom_vdw = self.stream.clone_htod(&atom_vdw)
+        let d_atom_vdw = self.stream.clone_htod(atom_vdw)
             .map_err(|e| PrismError::gpu("generate_alpha_spheres", e.to_string()))?;
 
         // Allocate output buffers

@@ -12,9 +12,15 @@ pub mod feature_merge;
 pub mod global_context;
 pub mod mega_fused;
 pub mod mega_fused_batch;
+pub mod lbs;
+pub mod molecular;
+pub mod pimc;
 pub mod polycentric_immunity;
 pub mod prism_nova;
 pub mod reservoir_construction;
+pub mod tda;
+pub mod thermodynamic;
+pub mod viral_evolution_fitness;
 pub mod ve_swarm;
 
 // AMBER ff14SB bonded force calculator
@@ -113,6 +119,7 @@ pub use lcpo_sasa::{
     elements_to_atom_types, elements_to_radii, AtomType as LcpoAtomType, BatchedSasaResult,
     LcpoSasaGpu, SasaResult,
 };
+pub use lbs::LbsGpu;
 pub use mega_fused::{
     confidence, signals, GpuProvenanceData, GpuTelemetry, KernelTelemetryEvent, MegaFusedConfig,
     MegaFusedGpu, MegaFusedMode, MegaFusedOutput, MegaFusedParams,
@@ -123,6 +130,7 @@ pub use mega_fused_batch::{
     StructureMetadata, TrainingOutput,
 };
 pub use memory::{global_vram_guard, init_global_vram_guard, VramGuard, VramGuardError, VramInfo};
+pub use molecular::{MDParams, MDResults, MolecularDynamicsGpu, Particle};
 pub use pme::{compute_ewald_beta, DEFAULT_PME_TOLERANCE, PME};
 pub use polycentric_immunity::{
     PolycentricImmunityGpu, DEFAULT_CROSS_REACTIVITY, N_EPITOPE_CENTERS, N_PK_SCENARIOS,
@@ -137,6 +145,7 @@ pub use tensor_core_forces::{TensorCoreForces, TC_BLOCK_SIZE, TC_TILE_SIZE};
 pub use verlet_list::{
     VerletList, MAX_NEIGHBORS_PER_ATOM, VERLET_LIST_CUTOFF, VERLET_SKIN, VERLET_SKIN_HALF,
 };
+pub use viral_evolution_fitness::FitnessParams;
 pub use whcr::{RepairResult as WhcrRepairResult, WhcrGpu};
 
 // Commented out unused modules to isolate benchmark requirements
