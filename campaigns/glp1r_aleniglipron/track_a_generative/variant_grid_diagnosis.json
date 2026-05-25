@@ -1,0 +1,105 @@
+{
+  "schema_version": "PRISM.variant_grid_diagnosis.v1",
+  "epistemic_class": "DERIVED",
+  "generated_at_utc": "2026-05-25T04:16:09.706163+00:00",
+  "wt_condition": "glp1r_6XOX_WT",
+  "variants": {
+    "A316T": "glp1r_6XOX_A316T",
+    "T149M": "glp1r_6XOX_T149M"
+  },
+  "condition_summaries": {
+    "glp1r_6XOX_WT": {
+      "exists": true,
+      "rows": 884736,
+      "nonvoid": 117344,
+      "activated": 0,
+      "voxel_min": 0,
+      "voxel_max": 884735
+    },
+    "glp1r_6XOX_A316T": {
+      "exists": true,
+      "rows": 884736,
+      "nonvoid": 109707,
+      "activated": 0,
+      "voxel_min": 0,
+      "voxel_max": 884735
+    },
+    "glp1r_6XOX_T149M": {
+      "exists": true,
+      "rows": 884736,
+      "nonvoid": 116897,
+      "activated": 0,
+      "voxel_min": 0,
+      "voxel_max": 884735
+    }
+  },
+  "grid_metadata": {
+    "glp1r_6XOX_WT": {
+      "origin_xyz_angstrom": [
+        94.46001052856445,
+        103.87410163879395,
+        88.73695373535156
+      ],
+      "spacing_angstrom": 1.1672272443771363,
+      "dims_xyz": [
+        96,
+        96,
+        96
+      ]
+    },
+    "glp1r_6XOX_A316T": {
+      "origin_xyz_angstrom": [
+        94.52105522155762,
+        103.63471031188965,
+        88.30329895019531
+      ],
+      "spacing_angstrom": 1.1940620124340058,
+      "dims_xyz": [
+        96,
+        96,
+        96
+      ]
+    },
+    "glp1r_6XOX_T149M": {
+      "origin_xyz_angstrom": [
+        95.18477439880371,
+        103.14645767211914,
+        87.38940238952637
+      ],
+      "spacing_angstrom": 1.1739391028881072,
+      "dims_xyz": [
+        96,
+        96,
+        96
+      ]
+    }
+  },
+  "projection_report": {
+    "WT": {
+      "sample_size": 25,
+      "reward_mean": 1e-08,
+      "reward_max": 1e-08,
+      "reward_nonzero": 0,
+      "atoms_scored_mean": 128.56
+    },
+    "A316T": {
+      "condition_id": "glp1r_6XOX_A316T",
+      "reward_mean": 1e-08,
+      "reward_max": 1e-08,
+      "reward_nonzero": 0,
+      "atoms_scored_mean": 128.56
+    },
+    "T149M": {
+      "condition_id": "glp1r_6XOX_T149M",
+      "reward_mean": 1e-08,
+      "reward_max": 1e-08,
+      "reward_nonzero": 0,
+      "atoms_scored_mean": 128.56
+    }
+  },
+  "determination": "variant_grids_present_but_projection_collapsed",
+  "notes": [
+    "Variant conditions exist inside the main signal-grid parquet.",
+    "If WT reward_nonzero is zero under this projector, PGx resilience cannot be interpreted on the current scale."
+  ]
+}

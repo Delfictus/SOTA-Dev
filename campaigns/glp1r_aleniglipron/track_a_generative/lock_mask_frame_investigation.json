@@ -1,0 +1,170 @@
+{
+  "schema_version": "PRISM.lock_mask_frame_investigation.v1",
+  "epistemic_class": "DERIVED",
+  "generated_at_utc": "2026-05-25T04:16:07.743161+00:00",
+  "condition_id": "glp1r_6XOX_WT",
+  "grid": {
+    "origin_xyz_angstrom": [
+      94.46001052856445,
+      103.87410163879395,
+      88.73695373535156
+    ],
+    "spacing_angstrom": 1.1672272443771363,
+    "dims_xyz": [
+      96,
+      96,
+      96
+    ],
+    "bbox": {
+      "min_xyz": [
+        94.46001052856445,
+        103.87410163879395,
+        88.73695373535156
+      ],
+      "max_xyz": [
+        206.51382598876955,
+        215.92791709899905,
+        200.79076919555666
+      ],
+      "centroid_xyz": [
+        150.486918258667,
+        159.9010093688965,
+        144.7638614654541
+      ]
+    }
+  },
+  "raw_pdb": {
+    "path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/01_INPUT_STRUCTURES/raw/6XOX.pdb",
+    "bbox": {
+      "min_xyz": [
+        52.611,
+        64.326,
+        84.342
+      ],
+      "max_xyz": [
+        198.902,
+        166.521,
+        174.263
+      ],
+      "centroid_xyz": [
+        125.75649999999999,
+        115.42349999999999,
+        129.3025
+      ]
+    },
+    "in_grid": false,
+    "lock_centroid_xyz": [
+      111.23716538461538,
+      127.73921923076924,
+      115.11835
+    ],
+    "lock_z_range": [
+      84.342,
+      157.296
+    ],
+    "lock_residue_count": 260
+  },
+  "clean_pdb": {
+    "path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/01_INPUT_STRUCTURES/clean/glp1r_6XOX_WT.clean.pdb",
+    "bbox": {
+      "min_xyz": [
+        100.156,
+        109.023,
+        95.772
+      ],
+      "max_xyz": [
+        198.902,
+        166.521,
+        147.648
+      ],
+      "centroid_xyz": [
+        149.529,
+        137.772,
+        121.71000000000001
+      ]
+    },
+    "in_grid": true,
+    "lock_centroid_xyz": [
+      129.88098230088494,
+      134.7419203539823,
+      110.27469911504424
+    ],
+    "lock_z_range": [
+      97.809,
+      129.455
+    ],
+    "lock_residue_count": 113,
+    "mean_delta_to_topology_xyz": [
+      -0.6148028253827776,
+      -0.2938296954291201,
+      0.42297798006875126
+    ],
+    "lock_ca_rms_to_topology": 3.877684670941766,
+    "common_lock_residues_with_topology": 112
+  },
+  "topology": {
+    "path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json",
+    "bbox": {
+      "min_xyz": [
+        103.83745193481445,
+        111.59110069274902,
+        98.08156967163086
+      ],
+      "max_xyz": [
+        197.10186004638672,
+        164.7592544555664,
+        146.1579990386963
+      ],
+      "centroid_xyz": [
+        150.4696559906006,
+        138.17517757415771,
+        122.11978435516357
+      ]
+    },
+    "in_grid": true,
+    "lock_centroid_xyz": [
+      129.3169826743877,
+      134.51992828234108,
+      110.70280235425561
+    ],
+    "lock_z_range": [
+      98.08156967163086,
+      129.7739315032959
+    ],
+    "lock_residue_count": 113,
+    "mean_delta_from_raw_lock_xyz": [
+      -0.48564564419636685,
+      -0.20147879730494606,
+      0.43847492062728965
+    ]
+  },
+  "scaffold": {
+    "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf",
+    "bbox": {
+      "min_xyz": [
+        133.5622,
+        148.079,
+        117.4241
+      ],
+      "max_xyz": [
+        148.7187,
+        160.3498,
+        133.9634
+      ],
+      "centroid_xyz": [
+        141.14045,
+        154.2144,
+        125.69375
+      ]
+    },
+    "in_grid": true
+  },
+  "determination": {
+    "raw_pdb_frame_matches_grid": false,
+    "clean_pdb_frame_matches_grid": true,
+    "topology_frame_matches_grid": true,
+    "scaffold_frame_matches_grid": true,
+    "active_lock_mask_source_is_topology_frame": true,
+    "frame_mismatch_summary": "Raw full-complex 6XOX frame includes extra chains outside the receptor grid, but the clean receptor PDB, topology JSON, and O3A scaffold all sit in the same grid frame."
+  }
+}

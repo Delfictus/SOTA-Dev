@@ -18,6 +18,8 @@ const DEFAULT_BATCH: &str = ".scratch/oracle_batch.parquet";
 const DEFAULT_REWARDS: &str = ".scratch/oracle_rewards.parquet";
 const DEFAULT_SURVIVORS: &str =
     "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_full_scale.parquet";
+const DEFAULT_LOCK_MASK: &str =
+    "campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json";
 
 #[derive(Debug, Clone)]
 struct Config {
@@ -33,7 +35,7 @@ impl Default for Config {
             batch: PathBuf::from(DEFAULT_BATCH),
             rewards: PathBuf::from(DEFAULT_REWARDS),
             survivors: PathBuf::from(DEFAULT_SURVIVORS),
-            lock_mask: None,
+            lock_mask: Some(PathBuf::from(DEFAULT_LOCK_MASK)),
         }
     }
 }
@@ -389,34 +391,11 @@ fn bifurcate_clash(
             ),
         };
     }
-    let z_values: Vec<f64> = coords
-        .iter()
-        .filter_map(|coord| coord.get(2).copied())
-        .filter(|value| value.is_finite())
-        .collect();
-    if z_values.is_empty() {
-        return ClashBifurcation {
-            pi_clash_pocket: adjusted_pi_clash,
-            pi_clash_lock: 0.0,
-            pi_clash_lock_per_phase: [0.0; 5],
-            method: "empty_coordinates_fallback_all_pocket".to_owned(),
-        };
-    }
-    let z_min = z_values.iter().copied().fold(f64::INFINITY, f64::min);
-    let z_max = z_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let z_span = (z_max - z_min).max(1.0e-9);
-    let lock_cutoff = z_min + (0.20 * z_span);
-    let lock_atom_count = z_values.iter().filter(|z| **z <= lock_cutoff).count();
-    let atom_count = z_values.len().max(1);
-    let lock_fraction = lock_atom_count as f64 / atom_count as f64;
-    let pi_clash_lock = adjusted_pi_clash * lock_atom_count as f64;
     ClashBifurcation {
-        pi_clash_pocket: adjusted_pi_clash * (1.0 - lock_fraction),
-        pi_clash_lock,
-        pi_clash_lock_per_phase: [pi_clash_lock; 5],
-        method: format!(
-            "intracellular_bottom_z_proxy_v1:z_min={z_min:.4}:z_max={z_max:.4}:cutoff={lock_cutoff:.4}:lock_atoms={lock_atom_count}:total_atoms={atom_count}:phase_lock=aggregate_replicated"
-        ),
+        pi_clash_pocket: adjusted_pi_clash,
+        pi_clash_lock: 0.0,
+        pi_clash_lock_per_phase: [0.0; 5],
+        method: "lock_mask_missing_legacy_z_proxy_invalidated_all_pocket".to_owned(),
     }
 }
 

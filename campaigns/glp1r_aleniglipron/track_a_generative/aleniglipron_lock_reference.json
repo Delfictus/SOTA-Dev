@@ -1,0 +1,18 @@
+{
+  "schema_version": "PRISM.aleniglipron_lock_reference.v1",
+  "epistemic_class": "DERIVED",
+  "generated_at_utc": "2026-05-25T04:17:47.255415+00:00",
+  "scaffold_sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf",
+  "lock_mask_v1": {
+    "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json",
+    "z_proxy_atom_count": 14,
+    "z_proxy_voxel_count": 14,
+    "mask_atom_count": 0,
+    "mask_voxel_count": 0,
+    "top100": {
+      "candidate_count": 100,
+      "candidates_with_mask_hits": 6,
+      "max_mask_hit_atoms_per_candidate": 6
+    }
+  }
+}

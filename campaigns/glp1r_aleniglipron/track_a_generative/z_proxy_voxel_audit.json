@@ -1,0 +1,46 @@
+{
+  "schema_version": "PRISM.z_proxy_voxel_audit.v1",
+  "epistemic_class": "DERIVED",
+  "generated_at_utc": "2026-05-25T04:17:46.856226+00:00",
+  "input_sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf",
+  "lock_mask": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json",
+  "z_proxy": {
+    "atom_count": 14,
+    "voxel_count": 14,
+    "atom_centroid_xyz": [
+      138.22192857142858,
+      157.06085000000002,
+      119.79398571428571
+    ],
+    "voxel_centroid_xyz": [
+      138.48115231650218,
+      156.98294125795363,
+      120.00196920973914
+    ],
+    "nearest_residue": {
+      "residue_name": "PHE",
+      "residue_id": 142,
+      "distance_A": 6.0572653610316
+    }
+  },
+  "residue_lock_mask": {
+    "atom_hit_count": 0,
+    "voxel_hit_count": 0,
+    "global_voxel_centroid_xyz": [
+      130.0809338071437,
+      134.75055049114468,
+      110.08035068779773
+    ],
+    "nearest_residue": {
+      "residue_name": "THR",
+      "residue_id": 361,
+      "distance_A": 1.889151888841958
+    },
+    "atom_hit_centroid_xyz": null
+  },
+  "comparison": {
+    "voxel_jaccard": 0.0,
+    "min_scaffold_atom_to_lock_residue_ca_distance_A": 9.79142116391812,
+    "determination": "Z-proxy labels the bottom of the ligand pose, while the residue lock mask labels the receptor's intracellular face. These are not the same spatial region."
+  }
+}

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Generate a residue-based intracellular lock voxel mask."""
+"""Legacy v1 lock-mask generator retained for provenance.
+
+Use ``generate_lock_region_mask_v2.py`` for production investigations. The v1
+script computes a grid-bottom overlap diagnostic that is not equivalent to the
+Rust oracle's molecule-relative Z-proxy.
+"""
 
 from __future__ import annotations
 

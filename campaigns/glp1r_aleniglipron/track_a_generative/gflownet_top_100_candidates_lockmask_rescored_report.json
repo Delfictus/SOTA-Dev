@@ -1,0 +1,17 @@
+{
+  "schema_version": "PRISM.top100_lockmask_rescore.v1",
+  "epistemic_class": "DERIVED",
+  "generated_at_utc": "2026-05-25T04:18:45.547274+00:00",
+  "input": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates.parquet",
+  "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates_lockmask_rescored.parquet",
+  "oracle": "/home/diddy/Desktop/Prism4D-bio/target/release/oracle_scorer",
+  "survivors": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_full_scale.parquet",
+  "candidate_count": 100,
+  "lock_threshold": 0.5,
+  "biased_agonism_confirmed_top100": 6,
+  "biased_agonism_confirmed_top50": 3,
+  "legacy_lock_mean": 44.61418302631186,
+  "rescored_lock_mean": 0.25856423026413244,
+  "legacy_reward_mean": 51.002799818172306,
+  "rescored_reward_mean": 6.734581157136854
+}

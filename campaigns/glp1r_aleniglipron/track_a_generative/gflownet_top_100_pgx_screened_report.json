@@ -1,8 +1,9 @@
 {
-  "schema_version": "PRISM.pgx_resilience_cross_screen.v1",
+  "schema_version": "PRISM.pgx_resilience_cross_screen.v2",
   "epistemic_class": "PROJECTED",
+  "diagnostic_status": "WT_PROJECTION_COLLAPSE",
   "scoring_method": "coordinate_field_projection_v1",
-  "generated_at_utc": "2026-05-25T02:57:54.801636+00:00",
+  "generated_at_utc": "2026-05-25T04:16:12.421391+00:00",
   "candidate_count": 100,
   "wt_condition": "glp1r_6XOX_WT",
   "variants": {
@@ -24,9 +25,12 @@
   "worst_case_mean": NaN,
   "worst_case_min": NaN,
   "immune_or_tolerant_worst_case": 0,
+  "wt_projection_nonzero": 0,
+  "wt_atoms_scored_mean": 127.64,
   "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_pgx_screened.parquet",
   "notes": [
-    "Scores are coordinate-field projections against the protocol-aware signal grid, not new PRISM-4D MD observations.",
+    "Variant grid conditions exist, but the current coordinate-field projection collapses WT rewards to <=0.01 for every sampled candidate.",
+    "This is a scoring-path calibration mismatch, not a missing-file condition.",
     "Candidate coordinates are reused from the O3A/Z-matrix survivor corpus."
   ]
 }

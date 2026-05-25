@@ -231,11 +231,61 @@ def main() -> int:
         score_coordinates(str(row["coordinates_json"]), specs[str(args.wt_condition)], fields[str(args.wt_condition)])
         for row in rows
     ]
+    wt_projection_nonzero = sum(1 for score in wt_scores if score.reward > 0.01)
+    wt_atoms_scored_mean = (
+        sum(score.atoms_scored for score in wt_scores) / float(len(wt_scores)) if wt_scores else 0.0
+    )
     result = frame.with_columns(
         pl.Series("pgx_reward_WT_rescore", [score.reward for score in wt_scores]),
         pl.Series("pgx_pi_complement_WT", [score.pi_complement for score in wt_scores]),
         pl.Series("pgx_pi_clash_WT", [score.pi_clash for score in wt_scores]),
     )
+    if wt_projection_nonzero == 0:
+        result = result.with_columns(
+            pl.lit(float("nan")).alias("pgx_worst_case"),
+            pl.lit("INDETERMINATE").alias("pgx_overall_class"),
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = args.output.with_suffix(args.output.suffix + ".tmp")
+        result.write_parquet(tmp_path)
+        tmp_path.replace(args.output)
+        collapse_report: JsonObject = {
+            "schema_version": "PRISM.pgx_resilience_cross_screen.v2",
+            "epistemic_class": "PROJECTED",
+            "diagnostic_status": "WT_PROJECTION_COLLAPSE",
+            "scoring_method": "coordinate_field_projection_v1",
+            "generated_at_utc": datetime.now(UTC).isoformat(),
+            "candidate_count": result.height,
+            "wt_condition": str(args.wt_condition),
+            "variants": {
+                variant_name: {
+                    "condition_id": condition_id,
+                    "classification_counts": {"INDETERMINATE": result.height},
+                    "lock_preserved_count": 0,
+                }
+                for variant_name, condition_id in variants.items()
+            },
+            "worst_case_mean": float("nan"),
+            "worst_case_min": float("nan"),
+            "immune_or_tolerant_worst_case": 0,
+            "wt_projection_nonzero": wt_projection_nonzero,
+            "wt_atoms_scored_mean": wt_atoms_scored_mean,
+            "output": args.output.as_posix(),
+            "notes": [
+                "Variant grid conditions exist, but the current coordinate-field projection collapses WT rewards to <=0.01 for every sampled candidate.",
+                "This is a scoring-path calibration mismatch, not a missing-file condition.",
+                "Candidate coordinates are reused from the O3A/Z-matrix survivor corpus.",
+            ],
+        }
+        atomic_write_json(Path(args.report), collapse_report)
+        print(
+            "pgx_summary "
+            "status=WT_PROJECTION_COLLAPSE "
+            f"wt_projection_nonzero={wt_projection_nonzero} "
+            f"wt_atoms_scored_mean={wt_atoms_scored_mean:.2f} "
+            f"output={args.output}"
+        )
+        return 0
     report_variants: JsonObject = {}
     resilience_columns: list[str] = []
     lock_preserved_columns: list[str] = []
