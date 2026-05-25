@@ -62,12 +62,13 @@ class OracleBatchResult:
 
 
 @dataclass
-class BatchedRustOracle:
-    """Strict reward-authority wrapper around ``oracle_scorer``.
+class SurvivorCorpusOracle:
+    """Strict survivor-corpus reward wrapper around ``oracle_scorer``.
 
-    The Python training loop never computes final rewards directly. It writes
-    parquet proposals, invokes the Rust binary, validates the returned parquet,
-    and only then exposes a reward tensor to PyTorch.
+    This is not a live signal-grid scorer. Proposed molecules are scored by
+    lookup against the immutable survivor parquet produced by ``vspace_pruner``.
+    That corpus was computed from signal-grid voxel mapping offline, and this
+    runtime bridge preserves the full component row returned by Rust.
     """
 
     oracle_binary: Path = DEFAULT_ORACLE_BIN
@@ -93,7 +94,7 @@ class BatchedRustOracle:
         parquet_write_ms = (time.perf_counter() - write_start) * 1000.0
         rust_scoring_time_ms = await self.invoke_rust()
         read_start = time.perf_counter()
-        rewards_df = self.read_rewards()
+        rewards_df = self.annotate_lock_phase_provenance(self.read_rewards())
         parquet_read_ms = (time.perf_counter() - read_start) * 1000.0
         telemetry = self.validate_rewards(
             proposals=proposals,
@@ -212,6 +213,30 @@ class BatchedRustOracle:
             raise RustOracleError(f"Rust oracle did not write rewards parquet: {self.reward_path}")
         return pl.read_parquet(self.reward_path)
 
+    def annotate_lock_phase_provenance(self, rewards_df: pl.DataFrame) -> pl.DataFrame:
+        """Ensure each oracle row carries explicit lock phase provenance."""
+
+        if "lock_phase_provenance" in rewards_df.columns:
+            return rewards_df
+        phase_columns = [
+            "lock_occupancy_cold_hold",
+            "lock_occupancy_ramp_up",
+            "lock_occupancy_warm_hold",
+            "lock_occupancy_ramp_down",
+            "lock_occupancy_cold_return",
+        ]
+        if not set(phase_columns).issubset(set(rewards_df.columns)):
+            return rewards_df.with_columns(pl.lit("UNKNOWN").alias("lock_phase_provenance"))
+        tags: list[str] = []
+        for row in rewards_df.select(phase_columns).iter_rows():
+            finite_values = [float(value or 0.0) for value in row]
+            tags.append(
+                "REPLICATED_AGGREGATE"
+                if len({round(value, 12) for value in finite_values}) <= 1
+                else "PHASE_RESOLVED"
+            )
+        return rewards_df.with_columns(pl.Series("lock_phase_provenance", tags))
+
     def validate_rewards(
         self,
         *,
@@ -248,6 +273,7 @@ class BatchedRustOracle:
             "lock_steric_volume_angstrom3",
             "cryptic_bonus",
             "consensus_complement_bonus",
+            "lock_phase_provenance",
             "survival_tier",
             "selected_dihedral_deg",
             "reward_components_json",
@@ -289,6 +315,9 @@ class BatchedRustOracle:
         return None
 
 
+BatchedRustOracle = SurvivorCorpusOracle
+
+
 def proposals_from_rows(rows: pl.DataFrame, indices: Sequence[int]) -> list[OracleProposal]:
     """Build proposal objects from an anchor/action dataframe."""
 
@@ -328,6 +357,7 @@ def telemetry_to_dict(telemetry: OracleTelemetry) -> dict[str, float | int]:
 
 __all__ = [
     "BatchedRustOracle",
+    "SurvivorCorpusOracle",
     "OracleBatchResult",
     "OracleProposal",
     "OracleTelemetry",

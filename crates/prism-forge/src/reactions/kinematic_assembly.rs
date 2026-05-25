@@ -1399,4 +1399,9 @@ mod tests {
         assert!(product.metadata.z_matrix_active);
         Ok(())
     }
+
+    #[test]
+    fn guard_leaving_group_deletion_and_atom_count_remain_active() -> Result<()> {
+        topology_roundtrip_smarts_zmatrix_deletes_leaving_groups_and_connects_product()
+    }
 }

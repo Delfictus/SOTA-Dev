@@ -55,8 +55,11 @@ class DualChannelPolicyOutput:
     electronic_embeddings: Tensor
     steric_embeddings: Tensor
     graph_embeddings: Tensor
+    phase_global_embeddings: Tensor
     exit_embeddings: Tensor
     action_context_embeddings: Tensor
+    action_field_embeddings: Tensor | None
+    channel_gate: Tensor
     forward_logits: Tensor
     forward_log_probs: Tensor
     forward_probs: Tensor
@@ -351,13 +354,17 @@ class OrthogonalMessagePassing(nn.Module):
         edge_feature_dim: int,
         hidden_dim: int,
         output_dim: int,
+        rf_mode: str = "gain",
     ) -> None:
         super().__init__()
         if min(base_feature_dim, fiber_embedding_dim, edge_feature_dim, hidden_dim, output_dim) < 1:
             raise ValueError("all dimensions must be positive")
+        if rf_mode not in {"gain", "hard_zero", "soft"}:
+            raise ValueError("rf_mode must be one of: gain, hard_zero, soft")
         self.base_feature_dim = base_feature_dim
         self.fiber_embedding_dim = fiber_embedding_dim
         self.edge_feature_dim = edge_feature_dim
+        self.rf_mode = rf_mode
         self.base_input = nn.Sequential(
             nn.Linear(base_feature_dim, hidden_dim),
             nn.SiLU(),
@@ -410,12 +417,17 @@ class OrthogonalMessagePassing(nn.Module):
             dst = edge_index[1]
             message_input = torch.cat([hidden.index_select(0, src), edge_attr.to(dtype=hidden.dtype)], dim=1)
             messages = self.base_message(message_input)
-            resonance_gain = 1.0 + active_dendrite_mask.to(dtype=hidden.dtype).unsqueeze(-1)
-            messages = messages * resonance_gain
+            if self.rf_mode == "hard_zero":
+                edge_weight = active_dendrite_mask.to(dtype=hidden.dtype).unsqueeze(-1)
+            elif self.rf_mode == "soft":
+                edge_weight = 0.1 + 0.9 * active_dendrite_mask.to(dtype=hidden.dtype).unsqueeze(-1)
+            else:
+                edge_weight = 1.0 + active_dendrite_mask.to(dtype=hidden.dtype).unsqueeze(-1)
+            messages = messages * edge_weight
             aggregate = hidden.new_zeros(hidden.shape)
             aggregate.index_add_(0, dst, messages)
             counts = hidden.new_zeros((hidden.shape[0], 1))
-            counts.index_add_(0, dst, resonance_gain)
+            counts.index_add_(0, dst, edge_weight)
             aggregate = aggregate / counts.clamp_min(1.0)
         return cast(Tensor, self.base_update(torch.cat([hidden, aggregate], dim=1)))
 
@@ -474,6 +486,7 @@ class FiberBundleGFlowNetPolicy(nn.Module):
         embedding_dim: int = 64,
         max_backward_actions: int = 8,
         learn_anchor_embeddings: bool = False,
+        rf_mode: str = "gain",
     ) -> None:
         super().__init__()
         if anchor_embeddings.ndim != 2:
@@ -496,6 +509,7 @@ class FiberBundleGFlowNetPolicy(nn.Module):
             edge_feature_dim=edge_feature_dim,
             hidden_dim=hidden_dim,
             output_dim=embedding_dim,
+            rf_mode=rf_mode,
         )
         self.fusion_gate = nn.Sequential(
             nn.Linear(embedding_dim * 2, hidden_dim),
@@ -598,7 +612,10 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
     def __init__(
         self,
         *,
-        node_feature_dim: int,
+        node_feature_dim: int | None = None,
+        base_feature_dim: int | None = None,
+        phase_feature_dim: int | None = None,
+        edge_feature_dim: int | None = None,
         anchor_embeddings: Tensor,
         hidden_dim: int = 96,
         embedding_dim: int | None = None,
@@ -613,6 +630,11 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
             raise ValueError("max_backward_actions must be positive")
         if distance_decay_a <= 0.0:
             raise ValueError("distance_decay_a must be positive")
+        resolved_node_feature_dim = node_feature_dim if node_feature_dim is not None else base_feature_dim
+        if resolved_node_feature_dim is None or resolved_node_feature_dim < 1:
+            raise ValueError("node_feature_dim or base_feature_dim must be positive")
+        if edge_feature_dim is not None and edge_feature_dim < 1:
+            raise ValueError("edge_feature_dim must be positive when provided")
         resolved_embedding_dim = int(embedding_dim or anchor_embeddings.shape[1])
         if int(anchor_embeddings.shape[1]) != resolved_embedding_dim:
             raise ValueError("anchor_embeddings width must match embedding_dim")
@@ -620,8 +642,17 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         self.num_anchors = int(anchor_embeddings.shape[0])
         self.max_backward_actions = max_backward_actions
         self.distance_decay_a = float(distance_decay_a)
+        self.phase_embedder = (
+            PhaseResolvedFiberEmbedder(
+                phase_feature_dim=int(phase_feature_dim),
+                hidden_dim=hidden_dim,
+                embedding_dim=resolved_embedding_dim,
+            )
+            if phase_feature_dim is not None
+            else None
+        )
         self.node_input = nn.Sequential(
-            nn.Linear(node_feature_dim, hidden_dim),
+            nn.Linear(int(resolved_node_feature_dim), hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
@@ -646,13 +677,17 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, resolved_embedding_dim),
         )
-        self.node_fusion = nn.Sequential(
+        self.channel_gate = nn.Sequential(
             nn.Linear(resolved_embedding_dim * 2, resolved_embedding_dim),
+            nn.Sigmoid(),
+        )
+        self.action_context = nn.Sequential(
+            nn.Linear(resolved_embedding_dim * 3, resolved_embedding_dim),
             nn.SiLU(),
             nn.Linear(resolved_embedding_dim, resolved_embedding_dim),
         )
-        self.action_context = nn.Sequential(
-            nn.Linear(resolved_embedding_dim * 2, resolved_embedding_dim),
+        self.action_field_projection = nn.Sequential(
+            nn.Linear(resolved_embedding_dim * 3, resolved_embedding_dim),
             nn.SiLU(),
             nn.Linear(resolved_embedding_dim, resolved_embedding_dim),
         )
@@ -722,7 +757,8 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         edge_distance_a: Tensor,
         active_dendrite_mask: Tensor,
         batch_index: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        x_phase: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Embed a PyG-style disconnected super-graph without dense padding."""
 
         if node_features.ndim != 2:
@@ -743,28 +779,65 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         )
         electronic_embeddings = self.electronic_update(torch.cat([node_hidden, electronic_agg], dim=1))
         steric_embeddings = self.steric_update(torch.cat([node_hidden, steric_agg], dim=1))
-        node_embeddings = self.node_fusion(torch.cat([electronic_embeddings, steric_embeddings], dim=1))
+        channel_gate = self.channel_gate(torch.cat([electronic_embeddings, steric_embeddings], dim=1))
+        node_embeddings = channel_gate * electronic_embeddings + (1.0 - channel_gate) * steric_embeddings
+        phase_global_embeddings = node_embeddings.new_zeros((batch_size, self.embedding_dim))
+        if x_phase is not None:
+            if self.phase_embedder is None:
+                raise ValueError("x_phase was provided but this policy was built without phase_feature_dim")
+            phase_output = self.phase_embedder(x_phase)
+            node_embeddings = node_embeddings + phase_output.h_fiber_summary
+            phase_global_embeddings = _scatter_mean(phase_output.h_fiber_summary, batch_index, batch_size)
         graph_embeddings = _scatter_mean(node_embeddings, batch_index, batch_size)
-        return node_embeddings, electronic_embeddings, steric_embeddings, graph_embeddings
+        return (
+            node_embeddings,
+            electronic_embeddings,
+            steric_embeddings,
+            graph_embeddings,
+            phase_global_embeddings,
+            channel_gate,
+        )
 
     def forward(
         self,
         *,
-        node_features: Tensor,
+        node_features: Tensor | None = None,
+        x_base: Tensor | None = None,
+        x_phase: Tensor | None = None,
         edge_index: Tensor,
-        edge_distance_a: Tensor,
+        edge_distance_a: Tensor | None = None,
+        edge_attr: Tensor | None = None,
         active_dendrite_mask: Tensor,
         batch_index: Tensor,
         exit_node_indices: Tensor,
         forward_action_mask: Tensor,
         backward_action_mask: Tensor,
+        action_phase_features: Tensor | None = None,
     ) -> DualChannelPolicyOutput:
-        node_embeddings, electronic_embeddings, steric_embeddings, graph_embeddings = self.embed_graph(
+        if node_features is None:
+            if x_base is None:
+                raise ValueError("node_features or x_base must be provided")
+            node_features = x_base
+        if edge_distance_a is None:
+            if edge_attr is None:
+                raise ValueError("edge_distance_a or edge_attr must be provided")
+            if edge_attr.ndim != 2 or int(edge_attr.shape[1]) < 1:
+                raise ValueError("edge_attr must have shape [num_edges, edge_features]")
+            edge_distance_a = edge_attr[:, 0].to(dtype=node_features.dtype) * 5.0
+        (
+            node_embeddings,
+            electronic_embeddings,
+            steric_embeddings,
+            graph_embeddings,
+            phase_global_embeddings,
+            channel_gate,
+        ) = self.embed_graph(
             node_features=node_features,
             edge_index=edge_index,
             edge_distance_a=edge_distance_a,
             active_dendrite_mask=active_dendrite_mask,
             batch_index=batch_index,
+            x_phase=x_phase,
         )
         batch_size = int(graph_embeddings.shape[0])
         if exit_node_indices.shape != (batch_size,):
@@ -772,8 +845,31 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         if exit_node_indices.dtype != torch.long:
             raise TypeError("exit_node_indices must have dtype long")
         exit_embeddings = node_embeddings.index_select(0, exit_node_indices)
-        action_context_embeddings = self.action_context(torch.cat([exit_embeddings, graph_embeddings], dim=1))
-        forward_logits = action_context_embeddings.matmul(self.anchor_embeddings.transpose(0, 1)) / math.sqrt(
+        action_context_embeddings = self.action_context(
+            torch.cat([exit_embeddings, graph_embeddings, phase_global_embeddings], dim=1)
+        )
+        action_embeddings: Tensor = self.anchor_embeddings
+        action_field_embeddings: Tensor | None = None
+        if action_phase_features is not None:
+            if self.phase_embedder is None:
+                raise ValueError("action_phase_features require phase_feature_dim")
+            if action_phase_features.ndim != 3 or int(action_phase_features.shape[1]) != 5:
+                raise ValueError("action_phase_features must have shape [num_anchors, 5, phase_feature_dim]")
+            if int(action_phase_features.shape[0]) != self.num_anchors:
+                raise ValueError("action_phase_features row count must match num_anchors")
+            action_phase_output = self.phase_embedder(action_phase_features)
+            action_field_embeddings = self.action_field_projection(
+                torch.cat(
+                    [
+                        action_phase_output.h_fiber_summary,
+                        action_phase_output.hysteresis_embedding,
+                        action_phase_output.activation_gradient_embedding,
+                    ],
+                    dim=1,
+                )
+            )
+            action_embeddings = action_embeddings + action_field_embeddings
+        forward_logits = action_context_embeddings.matmul(action_embeddings.transpose(0, 1)) / math.sqrt(
             float(self.embedding_dim)
         )
         _validate_mask("forward_action_mask", forward_action_mask, forward_logits.shape)
@@ -789,8 +885,11 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
             electronic_embeddings=electronic_embeddings,
             steric_embeddings=steric_embeddings,
             graph_embeddings=graph_embeddings,
+            phase_global_embeddings=phase_global_embeddings,
             exit_embeddings=exit_embeddings,
             action_context_embeddings=action_context_embeddings,
+            action_field_embeddings=action_field_embeddings,
+            channel_gate=channel_gate,
             forward_logits=forward_logits,
             forward_log_probs=forward_log_probs,
             forward_probs=forward_log_probs.exp(),

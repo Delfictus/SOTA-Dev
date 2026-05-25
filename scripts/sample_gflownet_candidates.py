@@ -35,7 +35,10 @@ sys.path.insert(0, str(REPO / "src"))
 # Reuse the trainer's helpers (scaffold graph, action space, model factory).
 import scripts.train_gflownet_policy as T  # noqa: E402
 
-from prism_dstw.hierarchical_bayes.gflownet_policy import FiberBundleGFlowNetPolicy  # noqa: E402
+from prism_dstw.hierarchical_bayes.gflownet_policy import (  # noqa: E402
+    FiberBundleGFlowNetPolicy,
+    FieldConditionedDualChannelGFlowNetPolicy,
+)
 from prism_dstw.scoring.tripartite_bias_scorer import compute_tripartite_bias  # noqa: E402
 
 TRACK_A = REPO / "campaigns/glp1r_aleniglipron/track_a_generative"
@@ -93,7 +96,7 @@ def build_paths(args: argparse.Namespace) -> "T.TrainingPaths":
 
 @torch.no_grad()
 def sample_once(
-    model: FiberBundleGFlowNetPolicy,
+    model: torch.nn.Module,
     graph: "T.ScaffoldGraph | Sequence[T.ScaffoldGraph]",
     action_space: "T.ActionSpace",
     action_rows: list[dict],
@@ -159,6 +162,8 @@ def main() -> int:
     ap.add_argument("--synthon-parquet", type=Path, default=None)
     ap.add_argument("--survivors", type=Path, default=None)
     ap.add_argument("--signal-grid", type=Path, default=None)
+    ap.add_argument("--grid-coordinate-mapping", type=Path, default=T.DEFAULT_GRID_MAPPING)
+    ap.add_argument("--disable-exit-ray-masks", action="store_true", default=False)
     ap.add_argument("--lock-mask", type=Path, default=TRACK_A / "lock_region_mask.json")
     ap.add_argument("--temperatures", type=str, default="")
     ap.add_argument("--trajectories-per-temperature", type=int, default=None)
@@ -185,21 +190,43 @@ def main() -> int:
     hidden_dim    = 96
     embedding_dim = 64
     action_space = T.load_action_space(paths, embedding_dim)
-    action_rows = action_space.table.to_dicts()
-    model = FiberBundleGFlowNetPolicy(
-        base_feature_dim=reference_graph.base_feature_dim,
-        phase_feature_dim=reference_graph.phase_feature_dim,
-        edge_feature_dim=reference_graph.edge_feature_dim,
-        anchor_embeddings=action_space.anchor_embeddings,
-        hidden_dim=hidden_dim,
-        embedding_dim=embedding_dim,
-        learn_anchor_embeddings=True,
+    fiber_lookup = T.build_signal_fiber_lookup(args.signal_grid, args.grid_coordinate_mapping)
+    action_space = T.attach_exit_ray_adjustments(
+        action_space,
+        reference_graph=reference_graph,
+        fiber_lookup=fiber_lookup,
+        enabled=not bool(args.disable_exit_ray_masks),
     )
+    action_rows = action_space.table.to_dicts()
     ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
     if isinstance(ckpt, dict):
+        if isinstance(ckpt.get("config"), dict):
+            cfg.update(ckpt["config"])
         state_dict = ckpt.get("model_state_dict") or ckpt.get("state_dict") or ckpt
     else:
         state_dict = ckpt
+    architecture = str(cfg.get("architecture", "FiberBundleGFlowNetPolicy"))
+    if architecture == "FieldConditionedDualChannelGFlowNetPolicy" or bool(cfg.get("dual_channel", False)):
+        model = FieldConditionedDualChannelGFlowNetPolicy(
+            base_feature_dim=reference_graph.base_feature_dim,
+            phase_feature_dim=reference_graph.phase_feature_dim,
+            edge_feature_dim=reference_graph.edge_feature_dim,
+            anchor_embeddings=action_space.anchor_embeddings,
+            hidden_dim=hidden_dim,
+            embedding_dim=embedding_dim,
+            learn_anchor_embeddings=True,
+        )
+    else:
+        model = FiberBundleGFlowNetPolicy(
+            base_feature_dim=reference_graph.base_feature_dim,
+            phase_feature_dim=reference_graph.phase_feature_dim,
+            edge_feature_dim=reference_graph.edge_feature_dim,
+            anchor_embeddings=action_space.anchor_embeddings,
+            hidden_dim=hidden_dim,
+            embedding_dim=embedding_dim,
+            learn_anchor_embeddings=True,
+            rf_mode=str(cfg.get("rf_mode", "gain")),
+        )
     model.load_state_dict(state_dict)
     model.eval()
     print(f"  model loaded: {sum(p.numel() for p in model.parameters()):,} params")

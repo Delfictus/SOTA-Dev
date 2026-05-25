@@ -92,6 +92,7 @@ struct RewardRow {
     survival_tier: String,
     selected_dihedral_deg: f64,
     reward_components_json: String,
+    lock_phase_provenance: String,
     oracle_valid: bool,
 }
 
@@ -135,9 +136,11 @@ fn main() -> Result<()> {
                 selected_dihedral_deg: f64::NAN,
                 reward_components_json: json!({
                     "oracle_mode": "validated_o3a_zmatrix_corpus_lookup",
+                    "lock_phase_provenance": "REPLICATED_AGGREGATE",
                     "error": "proposal not present in immutable survivor corpus"
                 })
                 .to_string(),
+                lock_phase_provenance: "REPLICATED_AGGREGATE".to_owned(),
                 oracle_valid: false,
             });
             continue;
@@ -185,12 +188,14 @@ fn main() -> Result<()> {
                 "intracellular_penetration_depth_angstrom": reward.intracellular_penetration_depth_angstrom,
                 "lock_steric_volume_angstrom3": reward.lock_steric_volume_angstrom3,
                 "lock_proxy_method": reward.lock_proxy_method,
+                "lock_phase_provenance": "REPLICATED_AGGREGATE",
                 "cryptic_bonus": reward.cryptic_bonus,
                 "consensus_complement_bonus": reward.consensus_complement_bonus,
                 "survival_tier": reward.survival_tier,
                 "selected_dihedral_deg": reward.selected_dihedral_deg
             })
             .to_string(),
+            lock_phase_provenance: "REPLICATED_AGGREGATE".to_owned(),
             oracle_valid: true,
         });
     }
@@ -646,6 +651,7 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         Field::new("survival_tier", DataType::Utf8, false),
         Field::new("selected_dihedral_deg", DataType::Float64, false),
         Field::new("reward_components_json", DataType::Utf8, false),
+        Field::new("lock_phase_provenance", DataType::Utf8, false),
         Field::new("oracle_valid", DataType::Boolean, false),
     ]));
     let arrays: Vec<ArrayRef> = vec![
@@ -779,6 +785,11 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         Arc::new(StringArray::from(
             rows.iter()
                 .map(|row| row.reward_components_json.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            rows.iter()
+                .map(|row| row.lock_phase_provenance.as_str())
                 .collect::<Vec<_>>(),
         )),
         Arc::new(BooleanArray::from(

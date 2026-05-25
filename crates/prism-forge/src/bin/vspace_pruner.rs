@@ -5207,3 +5207,57 @@ fn top_dihedral_bins(values: &[f64]) -> String {
         .collect::<Vec<_>>()
         .join(",")
 }
+
+#[cfg(test)]
+mod streaming_writer_guard_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn survivor(index: usize) -> Survivor {
+        Survivor {
+            anchor_id: format!("ANCHOR_{index:06}"),
+            canonical_smiles: format!("CCO{index}"),
+            product_id: format!("PRODUCT_{index:06}"),
+            smiles: format!("CCO{index}"),
+            synthon_a_id: format!("A_{index:06}"),
+            synthon_b_id: "B".to_owned(),
+            score: index as f64,
+            fragment_pi_complement: 1.0,
+            fragment_pi_clash_adjusted: 0.1,
+            pi_complement: 1.0,
+            pi_clash: 0.1,
+            cryptic_bonus: 0.0,
+            cryptic_bonus_atoms: 0,
+            survival_tier: "normal",
+            selected_dihedral_deg: 60.0,
+            assembly_mode: "smarts_zmatrix",
+            z_matrix_active: true,
+            rotamers_evaluated: 1,
+            best_rotamer_rank: 1,
+            ligand_sdf_path: "unit.sdf".to_owned(),
+            pose_reconciliation_method: "unit".to_owned(),
+            coordinates_json: "[]".to_owned(),
+        }
+    }
+
+    #[test]
+    fn guard_mpsc_streaming_writer_flushes_and_atomic_renames() -> Result<()> {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("vspace_streaming_guard_{nonce}.parquet"));
+        let tmp_path = path.with_extension("parquet.tmp");
+        let (tx, rx) = mpsc::channel();
+        for index in 0..3 {
+            tx.send(survivor(index))?;
+        }
+        drop(tx);
+        let rows = write_survivors_streaming(&path, rx, 2)?;
+        assert_eq!(rows, 3);
+        assert!(path.exists());
+        assert!(!tmp_path.exists());
+        std::fs::remove_file(path)?;
+        Ok(())
+    }
+}

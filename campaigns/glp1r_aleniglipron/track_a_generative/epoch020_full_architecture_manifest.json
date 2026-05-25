@@ -1,0 +1,99 @@
+{
+  "schema_version": "PRISM.epoch020.full_architecture_manifest.v2",
+  "generated_at_local": "2026-05-25T05:25:00-07:00",
+  "artifact_root": "/mnt/storage/prism-scratch/epoch020_actionfiber",
+  "directive": "CODEX DIRECTIVE EPOCH 020: COMPLETE AUDIT REMEDIATION",
+  "packaging": "SKIPPED_BY_USER_REQUEST",
+  "architecture": {
+    "policy": "FieldConditionedDualChannelGFlowNetPolicy",
+    "dual_channel": true,
+    "rf_mode": "hard_zero",
+    "oracle_mode": "survivor_lookup",
+    "product_fiber_method": "direct_signal_grid_lookup",
+    "action_product_fiber_consumed_by_policy": true,
+    "action_product_fiber_shape": [76493, 5, 8],
+    "exit_ray_masks": "enabled"
+  },
+  "training": {
+    "epochs_completed": 200,
+    "policy_path": "/mnt/storage/prism-scratch/epoch020_actionfiber/gflownet_policy_v6_action_fiber.pt",
+    "log_path": "/mnt/storage/prism-scratch/epoch020_actionfiber/logs/epoch020_actionfiber_training.log",
+    "validation_status": "WARN_REVIEW",
+    "convergence_note": "plateau detected at epoch 101; training intentionally continued to 200 epochs",
+    "epoch_1_tb_loss": 339.97705078125,
+    "epoch_200_tb_loss": 40.95013427734375,
+    "reward_mean_epoch_1": 4.05118465423584,
+    "reward_mean_epoch_200": 3.1265721321105957,
+    "top_reward_seen": 40.83734893798828,
+    "unique_smiles_generated": 10068,
+    "dot_smiles_count": 0,
+    "mode_collapse_metric_top_anchor_share": 0.001640625,
+    "honest_note": "Training completed all 200 epochs with dual-channel, hard-zero R&F, per-action product fiber conditioning, exit-ray masks, and survivor_lookup oracle active. The validation report remains WARN_REVIEW because mean reward declined and late-epoch novelty flattened, although TB loss fell and topology/diversity gates passed."
+  },
+  "sampling": {
+    "trajectories_total": 10000,
+    "unique_smiles": 4265,
+    "valid_generation_rate": 1.0,
+    "top_anchor_share": 0.0537,
+    "sampled_lock_positive_pool": 30,
+    "top500": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/gflownet_top_500_v6.parquet",
+    "top100": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/gflownet_top_100_v6.parquet",
+    "top100_pgx": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/gflownet_top100_full_pgx_v6.parquet"
+  },
+  "post_training": {
+    "candidate_audit": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/gflownet_audit_v6.json",
+    "candidate_audit_summary": {
+      "pass": 7,
+      "warn": 2,
+      "fail": 0,
+      "info": 3
+    },
+    "medchem": {
+      "pains_pass": 100,
+      "brenk_pass": 92,
+      "oral_pass": 100,
+      "biased_agonism_confirmed_top100": 14,
+      "biased_agonism_confirmed_top50": 13
+    },
+    "pgx_full_landscape": {
+      "report": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/pgx_full_landscape_report_v6.json",
+      "status": "PASS",
+      "tier1_worst_case_mean": 1.0,
+      "tier1_ge085": "100/100",
+      "population_coverage_pct_mean": 100.0
+    },
+    "cross_scaffold": {
+      "output": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/gflownet_top100_cross_scaffold_v6.parquet",
+      "n_scaffolds_positive_ge_2": 0,
+      "honest_note": "No candidates were positive on two or more scaffold contexts in this run; cross-scaffold report is PROJECTED_PROXY_NO_REDOCK."
+    },
+    "candidate_dossiers": {
+      "count": 50,
+      "lock_positive_top50": 13,
+      "output_dir": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/candidate_dossiers_v6",
+      "profile_parquet": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/gflownet_top50_tripartite_profiles_v6.parquet"
+    },
+    "canonical_survivors": {
+      "output": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/vspace_survivors_population_consensus_canonical.parquet",
+      "rows": 76493,
+      "ok": 76493,
+      "reconstructed_from_reaction_smarts": 0,
+      "fallback_source": "existing_survivor_product",
+      "honest_note": "The script now attempts reaction SMARTS reconstruction when scaffold/synthon reactant columns are present. This survivor corpus lacks reactant SMILES columns, so all rows canonicalized from the existing connected survivor product column."
+    },
+    "gpu_dispatch": {
+      "count": 14,
+      "manifest": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/gpu_dispatch_v6_manifest.json",
+      "protocol": "ccns_5phase",
+      "replicas": 10
+    },
+    "m3_dossier": "/mnt/storage/prism-scratch/epoch020_actionfiber/output/M3_Lead_Optimization_Dossier_v6.md"
+  },
+  "verification": {
+    "pytest_targeted": "39 passed",
+    "cargo_test_prism_forge_release": "8 passed",
+    "cargo_clippy": "cargo clippy -p prism-forge -- -D warnings PASS",
+    "mypy_strict": "Success: no issues found in 8 source files after action-fiber consumption fix",
+    "release_build": "cargo build --release -p prism-forge --bin oracle_scorer --bin vspace_pruner PASS"
+  }
+}

@@ -11,7 +11,7 @@ import json
 import math
 import random
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, TextIO, cast
@@ -20,6 +20,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
 import torch
 from rdkit import Chem
@@ -27,7 +28,10 @@ from torch import Tensor
 from torch.nn import functional as F
 from torch_geometric.data import Batch, Data  # type: ignore[import-untyped]
 
-from prism_dstw.hierarchical_bayes.gflownet_policy import FiberBundleGFlowNetPolicy
+from prism_dstw.hierarchical_bayes.gflownet_policy import (
+    FiberBundleGFlowNetPolicy,
+    FieldConditionedDualChannelGFlowNetPolicy,
+)
 from prism_dstw.hierarchical_bayes.trajectory_balance import TrajectoryBalanceLoss
 from prism_dstw.orchestration.multi_scaffold_entropy_router import (
     MultiScaffoldEntropyRouter,
@@ -35,10 +39,12 @@ from prism_dstw.orchestration.multi_scaffold_entropy_router import (
     phase_occupancy_from_fiber_bundle,
 )
 from prism_dstw.orchestration.rust_reward_oracle import (
-    BatchedRustOracle,
     OracleProposal,
+    SurvivorCorpusOracle,
     telemetry_to_dict,
 )
+from prism_dstw.scoring.exit_atom_ray_cast import ExitAtomRayCaster
+from prism_dstw.scoring.product_fiber_lookup import SignalGridFiberLookup
 from prism_dstw.scoring.tripartite_bias_scorer import (
     TripartiteBiasScore,
     compute_reward_v2,
@@ -62,6 +68,7 @@ DEFAULT_FRAGMENT_REGISTRY = (
     REPO_ROOT / "campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_brics_fragment_registry.json"
 )
 DEFAULT_PHASE3_PGX_MANIFEST = REPO_ROOT / "campaigns/glp1r_aleniglipron/Phase3_PGx_Exclusion_Manifest.json"
+DEFAULT_GRID_MAPPING = REPO_ROOT / "campaigns/glp1r_aleniglipron/track_0_manual_emulation/grid_coordinate_mapping.json"
 DEFAULT_OUTPUT_DIR = TRACK_A_DIR
 PHASES = ("cold_hold", "ramp_up", "warm_hold", "ramp_down", "cold_return")
 PHASE_LABELS = ("Cold Hold", "Ramp Up", "Warm Hold", "Ramp Down", "Cold Return")
@@ -97,6 +104,8 @@ class ActionSpace:
     anchor_embeddings: Tensor
     valid_mask: Tensor
     reward_targets: Tensor
+    exit_ray_adjustments: Tensor | None = None
+    action_phase_features: Tensor | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,6 +127,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--diversity-beta", type=float, default=0.5)
     parser.add_argument("--max-trajectory-steps", type=int, default=5)
     parser.add_argument("--reward-version", type=str, default="v2_tripartite")
+    parser.add_argument("--dual-channel", action="store_true", default=False)
+    parser.add_argument(
+        "--rf-mode",
+        choices=("gain", "hard_zero", "soft"),
+        default="gain",
+        help="Resonate-and-fire edge weighting for the single-route fallback policy.",
+    )
+    parser.add_argument(
+        "--oracle-mode",
+        choices=("survivor_lookup",),
+        default="survivor_lookup",
+        help="Explicit oracle contract. Current runtime scores by immutable survivor-corpus lookup.",
+    )
     parser.add_argument("--lock-directional-bias-alpha", type=float, default=2.0)
     parser.add_argument("--lock-reaching-synthon-boost", type=float, default=2.0)
     parser.add_argument("--lock-geo-intrinsic-bonus", type=float, default=0.0)
@@ -130,6 +152,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lock-mask", type=Path, default=TRACK_A_DIR / "lock_region_mask.json")
     parser.add_argument("--synthon-parquet", type=Path, default=None)
     parser.add_argument("--signal-grid", type=Path, default=None)
+    parser.add_argument("--grid-coordinate-mapping", type=Path, default=DEFAULT_GRID_MAPPING)
+    parser.add_argument("--disable-exit-ray-masks", action="store_true", default=False)
     parser.add_argument("--shear-stress", type=Path, default=None)
     parser.add_argument("--checkpoint-dir", type=Path, default=REPO_ROOT / ".scratch/checkpoints")
     parser.add_argument("--checkpoint-interval", type=int, default=50)
@@ -655,6 +679,7 @@ def build_scaffold_graph(paths: TrainingPaths, ligand_sdf: Path | None = None) -
     conf = mol.GetConformer()
     x_base: list[list[float]] = []
     x_phase: list[list[list[float]]] = []
+    xyz_rows: list[list[float]] = []
     zero_phase = [[0.0] * 8 for _ in PHASES]
     for old_idx in retained_original_indices:
         atom = mol.GetAtomWithIdx(old_idx)
@@ -662,10 +687,12 @@ def build_scaffold_graph(paths: TrainingPaths, ligand_sdf: Path | None = None) -
         residue_idx = nearest_residue_idx(xyz, ca_coordinates)
         x_base.append(atom_base_features(atom, atom_partial_charge(mol, old_idx), old_idx == exit_original_idx))
         x_phase.append(phase_maps.get(residue_idx, zero_phase))
+        xyz_rows.append([float(value) for value in xyz])
     edge_index, edge_attr, active_mask = build_edges(mol, retained_original_indices, old_to_new, exit_original_idx)
     data = Data(
         x_base=torch.tensor(x_base, dtype=torch.float32),
         x_phase=torch.tensor(x_phase, dtype=torch.float32),
+        xyz=torch.tensor(xyz_rows, dtype=torch.float32),
         edge_index=edge_index,
         edge_attr=edge_attr,
         active_dendrite_mask=active_mask,
@@ -708,8 +735,11 @@ def build_scaffold_pool(paths: TrainingPaths, scaffold_sdfs: Sequence[Path]) -> 
 
 def load_action_space(paths: TrainingPaths, embedding_dim: int) -> ActionSpace:
     anchors = normalize_anchor_table(pl.read_parquet(paths.anchors))
+    survivor_source = pl.read_parquet(paths.survivors)
+    if "coordinates_json" not in survivor_source.columns:
+        survivor_source = survivor_source.with_columns(pl.lit("").alias("coordinates_json"))
     survivors = (
-        pl.read_parquet(paths.survivors)
+        survivor_source
         .sort("score", descending=True)
         .group_by("anchor_id")
         .agg(
@@ -717,6 +747,7 @@ def load_action_space(paths: TrainingPaths, embedding_dim: int) -> ActionSpace:
             pl.col("canonical_smiles").first().alias("survivor_smiles"),
             pl.col("synthon_b_id").first().alias("synthon_b_id"),
             pl.col("product_id").first().alias("product_id"),
+            pl.col("coordinates_json").first().alias("coordinates_json"),
             pl.col("selected_dihedral_deg").first().alias("selected_dihedral_deg"),
             pl.col("survival_tier").first().alias("survival_tier"),
         )
@@ -746,6 +777,140 @@ def load_action_space(paths: TrainingPaths, embedding_dim: int) -> ActionSpace:
     reward_logits = reward_logits.masked_fill(~valid_mask, torch.finfo(torch.float32).min)
     reward_targets = torch.softmax(reward_logits / 0.08, dim=0)
     return ActionSpace(table=table, anchor_embeddings=embeddings, valid_mask=valid_mask, reward_targets=reward_targets)
+
+
+def build_signal_fiber_lookup(signal_grid: Path | None, grid_mapping: Path) -> SignalGridFiberLookup | None:
+    """Create the direct signal-grid lookup used for product fibers and exit masks."""
+
+    if signal_grid is None:
+        return None
+    resolved_grid = resolve_track_a_path(signal_grid, N80_DIR / "signal_grid_variance_channel.parquet")
+    resolved_mapping = resolve_track_a_path(grid_mapping, DEFAULT_GRID_MAPPING)
+    if not resolved_grid.is_file() or not resolved_mapping.is_file():
+        print(
+            "product_fiber_lookup_unavailable "
+            f"signal_grid={resolved_grid} grid_mapping={resolved_mapping}",
+            flush=True,
+        )
+        return None
+    lookup = SignalGridFiberLookup(resolved_grid, resolved_mapping)
+    print(
+        "product_fiber_lookup_initialized "
+        f"method=direct_signal_grid_lookup signal_grid={resolved_grid} grid_mapping={resolved_mapping}",
+        flush=True,
+    )
+    return lookup
+
+
+def attach_exit_ray_adjustments(
+    action_space: ActionSpace,
+    *,
+    reference_graph: ScaffoldGraph,
+    fiber_lookup: SignalGridFiberLookup | None,
+    enabled: bool,
+) -> ActionSpace:
+    """Attach action-specific steric logit adjustments from product coordinates."""
+
+    if not enabled or fiber_lookup is None or "coordinates_json" not in action_space.table.columns:
+        return action_space
+    ray_caster = ExitAtomRayCaster(fiber_lookup)
+    n_scaffold = reference_graph.retained_atom_count
+    adjustments: list[float] = []
+    action_phase_features = torch.zeros(
+        (action_space.table.height, 5, reference_graph.phase_feature_dim),
+        dtype=torch.float32,
+    )
+    scored = 0
+    conditioned = 0
+    for row in action_space.table.iter_rows(named=True):
+        coords = _coordinates_from_row(row)
+        if coords is None or coords.shape[0] <= n_scaffold:
+            adjustments.append(0.0)
+            continue
+        scaffold_xyz = coords[:n_scaffold]
+        synthon_xyz = coords[n_scaffold:]
+        centroid = scaffold_xyz.mean(axis=0)
+        distances = np.linalg.norm(synthon_xyz - centroid, axis=1)
+        distal = synthon_xyz[int(np.argmax(distances))]
+        mask_value = float(ray_caster.compute_exit_masks(np.array([distal], dtype=np.float32), centroid)[0].item())
+        adjustments.append(mask_value)
+        product_fiber = fiber_lookup.lookup_product_fiber(
+            cast(Tensor, reference_graph.data.x_phase),
+            coords,
+            n_scaffold=n_scaffold,
+        )
+        action_phase_features[len(adjustments) - 1] = product_fiber[n_scaffold:].mean(dim=0)
+        scored += 1
+        conditioned += 1
+    tensor = torch.tensor(adjustments, dtype=torch.float32)
+    finite_values = tensor[torch.isfinite(tensor)]
+    mean_value = float(finite_values.mean().item()) if finite_values.numel() else float("-inf")
+    print(
+        "exit_ray_masks_initialized "
+        f"actions_scored={scored}/{len(adjustments)} blocked={int(torch.isneginf(tensor).sum().item())} "
+        f"mean_adjustment={mean_value:.6f}",
+        flush=True,
+    )
+    print(
+        "action_product_fiber_initialized "
+        f"actions_conditioned={conditioned}/{len(adjustments)} method=direct_signal_grid_lookup "
+        f"shape={list(action_phase_features.shape)}",
+        flush=True,
+    )
+    return ActionSpace(
+        table=action_space.table,
+        anchor_embeddings=action_space.anchor_embeddings,
+        valid_mask=action_space.valid_mask,
+        reward_targets=action_space.reward_targets,
+        exit_ray_adjustments=tensor,
+        action_phase_features=action_phase_features,
+    )
+
+
+def _coordinates_from_row(row: Mapping[str, object]) -> np.ndarray | None:
+    raw = row.get("coordinates_json")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        coords = np.array(json.loads(raw), dtype=np.float32)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if coords.ndim != 2 or coords.shape[1] != 3:
+        return None
+    return coords
+
+
+def product_fiber_batch_telemetry(
+    *,
+    action_space: ActionSpace,
+    actions: Sequence[int],
+    selected_graphs: Sequence[ScaffoldGraph],
+    fiber_lookup: SignalGridFiberLookup | None,
+) -> dict[str, int | str]:
+    """Compute direct product fiber tensors for selected terminal products."""
+
+    if fiber_lookup is None:
+        return {"product_fiber_method": "unavailable", "product_fiber_synthon_atoms": 0}
+    rows = action_space.table.to_dicts()
+    synthon_atoms = 0
+    estimated = 0
+    for action_idx, graph in zip(actions, selected_graphs, strict=True):
+        coords = _coordinates_from_row(rows[int(action_idx)])
+        if coords is None:
+            continue
+        n_scaffold = min(graph.retained_atom_count, coords.shape[0])
+        fiber_lookup.lookup_product_fiber(
+            cast(Tensor, graph.data.x_phase),
+            coords,
+            n_scaffold=n_scaffold,
+        )
+        synthon_atoms += max(0, int(coords.shape[0]) - n_scaffold)
+        estimated += 1
+    return {
+        "product_fiber_method": "direct_signal_grid_lookup",
+        "product_fiber_products": estimated,
+        "product_fiber_synthon_atoms": synthon_atoms,
+    }
 
 
 def normalize_anchor_table(anchors: pl.DataFrame) -> pl.DataFrame:
@@ -836,7 +1001,7 @@ def clone_graph_batch(
 
 
 def forward_policy(
-    model: FiberBundleGFlowNetPolicy,
+    model: torch.nn.Module,
     graph: ScaffoldGraph | Sequence[ScaffoldGraph],
     action_space: ActionSpace,
     batch_size: int,
@@ -844,18 +1009,41 @@ def forward_policy(
 ) -> tuple[Any, Batch, Tensor]:
     batch, exit_indices = clone_graph_batch(graph, batch_size, selected_graphs)
     forward_mask = action_space.valid_mask.unsqueeze(0).expand(batch_size, -1)
+    if action_space.exit_ray_adjustments is not None:
+        ray_finite = torch.isfinite(action_space.exit_ray_adjustments).unsqueeze(0).expand_as(forward_mask)
+        row_mask = forward_mask & ray_finite
+        dead_rows = ~row_mask.any(dim=1)
+        if bool(dead_rows.any().item()):
+            row_mask[dead_rows] = forward_mask[dead_rows]
+        forward_mask = row_mask
     backward_mask = torch.ones((batch_size, 1), dtype=torch.bool)
-    output = model(
-        x_base=cast(Tensor, batch.x_base),
-        x_phase=cast(Tensor, batch.x_phase),
-        edge_index=cast(Tensor, batch.edge_index),
-        edge_attr=cast(Tensor, batch.edge_attr),
-        active_dendrite_mask=cast(Tensor, batch.active_dendrite_mask),
-        batch_index=cast(Tensor, batch.batch),
-        exit_node_indices=exit_indices,
-        forward_action_mask=forward_mask,
-        backward_action_mask=backward_mask,
-    )
+    policy_kwargs: dict[str, Tensor] = {
+        "x_base": cast(Tensor, batch.x_base),
+        "x_phase": cast(Tensor, batch.x_phase),
+        "edge_index": cast(Tensor, batch.edge_index),
+        "edge_attr": cast(Tensor, batch.edge_attr),
+        "active_dendrite_mask": cast(Tensor, batch.active_dendrite_mask),
+        "batch_index": cast(Tensor, batch.batch),
+        "exit_node_indices": exit_indices,
+        "forward_action_mask": forward_mask,
+        "backward_action_mask": backward_mask,
+    }
+    if isinstance(model, FieldConditionedDualChannelGFlowNetPolicy) and action_space.action_phase_features is not None:
+        policy_kwargs["action_phase_features"] = action_space.action_phase_features
+    output = model(**policy_kwargs)
+    if action_space.exit_ray_adjustments is not None:
+        adjustments = action_space.exit_ray_adjustments.to(dtype=output.forward_logits.dtype).unsqueeze(0).expand_as(
+            output.forward_logits
+        )
+        adjusted_logits = output.forward_logits + adjustments
+        floor = torch.finfo(adjusted_logits.dtype).min
+        adjusted_log_probs = torch.log_softmax(adjusted_logits.masked_fill(~forward_mask, floor), dim=1)
+        output = replace(
+            output,
+            forward_logits=adjusted_logits,
+            forward_log_probs=adjusted_log_probs,
+            forward_probs=adjusted_log_probs.exp(),
+        )
     return output, batch, exit_indices
 
 
@@ -1028,7 +1216,7 @@ def parameter_grad_norm(parameters: Sequence[torch.nn.Parameter]) -> float:
 def save_training_checkpoint(
     path: Path,
     *,
-    model: FiberBundleGFlowNetPolicy,
+    model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     epoch: int,
     config: Mapping[str, object],
@@ -1095,14 +1283,43 @@ async def train() -> None:
             flush=True,
         )
     action_space = load_action_space(paths, int(args.embedding_dim))
-    model = FiberBundleGFlowNetPolicy(
-        base_feature_dim=reference_graph.base_feature_dim,
-        phase_feature_dim=reference_graph.phase_feature_dim,
-        edge_feature_dim=reference_graph.edge_feature_dim,
-        anchor_embeddings=action_space.anchor_embeddings,
-        hidden_dim=int(args.hidden_dim),
-        embedding_dim=int(args.embedding_dim),
-        learn_anchor_embeddings=True,
+    fiber_lookup = build_signal_fiber_lookup(cast(Path | None, args.signal_grid), Path(args.grid_coordinate_mapping))
+    action_space = attach_exit_ray_adjustments(
+        action_space,
+        reference_graph=reference_graph,
+        fiber_lookup=fiber_lookup,
+        enabled=not bool(args.disable_exit_ray_masks),
+    )
+    if str(args.oracle_mode) != "survivor_lookup":
+        raise RuntimeError(f"unsupported oracle_mode={args.oracle_mode}")
+    model: torch.nn.Module
+    if bool(args.dual_channel):
+        model = FieldConditionedDualChannelGFlowNetPolicy(
+            base_feature_dim=reference_graph.base_feature_dim,
+            phase_feature_dim=reference_graph.phase_feature_dim,
+            edge_feature_dim=reference_graph.edge_feature_dim,
+            anchor_embeddings=action_space.anchor_embeddings,
+            hidden_dim=int(args.hidden_dim),
+            embedding_dim=int(args.embedding_dim),
+            learn_anchor_embeddings=True,
+        )
+        architecture_name = "FieldConditionedDualChannelGFlowNetPolicy"
+    else:
+        model = FiberBundleGFlowNetPolicy(
+            base_feature_dim=reference_graph.base_feature_dim,
+            phase_feature_dim=reference_graph.phase_feature_dim,
+            edge_feature_dim=reference_graph.edge_feature_dim,
+            anchor_embeddings=action_space.anchor_embeddings,
+            hidden_dim=int(args.hidden_dim),
+            embedding_dim=int(args.embedding_dim),
+            learn_anchor_embeddings=True,
+            rf_mode=str(args.rf_mode),
+        )
+        architecture_name = "FiberBundleGFlowNetPolicy"
+    print(
+        f"policy_instantiated type={architecture_name} dual_channel={bool(args.dual_channel)} "
+        f"rf_mode={args.rf_mode} oracle_mode={args.oracle_mode}",
+        flush=True,
     )
     policy_parameters: list[torch.nn.Parameter] = []
     log_z_parameters: list[torch.nn.Parameter] = []
@@ -1122,14 +1339,19 @@ async def train() -> None:
     lock_mask = resolve_track_a_path(cast(Path | None, args.lock_mask), TRACK_A_DIR / "lock_region_mask.json")
     if lock_mask.is_file():
         oracle_args.extend(["--lock-mask", str(lock_mask)])
-    oracle = BatchedRustOracle(
+    oracle = SurvivorCorpusOracle(
         survivor_corpus=paths.survivors,
         max_batch_size=int(args.batch_size),
         extra_args=tuple(oracle_args),
     )
 
     config = {
-        "architecture": "FiberBundleGFlowNetPolicy",
+        "architecture": architecture_name,
+        "dual_channel": bool(args.dual_channel),
+        "rf_mode": str(args.rf_mode),
+        "oracle_mode": str(args.oracle_mode),
+        "grid_coordinate_mapping": str(args.grid_coordinate_mapping),
+        "exit_ray_masks_enabled": action_space.exit_ray_adjustments is not None,
         "phase_labels": list(PHASE_LABELS),
         "x_phase_shape": [reference_graph.retained_atom_count, 5, reference_graph.phase_feature_dim],
         "base_feature_dim": reference_graph.base_feature_dim,
@@ -1195,7 +1417,7 @@ async def train() -> None:
         "- Trajectory horizon: max 5 synthetic steps with early termination retained.\n"
         "- Bias scoring: tripartite observed/derived/projected fields from the Rust oracle.\n"
         "- Scaffold routing: DSTW entropy router balances phase coverage, hysteresis, reaction entropy, novelty, and lock signal when multiple scaffolds are available.\n"
-        "- Reward authority: Batched Rust Oracle; Python never computes terminal rewards.\n"
+        "- Reward authority: Rust `oracle_scorer` survivor-corpus lookup; Python only selects versioned reward components.\n"
     )
 
     warm_rows: list[dict[str, Any]] = []
@@ -1293,6 +1515,12 @@ async def train() -> None:
             sampling_temperature,
         )
         actions = [int(value) for value in actions_tensor.tolist()]
+        product_fiber_metrics = product_fiber_batch_telemetry(
+            action_space=action_space,
+            actions=actions,
+            selected_graphs=selected_graphs,
+            fiber_lookup=fiber_lookup,
+        )
         proposals = proposals_for_actions(action_space, actions)
         reaction_classes = reaction_classes_for_actions(action_space, actions)
         oracle_result = await oracle.score_batch(proposals)
@@ -1447,8 +1675,17 @@ async def train() -> None:
             "oracle_latency_ms": f"{oracle_result.telemetry.oracle_latency_ms:.3f}",
             "lock_geo_positive": f"{lock_geo_positive}/{int(args.batch_size)}",
             "lock_proj_gt_05": f"{lock_proj_gt_05}/{int(args.batch_size)}",
+            "product_fiber_method": product_fiber_metrics["product_fiber_method"],
+            "product_fiber_synthon_atoms": product_fiber_metrics["product_fiber_synthon_atoms"],
         }
         print("tb_epoch_complete " + " ".join(f"{key}={value}" for key, value in telemetry.items()), flush=True)
+        print(
+            "product_fiber_estimated "
+            f"epoch={epoch} products={product_fiber_metrics.get('product_fiber_products', 0)} "
+            f"n_synthon_atoms={product_fiber_metrics['product_fiber_synthon_atoms']} "
+            f"method={product_fiber_metrics['product_fiber_method']}",
+            flush=True,
+        )
         print(
             "reward_component_variance "
             f"epoch={epoch} "
@@ -1635,7 +1872,7 @@ async def train() -> None:
         f"- Unique generated SMILES: `{len(generated_smiles)}`\n"
         f"- Dot-disconnected SMILES count: `{dot_smiles_total}`\n"
         f"- Top anchor share: `{top_anchor_share:.4f}`\n"
-        "- Reward authority: Rust `oracle_scorer` via `BatchedRustOracle`.\n"
+        "- Reward authority: Rust `oracle_scorer` via `SurvivorCorpusOracle` survivor lookup.\n"
     )
     print(
         "gflownet_training_complete "
