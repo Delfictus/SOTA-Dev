@@ -129,11 +129,14 @@ class BatchedRustOracle:
             clash = float(row["pi_clash_pocket"]) if "pi_clash_pocket" in row else float(row["adjusted_pi_clash"])
             lock_clash = float(row["pi_clash_lock"]) if "pi_clash_lock" in row else 0.0
             lock_phase = [
-                float(row.get("pi_clash_lock_cold_hold", lock_clash) or 0.0),
-                float(row.get("pi_clash_lock_ramp_up", lock_clash) or 0.0),
-                float(row.get("pi_clash_lock_warm_hold", lock_clash) or 0.0),
-                float(row.get("pi_clash_lock_ramp_down", lock_clash) or 0.0),
-                float(row.get("pi_clash_lock_cold_return", lock_clash) or 0.0),
+                float(row.get("lock_occupancy_cold_hold", row.get("pi_clash_lock_cold_hold", lock_clash)) or 0.0),
+                float(row.get("lock_occupancy_ramp_up", row.get("pi_clash_lock_ramp_up", lock_clash)) or 0.0),
+                float(row.get("lock_occupancy_warm_hold", row.get("pi_clash_lock_warm_hold", lock_clash)) or 0.0),
+                float(row.get("lock_occupancy_ramp_down", row.get("pi_clash_lock_ramp_down", lock_clash)) or 0.0),
+                float(
+                    row.get("lock_occupancy_cold_return", row.get("pi_clash_lock_cold_return", lock_clash))
+                    or 0.0
+                ),
             ]
             cryptic = float(row["cryptic_bonus"])
             dihedral = float(row["selected_dihedral_deg"])
@@ -233,6 +236,16 @@ class BatchedRustOracle:
             "pi_clash_lock_warm_hold",
             "pi_clash_lock_ramp_down",
             "pi_clash_lock_cold_return",
+            "lock_geometry_score",
+            "lock_geometry_atom_count",
+            "lock_voxel_indices_json",
+            "lock_occupancy_cold_hold",
+            "lock_occupancy_ramp_up",
+            "lock_occupancy_warm_hold",
+            "lock_occupancy_ramp_down",
+            "lock_occupancy_cold_return",
+            "intracellular_penetration_depth_angstrom",
+            "lock_steric_volume_angstrom3",
             "cryptic_bonus",
             "survival_tier",
             "selected_dihedral_deg",

@@ -1,0 +1,36 @@
+{
+  "dispatch_count": 3,
+  "dispatches": [
+    {
+      "bald_information_value": 0.056108499749957894,
+      "candidate_id": "cand_015_bccda098",
+      "canonical_smiles": "COc1cccc2cc(-c3cc(N)c[nH]3)[nH]c12",
+      "epistemic_confidence": "L1",
+      "launch_script": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch/launch-n10-validate-cand_015_bccda098.sh",
+      "lock_geometry_score": 2.691323012853219,
+      "sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/sdf/cand_015_bccda098.sdf"
+    },
+    {
+      "bald_information_value": 0.052687778785976525,
+      "candidate_id": "cand_040_331e0d6e",
+      "canonical_smiles": "N#Cc1cccnc1C(=O)Nc1ccccc1",
+      "epistemic_confidence": "L1",
+      "launch_script": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch/launch-n10-validate-cand_040_331e0d6e.sh",
+      "lock_geometry_score": 3.080634670543427,
+      "sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/sdf/cand_040_331e0d6e.sdf"
+    },
+    {
+      "bald_information_value": 0.04663737559200675,
+      "candidate_id": "cand_021_cd2c6bd2",
+      "canonical_smiles": "COc1ccc2nc([C@H]3CCNC3)ccc2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch/launch-n10-validate-cand_021_cd2c6bd2.sh",
+      "lock_geometry_score": 3.868790264392053,
+      "sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/sdf/cand_021_cd2c6bd2.sdf"
+    }
+  ],
+  "generated_at_utc": "2026-05-25T04:49:34.855711+00:00",
+  "profiles": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_50_tripartite_profiles.parquet",
+  "replicas": 10,
+  "schema_version": "PRISM.gpu_dispatch.tripartite.v1"
+}

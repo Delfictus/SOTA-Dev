@@ -1540,10 +1540,7 @@ fn prune_dendritic_shard_streaming(
         ));
     }
     let start_a_assignment = shard.pathway_start_pair_idx / terminal_count;
-    let end_a_assignment = shard
-        .pathway_end_pair_idx_exclusive
-        .saturating_sub(1)
-        / terminal_count;
+    let end_a_assignment = shard.pathway_end_pair_idx_exclusive.saturating_sub(1) / terminal_count;
     println!(
         "dendritic_stream_start requested_shard={} plan_shard={} pathway_id={} output={} row_group_size={} first_reaction={} second_reaction={} bridge_synthons={} terminal_synthons={} scaffold_anchors={} shard_pair_start={} shard_pair_end={} shard_pairs={} a_assignment_start={} a_assignment_end={} total_pairs={}",
         shard.requested_shard_id,
@@ -1601,9 +1598,10 @@ fn prune_dendritic_shard_streaming(
                 intermediate_a_dropped.fetch_add(1, Ordering::Relaxed);
                 return Ok(());
             };
-            counters
-                .cryptic_bonus_atoms
-                .fetch_add(intermediate_score.cryptic_bonus_atoms as usize, Ordering::Relaxed);
+            counters.cryptic_bonus_atoms.fetch_add(
+                intermediate_score.cryptic_bonus_atoms as usize,
+                Ordering::Relaxed,
+            );
 
             let block_start = a_assignment_idx
                 .checked_mul(terminal_count)
@@ -2086,20 +2084,31 @@ fn assemble_intermediate_synthon(
     )?;
     let scaffold_reference_atom_1 = bridge_site
         .reference_atom_idx
-        .and_then(|atom_idx| intermediate.synthon_index_map.get(atom_idx).copied().flatten())
+        .and_then(|atom_idx| {
+            intermediate
+                .synthon_index_map
+                .get(atom_idx)
+                .copied()
+                .flatten()
+        })
         .filter(|atom_idx| *atom_idx != scaffold_reactive_atom_idx)
         .unwrap_or_else(|| {
             fallback_product_reference_atom(&scaffold_state, &[scaffold_reactive_atom_idx])
         });
-    let scaffold_reference_atom_2 =
-        fallback_product_reference_atom(&scaffold_state, &[
-            scaffold_reactive_atom_idx,
-            scaffold_reference_atom_1,
-        ]);
+    let scaffold_reference_atom_2 = fallback_product_reference_atom(
+        &scaffold_state,
+        &[scaffold_reactive_atom_idx, scaffold_reference_atom_1],
+    );
     let scaffold_leaving_group_atom_indices = bridge_synthon
         .leaving_groups_for(&second_rule.reaction_id, "scaffold")
         .into_iter()
-        .filter_map(|atom_idx| intermediate.synthon_index_map.get(atom_idx).copied().flatten())
+        .filter_map(|atom_idx| {
+            intermediate
+                .synthon_index_map
+                .get(atom_idx)
+                .copied()
+                .flatten()
+        })
         .collect::<Vec<_>>();
     let synthon_reference_atom_idx = terminal_site
         .reference_atom_idx
@@ -2122,8 +2131,12 @@ fn assemble_intermediate_synthon(
         synthon_leaving_group_atom_indices: synthon_leaving_group_atom_indices.clone(),
         selected_dihedral_deg: dihedral_deg as f32,
     };
-    let product =
-        execute_smarts_zmatrix_reaction(&scaffold_state, &terminal_synthon.synthon, &plan, second_rule)?;
+    let product = execute_smarts_zmatrix_reaction(
+        &scaffold_state,
+        &terminal_synthon.synthon,
+        &plan,
+        second_rule,
+    )?;
     let score_atom_offset = scaffold_state.atom_count();
     let product_id = format!(
         "DENDRITIC__{}__{}__{}__PHI_{:.0}",
@@ -4901,13 +4914,8 @@ fn write_survivors_streaming(
         )?;
     }
     writer.close()?;
-    std::fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "atomic rename {} -> {}",
-            tmp_path.display(),
-            path.display()
-        )
-    })?;
+    std::fs::rename(&tmp_path, path)
+        .with_context(|| format!("atomic rename {} -> {}", tmp_path.display(), path.display()))?;
     Ok(total_rows)
 }
 

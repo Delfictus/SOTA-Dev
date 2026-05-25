@@ -28,16 +28,28 @@ The nominal Enamine REAL design space was treated as a dendritic combinatorial s
 | shard count | {{ shard_count }} |
 | completed local shards | {{ completed_shards }} |
 
-## 3. Biased Agonism Steric Wedge
+## 3. Tripartite Bias Scoring
 
-The Rust oracle now reports bifurcated clash channels:
+The Rust oracle now reports the corrected residue-mask lock fields needed for tripartite biased-agonism scoring:
 
 - `pi_clash_pocket`: orthosteric pocket clash, treated as an unfavorable fit liability.
-- `pi_clash_lock`: intracellular lock-region clash proxy, treated as the steric wedge signal requiring experimental falsification.
+- `lock_geometry_score`: OBSERVED static overlap with corrected intracellular lock voxels.
+- `lock_occupancy_*`: DERIVED five-phase lock occupancy proxy used for persistence and hysteresis analysis.
+- `bias_projection_score`: PROJECTED beta-arrestin blockade probability requiring GPU MD and wet-lab falsification before promotion.
 
-Audit threshold: `pi_clash_lock > {{ lock_threshold }}`.
+Corrected lock threshold: `lock_geometry_score > {{ lock_threshold }}`.
 
-This is a PROJECTED mechanical hypothesis. It is falsified if the selected candidates fail to preserve a WT-normalized biased-signaling signature in receptor internalization / β-arrestin recruitment assays under matched receptor occupancy.
+The legacy Z-proxy was invalidated in Epoch 014 because it labeled pocket-floor voxels rather than the intracellular lock. This dossier therefore reports the tripartite evidence levels explicitly:
+
+| tripartite metric | value |
+|---|---:|
+| profiled candidates | {{ tripartite_profile_count }} |
+| corrected lock-positive candidates | {{ tripartite_lock_positive }} |
+| L1 projected-only | {{ tripartite_l1 }} |
+| L2 observed geometry present | {{ tripartite_l2 }} |
+| L3 geometry + persistence proxy | {{ tripartite_l3 }} |
+
+This remains a PROJECTED mechanical hypothesis unless GPU MD preserves lock occupancy across the CCNS protocol and receptor assays preserve the WT-normalized biased-signaling signature under matched receptor occupancy.
 
 ## 4. Competitor Cross-Scaffold Recombination
 
@@ -57,10 +69,10 @@ Lineage:
 
 ## 5. Top 10 Lead Candidates
 
-| rank | SMILES | reward | lock score | pocket clash | complement | synthetic route |
-|---:|---|---:|---:|---:|---:|---|
+| rank | SMILES | reward | lock geometry | bias projection | confidence | pocket clash | complement | synthetic route |
+|---:|---|---:|---:|---:|---|---:|---:|---|
 {% for row in top10 -%}
-| {{ row.rank }} | `{{ row.canonical_smiles }}` | {{ "%.3f"|format(row.reward) }} | {{ "%.3f"|format(row.pi_clash_lock) }} | {{ "%.3f"|format(row.pi_clash_pocket) }} | {{ "%.3f"|format(row.pi_complement) }} | {{ row.synthetic_route }} |
+| {{ row.rank }} | `{{ row.canonical_smiles }}` | {{ "%.3f"|format(row.reward) }} | {{ "%.3f"|format(row.lock_geometry_score) }} | {{ "%.3f"|format(row.bias_projection_score) }} | {{ row.epistemic_confidence }} | {{ "%.3f"|format(row.pi_clash_pocket) }} | {{ "%.3f"|format(row.pi_complement) }} | {{ row.synthetic_route }} |
 {% endfor %}
 
 ## 6. Falsification Gates
@@ -74,6 +86,7 @@ Lineage:
 
 - policy checkpoint: `{{ policy_path }}`
 - top-100 candidates: `{{ top100_path }}`
+- tripartite profiles: `{{ tripartite_profile_path }}`
 - medchem audit: `{{ medchem_audit_path }}`
 - candidate audit: `{{ audit_json_path }}`
 - CBOM: `{{ cbom_path }}`

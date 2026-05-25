@@ -38,6 +38,7 @@ from prism_dstw.orchestration.rust_reward_oracle import (
     OracleProposal,
     telemetry_to_dict,
 )
+from prism_dstw.scoring.tripartite_bias_scorer import compute_tripartite_bias
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +111,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reward-scale", type=float, default=10.0)
     parser.add_argument("--policy-aux-weight", type=float, default=0.0)
     parser.add_argument("--diversity-beta", type=float, default=0.5)
+    parser.add_argument("--max-trajectory-steps", type=int, default=5)
+    parser.add_argument("--reward-version", type=str, default="v2_tripartite")
+    parser.add_argument("--lock-directional-bias-alpha", type=float, default=2.0)
+    parser.add_argument("--lock-reaching-synthon-boost", type=float, default=2.0)
     parser.add_argument("--torch-threads", type=int, default=4)
     parser.add_argument("--entropy-router", action="store_true", default=True)
     parser.add_argument("--disable-entropy-router", action="store_true", default=False)
@@ -931,6 +936,10 @@ async def train() -> None:
         "reward_scale": float(args.reward_scale),
         "policy_aux_weight": float(args.policy_aux_weight),
         "diversity_beta": float(args.diversity_beta),
+        "max_trajectory_steps": int(args.max_trajectory_steps),
+        "reward_version": str(args.reward_version),
+        "lock_directional_bias_alpha": float(args.lock_directional_bias_alpha),
+        "lock_reaching_synthon_boost": float(args.lock_reaching_synthon_boost),
         "rust_oracle_reward_authority": True,
         "uses_pyg_batch": True,
         "dense_adjacency": False,
@@ -953,6 +962,8 @@ async def train() -> None:
         "- Phase routing: GRU plus 1D convolution over Cold Hold, Ramp Up, Warm Hold, Ramp Down, Cold Return.\n"
         "- Orthogonal routing: base graph messages and within-atom fiber messages remain separate before gated fusion.\n"
         "- Action policy: exit-vector-conditioned dot-product attention over calibration anchor embeddings.\n"
+        "- Trajectory horizon: max 5 synthetic steps with early termination retained.\n"
+        "- Bias scoring: tripartite observed/derived/projected fields from the Rust oracle.\n"
         "- Scaffold routing: DSTW entropy router balances phase coverage, hysteresis, reaction entropy, novelty, and lock signal when multiple scaffolds are available.\n"
         "- Reward authority: Batched Rust Oracle; Python never computes terminal rewards.\n"
     )
@@ -1042,6 +1053,10 @@ async def train() -> None:
         reaction_classes = reaction_classes_for_actions(action_space, actions)
         oracle_result = await oracle.score_batch(proposals)
         rewards = oracle_result.rewards
+        oracle_row_dicts = cast(list[dict[str, object]], oracle_result.rows.to_dicts())
+        tripartite_scores = [compute_tripartite_bias(row) for row in oracle_row_dicts]
+        lock_geo_positive = sum(1 for score in tripartite_scores if score.lock_geometry_score > 0.0)
+        lock_proj_gt_05 = sum(1 for score in tripartite_scores if score.bias_projection_score > 0.5)
         update_router_from_oracle(
             entropy_router,
             selected_graphs=selected_graphs,
@@ -1132,6 +1147,8 @@ async def train() -> None:
                 "unique_smiles_generated": len(generated_smiles),
                 "diversity_bonus_mean": float(diversity_bonus.mean().item()),
                 "temperature": current_temperature,
+                "lock_geo_positive": lock_geo_positive,
+                "lock_proj_gt_05": lock_proj_gt_05,
             }
         )
         entropy_rows.append({"epoch": epoch, "trajectory_entropy": entropy})
@@ -1159,8 +1176,16 @@ async def train() -> None:
             "gradient_norm_policy": f"{gradient_norm_policy:.6f}",
             "gradient_norm_logZ": f"{gradient_norm_log_z:.6f}",
             "oracle_latency_ms": f"{oracle_result.telemetry.oracle_latency_ms:.3f}",
+            "lock_geo_positive": f"{lock_geo_positive}/{int(args.batch_size)}",
+            "lock_proj_gt_05": f"{lock_proj_gt_05}/{int(args.batch_size)}",
         }
         print("tb_epoch_complete " + " ".join(f"{key}={value}" for key, value in telemetry.items()), flush=True)
+        print(
+            "lock_positive_rate "
+            f"epoch={epoch} lock_geo_positive={lock_geo_positive}/{int(args.batch_size)} "
+            f"lock_proj_gt_05={lock_proj_gt_05}/{int(args.batch_size)}",
+            flush=True,
+        )
         interval = max(1, int(args.router_telemetry_interval))
         if entropy_router is not None and epoch % interval == 0:
             for line in entropy_router.telemetry_lines(active_variant=str(args.active_variant)):
@@ -1237,6 +1262,8 @@ async def train() -> None:
             "unique_smiles_generated",
             "diversity_bonus_mean",
             "temperature",
+            "lock_geo_positive",
+            "lock_proj_gt_05",
         ],
     )
     write_csv(paths.output_dir / "trajectory_entropy.csv", entropy_rows, ["epoch", "trajectory_entropy"])

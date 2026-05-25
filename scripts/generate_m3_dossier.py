@@ -28,7 +28,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--template", type=Path, default=TEMPLATE)
     parser.add_argument("--output", type=Path, default=OUTPUT)
-    parser.add_argument("--top100", type=Path, default=TRACK_A / "gflownet_top_100_candidates.parquet")
+    parser.add_argument("--top100", type=Path, default=TRACK_A / "gflownet_top_100_candidates_lockmask_rescored.parquet")
+    parser.add_argument("--tripartite-profiles", type=Path, default=TRACK_A / "gflownet_top_50_tripartite_profiles.parquet")
     parser.add_argument("--medchem-audit", type=Path, default=TRACK_A / "gflownet_medchem_audit.parquet")
     parser.add_argument("--candidate-audit", type=Path, default=TRACK_A / "gflownet_candidate_audit.json")
     parser.add_argument("--plan", type=Path, default=TRACK_A / "vspace_38b_dendritic_plan.json")
@@ -62,14 +63,21 @@ def integer(value: object, default: int = 0) -> int:
 
 
 def top_rows(path: Path) -> list[Row]:
+    frame = pl.read_parquet(path)
+    if "lock_geometry_score" not in frame.columns:
+        frame = frame.with_columns(pl.col("pi_clash_lock").alias("lock_geometry_score"))
+    if "bias_projection_score" not in frame.columns:
+        frame = frame.with_columns(pl.lit(0.0).alias("bias_projection_score"))
+    if "epistemic_confidence" not in frame.columns:
+        frame = frame.with_columns(pl.lit("L1").alias("epistemic_confidence"))
     frame = (
-        pl.scan_parquet(path)
-        .sort(["reward", "pi_clash_lock"], descending=[True, True])
+        frame.sort(["reward", "lock_geometry_score"], descending=[True, True])
         .head(10)
         .with_columns(
             pl.format("SMARTS/Z-matrix projected route via {}", pl.col("anchor_id")).alias("synthetic_route")
+            if "anchor_id" in frame.columns
+            else pl.lit("SMARTS/Z-matrix projected route").alias("synthetic_route")
         )
-        .collect()
     )
     return cast(list[Row], frame.to_dicts())
 
@@ -150,9 +158,48 @@ def variant_grid_context(path: Path) -> dict[str, object]:
     }
 
 
+def tripartite_context(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {
+            "tripartite_profile_count": 0,
+            "tripartite_lock_positive": 0,
+            "tripartite_l1": 0,
+            "tripartite_l2": 0,
+            "tripartite_l3": 0,
+            "tripartite_profile_path": path.as_posix(),
+        }
+    frame = pl.read_parquet(path)
+    if "epistemic_confidence" not in frame.columns:
+        return {
+            "tripartite_profile_count": frame.height,
+            "tripartite_lock_positive": 0,
+            "tripartite_l1": frame.height,
+            "tripartite_l2": 0,
+            "tripartite_l3": 0,
+            "tripartite_profile_path": path.as_posix(),
+        }
+    return {
+        "tripartite_profile_count": frame.height,
+        "tripartite_lock_positive": frame.filter(pl.col("lock_geometry_score") > 0.0).height
+        if "lock_geometry_score" in frame.columns
+        else 0,
+        "tripartite_l1": frame.filter(pl.col("epistemic_confidence") == "L1").height,
+        "tripartite_l2": frame.filter(pl.col("epistemic_confidence") == "L2").height,
+        "tripartite_l3": frame.filter(pl.col("epistemic_confidence") == "L3").height,
+        "tripartite_profile_path": path.as_posix(),
+    }
+
+
 def render(args: argparse.Namespace) -> str:
     counts = medchem_counts(args.medchem_audit)
-    top10 = top_rows(args.top100)
+    if args.top100.is_file():
+        top100_frame = pl.read_parquet(args.top100)
+        if "lock_geometry_score" in top100_frame.columns:
+            counts["biased_agonism_confirmed"] = top100_frame.filter(pl.col("lock_geometry_score") > 0.5).height
+        elif "pi_clash_lock" in top100_frame.columns:
+            counts["biased_agonism_confirmed"] = top100_frame.filter(pl.col("pi_clash_lock") > 0.5).height
+    top10_source = args.tripartite_profiles if args.tripartite_profiles.is_file() else args.top100
+    top10 = top_rows(top10_source)
     top100_unique = (
         pl.scan_parquet(args.top100)
         .select(pl.col("canonical_smiles").n_unique().alias("n_unique"))
@@ -176,6 +223,7 @@ def render(args: argparse.Namespace) -> str:
     context.update(plan_context(args.plan))
     context.update(scaffold_context(args.competitor_scaffold_manifest))
     context.update(variant_grid_context(args.phase2d_manifest))
+    context.update(tripartite_context(args.tripartite_profiles))
     env = Environment(
         loader=FileSystemLoader(str(args.template.parent)),
         undefined=StrictUndefined,

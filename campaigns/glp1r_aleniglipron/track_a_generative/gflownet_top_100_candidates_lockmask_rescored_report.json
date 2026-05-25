@@ -1,7 +1,7 @@
 {
   "schema_version": "PRISM.top100_lockmask_rescore.v1",
   "epistemic_class": "DERIVED",
-  "generated_at_utc": "2026-05-25T04:18:45.547274+00:00",
+  "generated_at_utc": "2026-05-25T04:49:11.046263+00:00",
   "input": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates.parquet",
   "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates_lockmask_rescored.parquet",
   "oracle": "/home/diddy/Desktop/Prism4D-bio/target/release/oracle_scorer",

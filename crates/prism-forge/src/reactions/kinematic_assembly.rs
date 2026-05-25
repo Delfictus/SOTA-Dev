@@ -520,8 +520,13 @@ pub fn execute_zmatrix_reaction(
         scaffold_skip,
         synthon_skip,
     );
-    ScaffoldState3D::new_with_bonds(product_coordinates, product_charges, Vec::new(), product_bonds)
-        .map_err(Into::into)
+    ScaffoldState3D::new_with_bonds(
+        product_coordinates,
+        product_charges,
+        Vec::new(),
+        product_bonds,
+    )
+    .map_err(Into::into)
 }
 
 pub fn execute_smarts_zmatrix_reaction(
@@ -632,7 +637,11 @@ pub fn execute_smarts_zmatrix_reaction(
     for bond in remap_bonds(&synthon.bonds, &synthon_index_map) {
         push_unique_bond(&mut product_bonds, bond.0, bond.1);
     }
-    push_unique_bond(&mut product_bonds, scaffold_product_idx, synthon_product_idx);
+    push_unique_bond(
+        &mut product_bonds,
+        scaffold_product_idx,
+        synthon_product_idx,
+    );
     #[cfg(debug_assertions)]
     assert_topology_integrity(
         scaffold,
@@ -720,19 +729,33 @@ fn assert_topology_integrity<I, J>(
     let synthon_leaving_groups: Vec<usize> = synthon_leaving_groups.into_iter().collect();
     for atom_index in &scaffold_leaving_groups {
         assert!(
-            scaffold_index_map.get(*atom_index).copied().flatten().is_none(),
+            scaffold_index_map
+                .get(*atom_index)
+                .copied()
+                .flatten()
+                .is_none(),
             "scaffold leaving-group atom {atom_index} survived topology remap"
         );
     }
     for atom_index in &synthon_leaving_groups {
         assert!(
-            synthon_index_map.get(*atom_index).copied().flatten().is_none(),
+            synthon_index_map
+                .get(*atom_index)
+                .copied()
+                .flatten()
+                .is_none(),
             "synthon leaving-group atom {atom_index} survived topology remap"
         );
     }
 
-    let retained_scaffold_atoms = scaffold_index_map.iter().filter(|value| value.is_some()).count();
-    let retained_synthon_atoms = synthon_index_map.iter().filter(|value| value.is_some()).count();
+    let retained_scaffold_atoms = scaffold_index_map
+        .iter()
+        .filter(|value| value.is_some())
+        .count();
+    let retained_synthon_atoms = synthon_index_map
+        .iter()
+        .filter(|value| value.is_some())
+        .count();
     assert_eq!(
         product_atom_count,
         retained_scaffold_atoms + retained_synthon_atoms,
@@ -1271,7 +1294,7 @@ fn cross(lhs: [f32; 3], rhs: [f32; 3]) -> [f32; 3] {
 mod tests {
     use super::*;
     use crate::reactions::reaction_registry::{
-        ProductBondSpec, ReactionGuards, ReactionProvenance, ReactantRole, TorsionPolicy,
+        ProductBondSpec, ReactantRole, ReactionGuards, ReactionProvenance, TorsionPolicy,
     };
 
     #[test]

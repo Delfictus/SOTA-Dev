@@ -1,0 +1,14 @@
+{
+  "criteria": {
+    "aromatic_ring_count": ">=1",
+    "functional_group_count": ">=2 when available",
+    "max_atomic_span_angstrom": ">8",
+    "rotatable_bonds": "<=4"
+  },
+  "generated_at_utc": "2026-05-25T04:49:18.454981+00:00",
+  "input": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/enamine_115k_synthons_3d.parquet",
+  "lock_reaching_candidate_count": 0,
+  "output": ".scratch/enamine_115k_synthons_3d_lock_reaching_sample.parquet",
+  "rows": 5000,
+  "schema_version": "PRISM.lock_reaching_synthon_enrichment.v1"
+}

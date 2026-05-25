@@ -1,0 +1,42 @@
+{
+  "determination": "blocked_missing_variant_grids:/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_A316T.parquet,/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_T149M.parquet",
+  "generated_at_utc": "2026-05-25T04:49:34.848655+00:00",
+  "next_action": "Use corrected lock mask and variant-specific normalization only after the variant grid coordinate projection returns nonzero WT reference scores.",
+  "schema_version": "PRISM.pgx_scoring_path_diagnosis.v2",
+  "variant_grids": [
+    {
+      "exists": false,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_A316T.parquet"
+    },
+    {
+      "exists": false,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_T149M.parquet"
+    }
+  ],
+  "wt_grid": {
+    "columns": [
+      "campaign_id",
+      "condition_id",
+      "voxel_idx",
+      "x_idx",
+      "y_idx",
+      "z_idx",
+      "hit_count_cold_mean",
+      "hit_count_warm_mean",
+      "variance_class",
+      "cold_stream_count",
+      "warm_stream_count"
+    ],
+    "exists": true,
+    "missing_required": [
+      "hit_count_delta",
+      "variance_classification"
+    ],
+    "nonvoid": 0,
+    "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+    "rows": 7077888,
+    "thermally_activated": 0,
+    "voxel_idx_max": 884735,
+    "voxel_idx_min": 0
+  }
+}

@@ -97,9 +97,10 @@ def medchem_audit(top_candidates: pl.DataFrame) -> tuple[pl.DataFrame, dict[str,
         qed_pass = q > 0.3
         fsp3_pass = fsp3 > 0.2
         biased_confirmed = False
-        if "pi_clash_lock" in row:
+        lock_value = row.get("lock_geometry_score", row.get("pi_clash_lock", 0.0))
+        if lock_value is not None:
             try:
-                biased_confirmed = float(row["pi_clash_lock"]) > LOCK_CLASH_THRESHOLD
+                biased_confirmed = float(lock_value) > LOCK_CLASH_THRESHOLD
             except Exception:
                 biased_confirmed = False
         rows.append(

@@ -13,12 +13,20 @@ from typing import Any, Mapping, Sequence, cast
 import polars as pl
 
 from prism_dstw.ontology import EpistemicClass
+from prism_dstw.scoring.tripartite_bias_scorer import (
+    RewardV2Weights,
+    TripartiteBiasScore,
+    compute_reward_v2 as compute_tripartite_reward_v2,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_VSPACE_SURVIVORS = (
     REPO_ROOT / "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors.parquet"
 )
+MAX_TRAJECTORY_STEPS = 5
+DEFAULT_LOCK_DIRECTIONAL_BIAS_ALPHA = 2.0
+DEFAULT_LOCK_REACHING_SYNTHON_BOOST = 2.0
 Coordinate3D = tuple[float, float, float]
 Matrix3D = tuple[Coordinate3D, Coordinate3D, Coordinate3D]
 
@@ -39,6 +47,8 @@ class RewardWeights:
     uncertainty_lambda: float = 1.0
     sa_lambda: float = 1.0
     oral_lambda: float = 1.0
+    lock_geometry: float = 1.0
+    lock_projection: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -757,6 +767,54 @@ def saturated_reward(
         * math.exp(-weights.oral_lambda * oral_violation_score)
     )
     return raw_score * attenuation
+
+
+def compute_lock_directional_bias(
+    exit_atom_xyz: Coordinate3D,
+    lock_centroid: Coordinate3D,
+    scaffold_centroid: Coordinate3D,
+) -> float:
+    """Return cosine alignment of an exit atom with the lock-facing direction."""
+
+    exit_dir = _vec_sub(exit_atom_xyz, scaffold_centroid)
+    lock_dir = _vec_sub(lock_centroid, scaffold_centroid)
+    exit_norm = _norm(exit_dir)
+    lock_norm = _norm(lock_dir)
+    if exit_norm < 1.0e-6 or lock_norm < 1.0e-6:
+        return 0.0
+    return _dot(exit_dir, lock_dir) / (exit_norm * lock_norm)
+
+
+def lock_directional_logit_bonus(
+    exit_atom_xyz: Coordinate3D,
+    lock_centroid: Coordinate3D,
+    scaffold_centroid: Coordinate3D,
+    *,
+    alpha: float = DEFAULT_LOCK_DIRECTIONAL_BIAS_ALPHA,
+) -> float:
+    """Soft positive-only logit boost for exit vectors pointing at the lock."""
+
+    return alpha * max(0.0, compute_lock_directional_bias(exit_atom_xyz, lock_centroid, scaffold_centroid))
+
+
+def compute_reward_v2(
+    oracle_output: Mapping[str, Any],
+    bias_score: TripartiteBiasScore,
+    weights: RewardWeights | None = None,
+) -> float:
+    """Compatibility wrapper around the Epoch 015 tripartite reward."""
+
+    reward_weights = None
+    if weights is not None:
+        reward_weights = RewardV2Weights(
+            complement=weights.complement,
+            clash_pocket=weights.clash,
+            lock_geometry=weights.lock_geometry,
+            lock_projection=weights.lock_projection,
+            shear=weights.shear,
+            oral=weights.oral_lambda,
+        )
+    return compute_tripartite_reward_v2(oracle_output, bias_score, reward_weights)
 
 
 class GFlowNetActionSpace:

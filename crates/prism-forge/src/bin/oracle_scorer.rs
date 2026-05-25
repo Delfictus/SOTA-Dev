@@ -50,6 +50,12 @@ struct SurvivorReward {
     pi_clash_pocket: f64,
     pi_clash_lock: f64,
     pi_clash_lock_per_phase: [f64; 5],
+    lock_geometry_score: f64,
+    lock_geometry_atom_count: u64,
+    lock_voxel_indices_json: String,
+    lock_occupancy_per_phase: [f64; 5],
+    intracellular_penetration_depth_angstrom: f64,
+    lock_steric_volume_angstrom3: f64,
     cryptic_bonus: f64,
     survival_tier: String,
     selected_dihedral_deg: f64,
@@ -74,6 +80,12 @@ struct RewardRow {
     pi_clash_pocket: f64,
     pi_clash_lock: f64,
     pi_clash_lock_per_phase: [f64; 5],
+    lock_geometry_score: f64,
+    lock_geometry_atom_count: u64,
+    lock_voxel_indices_json: String,
+    lock_occupancy_per_phase: [f64; 5],
+    intracellular_penetration_depth_angstrom: f64,
+    lock_steric_volume_angstrom3: f64,
     cryptic_bonus: f64,
     survival_tier: String,
     selected_dihedral_deg: f64,
@@ -109,6 +121,12 @@ fn main() -> Result<()> {
                 pi_clash_pocket: 0.0,
                 pi_clash_lock: 0.0,
                 pi_clash_lock_per_phase: [0.0; 5],
+                lock_geometry_score: 0.0,
+                lock_geometry_atom_count: 0,
+                lock_voxel_indices_json: "[]".to_owned(),
+                lock_occupancy_per_phase: [0.0; 5],
+                intracellular_penetration_depth_angstrom: 0.0,
+                lock_steric_volume_angstrom3: 0.0,
                 cryptic_bonus: 0.0,
                 survival_tier: "invalid_missing_survivor".to_owned(),
                 selected_dihedral_deg: f64::NAN,
@@ -131,6 +149,12 @@ fn main() -> Result<()> {
             pi_clash_pocket: reward.pi_clash_pocket,
             pi_clash_lock: reward.pi_clash_lock,
             pi_clash_lock_per_phase: reward.pi_clash_lock_per_phase,
+            lock_geometry_score: reward.lock_geometry_score,
+            lock_geometry_atom_count: reward.lock_geometry_atom_count,
+            lock_voxel_indices_json: reward.lock_voxel_indices_json.clone(),
+            lock_occupancy_per_phase: reward.lock_occupancy_per_phase,
+            intracellular_penetration_depth_angstrom: reward.intracellular_penetration_depth_angstrom,
+            lock_steric_volume_angstrom3: reward.lock_steric_volume_angstrom3,
             cryptic_bonus: reward.cryptic_bonus,
             survival_tier: reward.survival_tier.clone(),
             selected_dihedral_deg: reward.selected_dihedral_deg,
@@ -146,6 +170,16 @@ fn main() -> Result<()> {
                 "pi_clash_lock_warm_hold": reward.pi_clash_lock_per_phase[2],
                 "pi_clash_lock_ramp_down": reward.pi_clash_lock_per_phase[3],
                 "pi_clash_lock_cold_return": reward.pi_clash_lock_per_phase[4],
+                "lock_geometry_score": reward.lock_geometry_score,
+                "lock_geometry_atom_count": reward.lock_geometry_atom_count,
+                "lock_voxel_indices": reward.lock_voxel_indices_json,
+                "lock_occupancy_cold_hold": reward.lock_occupancy_per_phase[0],
+                "lock_occupancy_ramp_up": reward.lock_occupancy_per_phase[1],
+                "lock_occupancy_warm_hold": reward.lock_occupancy_per_phase[2],
+                "lock_occupancy_ramp_down": reward.lock_occupancy_per_phase[3],
+                "lock_occupancy_cold_return": reward.lock_occupancy_per_phase[4],
+                "intracellular_penetration_depth_angstrom": reward.intracellular_penetration_depth_angstrom,
+                "lock_steric_volume_angstrom3": reward.lock_steric_volume_angstrom3,
                 "lock_proxy_method": reward.lock_proxy_method,
                 "cryptic_bonus": reward.cryptic_bonus,
                 "survival_tier": reward.survival_tier,
@@ -268,6 +302,13 @@ fn load_survivors(path: &Path, lock_mask: Option<&LockRegionMask>) -> Result<Vec
                 pi_clash_pocket: lock_proxy.pi_clash_pocket,
                 pi_clash_lock: lock_proxy.pi_clash_lock,
                 pi_clash_lock_per_phase: lock_proxy.pi_clash_lock_per_phase,
+                lock_geometry_score: lock_proxy.lock_geometry_score,
+                lock_geometry_atom_count: lock_proxy.lock_geometry_atom_count,
+                lock_voxel_indices_json: lock_proxy.lock_voxel_indices_json,
+                lock_occupancy_per_phase: lock_proxy.lock_occupancy_per_phase,
+                intracellular_penetration_depth_angstrom: lock_proxy
+                    .intracellular_penetration_depth_angstrom,
+                lock_steric_volume_angstrom3: lock_proxy.lock_steric_volume_angstrom3,
                 cryptic_bonus: f64_value(cryptic, row_idx)?,
                 survival_tier: string_value(tiers, row_idx)?,
                 selected_dihedral_deg: f64_value(dihedrals, row_idx)?,
@@ -283,6 +324,12 @@ struct ClashBifurcation {
     pi_clash_pocket: f64,
     pi_clash_lock: f64,
     pi_clash_lock_per_phase: [f64; 5],
+    lock_geometry_score: f64,
+    lock_geometry_atom_count: u64,
+    lock_voxel_indices_json: String,
+    lock_occupancy_per_phase: [f64; 5],
+    intracellular_penetration_depth_angstrom: f64,
+    lock_steric_volume_angstrom3: f64,
     method: String,
 }
 
@@ -292,6 +339,7 @@ struct LockRegionMask {
     origin: [f64; 3],
     spacing: f64,
     dims: [u64; 3],
+    lock_centroid_z: f64,
 }
 
 impl LockRegionMask {
@@ -312,30 +360,55 @@ impl LockRegionMask {
             .and_then(|value| value.as_array())
             .ok_or_else(|| anyhow!("lock mask grid missing origin_xyz_angstrom"))?;
         let origin = [
-            origin_values.first().and_then(|value| value.as_f64()).unwrap_or(0.0),
-            origin_values.get(1).and_then(|value| value.as_f64()).unwrap_or(0.0),
-            origin_values.get(2).and_then(|value| value.as_f64()).unwrap_or(0.0),
+            origin_values
+                .first()
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0),
+            origin_values
+                .get(1)
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0),
+            origin_values
+                .get(2)
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0),
         ];
         let dims = [
-            grid.get("nx").and_then(|value| value.as_u64()).unwrap_or(96),
-            grid.get("ny").and_then(|value| value.as_u64()).unwrap_or(96),
-            grid.get("nz").and_then(|value| value.as_u64()).unwrap_or(96),
+            grid.get("nx")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(96),
+            grid.get("ny")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(96),
+            grid.get("nz")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(96),
         ];
         let spacing = grid
             .get("spacing_angstrom")
             .and_then(|value| value.as_f64())
             .ok_or_else(|| anyhow!("lock mask grid missing spacing_angstrom"))?;
+        let lock_centroid_z = if lock_voxels.is_empty() {
+            origin[2]
+        } else {
+            lock_voxels
+                .iter()
+                .map(|voxel_idx| voxel_center_z(*voxel_idx, origin, spacing, dims))
+                .sum::<f64>()
+                / lock_voxels.len() as f64
+        };
         Ok(Self {
             lock_voxels,
             origin,
             spacing,
             dims,
+            lock_centroid_z,
         })
     }
 
-    fn contains_xyz(&self, xyz: &[f64]) -> bool {
+    fn voxel_idx_for_xyz(&self, xyz: &[f64]) -> Option<u64> {
         if xyz.len() < 3 || self.spacing <= 0.0 {
-            return false;
+            return None;
         }
         let ix = ((xyz[0] - self.origin[0]) / self.spacing).floor() as i64;
         let iy = ((xyz[1] - self.origin[1]) / self.spacing).floor() as i64;
@@ -347,11 +420,20 @@ impl LockRegionMask {
             || iy >= self.dims[1] as i64
             || iz >= self.dims[2] as i64
         {
-            return false;
+            return None;
         }
-        let voxel_idx = iz as u64 * (self.dims[0] * self.dims[1]) + iy as u64 * self.dims[0] + ix as u64;
+        Some(iz as u64 * (self.dims[0] * self.dims[1]) + iy as u64 * self.dims[0] + ix as u64)
+    }
+
+    fn contains_voxel(&self, voxel_idx: u64) -> bool {
         self.lock_voxels.contains(&voxel_idx)
     }
+}
+
+fn voxel_center_z(voxel_idx: u64, origin: [f64; 3], spacing: f64, dims: [u64; 3]) -> f64 {
+    let plane = dims[0] * dims[1];
+    let iz = voxel_idx / plane;
+    origin[2] + (iz as f64 + 0.5) * spacing
 }
 
 fn bifurcated_reward(
@@ -374,20 +456,55 @@ fn bifurcate_clash(
             pi_clash_pocket: adjusted_pi_clash,
             pi_clash_lock: 0.0,
             pi_clash_lock_per_phase: [0.0; 5],
+            lock_geometry_score: 0.0,
+            lock_geometry_atom_count: 0,
+            lock_voxel_indices_json: "[]".to_owned(),
+            lock_occupancy_per_phase: [0.0; 5],
+            intracellular_penetration_depth_angstrom: 0.0,
+            lock_steric_volume_angstrom3: 0.0,
             method: "missing_coordinates_fallback_all_pocket".to_owned(),
         };
     };
     if let Some(mask) = lock_mask {
-        let lock_atom_count = coords.iter().filter(|coord| mask.contains_xyz(coord)).count();
+        let mut occupied_lock_voxels = HashSet::new();
+        let mut lock_atom_count: u64 = 0;
+        let mut min_lock_atom_z = f64::INFINITY;
+        for coord in &coords {
+            let Some(voxel_idx) = mask.voxel_idx_for_xyz(coord) else {
+                continue;
+            };
+            if mask.contains_voxel(voxel_idx) {
+                lock_atom_count += 1;
+                occupied_lock_voxels.insert(voxel_idx);
+                if coord.len() >= 3 {
+                    min_lock_atom_z = min_lock_atom_z.min(coord[2]);
+                }
+            }
+        }
         let atom_count = coords.len().max(1);
         let lock_fraction = lock_atom_count as f64 / atom_count as f64;
         let pi_clash_lock = adjusted_pi_clash * lock_atom_count as f64;
+        let mut lock_voxels_sorted = occupied_lock_voxels.into_iter().collect::<Vec<_>>();
+        lock_voxels_sorted.sort_unstable();
+        let lock_voxel_indices_json = json!(lock_voxels_sorted).to_string();
+        let penetration_depth = if lock_atom_count == 0 || !min_lock_atom_z.is_finite() {
+            0.0
+        } else {
+            (mask.lock_centroid_z - min_lock_atom_z).max(0.0)
+        };
+        let steric_volume = lock_atom_count as f64 * 20.0;
         return ClashBifurcation {
             pi_clash_pocket: adjusted_pi_clash * (1.0 - lock_fraction),
             pi_clash_lock,
             pi_clash_lock_per_phase: [pi_clash_lock; 5],
+            lock_geometry_score: pi_clash_lock,
+            lock_geometry_atom_count: lock_atom_count,
+            lock_voxel_indices_json,
+            lock_occupancy_per_phase: [pi_clash_lock; 5],
+            intracellular_penetration_depth_angstrom: penetration_depth,
+            lock_steric_volume_angstrom3: steric_volume,
             method: format!(
-                "residue_lock_region_mask_v1:lock_atoms={lock_atom_count}:total_atoms={atom_count}:phase_lock=aggregate_replicated"
+                "residue_lock_region_mask_v2:lock_atoms={lock_atom_count}:total_atoms={atom_count}:phase_lock=static_aggregate_replicated:steric_volume_proxy=20A3_per_atom"
             ),
         };
     }
@@ -395,6 +512,12 @@ fn bifurcate_clash(
         pi_clash_pocket: adjusted_pi_clash,
         pi_clash_lock: 0.0,
         pi_clash_lock_per_phase: [0.0; 5],
+        lock_geometry_score: 0.0,
+        lock_geometry_atom_count: 0,
+        lock_voxel_indices_json: "[]".to_owned(),
+        lock_occupancy_per_phase: [0.0; 5],
+        intracellular_penetration_depth_angstrom: 0.0,
+        lock_steric_volume_angstrom3: 0.0,
         method: "lock_mask_missing_legacy_z_proxy_invalidated_all_pocket".to_owned(),
     }
 }
@@ -483,6 +606,20 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         Field::new("pi_clash_lock_warm_hold", DataType::Float64, false),
         Field::new("pi_clash_lock_ramp_down", DataType::Float64, false),
         Field::new("pi_clash_lock_cold_return", DataType::Float64, false),
+        Field::new("lock_geometry_score", DataType::Float64, false),
+        Field::new("lock_geometry_atom_count", DataType::Float64, false),
+        Field::new("lock_voxel_indices_json", DataType::Utf8, false),
+        Field::new("lock_occupancy_cold_hold", DataType::Float64, false),
+        Field::new("lock_occupancy_ramp_up", DataType::Float64, false),
+        Field::new("lock_occupancy_warm_hold", DataType::Float64, false),
+        Field::new("lock_occupancy_ramp_down", DataType::Float64, false),
+        Field::new("lock_occupancy_cold_return", DataType::Float64, false),
+        Field::new(
+            "intracellular_penetration_depth_angstrom",
+            DataType::Float64,
+            false,
+        ),
+        Field::new("lock_steric_volume_angstrom3", DataType::Float64, false),
         Field::new("cryptic_bonus", DataType::Float64, false),
         Field::new("survival_tier", DataType::Utf8, false),
         Field::new("selected_dihedral_deg", DataType::Float64, false),
@@ -517,7 +654,9 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
                 .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
-            rows.iter().map(|row| row.pi_clash_pocket).collect::<Vec<_>>(),
+            rows.iter()
+                .map(|row| row.pi_clash_pocket)
+                .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
             rows.iter().map(|row| row.pi_clash_lock).collect::<Vec<_>>(),
@@ -545,6 +684,56 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         Arc::new(Float64Array::from(
             rows.iter()
                 .map(|row| row.pi_clash_lock_per_phase[4])
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_geometry_score)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_geometry_atom_count as f64)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            rows.iter()
+                .map(|row| row.lock_voxel_indices_json.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_occupancy_per_phase[0])
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_occupancy_per_phase[1])
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_occupancy_per_phase[2])
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_occupancy_per_phase[3])
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_occupancy_per_phase[4])
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.intracellular_penetration_depth_angstrom)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.lock_steric_volume_angstrom3)
                 .collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(

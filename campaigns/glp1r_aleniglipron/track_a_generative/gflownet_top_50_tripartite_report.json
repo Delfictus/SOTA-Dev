@@ -1,0 +1,13 @@
+{
+  "candidate_count": 50,
+  "confidence_counts": {
+    "L1": 50
+  },
+  "epistemic_note": "L1-L3 are static/proxy confidence tags. They do not represent GPU MD confirmation.",
+  "generated_at_utc": "2026-05-25T04:49:17.587299+00:00",
+  "input": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates_lockmask_rescored.parquet",
+  "lock_positive": 3,
+  "output_dir": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/candidate_dossiers",
+  "profile_parquet": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_50_tripartite_profiles.parquet",
+  "schema_version": "PRISM.candidate_dossiers.tripartite.v1"
+}
