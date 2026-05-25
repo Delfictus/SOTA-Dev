@@ -1,0 +1,15 @@
+{
+  "package": "PRISM_TRACK_A_GFLOWNET_V1_INFERENCE",
+  "phase": "3_oracle_consensus_rescoring",
+  "generated_at_utc": "2026-05-24T21:42:03Z",
+  "unique_candidates_in": 440,
+  "unique_candidates_out": 440,
+  "invalid_dropped": 0,
+  "oracle_backend": "smiles_lookup_deterministic",
+  "consensus_variability_source": "intra-anchor trajectory variance (real); pose/dihedral consensus not measurable against the current oracle_scorer binary backend.",
+  "oracle_calls": 7,
+  "oracle_wall_seconds": 0.0,
+  "reward_mean_top10": 2.566829483525196,
+  "reward_mean_overall": 0.7881986114270497,
+  "reward_max": 2.65
+}

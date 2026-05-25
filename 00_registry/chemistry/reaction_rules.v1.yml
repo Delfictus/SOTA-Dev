@@ -1,0 +1,151 @@
+schema_version: reaction_rules.v1
+registry_name: PRISM Track A SMARTS Reaction Grammar
+disclaimer: "Reaction-rule compatibility indicates virtual synthesis plausibility, not guaranteed experimental success."
+reactions:
+  - reaction_id: RXN_AMIDE_COUPLING
+    reaction_name: Carboxylic Acid Amide Coupling
+    reaction_class: amide_coupling
+    version: 1
+    enabled: true
+    epistemic_status: PROJECTED_REACTION_GRAMMAR
+    smarts: "[C:1](=[O:2])[O:3].[N:4]>>[C:1](=[O:2])[N:4]"
+    reactant_roles:
+      scaffold:
+        required_smarts: "[C:1](=[O:2])[O:3]"
+        reactive_atom_map: 1
+        leaving_group_atom_maps: [3]
+        bond_vector_reference: [1, 3]
+      synthon:
+        required_smarts: "[N:4]"
+        reactive_atom_map: 4
+        leaving_group_atom_maps: []
+        bond_vector_reference: [4]
+    product_bond:
+      atom_map_a: 1
+      atom_map_b: 4
+      bond_order: 1
+      ideal_bond_length_A: 1.35
+      ideal_bond_angle_deg: 120.0
+      torsion_policy:
+        mode: discrete_grid
+        dihedral_deg: [0, 180]
+    guards:
+      max_product_heavy_atoms: 72
+      allowed_formal_charge_range: [-2, 2]
+      reject_radicals: true
+      reject_unmapped_reactive_atoms: true
+      require_single_match_or_enumerate_matches: enumerate_matches
+    provenance:
+      source: "Medicinal chemistry reaction grammar; virtual amide coupling."
+      notes: "PROJECTED reaction grammar only; coupling yield and selectivity require CRO validation."
+
+  - reaction_id: RXN_SUZUKI_ARYL_ARYL
+    reaction_name: Suzuki Aryl-Aryl Coupling
+    reaction_class: suzuki_coupling
+    version: 1
+    enabled: true
+    epistemic_status: PROJECTED_REACTION_GRAMMAR
+    smarts: "[c:1][Br,Cl,I:2].[c:3][B:4]([O:5])[O:6]>>[c:1]-[c:3]"
+    reactant_roles:
+      scaffold:
+        required_smarts: "[c:1][Br,Cl,I:2]"
+        reactive_atom_map: 1
+        leaving_group_atom_maps: [2]
+        bond_vector_reference: [1, 2]
+      synthon:
+        required_smarts: "[c:3][B:4]([O:5])[O:6]"
+        reactive_atom_map: 3
+        leaving_group_atom_maps: [4, 5, 6]
+        bond_vector_reference: [3, 4]
+    product_bond:
+      atom_map_a: 1
+      atom_map_b: 3
+      bond_order: 1
+      ideal_bond_length_A: 1.48
+      ideal_bond_angle_deg: 120.0
+      torsion_policy:
+        mode: discrete_grid
+        dihedral_deg: [0, 60, 120, 180, 240, 300]
+    guards:
+      max_product_heavy_atoms: 78
+      allowed_formal_charge_range: [-2, 2]
+      reject_radicals: true
+      reject_unmapped_reactive_atoms: true
+      require_single_match_or_enumerate_matches: enumerate_matches
+    provenance:
+      source: "Medicinal chemistry reaction grammar; virtual Suzuki aryl coupling."
+      notes: "Aryl halide and boronate compatibility is projected; catalyst/base feasibility is not asserted."
+
+  - reaction_id: RXN_BUCHWALD_HARTWIG
+    reaction_name: Buchwald-Hartwig Aryl Amination
+    reaction_class: buchwald_hartwig
+    version: 1
+    enabled: true
+    epistemic_status: PROJECTED_REACTION_GRAMMAR
+    smarts: "[c:1][Br,Cl,I:2].[N:3]>>[c:1]-[N:3]"
+    reactant_roles:
+      scaffold:
+        required_smarts: "[c:1][Br,Cl,I:2]"
+        reactive_atom_map: 1
+        leaving_group_atom_maps: [2]
+        bond_vector_reference: [1, 2]
+      synthon:
+        required_smarts: "[N:3]"
+        reactive_atom_map: 3
+        leaving_group_atom_maps: []
+        bond_vector_reference: [3]
+    product_bond:
+      atom_map_a: 1
+      atom_map_b: 3
+      bond_order: 1
+      ideal_bond_length_A: 1.40
+      ideal_bond_angle_deg: 120.0
+      torsion_policy:
+        mode: discrete_grid
+        dihedral_deg: [0, 60, 120, 180, 240, 300]
+    guards:
+      max_product_heavy_atoms: 76
+      allowed_formal_charge_range: [-2, 2]
+      reject_radicals: true
+      reject_unmapped_reactive_atoms: true
+      require_single_match_or_enumerate_matches: enumerate_matches
+    provenance:
+      source: "Medicinal chemistry reaction grammar; virtual Buchwald-Hartwig amination."
+      notes: "Reaction grammar does not guarantee catalyst-compatible amine or aryl halide performance."
+
+  - reaction_id: RXN_SULFONAMIDE
+    reaction_name: Sulfonyl Chloride Amine Coupling
+    reaction_class: sulfonamide
+    version: 1
+    enabled: true
+    epistemic_status: PROJECTED_REACTION_GRAMMAR
+    smarts: "[S:1](=[O:2])(=[O:3])[Cl:4].[N:5]>>[S:1](=[O:2])(=[O:3])[N:5]"
+    reactant_roles:
+      scaffold:
+        required_smarts: "[S:1](=[O:2])(=[O:3])[Cl:4]"
+        reactive_atom_map: 1
+        leaving_group_atom_maps: [4]
+        bond_vector_reference: [1, 4]
+      synthon:
+        required_smarts: "[N:5]"
+        reactive_atom_map: 5
+        leaving_group_atom_maps: []
+        bond_vector_reference: [5]
+    product_bond:
+      atom_map_a: 1
+      atom_map_b: 5
+      bond_order: 1
+      ideal_bond_length_A: 1.62
+      ideal_bond_angle_deg: 109.5
+      torsion_policy:
+        mode: discrete_grid
+        dihedral_deg: [0, 60, 120, 180, 240, 300]
+    guards:
+      max_product_heavy_atoms: 78
+      allowed_formal_charge_range: [-2, 2]
+      reject_radicals: true
+      reject_unmapped_reactive_atoms: true
+      require_single_match_or_enumerate_matches: enumerate_matches
+    provenance:
+      source: "Medicinal chemistry reaction grammar; virtual sulfonamide formation."
+      notes: "Sulfonyl chloride compatibility remains projected until reagent/vendor and CRO validation."

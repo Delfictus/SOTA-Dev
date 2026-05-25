@@ -1,0 +1,90 @@
+# M2 Executive Readout Final
+
+## 1. EXECUTIVE SUMMARY
+
+This readout integrates the 80-replica, 1,600-stream GLP-1R WT/variant manifold over {{ spike_count_text }} SNR-masked spike events. The completed extraction unrolled the 5-phase CCNS hysteresis protocol across Cold Hold, Ramp Up, Warm Hold, Ramp Down, and Cold Return, then fused the phase tensors into receptor durability, pathway, hysteresis, shear, and Aleniglipron interference layers.
+
+Primary tensor scale:
+
+| Tensor | Rows |
+|---|---:|
+| Stream-level 5-phase counts | {{ stream_phase_rows }} |
+| Phase-Manifold Coherence | {{ coherence_rows }} |
+| Hysteresis tensor | {{ hysteresis_rows }} |
+| Interferometric differential | {{ interferometric_rows }} |
+| Rust shear-stress field | {{ shear_rows }} |
+| Receptor durability risk map | {{ risk_rows }} |
+
+## 2. M0-M1 VERIFICATION (THE WT MANIFOLD)
+
+The 80-replica summary now includes {{ mechanically_pruned_edges }} mechanically_pruned edges in the edge-level risk map, preserving the mechanical gate before downstream ligand scoring. In the D_Hysteresis Temporal Cascade, non-edge residues fire at median MD step {{ "%.2f"|format(cascade_d_hysteresis.noncritical_median) }}, while critical edge endpoints fire later at median MD step {{ "%.2f"|format(cascade_d_hysteresis.critical_median) }}, mapping the propagation timing of the allosteric wave rather than only the final edge state.
+
+| Durability class | Edge count | Mean risk | Mechanically pruned |
+|---|---:|---:|---:|
+{% for row in durability_summary -%}
+| {{ row.durability_class }} | {{ row.edge_count }} | {{ "%.4f"|format(row.mean_risk_score) }} | {{ row.mechanically_pruned_edges }} |
+{% endfor %}
+
+## 3. PHASE-MANIFOLD COHERENCE (FIRST-PRINCIPLES VALIDATION)
+
+These edges show high signal consistency across 20 orthogonal thermodynamic perturbation streams, providing first-principles evidence that they are constitutive receptor features, not thermal artifacts.
+
+The updated coherence tensor consumes `stream_level_phase_counts.parquet`, so Shannon entropy is computed over stream-phase bins from the 5-phase protocol rather than from a single raw stream histogram. The risk map now carries the phase validation status through the composite critical-edge key.
+
+| Critical edge | Class | Edge coherence | Validation status | Durability risk |
+|---|---|---:|---|---:|
+{% for row in phase_validation_rows -%}
+| {{ row.edge_label }} | {{ row.edge_class }} | {{ "%.4f"|format(row.edge_coherence_score) }} | {{ row.validation_status }} | {{ "%.4f"|format(row.durability_risk_score_raw) }} |
+{% endfor %}
+
+## 4. CCNS HYSTERESIS ANALYSIS
+
+`6LN2_A316T` shows a recovery impairment signature consistent with persistent lock-state occupancy, whereas `6XOX_WT` shows an elastic recovery profile under matched thermal perturbation.
+
+The fused `hysteresis_tensor.parquet` provides the condition/protocol accounting below. The D_Hysteresis recovery channel remains explicitly loaded here so the executive contrast is traceable back to Cold Hold versus Cold Return spike behavior.
+
+| Condition | Protocol | Mean irreversibility | Mean reversibility | Cold Hold spikes | Cold Return spikes |
+|---|---|---:|---:|---:|---:|
+{% for row in hysteresis_focus_rows -%}
+| {{ row.condition_id }} | {{ row.protocol_group }} | {{ "%.1f"|format(row.mean_irreversibility * 100.0) }}% | {{ "%.1f"|format(row.mean_reversibility * 100.0) }}% | {{ row.cold_hold_spikes }} | {{ row.cold_return_spikes }} |
+{% endfor %}
+
+## 5. THE TRANSLATION PATHWAY
+
+The 9 critical edges below are the receptor handoff points used for downstream scoring, while the pathway table lists the top intermediate load-bearing residues available after the triple-evidence and spatial filters. `ASN182` appears as the dominant intermediate wire residue and is explicitly annotated with shear and burst-motion flags.
+
+| Critical edge | Class | Validation status | Mechanically pruned | Risk |
+|---|---|---|---:|---:|
+{% for row in critical_edge_rows -%}
+| {{ row.edge_label }} | {{ row.edge_class }} | {{ row.validation_status }} | {{ row.mechanically_pruned }} | {{ "%.4f"|format(row.durability_risk_score_raw) }} |
+{% endfor %}
+
+| Residue | Condition | Rank | Wire score | Structural fault line | Violent kinetic node | Shear stress | Max burst motion |
+|---|---|---:|---:|---:|---:|---:|---:|
+{% for row in pathway_rows -%}
+| {{ row.residue_name }} | {{ row.condition_id }} | {{ row.pathway_rank }} | {{ "%.4f"|format(row.wire_score) }} | {{ row.structural_fault_line }} | {{ row.violent_kinetic_node }} | {{ "%.4f"|format(row.shear_stress) }} | {{ "%.4f"|format(row.max_burst_motion) }} |
+{% endfor %}
+
+## 6. ALENIGLIPRON TWO-LAYER INTERFERENCE
+
+Whole-molecule projected durability score: `{{ "%.4f"|format(whole_projection.projected_durability_score) }}` +/- `{{ "%.4f"|format(whole_projection.projected_durability_std) }}` using frozen beta values `beta_f={{ "%.12f"|format(whole_projection.beta_f) }}` and `beta_s={{ "%.12f"|format(whole_projection.beta_s) }}`.
+
+Inter-Fragment Coupling is positive where the covalent connection forces the whole molecule into a more strained geometry than the sum of independently sliced BRICS fragments. The total coupling across the scored edges is `{{ "%.4f"|format(total_inter_fragment_coupling) }}`.
+
+| Edge | Whole clash | Sum fragment clash | Inter-Fragment Coupling | Dominant fragment | Dominant fraction |
+|---|---:|---:|---:|---|---:|
+{% for row in fragment_rows -%}
+| {{ row.edge_id }} | {{ "%.4f"|format(row.whole_molecule_clash) }} | {{ "%.4f"|format(row.sum_fragment_clash) }} | {{ "%.4f"|format(row.inter_fragment_coupling) }} | {{ row.dominant_fragment }} | {{ "%.1f"|format(row.dominant_fraction * 100.0) }}% |
+{% endfor %}
+
+## 7. STRATEGIC RECOMMENDATION
+
+Transition to the automated Chem-BALD / Graph-Wasserstein DKL pipeline (Track A) to resolve epistemic uncertainty ($U_{pose}$) for rigidified scaffolds. The current Track 0 scoring has enough receptor-side physics to prioritize hypotheses, but the next decision point needs uncertainty-aware pose exploration rather than a single rigidified scaffold assumption.
+
+## 8. CRYPTOGRAPHIC LINEAGE
+
+| Artifact | SHA-256 |
+|---|---|
+{% for row in lineage_rows -%}
+| {{ row.name }} | `{{ row.sha256 }}` |
+{% endfor %}

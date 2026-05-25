@@ -1,0 +1,59 @@
+schema_version: "warp_gradient_field.v1"
+description: "Voxel-wise 3D finite-difference gradient magnitude from warp-matrix atom weights mapped through topology coordinate vectors."
+tensor_selection:
+  selected_option: 1
+  vector_source: "topology.positions"
+  tensor_name: "ShearStress"
+  fallback_options_not_used:
+    - "forces_final.bin"
+    - "asc_vectors.bin"
+columns:
+  campaign_id:
+    dtype: string
+    ontology: CampaignId
+    unit: dimensionless
+    nullable: false
+  condition_id:
+    dtype: string
+    ontology: StructureId
+    unit: dimensionless
+    nullable: false
+  voxel_idx:
+    dtype: uint32
+    ontology: VoxelIdx
+    unit: dimensionless
+    nullable: false
+  x_idx:
+    dtype: int32
+    ontology: VoxelIdx
+    unit: dimensionless
+    nullable: false
+  y_idx:
+    dtype: int32
+    ontology: VoxelIdx
+    unit: dimensionless
+    nullable: false
+  z_idx:
+    dtype: int32
+    ontology: VoxelIdx
+    unit: dimensionless
+    nullable: false
+  shear_stress:
+    dtype: float64
+    ontology: ShearStress
+    unit: "angstrom_per_voxel_frobenius_norm"
+    nullable: false
+    constraints:
+      minimum: 0.0
+  shear_stress_max:
+    dtype: float64
+    ontology: ShearStress
+    unit: "angstrom_per_voxel_frobenius_norm"
+    nullable: false
+    constraints:
+      minimum: 0.0
+  stream_count:
+    dtype: uint64
+    ontology: StreamCount
+    unit: dimensionless
+    nullable: false

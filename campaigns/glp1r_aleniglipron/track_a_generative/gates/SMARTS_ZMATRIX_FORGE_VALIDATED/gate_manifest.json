@@ -1,0 +1,157 @@
+{
+  "artifacts": [
+    {
+      "key": "reaction_registry",
+      "path": "00_registry/chemistry/reaction_rules.v1.yml",
+      "sha256": "1dacde46248457ed1b5e2615f879916fe4101b540fd09a332e9fa0c1bc39f70b",
+      "size_bytes": 5344,
+      "summary": {
+        "disclaimer": "Reaction-rule compatibility indicates virtual synthesis plausibility, not guaranteed experimental success.",
+        "enabled_reactions": [
+          "RXN_AMIDE_COUPLING",
+          "RXN_SUZUKI_ARYL_ARYL",
+          "RXN_BUCHWALD_HARTWIG",
+          "RXN_SULFONAMIDE"
+        ],
+        "reaction_rule_count": 4,
+        "registry_name": "PRISM Track A SMARTS Reaction Grammar",
+        "schema_version": "reaction_rules.v1"
+      }
+    },
+    {
+      "key": "tagged_synthons",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/enamine_130k_synthons_3d.parquet",
+      "sha256": "3f4faec111a4651d70f40d4ac27c951c509e4486dd99631e4f6be737199710c4",
+      "size_bytes": 1109572,
+      "summary": {
+        "columns": [
+          "synthon_id",
+          "vendor_id",
+          "canonical_smiles",
+          "is_valid_mol",
+          "compatible_reactions_json",
+          "compatible_reaction_roles_json",
+          "reaction_match_atoms_json",
+          "leaving_group_atoms_json",
+          "conformer_atoms_json",
+          "formal_charge",
+          "heavy_atom_count",
+          "molecular_weight",
+          "sa_score",
+          "charge_method",
+          "partial_charges_json",
+          "ingest_status",
+          "reject_reason",
+          "reaction_rule_id",
+          "reaction_role",
+          "reaction_tags_json",
+          "attachment_atom_idx",
+          "leaving_group_atom_idx",
+          "dihedral_reference_atom_idx",
+          "attachment_vector_json",
+          "leaving_group_formal_charge",
+          "partial_charge_method",
+          "conformer_count"
+        ],
+        "ingest_status_counts": {
+          "ok": 939,
+          "rejected": 85
+        },
+        "mock_id_count": 0,
+        "row_count": 1024,
+        "unique_smiles_count": 1024,
+        "unique_synthon_count": 1024
+      }
+    },
+    {
+      "key": "bounded_survivors",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_smarts_bounded.parquet",
+      "sha256": "969200124463312cdbc21181bb87b197dcd731e2e3867e63eddabba2d1cab8ec",
+      "size_bytes": 307203,
+      "summary": {
+        "columns": [
+          "anchor_id",
+          "canonical_smiles",
+          "product_id",
+          "smiles",
+          "synthon_a_id",
+          "synthon_b_id",
+          "score",
+          "fragment_pi_complement",
+          "fragment_pi_clash_adjusted",
+          "pi_complement",
+          "pi_clash",
+          "cryptic_bonus",
+          "cryptic_bonus_atoms",
+          "survival_tier",
+          "selected_dihedral_deg",
+          "assembly_mode",
+          "z_matrix_active",
+          "rotamers_evaluated",
+          "best_rotamer_rank",
+          "ligand_sdf_path",
+          "pose_reconciliation_method",
+          "coordinates_json"
+        ],
+        "row_count": 824,
+        "survival_tier_counts": {
+          "cryptic_rescue": 559,
+          "normal": 265
+        },
+        "unique_smiles_count": 553
+      }
+    },
+    {
+      "key": "bounded_telemetry",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/vspace_smarts_bounded_telemetry.json",
+      "sha256": "f8bdae9ba49695026776f42bc5414b686a57b6a4daf5821b495f4e3970c001bb",
+      "size_bytes": 2413,
+      "summary": {
+        "assembly_mode": "smarts_zmatrix",
+        "attempted_pairs": 1282,
+        "candidate_survivors": 824,
+        "complement_voxels": 11754,
+        "ligand_inside_grid": true,
+        "mock_anchor_count": 0,
+        "no_fly_voxels": 257,
+        "real_anchor_count_loaded": 939,
+        "rigid_fallback_count": 0,
+        "rotamers_evaluated": 7692,
+        "stable_occupied": 23491,
+        "survived_cryptic_rescue": 559,
+        "survived_normal": 265,
+        "z_matrix_active_count": 7692
+      }
+    }
+  ],
+  "campaign_id": "glp1r_aleniglipron",
+  "epistemic_boundary": "This gate validates rule-consistent virtual assembly and PRISM-field pruning. It does not claim guaranteed wet-lab synthetic success or experimental activity.",
+  "gate_id": "SMARTS_ZMATRIX_FORGE_VALIDATED",
+  "gate_status": "PASS",
+  "generated_at_utc": "2026-05-24T14:32:03.154912Z",
+  "git": {
+    "dirty_state": "dirty",
+    "sha": "d08607bf36b455265c8684fe501495a026498ee9"
+  },
+  "scaling_boundary": {
+    "full_scale_38b_loop_executed": false,
+    "full_scale_requires_later_explicit_invocation": true,
+    "max_pairs_safety_retained": true
+  },
+  "schema_version": "PRISM.track_a_gate_manifest.v1",
+  "scope": "SMARTS reaction grammar, synthon tagging, SMARTS-anchored Z-matrix assembly, bounded V-space smoke test.",
+  "track": "Track A",
+  "validation_gates": {
+    "bounded_survivors_nonzero": true,
+    "bounded_survivors_present": true,
+    "bounded_telemetry_present": true,
+    "full_scale_not_executed": true,
+    "mock_synthons_absent": true,
+    "reaction_registry_present": true,
+    "real_synthons_loaded": true,
+    "rigid_fallback_absent": true,
+    "smarts_zmatrix_mode": true,
+    "tagged_synthons_present": true,
+    "zmatrix_active": true
+  }
+}

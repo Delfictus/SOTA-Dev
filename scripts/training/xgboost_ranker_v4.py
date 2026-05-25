@@ -410,7 +410,7 @@ def main():
 
     print(f"\n  Outputs in: {out_dir}")
     print("  To activate in engine: copy model.onnx to crates/prism-nhs/assets/xgb_ranker_v4.onnx,")
-    print("  update xgb_ranker.rs EMBEDDED_ONNX path, rebuild, use --use-xgb-ranker flag.")
+    print("  update xgb_ranker.rs EMBEDDED_ONNX path, rebuild, select with --site-ranker xgb-v3.")
 
 
 if __name__ == "__main__":

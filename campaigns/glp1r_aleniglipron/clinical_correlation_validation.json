@@ -1,0 +1,67 @@
+{
+  "beta_f": 0.108968369488,
+  "beta_s": 0.090298355,
+  "campaign_id": "glp1r_aleniglipron",
+  "comparison_table": [
+    {
+      "activity_note": "Numeric correlation uses the conservative upper bound of the reported hGLP-1R cAMP EC50 range.",
+      "activity_relation": "<=",
+      "activity_units": "nM",
+      "clinical_ec50_nm": 0.1,
+      "compound_name": "Aleniglipron (GSBR-1290)",
+      "confidence_class": "upper_bound_preclinical_camp",
+      "ligand_id": "ALENIGLIPRON_GSBR1290",
+      "log10_ec50_nm": -1.0,
+      "prism_durability_risk_score": 546.65574459633,
+      "score_path": "campaigns/glp1r_aleniglipron/track_0_manual_emulation/layer1_whole_molecule/analog_durability_projection.parquet",
+      "source_url": "https://structuretx.com/wp-content/uploads/2024/12/SRTX2304B_ADA_PreClin_Mao_ePOSTER_0623_FIN.pdf"
+    },
+    {
+      "activity_note": "",
+      "activity_relation": "=",
+      "activity_units": "nM",
+      "clinical_ec50_nm": 3.0,
+      "compound_name": "Orforglipron (LY3502970)",
+      "confidence_class": "high_confidence_clinical",
+      "ligand_id": "ORFORGLIPRON_LY3502970",
+      "log10_ec50_nm": 0.47712125471966244,
+      "prism_durability_risk_score": 1138.3344512969954,
+      "score_path": "campaigns/glp1r_aleniglipron/track_a_generative/benchmark_scores/ORFORGLIPRON_LY3502970/analog_durability_projection.parquet",
+      "source_url": "expert_provided_benchmark_manifest"
+    },
+    {
+      "activity_note": "",
+      "activity_relation": "=",
+      "activity_units": "nM",
+      "clinical_ec50_nm": 4.5,
+      "compound_name": "Danuglipron (PF-06882961)",
+      "confidence_class": "high_confidence_clinical",
+      "ligand_id": "DANUGLIPRON_PF06882961",
+      "log10_ec50_nm": 0.6532125137753437,
+      "prism_durability_risk_score": 497.2871048562632,
+      "score_path": "campaigns/glp1r_aleniglipron/track_a_generative/benchmark_scores/DANUGLIPRON_PF06882961/analog_durability_projection.parquet",
+      "source_url": "expert_provided_benchmark_manifest"
+    },
+    {
+      "activity_note": "",
+      "activity_relation": "=",
+      "activity_units": "nM",
+      "clinical_ec50_nm": 4.8,
+      "compound_name": "Lotiglipron (PF-07081532)",
+      "confidence_class": "high_confidence_clinical",
+      "ligand_id": "LOTIGLIPRON_PF07081532",
+      "log10_ec50_nm": 0.6812412373755872,
+      "prism_durability_risk_score": 1029.417906550233,
+      "score_path": "campaigns/glp1r_aleniglipron/track_a_generative/benchmark_scores/LOTIGLIPRON_PF07081532/analog_durability_projection.parquet",
+      "source_url": "expert_provided_benchmark_manifest"
+    }
+  ],
+  "directional_expectation": "Lower EC50 should correspond to lower projected durability risk if the receptor-field score tracks potency-side target engagement.",
+  "ec50_bound_policy": "Upper-bound activity values are included at the numeric upper bound and flagged by activity_relation.",
+  "interpretation": "Low-n benchmark panel; interpret as a calibration signal, not a clinical validation claim. Observed correlation strength is limited (R^2=0.2181).",
+  "method": "Pearson correlation between log10(EC50_nM) and total_projected_durability",
+  "n_compounds": 4,
+  "pearson_r": 0.4670420378802346,
+  "r_squared": 0.21812826514732248,
+  "schema_version": "clinical_correlation_validation.v1"
+}

@@ -62,7 +62,7 @@ pub enum DynamicsMode {
     /// Best for: Capturing allosteric effects
     /// Speed: Medium (~100ms per protein)
     /// Accuracy: ρ ≈ 0.70-0.77 for RMSF (expected)
-    TransferEntropyGnm,
+    CausalCouplingGnm,
 
     /// ML-corrected GNM (dendritic SNN residual learning)
     /// Best for: Maximum RMSF accuracy
@@ -79,7 +79,7 @@ impl DynamicsMode {
             DynamicsMode::CoarseGrainedAnm => "Coarse-Grained ANM",
             DynamicsMode::PlainGnm => "Plain GNM (baseline)",
             DynamicsMode::EnhancedGnm => "Enhanced GNM",
-            DynamicsMode::TransferEntropyGnm => "Transfer Entropy + GNM",
+            DynamicsMode::CausalCouplingGnm => "Transfer Entropy + GNM",
             DynamicsMode::MlCorrectedGnm => "ML-Corrected GNM",
         }
     }
@@ -91,7 +91,7 @@ impl DynamicsMode {
             DynamicsMode::CoarseGrainedAnm => (0.45, 0.55),
             DynamicsMode::PlainGnm => (0.55, 0.60),
             DynamicsMode::EnhancedGnm => (0.65, 0.72),
-            DynamicsMode::TransferEntropyGnm => (0.70, 0.77),
+            DynamicsMode::CausalCouplingGnm => (0.70, 0.77),
             DynamicsMode::MlCorrectedGnm => (0.72, 0.80),
         }
     }
@@ -99,12 +99,12 @@ impl DynamicsMode {
     /// Relative speed (1.0 = baseline GNM)
     pub fn relative_speed(&self) -> f64 {
         match self {
-            DynamicsMode::AllAtomAmber => 0.001,     // ~1000x slower
-            DynamicsMode::CoarseGrainedAnm => 0.1,   // ~10x slower
-            DynamicsMode::PlainGnm => 1.0,           // Fastest
-            DynamicsMode::EnhancedGnm => 0.8,        // Slightly slower than base GNM
-            DynamicsMode::TransferEntropyGnm => 0.1, // ~10x slower (GPU TE)
-            DynamicsMode::MlCorrectedGnm => 0.2,     // ~5x slower (reservoir + readout)
+            DynamicsMode::AllAtomAmber => 0.001,    // ~1000x slower
+            DynamicsMode::CoarseGrainedAnm => 0.1,  // ~10x slower
+            DynamicsMode::PlainGnm => 1.0,          // Fastest
+            DynamicsMode::EnhancedGnm => 0.8,       // Slightly slower than base GNM
+            DynamicsMode::CausalCouplingGnm => 0.1, // ~10x slower (GPU TE)
+            DynamicsMode::MlCorrectedGnm => 0.2,    // ~5x slower (reservoir + readout)
         }
     }
 }
@@ -453,7 +453,7 @@ impl DynamicsEngine {
             DynamicsMode::EnhancedGnm => self.run_enhanced_gnm(structure)?,
             DynamicsMode::AllAtomAmber => self.run_all_atom_amber(structure)?,
             DynamicsMode::CoarseGrainedAnm => self.run_coarse_grained_anm(structure)?,
-            DynamicsMode::TransferEntropyGnm => self.run_transfer_entropy_gnm(structure)?,
+            DynamicsMode::CausalCouplingGnm => self.run_transfer_entropy_gnm(structure)?,
             DynamicsMode::MlCorrectedGnm => self.run_ml_corrected_gnm(structure)?,
         };
 

@@ -27,7 +27,6 @@ serde_json = { workspace = true }
 
 # Telemetry and metrics
 prometheus = { workspace = true }
-sqlx = { workspace = true, optional = true }
 
 # Logging
 log = { workspace = true }
@@ -43,5 +42,4 @@ chrono = { workspace = true }
 default = []
 gpu = ["prism-gpu"]
 cuda = ["gpu", "prism-gpu/cuda", "prism-mec/cuda", "prism-whcr/cuda"]
-telemetry_sqlite = ["sqlx"]
 lbs = ["prism-lbs"]

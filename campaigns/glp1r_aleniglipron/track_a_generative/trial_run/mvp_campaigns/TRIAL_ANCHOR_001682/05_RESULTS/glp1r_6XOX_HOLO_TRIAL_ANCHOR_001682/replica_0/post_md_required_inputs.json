@@ -1,0 +1,61 @@
+{
+  "missing_required_artifacts": [],
+  "path_b_required": true,
+  "required_artifacts_complete": true,
+  "run_id": "glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682.topology_20260524_064538",
+  "schema_kind": "post_md_required_inputs",
+  "schema_version": 1,
+  "stages": [
+    {
+      "inputs": [
+        "spikes.bin",
+        "asc_vectors.bin",
+        "protocol_state.json"
+      ],
+      "stage": "per_stream_filter"
+    },
+    {
+      "inputs": [
+        "kcc_v2full.bin (each stream)"
+      ],
+      "policy": "best_per_residue_by_active_causal",
+      "stage": "kcc_merge"
+    },
+    {
+      "inputs": [
+        "signal_grid.bin (each stream)"
+      ],
+      "policy": "elementwise_sum",
+      "stage": "signal_grid_merge"
+    },
+    {
+      "inputs": [
+        "spikes.bin (each stream)"
+      ],
+      "policy": "concat_with_per_stream_offsets",
+      "stage": "all_stream_spikes_concat"
+    },
+    {
+      "centroids_required": false,
+      "inputs": [
+        "all_stream_spikes",
+        "merged_signal_grid",
+        "merged_kcc",
+        "asc_vectors.bin",
+        "protocol_state.json",
+        "noise_floor.json",
+        "ghost_time_map.json"
+      ],
+      "outputs": [
+        "per-event spike features",
+        "per-residue spike/KCC features",
+        "per-stream temporal/protocol features"
+      ],
+      "site_materialization_required": false,
+      "stage": "spike_teacher_feature_pack"
+    }
+  ],
+  "stem": "glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682",
+  "topology_input": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/topologies/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682.topology.json",
+  "validation_status": "accepted_required_artifacts_present"
+}

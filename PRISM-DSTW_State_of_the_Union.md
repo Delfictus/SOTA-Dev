@@ -95,7 +95,7 @@ Evidence:
 
 [Missing] No `wgpu` or WGSL integration was found in `crates/prism-nhs`.
 
-[Missing] Rust ontological newtypes for `ResidueIdx`, `TransferEntropy`, `FrustrationPenalty`, `PoseUncertainty`, and related physics scalars are not enforced at DSTW/Arrow/Parquet boundaries. Rust handshake and parquet emitters still use primitive `u32`, `i32`, `f32`, and `f64`.
+[Missing] Rust ontological newtypes for `ResidueIdx`, `CausalCoupling`, `FrustrationPenalty`, `PoseUncertainty`, and related physics scalars are not enforced at DSTW/Arrow/Parquet boundaries. Rust handshake and parquet emitters still use primitive `u32`, `i32`, `f32`, and `f64`.
 
 ### Ontological and Math Auditor
 
@@ -106,7 +106,7 @@ Evidence:
 Present:
 
 - Identifier NewTypes: `CampaignId`, `RunLabel`, `StructureId`, `StreamId`, `ResidueIdx`, `EdgeIdx`, `ConformerIdx`, `AnalogIdx`, `ScaffoldIdx`, `VoxelIdx`.
-- Physics NewTypes: `TransferEntropy`, `HysteresisEnthalpy`, `HydrationVariance`, `SpatialVariance`, `FrustrationPenalty`, `ComplementPenalty`, `PoseUncertainty`, `ScalingConstant`, `AngstromDistance`.
+- Physics NewTypes: `CausalCoupling`, `HysteresisEnthalpy`, `HydrationVariance`, `SpatialVariance`, `FrustrationPenalty`, `ComplementPenalty`, `PoseUncertainty`, `ScalingConstant`, `AngstromDistance`.
 - Dataclasses: `PartitionKey`, `DTSGEdge`, `PerturbedEdge`.
 
 Gap:

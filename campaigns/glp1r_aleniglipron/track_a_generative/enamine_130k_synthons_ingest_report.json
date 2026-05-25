@@ -1,0 +1,19 @@
+{
+  "charge_method_counts": {
+    "rdkit_gasteiger_fallback": 939
+  },
+  "compatible_synthon_count": 939,
+  "conformer_success_rate": 0.9169921875,
+  "per_reaction_match_counts": {
+    "RXN_AMIDE_COUPLING": 1190,
+    "RXN_BUCHWALD_HARTWIG": 1434,
+    "RXN_SULFONAMIDE": 1067,
+    "RXN_SUZUKI_ARYL_ARYL": 367
+  },
+  "reject_reason_counts": {
+    "accepted": 939,
+    "no_compatible_reaction_role": 85
+  },
+  "total_input": 1024,
+  "valid_mol_count": 1024
+}

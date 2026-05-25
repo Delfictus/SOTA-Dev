@@ -1,0 +1,118 @@
+# M2 Phase 2E Triangulation Dossier
+
+## 1. ZERO-TRUST REPLAYABILITY MANIFEST
+
+Unified Merkle Root: `{{ manifest.unified_merkle_root }}`
+
+| Environment field | Value |
+|---|---|
+{% for row in environment_rows -%}
+| {{ row.name }} | `{{ row.value }}` |
+{% endfor %}
+
+| Replayability component | Count |
+|---|---:|
+| Schema files hashed | {{ manifest.replayability_constraints.schema_files_hashed }} |
+| Propagation ledgers hashed | {{ manifest.replayability_constraints.propagation_ledgers_hashed }} |
+| Physical constants hash present | {{ manifest.replayability_constraints.requires_identical_physical_constants }} |
+
+| Schema file | SHA-256 |
+|---|---|
+{% for row in schema_rows -%}
+| {{ row.path }} | `{{ row.sha256 }}` |
+{% endfor %}
+
+## 2. ASSAY HANDOFF PACKAGE
+
+The assay routing matrix maps tensor-supported residue findings to wet-lab assays using explicit physical triggers and non-figurative terminology.
+
+| Assay | Condition | Residue | Trigger rule | Trigger value | Rationale |
+|---|---|---|---|---:|---|
+{% for row in assay_rows -%}
+| {{ row.recommended_assay }} | {{ row.condition_id }} | {{ row.residue_name }} | {{ row.trigger_rule }} | {{ "%.4f"|format(row.trigger_value) }} | {{ row.rationale }} |
+{% endfor %}
+
+## 3. PROBABILISTIC TRANSITION CHRONOLOGY
+
+Temporal transition clusters were inferred from `first_ramp_md_step` using a BIC-selected one-dimensional Gaussian mixture model. The table reports cluster confidence and temporal overlap entropy so stochastic boundary uncertainty remains explicit.
+
+| Cluster | Members | Centroid MD step | Cluster confidence | Temporal overlap entropy | Stability metric |
+|---:|---:|---:|---:|---:|---:|
+{% for row in chronology_rows -%}
+| {{ row.cluster_id }} | {{ row.cluster_member_count }} | {{ "%.2f"|format(row.observed_cluster_centroid_md_step) }} | {{ "%.4f"|format(row.cluster_confidence) }} | {{ "%.4f"|format(row.temporal_overlap_entropy) }} | {{ "%.4f"|format(row.inter_replicate_stability) }} |
+{% endfor %}
+
+## 4. TRI-STATE ALENIGLIPRON FIBER GRAPH
+
+FRAG-{{ top_fiber.dominant_fragment_suffix }} biases the receptor toward persistent lock-state occupancy at Cluster {{ top_fiber.dominant_temporal_cluster }}.
+
+| Fiber type | Edge | Fragment | Cluster | TE multiplier | Interference load | Occupancy fatigue |
+|---|---|---|---:|---:|---:|---:|
+{% for row in fiber_rows -%}
+| {{ row.fiber_type }} | {{ row.edge_label }} | {{ row.dominant_fragment }} | {{ row.dominant_temporal_cluster }} | {{ "%.4f"|format(row.te_multiplier) }} | {{ "%.4f"|format(row.ligand_interference_load) }} | {{ "%.4f"|format(row.edge_occupancy_fatigue_index) }} |
+{% endfor %}
+
+Fiber interpretation:
+
+| Fiber type | Count |
+|---|---:|
+{% for row in fiber_counts -%}
+| {{ row.fiber_type }} | {{ row.edge_count }} |
+{% endfor %}
+
+## 5. MEDICINAL CHEMISTRY ACTION MATRIX
+
+The SAR contingency register is variant-aware and epistemic-aware. Each candidate vector is evaluated by thermodynamic ray-casting: `Score(v)=sum(Pi_complement)-sum(Pi_clash)-sum(ShearStress)`. High-risk epistemic expansions are reported as `epistemic_mirage` when atom-edge pose uncertainty exceeds the ray-casting threshold.
+
+### Universal Growth Vectors
+
+{% if universal_growth_vectors|length == 0 -%}
+**No universal growth vectors met the conserved thermally_activated cavity criterion. All current exit vectors exhibit high epistemic uncertainty ($U_{pose}$) and require scaffold rigidification before expansion.**
+{% else -%}
+| Rule | Vector | Edge | Cluster | Atom | Score | Variant support | Rationale |
+|---|---|---|---:|---|---:|---:|---|
+{% for row in universal_growth_vectors -%}
+| {{ row.rule_id }} | {{ row.vector_id }} | {{ row.edge_label }} | {{ row.cooperative_cluster_id }} | {{ row.atom_label }} | {{ "%.4f"|format(row.vector_score) }} | {{ row.variant_family_support_count }} | {{ row.rationale }} |
+{% endfor %}
+{% endif %}
+
+### Epistemic Mirage Vectors
+
+{% if epistemic_mirage_vectors|length == 0 -%}
+No exit vectors exceeded the atom-edge U_pose screen in the current aligned-conformer ensemble.
+{% else -%}
+| Rule | Vector | Edge | Atom | U_pose | Threshold | Rationale |
+|---|---|---|---|---:|---:|---|
+{% for row in epistemic_mirage_vectors -%}
+| {{ row.rule_id }} | {{ row.vector_id }} | {{ row.edge_label }} | {{ row.atom_label }} | {{ "%.4f"|format(row.atom_edge_u_pose) }} | {{ "%.4f"|format(row.epistemic_u_pose_threshold) }} | {{ row.rationale }} |
+{% endfor %}
+{% endif %}
+
+### Prohibited Rigidification Zones
+
+| Rule | Vector | Edge | Class | Ray score | Clash integral | Shear integral | Rationale |
+|---|---|---|---|---:|---:|---:|---|
+{% for row in prohibited_vectors -%}
+| {{ row.rule_id }} | {{ row.vector_id }} | {{ row.edge_label }} | {{ row.classification }} | {{ "%.4f"|format(row.vector_score) }} | {{ "%.4f"|format(row.pi_clash_integral) }} | {{ "%.4f"|format(row.shear_stress_normalized_integral) }} | {{ row.rationale }} |
+{% endfor %}
+
+## 6. NEGATIVE EVIDENCE REGISTER
+
+The following pathways were rejected due to lack of mechanical load support or failure to survive multi-modal convergence.
+
+| Condition | Edge | Class | Rejection basis | Risk score | Validation status |
+|---|---|---|---|---:|---|
+{% for row in negative_evidence_rows -%}
+| {{ row.condition_id }} | {{ row.edge_id }} | {{ row.edge_class }} | {{ row.rejection_basis }} | {{ "%.4f"|format(row.durability_risk_score_raw) }} | {{ row.validation_status }} |
+{% endfor %}
+
+## 7. EXPLICIT FALSIFICATION GATES
+
+| Gate | Falsification condition | Computational claim at risk |
+|---|---|---|
+| 1 | No HDX-MS solvent exposure change is detected at predicted high-shear interfaces from the assay routing matrix. | High spatial-gradient deformation is not translating into backbone exposure. |
+| 2 | No BRET kinetic phase shift is observed for residues routed by high kinetic burst regions. | KCC burst motion is not predictive of rapid conformational transition. |
+| 3 | No recovery asymmetry is observed in washout assays for variants with high occupancy fatigue index. | The bounded fatigue model is not capturing persistent receptor-state occupancy. |
+| 4 | Ligand perturbation assays show equivalent response on constitutive and induced fibers. | The tri-state separation between constitutive, ligand-amplified, and induced fibers is not experimentally supported. |
+| 5 | Proposed universal growth vectors fail to improve activity or selectivity after scaffold rigidification controls. | The dynamic pharmacophore does not identify productive phase-aware exit vectors. |
+| 6 | Edges marked as rejected in the Negative Evidence Register reproduce as strong wet-lab positives. | The mechanical-load and multi-modal convergence filters are overly stringent or miscalibrated. |

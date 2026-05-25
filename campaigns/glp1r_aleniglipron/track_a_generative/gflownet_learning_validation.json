@@ -1,0 +1,20 @@
+{
+  "validation_status": "PASS",
+  "epoch_1_tb_loss": 148.60964965820312,
+  "epoch_500_tb_loss": 12.799812316894531,
+  "reward_mean_epoch_1": 0.6457582116127014,
+  "reward_mean_epoch_500": 2.4595627784729004,
+  "top_reward_seen": 2.6500000953674316,
+  "unique_smiles_generated": 24284,
+  "dot_smiles_count": 0,
+  "mode_collapse_metric_top_anchor_share": 0.00053125,
+  "completed_epochs": 500,
+  "rust_oracle_reward_authority": true,
+  "pyg_batch_used": true,
+  "x_phase_preserved_shape": [
+    96,
+    5,
+    8
+  ],
+  "model_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_policy_v1.pt"
+}

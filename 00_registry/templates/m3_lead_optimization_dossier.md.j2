@@ -1,0 +1,79 @@
+# M3 Lead Optimization Dossier
+
+Campaign: `{{ campaign_id }}`
+
+Generated: `{{ generated_at_utc }}`
+
+Epistemic scope: this dossier reports PROJECTED candidate prioritization from the PRISM Track A policy and Rust oracle. Candidates remain subject to synthesis, purification, receptor signaling, internalization, and washout falsification gates.
+
+## 1. Executive Finding
+
+The Track A GFlowNet policy generated and ranked candidates against the PRISM-FORGE O3A/Z-matrix reward oracle. The final audit reports:
+
+- biased agonism candidates confirmed: `{{ biased_agonism_confirmed }}/{{ audited_candidates }}`
+- PAINS pass: `{{ pains_pass }}/{{ audited_candidates }}`
+- BRENK pass: `{{ brenk_pass }}/{{ audited_candidates }}`
+- oral descriptor pass: `{{ oral_pass }}/{{ audited_candidates }}`
+- top-100 unique SMILES: `{{ top100_unique_smiles }}`
+
+## 2. V-Space Navigation
+
+The nominal Enamine REAL design space was treated as a dendritic combinatorial search problem. SMARTS reaction grammar reduced the executable search to the rule-compatible subset before Z-matrix torsional scoring.
+
+| metric | value |
+|---|---:|
+| nominal design objective | {{ nominal_design_space }} |
+| SMARTS-compatible pairs | {{ "{:,}".format(total_valid_pairs) }} |
+| estimated rotamers | {{ "{:,}".format(estimated_rotamers) }} |
+| shard count | {{ shard_count }} |
+| completed local shards | {{ completed_shards }} |
+
+## 3. Biased Agonism Steric Wedge
+
+The Rust oracle now reports bifurcated clash channels:
+
+- `pi_clash_pocket`: orthosteric pocket clash, treated as an unfavorable fit liability.
+- `pi_clash_lock`: intracellular lock-region clash proxy, treated as the steric wedge signal requiring experimental falsification.
+
+Audit threshold: `pi_clash_lock > {{ lock_threshold }}`.
+
+This is a PROJECTED mechanical hypothesis. It is falsified if the selected candidates fail to preserve a WT-normalized biased-signaling signature in receptor internalization / β-arrestin recruitment assays under matched receptor occupancy.
+
+## 4. Competitor Cross-Scaffold Recombination
+
+PRISM-4D is no longer limited to the Aleniglipron core. The Track A GFlowNet initialization now supports a multi-scaffold pool:
+{% for name in scaffold_pool_names %}
+- {{ name }}
+{% endfor %}
+
+The competitor scaffolds were O3A-aligned into the compact PRISM 6XOX negative-image pocket reference and staged as policy initial states. This enables PROJECTED cross-scaffold recombination: the policy can sample from Aleniglipron, Orforglipron, or Danuglipron before choosing SMARTS/Z-matrix synthons from the shared action space.
+
+The Phase 2D PGx manifest now stages `{{ queued_variant_count }}` queued variant backgrounds for MD simulation, including a high-risk population grid derived from the supplied GLP1R functional and gnomAD source data. These outputs are infrastructure readiness claims only; any assertion of variant-specific clinical superiority remains falsified unless the matched PRISM-4D tensor and wet-lab assays confirm it.
+
+Lineage:
+
+- scaffold O3A manifest: `{{ scaffold_manifest_path }}`
+- Phase 2D PGx manifest: `{{ phase2d_manifest_path }}`
+
+## 5. Top 10 Lead Candidates
+
+| rank | SMILES | reward | lock score | pocket clash | complement | synthetic route |
+|---:|---|---:|---:|---:|---:|---|
+{% for row in top10 -%}
+| {{ row.rank }} | `{{ row.canonical_smiles }}` | {{ "%.3f"|format(row.reward) }} | {{ "%.3f"|format(row.pi_clash_lock) }} | {{ "%.3f"|format(row.pi_clash_pocket) }} | {{ "%.3f"|format(row.pi_complement) }} | {{ row.synthetic_route }} |
+{% endfor %}
+
+## 6. Falsification Gates
+
+1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
+2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
+3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
+4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
+
+## 7. Lineage
+
+- policy checkpoint: `{{ policy_path }}`
+- top-100 candidates: `{{ top100_path }}`
+- medchem audit: `{{ medchem_audit_path }}`
+- candidate audit: `{{ audit_json_path }}`
+- CBOM: `{{ cbom_path }}`

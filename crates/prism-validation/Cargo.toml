@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "PRISM-4D validation framework for dynamics and cryptic pocket benchmarks"
 authors = ["PRISM Team"]
+license.workspace = true
 
 [dependencies]
 # GPU dependencies - optional for curation-only builds
@@ -50,7 +51,7 @@ chrono = { version = "0.4", features = ["serde"] }
 blake3 = "1.5"
 
 # HTTP client for PDB downloads
-reqwest = { version = "0.11", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
 
 # File handling
 glob = "0.3"

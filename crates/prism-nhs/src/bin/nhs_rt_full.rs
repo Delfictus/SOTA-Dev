@@ -916,23 +916,6 @@ struct Args {
     #[arg(long, default_value = "false")]
     use_tokenized_ranker: bool,
 
-    /// Deprecated legacy compatibility flag for the v3 XGBoost ranker
-    /// (ONNX-backed, 13 continuous features, graded LOTO labels). Prefer
-    /// `--site-ranker phase-manifold`. This flag is ignored unless
-    /// `--site-ranker xgb-v3` is also set, so stale run scripts cannot silently
-    /// re-enable the deprecated branch.
-    ///
-    /// Evaluation (LOTO, 345 targets):
-    ///     SR@1 = 47.83%   SR@3 = 85.51%   SR@5 = 95.94%   SR@10 = 99.42%
-    ///
-    /// Features: [spike_count, n_streams, interaction, unsat_frac, persistence,
-    /// log_spike_count, log_interaction, spread, burial_score, spike_density,
-    /// druggability, aromatic_score, n_lining_residues].
-    ///
-    /// Deprecated: not the production path for v004 teacher generation.
-    #[arg(long, default_value = "false")]
-    use_xgb_ranker: bool,
-
     /// Stage 1: require spikes from both UV AND LIF channels.
     #[arg(long, default_value = "false")]
     cascade_multichannel: bool,
@@ -15828,7 +15811,6 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             "closed_loop_steering": args.closed_loop_steering,
             "asymmetric_steering":  args.asymmetric_steering,
             "site_ranker":          args.site_ranker.as_str(),
-            "use_xgb_ranker":       args.use_xgb_ranker,
             "replica_seed":         args.replica_seed,
             "spike_percentile":     args.spike_percentile,
             "path_a_production_profile": args.path_a_production_profile,
@@ -22299,15 +22281,6 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
                 args.site_ranker
             );
         }
-        if args.use_xgb_ranker && args.site_ranker != "xgb-v3" {
-            log::warn!(
-                "--use-xgb-ranker is deprecated and ignored unless \
-                 --site-ranker xgb-v3 is set. Active site_ranker={} keeps the \
-                 phase-manifold production path clean.",
-                args.site_ranker
-            );
-        }
-
         if args.site_ranker == "tokenized-v4" {
             ms_sites_json.sort_by(|a, b| {
                 let sa = a

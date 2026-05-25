@@ -1,0 +1,13 @@
+{
+  "cold_p80": 32.805,
+  "cold_p95": 36.13,
+  "condition_id": "glp1r_6XOX_WT",
+  "gain_p90": -26.71,
+  "generated_at_utc": "2026-05-24T11:28:23.070114+00:00",
+  "nonvoid_voxel_count": 117344,
+  "release_p90": 34.945,
+  "release_p95": 36.13,
+  "source_sha256": "c8dee22395bbd5dfec96830084e501fef8608280207c4d42fc99a7501022b30c",
+  "warm_p80": 0.0,
+  "warm_p95": 0.0
+}

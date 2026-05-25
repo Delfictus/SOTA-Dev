@@ -1,0 +1,205 @@
+%% PRISM-4D | GLP-1R Aleniglipron M2 — pharma/med-chem delivery template
+%% Jinja2-rendered template — placeholders are substituted server-side.
+%% Compile final .tex with: latexmk -pdf, or xelatex twice.
+%% Print-safe colors, no tikz dependency.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{microtype}
+\usepackage[a4paper,margin=16mm,top=22mm,bottom=22mm,headheight=14pt,headsep=10pt]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage[most]{tcolorbox}
+\usepackage[colorlinks=true,allcolors=DelfRule]{hyperref}
+\usepackage{textcomp}
+\usepackage{seqsplit}
+\usepackage{xltabular}
+\usepackage{ragged2e}
+\usepackage{etoolbox}
+
+% --- text-overflow hardening (margin protection) ----------------------
+\emergencystretch=8em
+\tolerance=4000
+\hbadness=10000
+% Hyphenate aggressively; permits breaks inside words to avoid
+% margin overflow when a long token is the only choice.
+\hyphenpenalty=200
+\exhyphenpenalty=200
+\pretolerance=-1
+\linepenalty=10
+\setlength{\parskip}{4pt plus 1pt minus 1pt}
+% Apply \sloppy globally — relaxes line-break tolerance, prevents most
+% small textual overflow.
+\AtBeginDocument{\sloppy}
+
+% Make every longtable (including pandoc-generated ones) use small font
+% and tighter column padding so wide tables fit. Combined with the
+% post-processor that converts wide longtables to xltabular X-cols,
+% this prevents the catastrophic 1000pt+ overflows.
+\AtBeginEnvironment{longtable}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+\AtBeginEnvironment{xltabular}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+
+% \texttt content that is one long hex / id blob gets line-broken by
+% \seqsplit. Wrappers around hashes injected by the build-script
+% post-processor.
+
+% Allow URL breaks anywhere — applies to hyperref-styled URLs.
+\PassOptionsToPackage{hyphens}{url}
+
+% --- print-safe epistemic colors -----------------------------------
+\definecolor{DelfBlue}{HTML}{0F2A4A}
+\definecolor{DelfRule}{HTML}{1F3A6B}
+\definecolor{DelfGrey}{HTML}{4A4A4A}
+\definecolor{EpObserved}{HTML}{1B5E20}
+\definecolor{EpDerived}{HTML}{0D47A1}
+\definecolor{EpInferred}{HTML}{4527A0}
+\definecolor{EpProjected}{HTML}{B65000}
+\definecolor{EpHypothesized}{HTML}{8B0000}
+\definecolor{HashBg}{HTML}{F4F4F7}
+
+% --- header / footer ------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{DelfBlue}\textbf{DELFICTUS I/O} \textbar{} PRISM-4D}
+\fancyhead[R]{\small\color{DelfGrey}{{ report_short_title }}}
+\fancyfoot[L]{\scriptsize\color{DelfGrey}Confidential Discussion Material \textbar{} PRISM-4D M2 Evidence Release}
+\fancyfoot[R]{\scriptsize\color{DelfGrey}Page \thepage}
+
+% --- listings (hashes) ---------------------------------------------
+\lstdefinestyle{hashbox}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{HashBg},
+  frame=single,
+  rulecolor=\color{DelfGrey!40},
+  framerule=0.4pt,
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  breakindent=0pt,
+  postbreak=\mbox{\textcolor{DelfGrey}{$\hookrightarrow$}\space},
+  columns=flexible,
+  showspaces=false,
+  showstringspaces=false
+}
+\lstset{style=hashbox}
+
+% --- pandoc stub macros (so .tex compiles standalone) --------------
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+% \passthrough is a transparent wrapper used by pandoc around inline
+% \lstinline. We do NOT wrap in \texttt — that breaks lstinline catcode
+% parsing and causes runaway lines.
+\providecommand{\passthrough}[1]{#1}
+\providecommand{\textsubscript}[1]{\ensuremath{_{#1}}}
+\providecommand{\textquotesingle}{'}
+% pandoc emits \pandocbounded around figures — accept it as a no-op
+\providecommand{\pandocbounded}[1]{#1}
+
+% --- epistemic label macros -----------------------------------------
+\newcommand{\epOBS}{\textcolor{EpObserved}{\textbf{OBSERVED}}}
+\newcommand{\epDER}{\textcolor{EpDerived}{\textbf{DERIVED}}}
+\newcommand{\epINF}{\textcolor{EpInferred}{\textbf{INFERRED}}}
+\newcommand{\epPRJ}{\textcolor{EpProjected}{\textbf{PROJECTED}}}
+\newcommand{\epHYP}{\textcolor{EpHypothesized}{\textbf{HYPOTHESIZED}}}
+
+% --- disclaimer / legend boxes --------------------------------------
+\newtcolorbox{disclaimerbox}{
+  colback=red!3, colframe=EpHypothesized,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+\newtcolorbox{legendbox}{
+  colback=DelfBlue!4, colframe=DelfBlue,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+
+% --- title / identity ----------------------------------------------
+\title{
+  \vspace{-12mm}
+  {\color{DelfBlue}\textbf{\Large {{ report_title }}}}\\[2pt]
+  {\color{DelfGrey}\normalsize {{ report_subtitle }}}\\[6pt]
+  {\color{DelfGrey}\small Confidential Discussion Material}
+}
+\author{}
+\date{}
+
+% --- DOCUMENT -------------------------------------------------------
+\begin{document}
+
+\maketitle
+\vspace{-14mm}
+
+\begin{flushleft}
+\small
+\begin{tabular}{@{}p{0.32\textwidth}p{0.62\textwidth}@{}}
+\textbf{Campaign}             & {{ campaign_id }} \\
+\textbf{Release}              & {{ release_version }} \\
+\textbf{Generated (UTC)}      & {{ generated_at_utc }} \\
+\textbf{Report type}          & {{ report_type }} \\
+\textbf{CBOM Merkle root}     & \texttt{\small {{ cbom_merkle_root }}} \\
+\textbf{Executive archive SHA-256} & \texttt{\small {{ executive_archive_sha256 }}} \\
+\end{tabular}
+\end{flushleft}
+
+\vspace{4mm}
+
+\begin{disclaimerbox}
+\textbf{Use of this document.} This package presents computational
+translational evidence from the PRISM-4D engine and downstream analysis
+layers. It is \emph{not} a clinical-effect claim, \emph{not} a
+patient-response prediction, and \emph{not} experimental validation.
+Assay recommendations are falsification gates, not confirmation
+ceremonies. PROJECTED and HYPOTHESIZED items require wet-lab
+falsification before any biological assertion.
+\end{disclaimerbox}
+
+\begin{legendbox}
+\textbf{Epistemic legend.} Every claim, table row, and figure inherits
+exactly one of the following classes, which governs how it may be cited:
+\begin{itemize}[leftmargin=18pt,topsep=2pt,itemsep=1pt]
+  \item \epOBS{} — direct tensor measurement from PRISM-4D engine outputs.
+  \item \epDER{} — deterministic transform of observed tensors.
+  \item \epINF{} — multi-tensor interpretation; not a single-tensor measurement.
+  \item \epPRJ{} — translational extrapolation beyond simulated conditions.
+  \item \epHYP{} — requires wet-lab falsification before any biological claim.
+\end{itemize}
+\end{legendbox}
+
+\vspace{2mm}
+\hrule
+\vspace{4mm}
+
+{{ body }}
+
+\vspace{8mm}
+\hrule
+\vspace{2mm}
+\begin{flushleft}\small
+\textbf{Release identity.}\\
+\end{flushleft}
+\begin{lstlisting}[caption={Release identity (verbatim)}]
+campaign_id            : {{ campaign_id_raw }}
+release_version        : {{ release_version_raw }}
+generated_at_utc       : {{ generated_at_utc_raw }}
+cbom_merkle_root       : {{ cbom_merkle_root_raw }}
+executive_archive_sha  : {{ executive_archive_sha256_raw }}
+\end{lstlisting}
+
+\end{document}

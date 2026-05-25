@@ -108,6 +108,7 @@ id_newtype!(ConformerIdx, u16);
 id_newtype!(AnalogIdx, u32);
 id_newtype!(ScaffoldIdx, u32);
 id_newtype!(VoxelIdx, u32);
+id_newtype!(HitCount, u32);
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct CampaignId(String);
@@ -138,6 +139,7 @@ finite_quantity!(ComplementPenalty, non_negative);
 finite_quantity!(PoseUncertainty, non_negative);
 finite_quantity!(ScalingConstant, non_negative);
 finite_quantity!(AngstromDistance, non_negative);
+finite_quantity!(ShearStress, non_negative);
 finite_quantity!(ChannelCapacity, positive);
 finite_quantity!(HysteresisCapacity, positive);
 

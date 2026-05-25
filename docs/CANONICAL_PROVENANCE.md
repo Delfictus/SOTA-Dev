@@ -47,7 +47,7 @@ scripts/prism-validate-and-run.sh \
 | `--persistent-coupling` | DISABLED on Blackwell SM120 | `coupled_md.rs:946-949`; `nhs_rt_full.rs:393` |
 | `--boltzmann-rank` (in canonical) | Superseded by `--site-ranker phase-manifold` | `nhs_rt_full.rs` final-ranker selector |
 | `--use-tokenized-ranker` (in canonical) | Legacy replay only; ignored unless `--site-ranker tokenized-v4` is explicit | `nhs_rt_full.rs` legacy selector guard |
-| `--use-xgb-ranker` (in canonical) | Deprecated legacy replay only; ignored unless `--site-ranker xgb-v3` is explicit | `nhs_rt_full.rs` legacy selector guard |
+| `--use-xgb-ranker` | REMOVED as a capability. The CLI flag no longer exists; use `--site-ranker xgb-v3` for legacy replay. | flag deleted from `nhs_rt_full.rs` Args |
 | `--spike-percentile 95` | Not engine default; not pct70 campaign | `nhs_rt_full.rs:136` |
 | `--fused-steps 4` | Not engine default; not Nyquist-validated value | `nhs_rt_full.rs:327-329` |
 | `--graph-coupling` together with `--multi-differential` | Mutually exclusive | `nhs_rt_full.rs:400` ("Requires --coupled-twin"); `:408` (multi-diff overrides coupled-twin) |

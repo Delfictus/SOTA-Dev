@@ -1,0 +1,31 @@
+{
+  "package": "PRISM_GLP1R_M2_DELIVERABLES_v1.1",
+  "phase": "markdown_source_manifest",
+  "entries": [
+    {
+      "file": "PRISM_GLP1R_M2_Audit_CBOM_Appendix.md",
+      "size_bytes": 15660,
+      "sha256": "3a7c0acfa76396550d0dc82c28f8c0711fae85602cfea0710a0b87cde6bc2996"
+    },
+    {
+      "file": "PRISM_GLP1R_M2_CRO_Falsification_Handoff.md",
+      "size_bytes": 27983,
+      "sha256": "d6a3540b0061410f878b33ab8bd0e20a8ad10bee1fd31863e12a62e6ca5a3a0b"
+    },
+    {
+      "file": "PRISM_GLP1R_M2_Executive_Dossier.md",
+      "size_bytes": 28224,
+      "sha256": "bc9ef78bce2217afa59a7ed93b8d068cc0c8a5911314155840a654cb3bab6cbf"
+    },
+    {
+      "file": "PRISM_GLP1R_M2_MedChem_Action_Appendix.md",
+      "size_bytes": 7230,
+      "sha256": "e18fd4054b3385bddab6d3a1fe4c8057b27d2c992928e1f171671790335a53c4"
+    },
+    {
+      "file": "PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.md",
+      "size_bytes": 30568,
+      "sha256": "d25fb3b8a6cd39d75a257cdbc7f517ce0e51295084ca794de2a07b8f24807249"
+    }
+  ]
+}

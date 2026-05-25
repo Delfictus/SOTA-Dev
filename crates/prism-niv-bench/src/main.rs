@@ -405,4 +405,4 @@ fn create_batch_from_structure(structure: &ParamyxoStructure) -> Result<PackedBa
     })
 }
 */
- // END DISABLED GPU batch processing
+// END DISABLED GPU batch processing

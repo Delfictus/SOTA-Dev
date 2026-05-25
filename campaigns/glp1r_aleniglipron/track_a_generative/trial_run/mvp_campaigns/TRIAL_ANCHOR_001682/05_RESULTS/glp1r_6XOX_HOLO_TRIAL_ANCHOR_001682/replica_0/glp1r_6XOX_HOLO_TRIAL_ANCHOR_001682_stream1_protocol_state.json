@@ -1,0 +1,302 @@
+{
+  "cold_hold_end": 10000,
+  "coupling_phase": 0,
+  "current_phase_bits": 26,
+  "current_step": 906,
+  "current_temperature_K": 50.0,
+  "dt_ps": 0.006000000052154064,
+  "effective_gamma": 1872.357177734375,
+  "end_temp_K": 310.0,
+  "focus_match_count": 55,
+  "fused_step_counter": 0,
+  "gamma": 10.0,
+  "last_seen_focus_id": 352,
+  "last_seen_spike_residue": 298,
+  "n_wavelengths": 5,
+  "processed_spike_count": 692,
+  "ramp_down_end": 31000,
+  "ramp_end": 14000,
+  "scan_wavelengths_nm": [
+    280.0,
+    274.0,
+    258.0,
+    254.0,
+    211.0
+  ],
+  "start_temp_K": 50.0,
+  "status_code": 0,
+  "steering_flags": 0,
+  "steering_focus_count": 64,
+  "steering_focus_residue": -1,
+  "steering_focus_residues": [
+    {
+      "residue_id": 352,
+      "weight": 0.4723328948020935
+    },
+    {
+      "residue_id": 356,
+      "weight": 0.44494903087615967
+    },
+    {
+      "residue_id": 173,
+      "weight": 0.4320894479751587
+    },
+    {
+      "residue_id": 288,
+      "weight": 0.41077709197998047
+    },
+    {
+      "residue_id": 175,
+      "weight": 0.41050052642822266
+    },
+    {
+      "residue_id": 148,
+      "weight": 0.39097675681114197
+    },
+    {
+      "residue_id": 22,
+      "weight": 0.39034342765808105
+    },
+    {
+      "residue_id": 50,
+      "weight": 0.38598620891571045
+    },
+    {
+      "residue_id": 255,
+      "weight": 0.37693628668785095
+    },
+    {
+      "residue_id": 28,
+      "weight": 0.37675461173057556
+    },
+    {
+      "residue_id": 122,
+      "weight": 0.3746923506259918
+    },
+    {
+      "residue_id": 167,
+      "weight": 0.3694649338722229
+    },
+    {
+      "residue_id": 75,
+      "weight": 0.36886119842529297
+    },
+    {
+      "residue_id": 372,
+      "weight": 0.3662906885147095
+    },
+    {
+      "residue_id": 166,
+      "weight": 0.36565372347831726
+    },
+    {
+      "residue_id": 105,
+      "weight": 0.36369600892066956
+    },
+    {
+      "residue_id": 86,
+      "weight": 0.362165629863739
+    },
+    {
+      "residue_id": 42,
+      "weight": 0.3614465892314911
+    },
+    {
+      "residue_id": 294,
+      "weight": 0.356706440448761
+    },
+    {
+      "residue_id": 146,
+      "weight": 0.3529110252857208
+    },
+    {
+      "residue_id": 32,
+      "weight": 0.3505963385105133
+    },
+    {
+      "residue_id": 292,
+      "weight": 0.34934812784194946
+    },
+    {
+      "residue_id": 41,
+      "weight": 0.34676820039749146
+    },
+    {
+      "residue_id": 54,
+      "weight": 0.3451080620288849
+    },
+    {
+      "residue_id": 232,
+      "weight": 0.34483790397644043
+    },
+    {
+      "residue_id": 323,
+      "weight": 0.34150251746177673
+    },
+    {
+      "residue_id": 363,
+      "weight": 0.3380892276763916
+    },
+    {
+      "residue_id": 227,
+      "weight": 0.3359085023403168
+    },
+    {
+      "residue_id": 277,
+      "weight": 0.33418354392051697
+    },
+    {
+      "residue_id": 40,
+      "weight": 0.33415016531944275
+    },
+    {
+      "residue_id": 70,
+      "weight": 0.33280953764915466
+    },
+    {
+      "residue_id": 311,
+      "weight": 0.3324797451496124
+    },
+    {
+      "residue_id": 365,
+      "weight": 0.331194132566452
+    },
+    {
+      "residue_id": 193,
+      "weight": 0.32894542813301086
+    },
+    {
+      "residue_id": 33,
+      "weight": 0.3287946283817291
+    },
+    {
+      "residue_id": 341,
+      "weight": 0.3287704885005951
+    },
+    {
+      "residue_id": 357,
+      "weight": 0.325749009847641
+    },
+    {
+      "residue_id": 150,
+      "weight": 0.32548677921295166
+    },
+    {
+      "residue_id": 102,
+      "weight": 0.3229941725730896
+    },
+    {
+      "residue_id": 76,
+      "weight": 0.3229738473892212
+    },
+    {
+      "residue_id": 49,
+      "weight": 0.32262811064720154
+    },
+    {
+      "residue_id": 360,
+      "weight": 0.3223700225353241
+    },
+    {
+      "residue_id": 55,
+      "weight": 0.3215710520744324
+    },
+    {
+      "residue_id": 271,
+      "weight": 0.31904512643814087
+    },
+    {
+      "residue_id": 156,
+      "weight": 0.31852132081985474
+    },
+    {
+      "residue_id": 141,
+      "weight": 0.3184435963630676
+    },
+    {
+      "residue_id": 46,
+      "weight": 0.3181334137916565
+    },
+    {
+      "residue_id": 313,
+      "weight": 0.31714582443237305
+    },
+    {
+      "residue_id": 263,
+      "weight": 0.31494635343551636
+    },
+    {
+      "residue_id": 327,
+      "weight": 0.3146521747112274
+    },
+    {
+      "residue_id": 98,
+      "weight": 0.3139549493789673
+    },
+    {
+      "residue_id": 241,
+      "weight": 0.3128162920475006
+    },
+    {
+      "residue_id": 2,
+      "weight": 0.3119116723537445
+    },
+    {
+      "residue_id": 228,
+      "weight": 0.31082865595817566
+    },
+    {
+      "residue_id": 94,
+      "weight": 0.3101462125778198
+    },
+    {
+      "residue_id": 261,
+      "weight": 0.3082503080368042
+    },
+    {
+      "residue_id": 174,
+      "weight": 0.30765998363494873
+    },
+    {
+      "residue_id": 53,
+      "weight": 0.30681106448173523
+    },
+    {
+      "residue_id": 276,
+      "weight": 0.3066270053386688
+    },
+    {
+      "residue_id": 92,
+      "weight": 0.3064505159854889
+    },
+    {
+      "residue_id": 109,
+      "weight": 0.30623045563697815
+    },
+    {
+      "residue_id": 161,
+      "weight": 0.30518555641174316
+    },
+    {
+      "residue_id": 354,
+      "weight": 0.3045468032360077
+    },
+    {
+      "residue_id": 289,
+      "weight": 0.3032691776752472
+    }
+  ],
+  "steering_temp_bias": 0.0,
+  "steering_uv_boost": 1.0,
+  "stream_index": 1,
+  "struct_size_bytes": 716,
+  "total_steps": 35000,
+  "uv_burst_active": 0,
+  "uv_burst_duration_steps": 60,
+  "uv_burst_energy_kcal_mol": 48.0,
+  "uv_burst_interval_steps": 200,
+  "uv_target_idx": 3,
+  "uv_wavelength_nm": 254.0,
+  "warm_hold_end": 26000,
+  "wavelength_dwell_steps": 250
+}

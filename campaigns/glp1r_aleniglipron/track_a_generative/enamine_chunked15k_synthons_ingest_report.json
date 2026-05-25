@@ -1,0 +1,34 @@
+{
+  "charge_method_counts": {
+    "precomputed_am1bcc_or_curated_partial_charge": 13004
+  },
+  "compatible_synthon_count": 13004,
+  "per_reaction_match_counts": {
+    "RXN_AMIDE_COUPLING": 20146,
+    "RXN_BUCHWALD_HARTWIG": 18474,
+    "RXN_SULFONAMIDE": 17336,
+    "RXN_SUZUKI_ARYL_ARYL": 1138
+  },
+  "reject_reason_counts": {
+    "no_compatible_reaction_role": 1976
+  },
+  "source_chunks": [
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0000.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0001.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0002.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0003.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0004.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0005.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0006.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0007.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0008.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0009.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0010.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0011.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0012.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0013.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/anchors_3d/chunk_0014.parquet"
+  ],
+  "total_input": 14980,
+  "valid_mol_count": 14980
+}

@@ -1,0 +1,43 @@
+{
+  "architecture": "FiberBundleGFlowNetPolicy",
+  "phase_labels": [
+    "Cold Hold",
+    "Ramp Up",
+    "Warm Hold",
+    "Ramp Down",
+    "Cold Return"
+  ],
+  "x_phase_shape": [
+    96,
+    5,
+    8
+  ],
+  "base_feature_dim": 12,
+  "phase_feature_dim": 8,
+  "edge_feature_dim": 6,
+  "valid_action_count": 76493,
+  "batch_size": 64,
+  "warm_start_epochs": 32,
+  "tb_epochs": 500,
+  "learning_rate": 0.001,
+  "log_z_learning_rate": 0.05,
+  "learning_rate_floor": 1e-05,
+  "log_z_learning_rate_floor": 0.0001,
+  "policy_warmup_epochs": 20,
+  "log_z_warmup_epochs": 10,
+  "reward_scale": 10.0,
+  "policy_aux_weight": 0.2,
+  "diversity_beta": 0.5,
+  "rust_oracle_reward_authority": true,
+  "uses_pyg_batch": true,
+  "dense_adjacency": false,
+  "learn_anchor_embeddings": true,
+  "input_sha256": {
+    "ligand_sdf": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d",
+    "anchors": "042742f9e1847e5b70bb191b5fa6fa2684ba2e470362ba814ddc16f908951874",
+    "survivors": "80834c84283594a817ba8c782eefd55e3edd52105a264d2be1fa1f8a084207de",
+    "residue_phase": "0b4c2dfb367b66b917b82527c3b55e87c00d598c15c7ae7eeb3e9b7e2aa0498f",
+    "interferometric": "03d7d1fd0bfc144a3db8d3e3c3731e12aad4a8f1e085f8dd2169d06672b93e54"
+  },
+  "generated_at_utc": "2026-05-24T23:07:31.462445+00:00"
+}

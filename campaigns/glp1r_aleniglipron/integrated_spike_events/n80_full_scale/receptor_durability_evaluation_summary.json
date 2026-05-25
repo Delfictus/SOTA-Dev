@@ -1,0 +1,130 @@
+{
+  "campaign_id": "glp1r_aleniglipron",
+  "risk_map_path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_risk_map.parquet",
+  "summary_path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_channel_summary.parquet",
+  "risk_map_rows": 4833,
+  "summary_rows": 27,
+  "risk_granularity": "edge",
+  "composite_join_key": [
+    "condition_id",
+    "replica_id",
+    "stream_id",
+    "edge_from_residue",
+    "edge_to_residue"
+  ],
+  "fused_tensors": [
+    "spike_events_snr_masked",
+    "signal_grid_variance_channel",
+    "mechanical_load_network",
+    "bocpd_survival_regimes",
+    "kinetic_strain_events",
+    "autonomous_steering_tensor",
+    "aromatic_reorganization_tensor",
+    "phase_manifold_coherence",
+    "phase_manifold_edge_validation",
+    "shear_stress_field"
+  ],
+  "warp_jacobian_quarantined": false,
+  "top10": [
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 7,
+      "edge_to_residue": 12,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "partial_validation",
+      "edge_coherence_score": 0.5317046895331821,
+      "durability_risk_score_raw": 22.391153096322526
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 12,
+      "edge_to_residue": 16,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "partial_validation",
+      "edge_coherence_score": 0.5174494292946039,
+      "durability_risk_score_raw": 22.33293078174427
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 16,
+      "edge_to_residue": 12,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "partial_validation",
+      "edge_coherence_score": 0.5174494292946039,
+      "durability_risk_score_raw": 22.33293078174427
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 7,
+      "edge_to_residue": 11,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "validated_constitutive",
+      "edge_coherence_score": 0.5195156258171149,
+      "durability_risk_score_raw": 22.190267393312222
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 64,
+      "edge_to_residue": 67,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "phase_validation_missing",
+      "edge_coherence_score": 0.0,
+      "durability_risk_score_raw": 22.13812467393512
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 67,
+      "edge_to_residue": 64,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "phase_validation_missing",
+      "edge_coherence_score": 0.0,
+      "durability_risk_score_raw": 22.13812467393512
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 39,
+      "edge_to_residue": 99,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "phase_validation_missing",
+      "edge_coherence_score": 0.0,
+      "durability_risk_score_raw": 21.908672207706125
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 74,
+      "edge_to_residue": 78,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "phase_validation_missing",
+      "edge_coherence_score": 0.0,
+      "durability_risk_score_raw": 21.77291452227827
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 12,
+      "edge_to_residue": 15,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "phase_validation_missing",
+      "edge_coherence_score": 0.0,
+      "durability_risk_score_raw": 21.693454681987486
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_from_residue": 15,
+      "edge_to_residue": 12,
+      "edge_class": "pocket_vector",
+      "durability_class": "critical_durability_risk",
+      "validation_status": "phase_validation_missing",
+      "edge_coherence_score": 0.0,
+      "durability_risk_score_raw": 21.693454681987486
+    }
+  ]
+}

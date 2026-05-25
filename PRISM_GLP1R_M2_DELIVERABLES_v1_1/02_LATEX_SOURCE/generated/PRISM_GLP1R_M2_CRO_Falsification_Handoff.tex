@@ -1,0 +1,826 @@
+%% PRISM-4D | GLP-1R Aleniglipron M2 — pharma/med-chem delivery template
+%% Jinja2-rendered template — placeholders are substituted server-side.
+%% Compile final .tex with: latexmk -pdf, or xelatex twice.
+%% Print-safe colors, no tikz dependency.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{microtype}
+\usepackage[a4paper,margin=16mm,top=22mm,bottom=22mm,headheight=14pt,headsep=10pt]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage[most]{tcolorbox}
+\usepackage[colorlinks=true,allcolors=DelfRule]{hyperref}
+\usepackage{textcomp}
+\usepackage{seqsplit}
+\usepackage{xltabular}
+\usepackage{ragged2e}
+\usepackage{etoolbox}
+
+% --- text-overflow hardening (margin protection) ----------------------
+\emergencystretch=8em
+\tolerance=4000
+\hbadness=10000
+% Hyphenate aggressively; permits breaks inside words to avoid
+% margin overflow when a long token is the only choice.
+\hyphenpenalty=200
+\exhyphenpenalty=200
+\pretolerance=-1
+\linepenalty=10
+\setlength{\parskip}{4pt plus 1pt minus 1pt}
+% Apply \sloppy globally — relaxes line-break tolerance, prevents most
+% small textual overflow.
+\AtBeginDocument{\sloppy}
+
+% Make every longtable (including pandoc-generated ones) use small font
+% and tighter column padding so wide tables fit. Combined with the
+% post-processor that converts wide longtables to xltabular X-cols,
+% this prevents the catastrophic 1000pt+ overflows.
+\AtBeginEnvironment{longtable}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+\AtBeginEnvironment{xltabular}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+
+% \texttt content that is one long hex / id blob gets line-broken by
+% \seqsplit. Wrappers around hashes injected by the build-script
+% post-processor.
+
+% Allow URL breaks anywhere — applies to hyperref-styled URLs.
+\PassOptionsToPackage{hyphens}{url}
+
+% --- print-safe epistemic colors -----------------------------------
+\definecolor{DelfBlue}{HTML}{0F2A4A}
+\definecolor{DelfRule}{HTML}{1F3A6B}
+\definecolor{DelfGrey}{HTML}{4A4A4A}
+\definecolor{EpObserved}{HTML}{1B5E20}
+\definecolor{EpDerived}{HTML}{0D47A1}
+\definecolor{EpInferred}{HTML}{4527A0}
+\definecolor{EpProjected}{HTML}{B65000}
+\definecolor{EpHypothesized}{HTML}{8B0000}
+\definecolor{HashBg}{HTML}{F4F4F7}
+
+% --- header / footer ------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{DelfBlue}\textbf{DELFICTUS I/O} \textbar{} PRISM-4D}
+\fancyhead[R]{\small\color{DelfGrey}CRO Falsification Handoff}
+\fancyfoot[L]{\scriptsize\color{DelfGrey}Confidential Discussion Material \textbar{} PRISM-4D M2 Evidence Release}
+\fancyfoot[R]{\scriptsize\color{DelfGrey}Page \thepage}
+
+% --- listings (hashes) ---------------------------------------------
+\lstdefinestyle{hashbox}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{HashBg},
+  frame=single,
+  rulecolor=\color{DelfGrey!40},
+  framerule=0.4pt,
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  breakindent=0pt,
+  postbreak=\mbox{\textcolor{DelfGrey}{$\hookrightarrow$}\space},
+  columns=flexible,
+  showspaces=false,
+  showstringspaces=false
+}
+\lstset{style=hashbox}
+
+% --- pandoc stub macros (so .tex compiles standalone) --------------
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+% \passthrough is a transparent wrapper used by pandoc around inline
+% \lstinline. We do NOT wrap in \texttt — that breaks lstinline catcode
+% parsing and causes runaway lines.
+\providecommand{\passthrough}[1]{#1}
+\providecommand{\textsubscript}[1]{\ensuremath{_{#1}}}
+\providecommand{\textquotesingle}{'}
+% pandoc emits \pandocbounded around figures — accept it as a no-op
+\providecommand{\pandocbounded}[1]{#1}
+
+% --- epistemic label macros -----------------------------------------
+\newcommand{\epOBS}{\textcolor{EpObserved}{\textbf{OBSERVED}}}
+\newcommand{\epDER}{\textcolor{EpDerived}{\textbf{DERIVED}}}
+\newcommand{\epINF}{\textcolor{EpInferred}{\textbf{INFERRED}}}
+\newcommand{\epPRJ}{\textcolor{EpProjected}{\textbf{PROJECTED}}}
+\newcommand{\epHYP}{\textcolor{EpHypothesized}{\textbf{HYPOTHESIZED}}}
+
+% --- disclaimer / legend boxes --------------------------------------
+\newtcolorbox{disclaimerbox}{
+  colback=red!3, colframe=EpHypothesized,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+\newtcolorbox{legendbox}{
+  colback=DelfBlue!4, colframe=DelfBlue,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+
+% --- title / identity ----------------------------------------------
+\title{
+  \vspace{-12mm}
+  {\color{DelfBlue}\textbf{\Large PRISM-4D — GLP-1R / Aleniglipron CRO Falsification Handoff}}\\[2pt]
+  {\color{DelfGrey}\normalsize Experimental validation planning for M2 falsification gates}\\[6pt]
+  {\color{DelfGrey}\small Confidential Discussion Material}
+}
+\author{}
+\date{}
+
+% --- DOCUMENT -------------------------------------------------------
+\begin{document}
+
+\maketitle
+\vspace{-14mm}
+
+\begin{flushleft}
+\small
+\begin{tabular}{@{}p{0.32\textwidth}p{0.62\textwidth}@{}}
+\textbf{Campaign}             & glp1r\_aleniglipron \\
+\textbf{Release}              & PRISM\_GLP1R\_M2\_DELIVERABLES\_v1.1 \\
+\textbf{Generated (UTC)}      & 2026-05-24T03:47:26Z \\
+\textbf{Report type}          & CRO — assay routing and falsification gates \\
+\textbf{CBOM Merkle root}     & \texttt{\small 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856} \\
+\textbf{Executive archive SHA-256} & \texttt{\small b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454} \\
+\end{tabular}
+\end{flushleft}
+
+\vspace{4mm}
+
+\begin{disclaimerbox}
+\textbf{Use of this document.} This package presents computational
+translational evidence from the PRISM-4D engine and downstream analysis
+layers. It is \emph{not} a clinical-effect claim, \emph{not} a
+patient-response prediction, and \emph{not} experimental validation.
+Assay recommendations are falsification gates, not confirmation
+ceremonies. PROJECTED and HYPOTHESIZED items require wet-lab
+falsification before any biological assertion.
+\end{disclaimerbox}
+
+\begin{legendbox}
+\textbf{Epistemic legend.} Every claim, table row, and figure inherits
+exactly one of the following classes, which governs how it may be cited:
+\begin{itemize}[leftmargin=18pt,topsep=2pt,itemsep=1pt]
+  \item \epOBS{} — direct tensor measurement from PRISM-4D engine outputs.
+  \item \epDER{} — deterministic transform of observed tensors.
+  \item \epINF{} — multi-tensor interpretation; not a single-tensor measurement.
+  \item \epPRJ{} — translational extrapolation beyond simulated conditions.
+  \item \epHYP{} — requires wet-lab falsification before any biological claim.
+\end{itemize}
+\end{legendbox}
+
+\vspace{2mm}
+\hrule
+\vspace{4mm}
+
+\hypertarget{section-1--cro-wet-lab-action-plan}{%
+\section{Section 1 --- CRO Wet-Lab Action Plan}\label{section-1--cro-wet-lab-action-plan}}
+
+Each row below is a \textbf{falsification gate}. The associated PRISM-4D claim is at risk if and
+only if the gate fails as described in \texttt{\seqsplit{falsification\_condition}}. None of
+these rows is a biological confirmation request. Priority score is a routing weight, not a
+probability of success.
+
+\hypertarget{cro_wetlab_action_plan}{%
+\section{CRO\_WetLab\_Action\_Plan}\label{cro_wetlab_action_plan}}
+
+PRISM GLP-1R M2 CRO wet-lab action plan. Every row is a \textbf{falsification gate}, not a
+confirmation request. \texttt{\seqsplit{epistemic\_class}} column governs how each row may be
+cited.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+action\_id & \seqsplit{epistemic\_class} & \seqsplit{assay\_category} & construct & residue\_idx & residue\_name &
+\seqsplit{claim\_at\_risk} & \seqsplit{priority\_score} & \seqsplit{falsification\_condition} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{HDX-MS:glp1r\_6XOX\_WT:144} & PROJECTED & HDX-MS & WT-normalized apo and holo GLP-1R peptide-mapping
+panel. & 144 & ASN182 & Predicted shear-associated exposure asymmetry at ASN182:144 & 5.34 &
+Falsification Condition: Lack of WT-normalized uptake asymm\ldots{} \\
+\seqsplit{HDX-MS:glp1r\_6X1A\_WT:333} & PROJECTED & HDX-MS & WT-normalized apo and holo GLP-1R peptide-mapping
+panel. & 333 & PHE367 & Predicted shear-associated exposure asymmetry at PHE367:333 & 5.206 &
+Falsification Condition: Lack of WT-normalized uptake asymm\ldots{} \\
+\seqsplit{HDX-MS:glp1r\_6XOX\_A316T:144} & PROJECTED & HDX-MS & WT-normalized apo and holo GLP-1R
+peptide-mapping panel. & 144 & ASN182 & Predicted shear-associated exposure asymmetry at ASN182:144
+& 5.012 & Falsification Condition: Lack of WT-normalized uptake asymm\ldots{} \\
+\seqsplit{HDX-MS:glp1r\_6X1A\_WT:148} & PROJECTED & HDX-MS & WT-normalized apo and holo GLP-1R peptide-mapping
+panel. & 148 & ASN182 & Predicted shear-associated exposure asymmetry at ASN182:148 & 4.406 &
+Falsification Condition: Lack of WT-normalized uptake asymm\ldots{} \\
+\seqsplit{HDX-MS:glp1r\_5VEX\_WT:46} & PROJECTED & HDX-MS & WT-normalized apo and holo GLP-1R peptide-mapping
+panel. & 46 & ASN182 & Predicted shear-associated exposure asymmetry at ASN182:46 & 4.018 &
+Falsification Condition: Lack of WT-normalized uptake asymm\ldots{} \\
+\seqsplit{WASHOUT:glp1r\_6LN2\_A316T} & PROJECTED & \seqsplit{Washout\_Recovery\_Assay} & 6LN2\_A316T holo and apo matched
+receptor-state recovery con\ldots{} & & \seqsplit{variant\_level} & Predicted persistent recovery impairment
+signature in 6LN2\_\ldots{} & 0.4395 & Falsification Condition: No WT-normalized recovery
+impairme\ldots{} \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-2--claim--falsification-graph}{%
+\section{Section 2 --- Claim / Falsification Graph}\label{section-2--claim--falsification-graph}}
+
+\hypertarget{claim_falsification_graph}{%
+\section{Claim\_Falsification\_Graph}\label{claim_falsification_graph}}
+
+Claim/falsification graph in flattened edge-table form. \texttt{\seqsplit{claim\_epistemic}}
+is the gate that governs how each edge may be cited. PROJECTED and HYPOTHESIZED edges require
+wet-lab falsification before any biological assertion.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+source\_id & target\_id & relationship & \seqsplit{claim\_epistemic} & claim\_assay & \seqsplit{claim\_condition} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{tensor\_source:shear\_stress} \textgreater{} condition p90 & \seqsplit{claim:HDX-MS:glp1r\_6XOX\_WT:144} &
+\seqsplit{supports\_projected\_claim} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6XOX\_WT} \\
+\seqsplit{claim:HDX-MS:glp1r\_6XOX\_WT:144} & \seqsplit{assay:HDX-MS:glp1r\_6XOX\_WT:ASN182:144} &
+\seqsplit{requires\_falsification\_by} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6XOX\_WT} \\
+\seqsplit{tensor\_source:shear\_stress} \textgreater{} condition p90 & \seqsplit{claim:HDX-MS:glp1r\_6X1A\_WT:333} &
+\seqsplit{supports\_projected\_claim} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6X1A\_WT} \\
+\seqsplit{claim:HDX-MS:glp1r\_6X1A\_WT:333} & \seqsplit{assay:HDX-MS:glp1r\_6X1A\_WT:PHE367:333} &
+\seqsplit{requires\_falsification\_by} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6X1A\_WT} \\
+\seqsplit{tensor\_source:shear\_stress} \textgreater{} condition p90 & \seqsplit{claim:HDX-MS:glp1r\_6XOX\_A316T:144} &
+\seqsplit{supports\_projected\_claim} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6XOX\_A316T} \\
+\seqsplit{claim:HDX-MS:glp1r\_6XOX\_A316T:144} & \seqsplit{assay:HDX-MS:glp1r\_6XOX\_A316T:ASN182:144} &
+\seqsplit{requires\_falsification\_by} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6XOX\_A316T} \\
+\seqsplit{tensor\_source:shear\_stress} \textgreater{} condition p90 & \seqsplit{claim:HDX-MS:glp1r\_6X1A\_WT:148} &
+\seqsplit{supports\_projected\_claim} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6X1A\_WT} \\
+\seqsplit{claim:HDX-MS:glp1r\_6X1A\_WT:148} & \seqsplit{assay:HDX-MS:glp1r\_6X1A\_WT:ASN182:148} &
+\seqsplit{requires\_falsification\_by} & PROJECTED & HDX-MS & \seqsplit{glp1r\_6X1A\_WT} \\
+\seqsplit{tensor\_source:shear\_stress} \textgreater{} condition p90 & \seqsplit{claim:HDX-MS:glp1r\_5VEX\_WT:46} &
+\seqsplit{supports\_projected\_claim} & PROJECTED & HDX-MS & \seqsplit{glp1r\_5VEX\_WT} \\
+\seqsplit{claim:HDX-MS:glp1r\_5VEX\_WT:46} & \seqsplit{assay:HDX-MS:glp1r\_5VEX\_WT:ASN182:46} &
+\seqsplit{requires\_falsification\_by} & PROJECTED & HDX-MS & \seqsplit{glp1r\_5VEX\_WT} \\
+\seqsplit{tensor\_source:hysteresis\_ratio} \textless{} 0.5 & \seqsplit{claim:WASHOUT:glp1r\_6LN2\_A316T} &
+\seqsplit{supports\_projected\_claim} & PROJECTED & \seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6LN2\_A316T} \\
+\seqsplit{claim:WASHOUT:glp1r\_6LN2\_A316T} &
+\seqsplit{assay:Washout\_Recovery\_Assay:glp1r\_6LN2\_A316T:variant\_level:None} & \seqsplit{requires\_falsification\_by}
+& PROJECTED & \seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6LN2\_A316T} \\
+\seqsplit{tensor:hysteresis\_tensor} & \seqsplit{claim:HYSTERESIS:6LN2\_A316T} & \seqsplit{supports\_inference} & INFERRED & & \\
+\seqsplit{claim:HYSTERESIS:6LN2\_A316T} & \seqsplit{assay:washout\_recovery} & \seqsplit{requires\_falsification\_by} & INFERRED &
+& \\
+\seqsplit{tensor:fragment\_interference\_attribution} & \seqsplit{claim:COUPLING:ALENI-PARENT} &
+\seqsplit{supports\_projected\_claim} & PROJECTED & & \\
+\seqsplit{claim:COUPLING:ALENI-PARENT} & \seqsplit{assay:matched\_analog\_controls} & \seqsplit{requires\_falsification\_by} &
+PROJECTED & & \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-3--triangulation-dossier-verbatim}{%
+\section{Section 3 --- Triangulation Dossier
+(verbatim)}\label{section-3--triangulation-dossier-verbatim}}
+
+\hypertarget{m2-phase-2e-triangulation-dossier}{%
+\section{M2 Phase 2E Triangulation Dossier}\label{m2-phase-2e-triangulation-dossier}}
+
+\hypertarget{1-zero-trust-replayability-manifest}{%
+\subsection{1. ZERO-TRUST REPLAYABILITY MANIFEST}\label{1-zero-trust-replayability-manifest}}
+
+Unified Merkle Root:
+\texttt{\seqsplit{4bebaed1e13a62e460b41a23990caa6ae5354780bc70476c01a1dedcb8c6a51b}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Environment field & Value \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{created\_at\_utc} & \texttt{\seqsplit{2\seqsplit{026-05-23T08:52:02.373889}+00:00}} \\
+cuda\_version & `nvcc: NVIDIA (R) Cuda compiler driver \\
+\end{xltabular}
+\endgroup
+
+
+Copyright (c) 2005-2026 NVIDIA Corporation Built on Mon\_Mar\_02\_09:52:23\_PM\_PST\_2026 Cuda
+compilation tools, release 13.2, V13.2.51 Build
+cuda\_13.2.r13.2/compiler.37434383\_0\texttt{\seqsplit{| | nvidia\_driver |}}595.45.04\texttt{\seqsplit{| | os\_kernel |}}6.14.0-37-generic\texttt{\seqsplit{| | platform |}}Linux-6.14.0-37-generic-x86\_64-with-glibc2.39\texttt{\seqsplit{| | polars |}}1.33.1\texttt{\seqsplit{| | python |}}3.12.3`
+\textbar{}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Replayability component & Count \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Schema files hashed & 9 \\
+Propagation ledgers hashed & 67 \\
+Physical constants hash present & True \\
+\end{xltabular}
+\endgroup
+
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Schema file & SHA-256 \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{00\_registry/schemas/analog\_intake\_v1.yml} &
+\texttt{\seqsplit{945f94007240b9dec562f096b474d46df3c002e5f0024d1e6103ed6e6c2531f5}} \\
+\seqsplit{00\_registry/schemas/chem\_perturbed\_dtsg.yml} &
+\texttt{\seqsplit{9b1f49fc6935284d1d1b01e2585209a6e545f23b2646ad4e63c59fb5935741be}} \\
+\seqsplit{00\_registry/schemas/interface\_timestamp\_mining.yml} &
+\texttt{\seqsplit{8d80384f1f10a302a5407fa9bf999ab61632ef00e87b65a383ab7528c38f2a38}} \\
+\seqsplit{00\_registry/schemas/phase\_manifold\_coherence.v1.yml} &
+\texttt{\seqsplit{8cbb7d278de9817b4e1d20c8bd976e599620c83f99513050276a2da79375be27}} \\
+\seqsplit{00\_registry/schemas/propagation\_ledger.yml} &
+\texttt{\seqsplit{8bb9358769701c7458f015f99d22002adc584fa48976c1f907750d1662159b9b}} \\
+\seqsplit{00\_registry/schemas/track\_0\_interference\_v1.yml} &
+\texttt{\seqsplit{f4bb89217ca334aa80d3a6d4b719b26bdc8b53e3e9edccc53089894b65be1e03}} \\
+\seqsplit{00\_registry/schemas/translation\_pathway\_nodes.v1.yml} &
+\texttt{\seqsplit{50b07158deb1f419b9abc4ab9b94ece0ec7a4a23c5ac8f4bb0070ebdfc00936b}} \\
+\seqsplit{00\_registry/schemas/voxel\_stable\_void\_proxy.yml} &
+\texttt{\seqsplit{1b27c994a5bd5a7a37b7e16293080cb0365f3bec149475d05dd94ba89a5bbb55}} \\
+\seqsplit{00\_registry/schemas/warp\_gradient\_field.v1.yml} &
+\texttt{\seqsplit{ac5384484bfc22976866d3848e6db9a683fe62f84adb6e01227517b1b8867e52}} \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{2-assay-handoff-package}{%
+\subsection{2. ASSAY HANDOFF PACKAGE}\label{2-assay-handoff-package}}
+
+The assay routing matrix maps tensor-supported residue findings to wet-lab assays using explicit
+physical triggers and non-figurative terminology.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Assay & Condition & Residue & Trigger rule & Trigger value & Rationale \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+HDX-MS & \seqsplit{glp1r\_6XOX\_WT} & ASN182 & \seqsplit{shear\_stress\_abs\_gt\_p90} & 5.3400 & High spatial gradient of
+structural deformation indicating backbone solvent exposure \\
+HDX-MS & \seqsplit{glp1r\_6X1A\_WT} & PHE367 & \seqsplit{shear\_stress\_abs\_gt\_p90} & 5.2064 & High spatial gradient of
+structural deformation indicating backbone solvent exposure \\
+HDX-MS & \seqsplit{glp1r\_6XOX\_A316T} & ASN182 & \seqsplit{shear\_stress\_abs\_gt\_p90} & 5.0121 & High spatial gradient
+of structural deformation indicating backbone solvent exposure \\
+HDX-MS & \seqsplit{glp1r\_6X1A\_WT} & ASN182 & \seqsplit{shear\_stress\_abs\_gt\_p90} & 4.4062 & High spatial gradient of
+structural deformation indicating backbone solvent exposure \\
+HDX-MS & \seqsplit{glp1r\_5VEX\_WT} & ASN182 & \seqsplit{shear\_stress\_abs\_gt\_p90} & 4.0178 & High spatial gradient of
+structural deformation indicating backbone solvent exposure \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & THR386 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4922 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6XOX\_T149M} & TYR305 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4902 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & GLU423 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4898 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & SER116 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4893 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & GLN97 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4829 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & LEU379 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4798 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6LN2\_WT} & LEU401 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4763 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & ASN115 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4751 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & PHE390 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4744 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & ILE308 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4731 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & SER225 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4722 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6LN2\_WT} & LEU339 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4713 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & PHE393 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4698 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & MET397 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4680 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & LEU232 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4671 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & HID374 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4661 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & GLU125 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4654 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & LEU118 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4643 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & GLU294 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4625 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6LN2\_T149M} & HID212 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4616 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & GLU128 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4609 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & GLN263 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4609 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & THR51 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4605 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6X1A\_WT} & LEU268 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4602 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6XOX\_A316T} & GLU125 & \seqsplit{hysteresis\_ratio\_lt\_0\_5} & 0.4587 &
+Persistent recovery impairment signature consistent with receptor-state trapping \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{3-probabilistic-transition-chronology}{%
+\subsection{3. PROBABILISTIC TRANSITION CHRONOLOGY}\label{3-probabilistic-transition-chronology}}
+
+Temporal transition clusters were inferred from \texttt{\seqsplit{first\_ramp\_md\_step}}
+using a BIC-selected one-dimensional Gaussian mixture model. The table reports cluster confidence
+and temporal overlap entropy so stochastic boundary uncertainty remains explicit.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Cluster & Members & Centroid MD step & Cluster confidence & Temporal overlap entropy & Stability
+metric \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & 2496 & 6015.89 & 0.8849 & 0.2181 & 55.6047 \\
+2 & 3430 & 6158.18 & 0.8465 & 0.1978 & 884.7646 \\
+3 & 2395 & 8001.26 & 0.9826 & 0.0352 & 0.1978 \\
+4 & 568 & 8085.65 & 0.9965 & 0.0000 & 1261.3595 \\
+5 & 2963 & 10015.63 & 0.9802 & 0.0001 & 351.6621 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{4-tri-state-aleniglipron-fiber-graph}{%
+\subsection{4. TRI-STATE ALENIGLIPRON FIBER GRAPH}\label{4-tri-state-aleniglipron-fiber-graph}}
+
+FRAG-A biases the receptor toward persistent lock-state occupancy at Cluster 2.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Fiber type & Edge & Fragment & Cluster & TE multiplier & Interference load & Occupancy fatigue \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{constitutive\_fiber} & ARG421 -\textgreater{} TRP417 & FRAG-A & 1 & 1.0000 & 0.0000 & 0.0047 \\
+\seqsplit{constitutive\_fiber} & PHE169 -\textgreater{} SER416 & FRAG-A & 1 & 1.0000 & 0.0000 & 0.0050 \\
+\seqsplit{constitutive\_fiber} & TYR241 -\textgreater{} ARG310 & FRAG-A & 1 & 1.0000 & 0.0000 & 0.0050 \\
+\seqsplit{constitutive\_fiber} & TRP417 -\textgreater{} ARG421 & FRAG-A & 1 & 1.0000 & 0.0000 & 0.0047 \\
+\seqsplit{ligand\_amplified\_fiber} & PHE143 -\textgreater{} ILE147 & FRAG-C & 2 & 10.0000 & 21.1308 &
+0.0050 \\
+\seqsplit{weak\_or\_unresolved\_fiber} & TYR152 -\textgreater{} TYR148 & FRAG-C & 2 & 9.5119 & 20.6716 &
+0.0050 \\
+\seqsplit{weak\_or\_unresolved\_fiber} & TYR242 -\textgreater{} ILE313 & FRAG-A & 2 & 1.0000 & 0.0000 &
+0.0053 \\
+\seqsplit{weak\_or\_unresolved\_fiber} & TYR148 -\textgreater{} TYR152 & FRAG-A & 1 & 0.1546 & 20.6716 &
+0.0050 \\
+\seqsplit{weak\_or\_unresolved\_fiber} & PHE143 -\textgreater{} TYR148 & FRAG-A & 2 & 0.1000 & 25.4997 &
+0.0049 \\
+\end{xltabular}
+\endgroup
+
+
+Fiber interpretation:
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Fiber type & Count \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{constitutive\_fiber} & 4 \\
+\seqsplit{ligand\_amplified\_fiber} & 1 \\
+\seqsplit{weak\_or\_unresolved\_fiber} & 4 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{5-medicinal-chemistry-action-matrix}{%
+\subsection{5. MEDICINAL CHEMISTRY ACTION MATRIX}\label{5-medicinal-chemistry-action-matrix}}
+
+The SAR contingency register is variant-aware and epistemic-aware. Each candidate vector is
+evaluated by thermodynamic ray-casting:
+\texttt{\seqsplit{Score(v)=sum(Pi\_complement)-sum(Pi\_clash)-sum(ShearStress)}}. High-risk
+epistemic expansions are reported as \texttt{\seqsplit{epistemic\_mirage}} when atom-edge pose
+uncertainty exceeds the ray-casting threshold.
+
+\hypertarget{universal-growth-vectors}{%
+\subsubsection{Universal Growth Vectors}\label{universal-growth-vectors}}
+
+\textbf{No universal growth vectors met the conserved thermally\_activated cavity criterion. All
+current exit vectors exhibit high epistemic uncertainty (\(U_{pose}\)) and require scaffold
+rigidification before expansion.}
+
+\hypertarget{epistemic-mirage-vectors}{%
+\subsubsection{Epistemic Mirage Vectors}\label{epistemic-mirage-vectors}}
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Rule & Vector & Edge & Atom & U\_pose & Threshold & Rationale \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+SAR-1222 & Vector 1222 & TYR152 -\textgreater{} TYR148 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1222; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1417 & Vector 1417 & TYR148 -\textgreater{} TYR152 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1417; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1416 & Vector 1416 & TYR148 -\textgreater{} TYR152 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1416; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1415 & Vector 1415 & TYR148 -\textgreater{} TYR152 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1415; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1224 & Vector 1224 & TYR152 -\textgreater{} TYR148 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1224; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1223 & Vector 1223 & TYR152 -\textgreater{} TYR148 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1223; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1422 & Vector 1422 & TYR148 -\textgreater{} TYR152 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1422; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1423 & Vector 1423 & TYR148 -\textgreater{} TYR152 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1423; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1421 & Vector 1421 & TYR148 -\textgreater{} TYR152 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1421; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1230 & Vector 1230 & TYR152 -\textgreater{} TYR148 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1230; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1229 & Vector 1229 & TYR152 -\textgreater{} TYR148 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1229; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1228 & Vector 1228 & TYR152 -\textgreater{} TYR148 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1228; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1655 & Vector 1655 & PHE143 -\textgreater{} ILE147 & C37 & 0.0488 & 0.0251 & Defer expansion at
+Vector 1655; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1654 & Vector 1654 & PHE143 -\textgreater{} ILE147 & C37 & 0.0488 & 0.0251 & Defer expansion at
+Vector 1654; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1653 & Vector 1653 & PHE143 -\textgreater{} ILE147 & C37 & 0.0488 & 0.0251 & Defer expansion at
+Vector 1653; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1678 & Vector 1678 & PHE143 -\textgreater{} ILE147 & C45 & 0.0468 & 0.0251 & Defer expansion at
+Vector 1678; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1677 & Vector 1677 & PHE143 -\textgreater{} ILE147 & C45 & 0.0468 & 0.0251 & Defer expansion at
+Vector 1677; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1676 & Vector 1676 & PHE143 -\textgreater{} ILE147 & C45 & 0.0468 & 0.0251 & Defer expansion at
+Vector 1676; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1708 & Vector 1708 & PHE143 -\textgreater{} ILE147 & C55 & 0.0452 & 0.0251 & Defer expansion at
+Vector 1708; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1707 & Vector 1707 & PHE143 -\textgreater{} ILE147 & C55 & 0.0452 & 0.0251 & Defer expansion at
+Vector 1707; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{prohibited-rigidification-zones}{%
+\subsubsection{Prohibited Rigidification Zones}\label{prohibited-rigidification-zones}}
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Rule & Vector & Edge & Class & Ray score & Clash integral & Shear integral & Rationale \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+SAR-1714 & Vector 1714 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.4458
+& 2.5098 & 5.9360 & Halt rigidifying expansion at Vector 1714; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1328 & Vector 1328 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -8.4458
+& 2.5098 & 5.9360 & Halt rigidifying expansion at Vector 1328; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1727 & Vector 1727 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.2538
+& 2.3853 & 5.8685 & Halt rigidifying expansion at Vector 1727; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1189 & Vector 1189 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -8.2254
+& 2.6790 & 5.5464 & Halt rigidifying expansion at Vector 1189; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1575 & Vector 1575 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.2254
+& 2.6790 & 5.5464 & Halt rigidifying expansion at Vector 1575; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1623 & Vector 1623 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.1544
+& 2.3719 & 5.7825 & Halt rigidifying expansion at Vector 1623; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1191 & Vector 1191 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.9600
+& 2.3868 & 5.5732 & Halt rigidifying expansion at Vector 1191; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1577 & Vector 1577 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9600
+& 2.3868 & 5.5732 & Halt rigidifying expansion at Vector 1577; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1200 & Vector 1200 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.9466
+& 2.9252 & 5.0214 & Halt rigidifying expansion at Vector 1200; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1586 & Vector 1586 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9466
+& 2.9252 & 5.0214 & Halt rigidifying expansion at Vector 1586; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1190 & Vector 1190 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.9340
+& 2.6767 & 5.2574 & Halt rigidifying expansion at Vector 1190; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1576 & Vector 1576 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9340
+& 2.6767 & 5.2574 & Halt rigidifying expansion at Vector 1576; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1600 & Vector 1600 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9019
+& 2.5233 & 5.3786 & Halt rigidifying expansion at Vector 1600; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1646 & Vector 1646 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.8535
+& 2.4255 & 5.4280 & Halt rigidifying expansion at Vector 1646; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1260 & Vector 1260 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.8535
+& 2.4255 & 5.4280 & Halt rigidifying expansion at Vector 1260; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1263 & Vector 1263 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.7664
+& 2.3741 & 5.3923 & Halt rigidifying expansion at Vector 1263; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1579 & Vector 1579 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.7480
+& 2.4172 & 5.3308 & Halt rigidifying expansion at Vector 1579; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1193 & Vector 1193 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.7480
+& 2.4172 & 5.3308 & Halt rigidifying expansion at Vector 1193; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1597 & Vector 1597 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.6872
+& 2.3698 & 5.3173 & Halt rigidifying expansion at Vector 1597; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1572 & Vector 1572 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.6299
+& 2.4830 & 5.1469 & Halt rigidifying expansion at Vector 1572; the ray intersects a positive clash
+field near a receptor lock interface. \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{6-negative-evidence-register}{%
+\subsection{6. NEGATIVE EVIDENCE REGISTER}\label{6-negative-evidence-register}}
+
+The following pathways were rejected due to lack of mechanical load support or failure to survive
+multi-modal convergence.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Condition & Edge & Class & Rejection basis & Risk score & Validation status \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{glp1r\_6LN2\_A316T} & 431-\textgreater435 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 408-\textgreater403 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_WT} & 428-\textgreater432 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 354-\textgreater351 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 376-\textgreater312 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_WT} & 421-\textgreater416 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_A316T} & 431-\textgreater434 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 320-\textgreater317 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_A316T} & 421-\textgreater417 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 319-\textgreater322 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 306-\textgreater294 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_T149M} & 414-\textgreater418 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_T149M} & 409-\textgreater412 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_T149M} & 418-\textgreater413 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 375-\textgreater317 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 420-\textgreater417 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 341-\textgreater348 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_5VEX\_WT} & 321-\textgreater316 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_T149M} & 405-\textgreater409 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\seqsplit{glp1r\_6LN2\_WT} & 407-\textgreater410 & \seqsplit{downstream\_lock} & \seqsplit{mechanically\_pruned} & 0.0000 &
+\seqsplit{phase\_validation\_missing} \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{7-explicit-falsification-gates}{%
+\subsection{7. EXPLICIT FALSIFICATION GATES}\label{7-explicit-falsification-gates}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Gate & Falsification condition & Computational claim at risk \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & No HDX-MS solvent exposure change is detected at predicted high-shear interfaces from the assay
+routing matrix. & High spatial-gradient deformation is not translating into backbone exposure. \\
+2 & No BRET kinetic phase shift is observed for residues routed by high kinetic burst regions. & KCC
+burst motion is not predictive of rapid conformational transition. \\
+3 & No recovery asymmetry is observed in washout assays for variants with high occupancy fatigue
+index. & The bounded fatigue model is not capturing persistent receptor-state occupancy. \\
+4 & Ligand perturbation assays show equivalent response on constitutive and induced fibers. & The
+tri-state separation between constitutive, ligand-amplified, and induced fibers is not
+experimentally supported. \\
+5 & Proposed universal growth vectors fail to improve activity or selectivity after scaffold
+rigidification controls. & The dynamic pharmacophore does not identify productive phase-aware exit
+vectors. \\
+6 & Edges marked as rejected in the Negative Evidence Register reproduce as strong wet-lab
+positives. & The mechanical-load and multi-modal convergence filters are overly stringent or
+miscalibrated. \\
+\end{xltabular}
+\endgroup
+
+
+
+\vspace{8mm}
+\hrule
+\vspace{2mm}
+\begin{flushleft}\small
+\textbf{Release identity.}\\
+\end{flushleft}
+\begin{lstlisting}[caption={Release identity (verbatim)}]
+campaign_id            : glp1r_aleniglipron
+release_version        : PRISM_GLP1R_M2_DELIVERABLES_v1.1
+generated_at_utc       : 2026-05-24T03:47:26Z
+cbom_merkle_root       : 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856
+executive_archive_sha  : b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454
+\end{lstlisting}
+
+\end{document}

@@ -1,0 +1,43 @@
+{
+  "package": "PRISM_TRACK_A_GFLOWNET_V1_INFERENCE",
+  "phase": "2_multi_temperature_sampling",
+  "generated_at_utc": "2026-05-25T01:48:43Z",
+  "total_trajectories": 10000,
+  "valid_generation_rate": 1.0,
+  "unique_smiles": 7480,
+  "action_space_size": 76493,
+  "top_anchor_share": 0.0397,
+  "regime_breakdown": [
+    {
+      "name": "exploitation",
+      "temperature": 0.1,
+      "samples": 2000
+    },
+    {
+      "name": "focused",
+      "temperature": 0.5,
+      "samples": 2000
+    },
+    {
+      "name": "balanced",
+      "temperature": 1.0,
+      "samples": 2000
+    },
+    {
+      "name": "exploration",
+      "temperature": 2.0,
+      "samples": 2000
+    },
+    {
+      "name": "near_random",
+      "temperature": 5.0,
+      "samples": 2000
+    }
+  ],
+  "wall_seconds": 24.8,
+  "oracle_ranked_unique_smiles": 7480,
+  "biased_pool_count": 7480,
+  "biased_lock_threshold": 0.5,
+  "top500_min_reward": 36.54200490115956,
+  "top500_max_reward": 67.10585941048511
+}

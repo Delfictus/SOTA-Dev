@@ -1,0 +1,227 @@
+{
+  "campaign_id": "glp1r_aleniglipron",
+  "target_conditions": [
+    "glp1r_6XOX_WT",
+    "glp1r_6LN2_A316T"
+  ],
+  "capture_mode": "targeted_window_reintegration",
+  "stride": 1,
+  "triggers": [
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 6285,
+          "end_step": 6300,
+          "rationale": "High-Resolution Rupture Window (C_Equilibrium downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 32000,
+          "end_step": 32000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 40000,
+          "end_step": 40000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 6285,
+          "end_step": 6300,
+          "rationale": "High-Resolution Rupture Window (C_Equilibrium downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 32000,
+          "end_step": 32000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 40000,
+          "end_step": 40000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 3,
+      "stream_id": 14,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 6110,
+          "end_step": 6125,
+          "rationale": "High-Resolution Rupture Window (D_Hysteresis downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 18000,
+          "end_step": 18000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 34000,
+          "end_step": 34000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 3,
+      "stream_id": 15,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 6110,
+          "end_step": 6125,
+          "rationale": "High-Resolution Rupture Window (D_Hysteresis downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 18000,
+          "end_step": 18000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 34000,
+          "end_step": 34000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 5991,
+          "end_step": 6006,
+          "rationale": "High-Resolution Rupture Window (C_Equilibrium downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 32000,
+          "end_step": 32000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 40000,
+          "end_step": 40000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 5991,
+          "end_step": 6006,
+          "rationale": "High-Resolution Rupture Window (C_Equilibrium downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 32000,
+          "end_step": 32000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 40000,
+          "end_step": 40000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 6,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 6090,
+          "end_step": 6105,
+          "rationale": "High-Resolution Rupture Window (D_Hysteresis downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 18000,
+          "end_step": 18000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 34000,
+          "end_step": 34000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 14,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 6090,
+          "end_step": 6105,
+          "rationale": "High-Resolution Rupture Window (D_Hysteresis downstream-lock first-ramp capture)"
+        },
+        {
+          "start_step": 18000,
+          "end_step": 18000,
+          "rationale": "Desensitized State (Warm Hold End)"
+        },
+        {
+          "start_step": 34000,
+          "end_step": 34000,
+          "rationale": "Hysteresis State (Cold Return End)"
+        }
+      ]
+    }
+  ]
+}

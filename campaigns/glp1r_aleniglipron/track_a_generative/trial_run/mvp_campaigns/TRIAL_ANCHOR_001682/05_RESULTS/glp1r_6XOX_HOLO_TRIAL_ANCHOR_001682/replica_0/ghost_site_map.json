@@ -1,0 +1,31 @@
+{
+  "coordinate_frame": "prism_topology_native_no_recentering",
+  "entries": [],
+  "field_completeness": {
+    "aabb": "absent_v2_was_not_live",
+    "centroid_xyz": "absent_v2_was_not_live",
+    "residue_support": "available_via_path_b_materializer_per_region_lining_residues",
+    "site_id": "absent_v2_was_not_live",
+    "stream_id": "implicit_from_per_stream_artifacts_map_keys_in_md_evidence_manifest",
+    "voxel_xyz": "absent_v2_was_not_live"
+  },
+  "missing_entries": [
+    {
+      "follow_up": "none_for_current_teacher_evidence_path; only enable site materialization for later site-ranking, docking, visualization, or DCC benchmark surfaces",
+      "impact": "non_blocking_for_current_spike_teacher_training",
+      "reason": "v2_monolithic_not_live_per_chunk_size_path_evidence_complete_fired_before_cold_hold"
+    }
+  ],
+  "run_id": "glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682.topology_20260524_064538",
+  "schema_kind": "pathb_ghost_site_map",
+  "schema_version": 1,
+  "site_centroid_policy": {
+    "engine_ghost_site_centroids": "optional_diagnostic_only_in_md_only_mode",
+    "production_source": "omitted_from_current_spike_teacher_substrate",
+    "rationale": "Current teacher training consumes spike/signal/KCC/residue evidence. Site identity, AABB, and centroids are lossy materialization products and are not prerequisites for high-value spike teacher features."
+  },
+  "stage2_requirement": "not_required_for_current_spike_teacher_training",
+  "status": "v2_was_not_live_no_per_site_centroid_metadata_emitted_this_run",
+  "target": "glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682",
+  "teacher_md_requirement": "not_required"
+}

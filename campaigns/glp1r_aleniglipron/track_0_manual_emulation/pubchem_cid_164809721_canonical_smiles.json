@@ -1,0 +1,10 @@
+{
+  "PropertyTable": {
+    "Properties": [
+      {
+        "CID": 164809721,
+        "ConnectivitySMILES": "CCP(=O)(CC)C1=C(C=C(C=C1)N2C=CN(C2=O)C3=C4C(N(CCC4=NN3C5=CC(=C(C(=C5)C)F)C)C(=O)C6=CC7=C(N6C8(CC8C)C9=NOC(=O)N9)C=CC(=C7)C1CCOCC1)C)NC"
+      }
+    ]
+  }
+}

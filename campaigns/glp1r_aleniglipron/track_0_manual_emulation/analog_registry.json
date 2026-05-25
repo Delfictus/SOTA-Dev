@@ -1,0 +1,21 @@
+{
+  "analogs": [
+    {
+      "analog_id": "ALENI-PARENT",
+      "canonical_smiles": "CCP(=O)(CC)c1ccc(-n2ccn(-c3c4c(nn3-c3cc(C)c(F)c(C)c3)CCN(C(=O)c3cc5cc(C6CCOCC6)ccc5n3C3(c5noc(=O)[nH]5)CC3C)C4C)c2=O)cc1NC",
+      "modification_class": "parent_clinical_candidate",
+      "mw": 916.0079999999997,
+      "source": "PubChem CID 164809721"
+    }
+  ],
+  "desalted_smiles": "CCP(=O)(CC)c1ccc(-n2ccn(-c3c4c(nn3-c3cc(C)c(F)c(C)c3)CCN(C(=O)c3cc5cc(C6CCOCC6)ccc5n3C3(c5noc(=O)[nH]5)CC3C)C4C)c2=O)cc1NC",
+  "mw_desalted": 916.0079999999997,
+  "n_heavy_atoms": 66,
+  "raw_smiles": "CCP(=O)(CC)C1=C(C=C(C=C1)N2C=CN(C2=O)C3=C4C(N(CCC4=NN3C5=CC(=C(C(=C5)C)F)C)C(=O)C6=CC7=C(N6C8(CC8C)C9=NOC(=O)N9)C=CC(=C7)C1CCOCC1)C)NC",
+  "retrieval_timestamp": "2026-05-23T06:23:30.189019+00:00",
+  "rotatable_bonds": 11,
+  "salt_stripped": false,
+  "schema_version": 2,
+  "source": "PubChem CID 164809721",
+  "validation_status": "accepted_relaxed_gate"
+}

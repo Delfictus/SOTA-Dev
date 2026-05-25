@@ -71,7 +71,7 @@ pub use projection::{
 pub use sidechain_tables::{AminoAcid, SidechainDescriptor};
 pub use types::{
     AnalogIdx, AngstromDistance, CampaignId, CausalCoupling, ChannelCapacity, ComplementPenalty,
-    ConformerIdx, DTSGEdge, DTSGEdgeMetrics, EdgeIdx, FrustrationPenalty, HydrationVariance,
-    HysteresisCapacity, HysteresisEnthalpy, HysteresisPersistence, PoseUncertainty, ResidueIdx,
-    ScaffoldIdx, ScalingConstant, SpatialVariance, VoxelIdx,
+    ConformerIdx, DTSGEdge, DTSGEdgeMetrics, EdgeIdx, FrustrationPenalty, HitCount,
+    HydrationVariance, HysteresisCapacity, HysteresisEnthalpy, HysteresisPersistence,
+    PoseUncertainty, ResidueIdx, ScaffoldIdx, ScalingConstant, SpatialVariance, VoxelIdx,
 };

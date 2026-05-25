@@ -1,0 +1,467 @@
+%% PRISM-4D | GLP-1R Aleniglipron M2 — pharma/med-chem delivery template
+%% Jinja2-rendered template — placeholders are substituted server-side.
+%% Compile final .tex with: latexmk -pdf, or xelatex twice.
+%% Print-safe colors, no tikz dependency.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{microtype}
+\usepackage[a4paper,margin=16mm,top=22mm,bottom=22mm,headheight=14pt,headsep=10pt]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage[most]{tcolorbox}
+\usepackage[colorlinks=true,allcolors=DelfRule]{hyperref}
+\usepackage{textcomp}
+\usepackage{seqsplit}
+\usepackage{xltabular}
+\usepackage{ragged2e}
+\usepackage{etoolbox}
+
+% --- text-overflow hardening (margin protection) ----------------------
+\emergencystretch=8em
+\tolerance=4000
+\hbadness=10000
+% Hyphenate aggressively; permits breaks inside words to avoid
+% margin overflow when a long token is the only choice.
+\hyphenpenalty=200
+\exhyphenpenalty=200
+\pretolerance=-1
+\linepenalty=10
+\setlength{\parskip}{4pt plus 1pt minus 1pt}
+% Apply \sloppy globally — relaxes line-break tolerance, prevents most
+% small textual overflow.
+\AtBeginDocument{\sloppy}
+
+% Make every longtable (including pandoc-generated ones) use small font
+% and tighter column padding so wide tables fit. Combined with the
+% post-processor that converts wide longtables to xltabular X-cols,
+% this prevents the catastrophic 1000pt+ overflows.
+\AtBeginEnvironment{longtable}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+\AtBeginEnvironment{xltabular}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+
+% \texttt content that is one long hex / id blob gets line-broken by
+% \seqsplit. Wrappers around hashes injected by the build-script
+% post-processor.
+
+% Allow URL breaks anywhere — applies to hyperref-styled URLs.
+\PassOptionsToPackage{hyphens}{url}
+
+% --- print-safe epistemic colors -----------------------------------
+\definecolor{DelfBlue}{HTML}{0F2A4A}
+\definecolor{DelfRule}{HTML}{1F3A6B}
+\definecolor{DelfGrey}{HTML}{4A4A4A}
+\definecolor{EpObserved}{HTML}{1B5E20}
+\definecolor{EpDerived}{HTML}{0D47A1}
+\definecolor{EpInferred}{HTML}{4527A0}
+\definecolor{EpProjected}{HTML}{B65000}
+\definecolor{EpHypothesized}{HTML}{8B0000}
+\definecolor{HashBg}{HTML}{F4F4F7}
+
+% --- header / footer ------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{DelfBlue}\textbf{DELFICTUS I/O} \textbar{} PRISM-4D}
+\fancyhead[R]{\small\color{DelfGrey}Audit / CBOM Appendix}
+\fancyfoot[L]{\scriptsize\color{DelfGrey}Confidential Discussion Material \textbar{} PRISM-4D M2 Evidence Release}
+\fancyfoot[R]{\scriptsize\color{DelfGrey}Page \thepage}
+
+% --- listings (hashes) ---------------------------------------------
+\lstdefinestyle{hashbox}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{HashBg},
+  frame=single,
+  rulecolor=\color{DelfGrey!40},
+  framerule=0.4pt,
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  breakindent=0pt,
+  postbreak=\mbox{\textcolor{DelfGrey}{$\hookrightarrow$}\space},
+  columns=flexible,
+  showspaces=false,
+  showstringspaces=false
+}
+\lstset{style=hashbox}
+
+% --- pandoc stub macros (so .tex compiles standalone) --------------
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+% \passthrough is a transparent wrapper used by pandoc around inline
+% \lstinline. We do NOT wrap in \texttt — that breaks lstinline catcode
+% parsing and causes runaway lines.
+\providecommand{\passthrough}[1]{#1}
+\providecommand{\textsubscript}[1]{\ensuremath{_{#1}}}
+\providecommand{\textquotesingle}{'}
+% pandoc emits \pandocbounded around figures — accept it as a no-op
+\providecommand{\pandocbounded}[1]{#1}
+
+% --- epistemic label macros -----------------------------------------
+\newcommand{\epOBS}{\textcolor{EpObserved}{\textbf{OBSERVED}}}
+\newcommand{\epDER}{\textcolor{EpDerived}{\textbf{DERIVED}}}
+\newcommand{\epINF}{\textcolor{EpInferred}{\textbf{INFERRED}}}
+\newcommand{\epPRJ}{\textcolor{EpProjected}{\textbf{PROJECTED}}}
+\newcommand{\epHYP}{\textcolor{EpHypothesized}{\textbf{HYPOTHESIZED}}}
+
+% --- disclaimer / legend boxes --------------------------------------
+\newtcolorbox{disclaimerbox}{
+  colback=red!3, colframe=EpHypothesized,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+\newtcolorbox{legendbox}{
+  colback=DelfBlue!4, colframe=DelfBlue,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+
+% --- title / identity ----------------------------------------------
+\title{
+  \vspace{-12mm}
+  {\color{DelfBlue}\textbf{\Large PRISM-4D — GLP-1R / Aleniglipron Audit \& CBOM Appendix}}\\[2pt]
+  {\color{DelfGrey}\normalsize IT / diligence audit appendix and CBOM identity}\\[6pt]
+  {\color{DelfGrey}\small Confidential Discussion Material}
+}
+\author{}
+\date{}
+
+% --- DOCUMENT -------------------------------------------------------
+\begin{document}
+
+\maketitle
+\vspace{-14mm}
+
+\begin{flushleft}
+\small
+\begin{tabular}{@{}p{0.32\textwidth}p{0.62\textwidth}@{}}
+\textbf{Campaign}             & glp1r\_aleniglipron \\
+\textbf{Release}              & PRISM\_GLP1R\_M2\_DELIVERABLES\_v1.1 \\
+\textbf{Generated (UTC)}      & 2026-05-24T03:47:26Z \\
+\textbf{Report type}          & Audit / IT / diligence \\
+\textbf{CBOM Merkle root}     & \texttt{\small 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856} \\
+\textbf{Executive archive SHA-256} & \texttt{\small b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454} \\
+\end{tabular}
+\end{flushleft}
+
+\vspace{4mm}
+
+\begin{disclaimerbox}
+\textbf{Use of this document.} This package presents computational
+translational evidence from the PRISM-4D engine and downstream analysis
+layers. It is \emph{not} a clinical-effect claim, \emph{not} a
+patient-response prediction, and \emph{not} experimental validation.
+Assay recommendations are falsification gates, not confirmation
+ceremonies. PROJECTED and HYPOTHESIZED items require wet-lab
+falsification before any biological assertion.
+\end{disclaimerbox}
+
+\begin{legendbox}
+\textbf{Epistemic legend.} Every claim, table row, and figure inherits
+exactly one of the following classes, which governs how it may be cited:
+\begin{itemize}[leftmargin=18pt,topsep=2pt,itemsep=1pt]
+  \item \epOBS{} — direct tensor measurement from PRISM-4D engine outputs.
+  \item \epDER{} — deterministic transform of observed tensors.
+  \item \epINF{} — multi-tensor interpretation; not a single-tensor measurement.
+  \item \epPRJ{} — translational extrapolation beyond simulated conditions.
+  \item \epHYP{} — requires wet-lab falsification before any biological claim.
+\end{itemize}
+\end{legendbox}
+
+\vspace{2mm}
+\hrule
+\vspace{4mm}
+
+\hypertarget{section-1--release-identity}{%
+\section{Section 1 --- Release Identity}\label{section-1--release-identity}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Campaign ID:} \texttt{\seqsplit{glp1r\_aleniglipron}}
+\item
+  \textbf{Release version:} \texttt{\seqsplit{PRISM\_GLP1R\_M2\_DELIVERABLES\_v1.1}}
+\item
+  \textbf{CBOM Merkle root:}
+  \texttt{\seqsplit{1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856}}
+\item
+  \textbf{Executive archive SHA-256:}
+  \texttt{\seqsplit{b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454}}
+\end{itemize}
+
+\hypertarget{section-2--cbom-summary}{%
+\section{Section 2 --- CBOM Summary}\label{section-2--cbom-summary}}
+
+\hypertarget{cbom-summary}{%
+\section{CBOM Summary}\label{cbom-summary}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Campaign ID:} \texttt{\seqsplit{glp1r\_aleniglipron}}
+\item
+  \textbf{Campaign Merkle root:}
+  \texttt{\seqsplit{1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856}}
+\item
+  \textbf{Schema version:} \texttt{\seqsplit{PRISM\_CBOM.v1.0}}
+\item
+  \textbf{Directories:} 39
+\item
+  \textbf{Files:} 264
+\end{itemize}
+
+\hypertarget{environment}{%
+\subsection{Environment}\label{environment}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{os\_kernel:} \texttt{\seqsplit{6.14.0-37-generic}}
+\item
+  \textbf{platform:} \texttt{\seqsplit{Linux-6.14.0-37-generic-x86\_64-with-glibc2.39}}
+\item
+  \textbf{polars\_version:} \texttt{1.33.1}
+\item
+  \textbf{python\_version:} \texttt{3.12.3}
+\end{itemize}
+
+\hypertarget{file-breakdown-by-epistemic-role--category}{%
+\subsection{File breakdown by epistemic role /
+category}\label{file-breakdown-by-epistemic-role--category}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+role / category & count \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+unknown & 264 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{file-breakdown-by-extension}{%
+\subsection{File breakdown by extension}\label{file-breakdown-by-extension}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+extension & count \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{\seqsplit{.parquet}} & 98 \\
+\texttt{.jsonl} & 81 \\
+\texttt{.json} & 58 \\
+\texttt{.md} & 20 \\
+\texttt{.csv} & 3 \\
+\texttt{.css} & 1 \\
+\texttt{.js} & 1 \\
+\texttt{.wasm} & 1 \\
+\texttt{.html} & 1 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-3--replayability-manifest-verbatim-json}{%
+\section{Section 3 --- Replayability Manifest (verbatim,
+JSON)}\label{section-3--replayability-manifest-verbatim-json}}
+
+\begin{lstlisting}
+{
+  "environment": {
+    "created_at_utc": "2026-05-23T08:52:02.373889+00:00",
+    "cuda_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Mon_Mar_02_09:52:23_PM_PST_2026\nCuda compilation tools, release 13.2, V13.2.51\nBuild cuda_13.2.r13.2/compiler.37434383_0",
+    "nvidia_driver": "595.45.04",
+    "os_kernel": "6.14.0-37-generic",
+    "platform": "Linux-6.14.0-37-generic-x86_64-with-glibc2.39",
+    "polars": "1.33.1",
+    "python": "3.12.3"
+  },
+  "parameter_freeze": {
+    "path": "00_registry/physical_constants.yml",
+    "sha256": "d15a29775009bbdb2dedd543316aaf8d350821507701be7753b6a32f197a8559"
+  },
+  "propagation_ledger_hashes": {
+    "campaigns/glp1r_aleniglipron/dstw_ingest/round_000/wt_physics_payload.propagation.jsonl": "c636033e14581aa1726628909b5223d0c44047ee746f7d03727adf542c8a8cd6",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/autonomous_steering_tensor.propagation.jsonl": "dfa504bd4b4f618722c6f82c108967704569f73aec32f574ca7e282f487f70f5",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/protocol_state_summary.propagation.jsonl": "2eda3c46b6a10721db005e0c5c23729d10330ec4bf55738b15fbc8ae51fc4e99",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/spike_events_snr_masked.propagation.jsonl": "03a8aa0523315cdae0d03361fb86b8852b0539c8000e2a7ddd39e45fc118a731",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/kcc_decoder_probe_5vex_r0_s0/kcc_residue_fields.propagation.jsonl": "a094ac30569df1049c0ebdd8bb76a247e31a617fc472176d3750fa3bfd333cb2",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/aromatic_reorganization_tensor.propagation.jsonl": "c3a5468167e3a619e9942a5810c0b09fb0a2252c33dfe7d984975632f08fd36e",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/assay_routing_recommendations.propagation.jsonl": "53a81a7cb6bdc5a06dfb28b2e2d1a6fcc946ff9134704f9e5d9f1becd3597847",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/autonomous_steering_tensor.propagation.jsonl": "64b7716ecdc0c2d1eb33769aee9b2fc6caa46220cc2346918b8f613d7fcc3a70",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/bocpd_survival_regimes.propagation.jsonl": "bb8e7d4e517f0bbfa3e4da9e8f4504b63ab7cfb1c06f3f78a555ded71b9ffb1e",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/bounded_warp_gradient_glp1r_5VEX_WT/warp_gradient_field.propagation.jsonl": "c7095572ab16dfaa99071c47d0bfa11bc763dc12ced190035bb3ff70b5bf5cd4",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/enriched_edge_validation.propagation.jsonl": "a7f200f900e886bb9c984f8dac5ac14250f5fc9e7689496b5ecbaffa6bdf9cce",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/enriched_pathway_nodes.propagation.jsonl": "a6edc6721197e7e1fe0e39dda981c7d8d93f2a514a3166951453d95f515f8720",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/kcc_residue_fields.propagation.jsonl": "a99edb114e062ac9e46de92d608f5369ec106f4622dd92c45eb71201d5cf239b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/kinetic_strain_events.propagation.jsonl": "fda2d73159bffe673d14dda81145b5bf603c31edc610718f2b13e6b45a4f75f9",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.propagation.jsonl": "b620ddb061e2b14559165525f91a88cdf69662b53e48d6487508336faa940507",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/occupancy_fatigue_risk.propagation.jsonl": "6b55d853c5a01a16c184a44a3dbef79e909ea94b453cfcd692fd4e1f2f682a38",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_coherence.propagation.jsonl": "11347e063730d7363f1b6f772ae84432f148abff81367e62779ac0a22134f5d6",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_edge_validation.propagation.jsonl": "630d3eb61a0a1999f68a48b2605b6f6d408c8042a0fea9c264aae2280d6031ba",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/probabilistic_break_clusters.propagation.jsonl": "d644c216e43bd5366fb64021b147b1ede219c2d708e1d8d375400770619527c2",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/protocol_state_summary.propagation.jsonl": "8c3293252a8b8d7d0572ec22f35dac6ec61217ff6be6edbaceea37db4dfa8426",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_channel_summary.propagation.jsonl": "dbb2f4b61af45946a5f579eb913a8e45330de8fd488559c66cf9e6204b035163",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_risk_map.propagation.jsonl": "17c00d753d5fcafeceb365df3ea4a95ad4fcd722ab946a458f1fa88d1f7fb4bc",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.propagation.jsonl": "1c25245a83bc2f0ccd5d7855f8ccdae9f0f6c18a7474ec473ba638e4000c833b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.propagation.jsonl": "77e95ae39714af4b800542c638536a7fef0b73fdd16d42bfd19503713facae80",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/spike_events_snr_masked.propagation.jsonl": "a07a147eb962c882c73ebf2154bef43083bd09fc254a7aa675f806002e06112a",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/stream_snr_masks.propagation.jsonl": "69508b1cfa57dde3579a64f435d861c5aa461e99452e41eca5199ee10fda312a",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade_summary.propagation.jsonl": "6d12e5a73eddf79e9ad76954fc2777aeec879362d6bc4062b4678dca251ba586",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.propagation.jsonl": "77dc79781fc465a856d8c6eadf2e3588431dab4fb0efb77ae8fe4d9bb81aa0bb",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/tri_state_ligand_fiber_graph.propagation.jsonl": "c1aab965b2a47bae47fc1e45bb4261abe8a3b7a7711ab4a19df3912c0340e4fe",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/variant_propagation_deltas.propagation.jsonl": "fa32efada842bd92ccc292c390cebfe0e35606f63a76e30ad9d605cb89501f96",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/wire_conservation_matrix.propagation.jsonl": "ba19d996e7ae7633fc3dd6bb277374cebbc5b181eb58c3f12e928eb2168bbd6b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale_smoke/phase_manifold_coherence.propagation.jsonl": "e98d03b7cbc4537d7f0b9af773cd8370a05ce014ba95b2f92aa33802980cb10b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale_smoke/phase_manifold_edge_validation.propagation.jsonl": "ce978786e033f85fafa3836952e8745a9e59f00751f5e79a861db4812378315f",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale_smoke/spike_events_snr_masked.propagation.jsonl": "db056610dfbbd7fcbe3bb18179c510781dc9a7a6bc84e5c0f099d7ce265a82a1",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_hysteresis_probe_5vex_r0_s0/autonomous_steering_tensor.propagation.jsonl": "a236e085f9de411bb352c4bc50d82b64b619dc6f6a29fe147a2d807c8e870537",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_hysteresis_probe_5vex_r0_s0/protocol_state_summary.propagation.jsonl": "e8bee506baf90ee2a52fc8ff8a9dfc5361eccadd5b52cfba963c5c347c2ed928",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_probe_5vex_r0_s0/autonomous_steering_tensor.propagation.jsonl": "ddcff6e579f5645df68d9099ce2ad27842f90e57166067190dce341dcd938ecb",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_probe_5vex_r0_s0/protocol_state_summary.propagation.jsonl": "397e4e30ebd1835662f68ac54959d504c8918678fb3625ab49f830d234a3a64c",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/p
+\end{lstlisting}
+
+\hypertarget{section-4--ground-truth-source-manifest-head}{%
+\section{Section 4 --- Ground-Truth Source Manifest
+(head)}\label{section-4--ground-truth-source-manifest-head}}
+
+\begingroup
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{3pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+epistemic & category & size & sha256 (head) & path \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+OBSERVED & \seqsplit{release\_signature} & 143 & \texttt{\seqsplit{b413f1cc6cd92d51…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/PRISM\_GLP1R\_M2\_EXECUTIVE\_RELEASE\_v1.1.tar.gz.sha256}}} \\
+PROJECTED & \seqsplit{cro\_action\_plan} & 11,048 & \texttt{\seqsplit{6b7be636f1d2faa7…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/CRO\_WetLab\_Action\_Plan.parquet}}} \\
+DERIVED & \seqsplit{executive\_positioning} & 1,249 & \texttt{\seqsplit{c437397d898973b5…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/ENTERPRISE\_POSITIONING\_SUMMARY.md}}} \\
+DERIVED & \seqsplit{executive\_readout} & 8,685 & \texttt{\seqsplit{884a4543f469d3d6…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/M2\_Executive\_Readout\_Final.md}}} \\
+INFERRED & \seqsplit{scientific\_report} & 22,944 & \texttt{\seqsplit{26cd9ffa14ff4c6e…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/M2\_Pharmacological\_Dynamics\_Intelligence\_Report.md}}} \\
+OBSERVED & \seqsplit{replay\_manifest} & 15,067 & \texttt{\seqsplit{c919fc6833af897c…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/M2\_Replayability\_Manifest.json}}} \\
+INFERRED & \seqsplit{triangulation\_dossier} & 23,020 & \texttt{\seqsplit{04722905a41d5ee6…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/M2\_Triangulation\_Dossier\_Final.md}}} \\
+DERIVED & master\_index & 16,561 & \texttt{\seqsplit{a5d291d61f70f6b9…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/MASTER\_DATA\_ROOM\_INDEX.md}}} \\
+OBSERVED & cbom & 56,338 & \texttt{\seqsplit{487e13008025feb9…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/PRISM\_CBOM\_v1.0.json}}} \\
+DERIVED & claim\_audit & 10,919 & \texttt{\seqsplit{3f4f47e1221eb5fe…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/claim\_falsification\_graph.json}}} \\
+PROJECTED & \seqsplit{tensor\_assay\_routing} & 87,298 & \texttt{\seqsplit{8425536a2e95186b…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/assay\_routing\_recommendations.parquet}}} \\
+OBSERVED & \seqsplit{tensor\_hysteresis} & 366,026 & \texttt{\seqsplit{52643bdd9ee38b1c…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/hysteresis\_tensor.parquet}}} \\
+INFERRED & \seqsplit{tensor\_fatigue\_risk} & 534,376 & \texttt{\seqsplit{4a5d858c3a7e7954…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/occupancy\_fatigue\_risk.parquet}}} \\
+OBSERVED & \seqsplit{tensor\_phase\_manifold} & 402,424 & \texttt{\seqsplit{31f1b764566ccd74…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/phase\_manifold\_coherence.parquet}}} \\
+DERIVED & \seqsplit{tensor\_edge\_validation} & 16,616 & \texttt{\seqsplit{4e8729ead4be1838…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/phase\_manifold\_edge\_validation.parquet}}} \\
+INFERRED & \seqsplit{tensor\_break\_clusters} & 46,107 & \texttt{\seqsplit{f11e35dfe5a20471…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/probabilistic\_break\_clusters.parquet}}} \\
+DERIVED & \seqsplit{tensor\_durability\_summary} & 8,870 & \texttt{\seqsplit{de823ce5d731206b…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/receptor\_durability\_channel\_summary.parquet}}} \\
+INFERRED & \seqsplit{tensor\_durability\_risk} & 561,263 & \texttt{\seqsplit{2aec5f547d933053…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/receptor\_durability\_risk\_map.parquet}}} \\
+OBSERVED & \seqsplit{tensor\_stream\_phase\_counts} & 3,146,024 & \texttt{\seqsplit{19da8f333f00594c…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/stream\_level\_phase\_counts.parquet}}} \\
+OBSERVED & \seqsplit{tensor\_temporal\_cascade} & 113,968 & \texttt{\seqsplit{d751df8769e37f92…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/temporal\_cascade.parquet}}} \\
+DERIVED & \seqsplit{tensor\_temporal\_summary} & 7,999 & \texttt{\seqsplit{17d43ec6e44c2e97…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/temporal\_cascade\_summary.parquet}}} \\
+DERIVED & \seqsplit{tensor\_translation\_pathway} & 15,160 & \texttt{\seqsplit{2bdf777a4faf286c…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/translation\_pathway\_nodes.parquet}}} \\
+DERIVED & \seqsplit{tensor\_ligand\_fiber} & 10,731 & \texttt{\seqsplit{605fa54956edb4c1…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/tri\_state\_ligand\_fiber\_graph.parquet}}} \\
+DERIVED & \seqsplit{tensor\_variant\_deltas} & 95,919 & \texttt{\seqsplit{a4a38df2e0d92e0a…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/variant\_propagation\_deltas.parquet}}} \\
+OBSERVED & \seqsplit{tensor\_wire\_conservation} & 7,739 & \texttt{\seqsplit{e9c8d3125f76e72d…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/integrated\_spike\_events/n80\_full\_scale/wire\_conservation\_matrix.parquet}}} \\
+OBSERVED & \seqsplit{phase2c\_triggers} & 59,830 & \texttt{\seqsplit{48068602afca7563…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/phase\_2c\_metastable\_atlas\_triggers.json}}} \\
+DERIVED & \seqsplit{phase2c\_parity} & 9,938 & \texttt{\seqsplit{30e5160165daa814…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/phase\_2c\_reintegration\_parity.json}}} \\
+OBSERVED & \seqsplit{phase2c\_triggers} & 6,005 & \texttt{\seqsplit{f6db43968d50bd16…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/phase\_2c\_snapshot\_triggers.json}}} \\
+PROJECTED & \seqsplit{phase2d\_staged} & 13,381 & \texttt{\seqsplit{b202d98c423b9d26…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/phase\_2d\_variant\_grid\_manifest.json}}} \\
+DERIVED & \seqsplit{phase2d\_propagation} & 2,199 & \texttt{\seqsplit{48db82590787cf92…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/phase\_2d\_variant\_grid\_manifest.propagation.jsonl}}} \\
+DERIVED & \seqsplit{brics\_registry} & 3,033 & \texttt{\seqsplit{f60ccedd67bec43b…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/track\_0\_manual\_emulation/aleniglipron\_brics\_fragment\_registry.json}}} \\
+INFERRED & \seqsplit{interference\_narrative} & 3,375 & \texttt{\seqsplit{ad9a7d2b9bdb3127…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/track\_0\_manual\_emulation/aleniglipron\_interference\_summary.md}}} \\
+DERIVED & \seqsplit{two\_layer\_gate} & 2,017 & \texttt{\seqsplit{5f7fff15a44532de…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/track\_0\_manual\_emulation/aleniglipron\_two\_layer\_gate\_report.json}}} \\
+INFERRED & \seqsplit{fragment\_interference} & 11,673 & \texttt{\seqsplit{cb6eea0504474ab5…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/track\_0\_manual\_emulation/fragment\_interference\_attribution.parquet}}} \\
+HYPOTHESIZED & \seqsplit{medchem\_replacements} & 66,952 & \texttt{\seqsplit{b3e9742773b68a4b…}} &
+\texttt{\seqsplit{05\_\seqsplit{GROUND\_TRUTH\_DATA/campaigns/glp1r\_aleniglipron/track\_0\_manual\_emulation/teaser\_solutions.parquet}}} \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-5--environment-fingerprint-verbatim}{%
+\section{Section 5 --- Environment Fingerprint
+(verbatim)}\label{section-5--environment-fingerprint-verbatim}}
+
+\begin{lstlisting}
+{
+  "os_kernel": "6.14.0-37-generic",
+  "platform": "Linux-6.14.0-37-generic-x86_64-with-glibc2.39",
+  "polars_version": "1.33.1",
+  "python_version": "3.12.3"
+}
+\end{lstlisting}
+
+
+\vspace{8mm}
+\hrule
+\vspace{2mm}
+\begin{flushleft}\small
+\textbf{Release identity.}\\
+\end{flushleft}
+\begin{lstlisting}[caption={Release identity (verbatim)}]
+campaign_id            : glp1r_aleniglipron
+release_version        : PRISM_GLP1R_M2_DELIVERABLES_v1.1
+generated_at_utc       : 2026-05-24T03:47:26Z
+cbom_merkle_root       : 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856
+executive_archive_sha  : b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454
+\end{lstlisting}
+
+\end{document}

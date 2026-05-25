@@ -1,31 +1,39 @@
 #!/usr/bin/env python3
-"""Decode PRISM PRSPK001 spike streams into typed Parquet event layers.
-
-The integrator is intentionally ontology-preserving:
-
-* raw spike event fields stay raw event fields;
-* residue mapping is added as an annotation layer;
-* materialized-site assignment is added as a projection layer;
-* SAR interface hits are emitted as an optional long table.
-
-This is the first durable bridge from Prism4D MD evidence into a temporal
-mechanistic event surface suitable for downstream interface timestamp mining.
-"""
+"""Chunk-decode PRSPK001 spike streams and apply n80 SNR masking."""
 
 from __future__ import annotations
 
 import argparse
-import json
-import math
-import re
 import struct
+import time
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
 
 import numpy as np
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+from prism_dstw.io import provenance_metadata
+from prism_dstw.ontology import Picosecond, StreamId
+from prism_dstw.propagation_ledger import append_propagation_entry, build_entry
+
+from scripts.prism_n80_extraction_common import (
+    CAMPAIGN_ID,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_RAW_ROOT,
+    StreamFile,
+    discover_stream_files,
+    emit,
+    filter_streams,
+    json_float,
+    json_int,
+    json_list,
+    json_object,
+    parse_stream_selector,
+    read_json_object,
+)
 
 
 SPIKE_DTYPE = np.dtype(
@@ -48,94 +56,28 @@ SPIKE_DTYPE = np.dtype(
     ],
     align=False,
 )
-
-if SPIKE_DTYPE.itemsize != 96:
-    raise RuntimeError(f"GpuSpikeEvent dtype must be 96 bytes, got {SPIKE_DTYPE.itemsize}")
-
-
-EVENT_SCHEMA = pa.schema(
+PHASE_LABELS = np.array(
     [
-        ("campaign_id", pa.string()),
-        ("run_label", pa.string()),
-        ("run_id", pa.string()),
-        ("stem", pa.string()),
-        ("structure_id", pa.string()),
-        ("stream_id", pa.uint8()),
-        ("event_index_in_stream", pa.int64()),
-        ("spike_id", pa.string()),
-        ("timestep", pa.int32()),
-        ("physical_time_fs", pa.float64()),
-        ("physical_time_ps", pa.float64()),
-        ("voxel_idx", pa.int32()),
-        ("x", pa.float32()),
-        ("y", pa.float32()),
-        ("z", pa.float32()),
-        ("intensity", pa.float32()),
-        ("spike_source", pa.int32()),
-        ("mechanism_tag", pa.string()),
-        ("wavelength_nm", pa.float32()),
-        ("aromatic_type", pa.int32()),
-        ("aromatic_residue_id", pa.int32()),
-        ("water_density", pa.float32()),
-        ("wd_change", pa.float32()),
-        ("vibrational_energy", pa.float32()),
-        ("n_nearby_excited", pa.int32()),
-        ("phase_bits", pa.uint32()),
-        ("n_residues", pa.int32()),
-        *[(f"nearby_topology_residue_{i}", pa.int32()) for i in range(8)],
-        *[(f"nearby_uniprot_residue_{i}", pa.int32()) for i in range(8)],
-        ("primary_topology_residue", pa.int32()),
-        ("primary_uniprot_residue", pa.int32()),
-        ("nearest_site_id", pa.string()),
-        ("nearest_site_rank", pa.int32()),
-        ("nearest_site_distance_a", pa.float32()),
-        ("nearest_site_radius_a", pa.float32()),
-        ("inside_nearest_site_radius", pa.bool_()),
-        ("best_interface_id", pa.string()),
-        ("best_interface_class", pa.string()),
-        ("best_interface_match_basis", pa.string()),
-        ("best_interface_te_coupling_score", pa.float64()),
-        ("best_interface_score", pa.float64()),
-    ]
+        "phase_cold_hold",
+        "phase_ramp_up",
+        "phase_warm_hold",
+        "phase_ramp_down",
+        "phase_cold_return",
+    ],
+    dtype=object,
 )
-
-INTERFACE_HIT_SCHEMA = pa.schema(
-    [
-        ("campaign_id", pa.string()),
-        ("run_label", pa.string()),
-        ("run_id", pa.string()),
-        ("structure_id", pa.string()),
-        ("stream_id", pa.uint8()),
-        ("event_index_in_stream", pa.int64()),
-        ("spike_id", pa.string()),
-        ("timestep", pa.int32()),
-        ("physical_time_ps", pa.float64()),
-        ("interface_id", pa.string()),
-        ("interface_class", pa.string()),
-        ("match_basis", pa.string()),
-        ("target_hinge_residue_index", pa.int32()),
-        ("neighbor_residue_index", pa.int32()),
-        ("nearest_materialized_pocket_site_id", pa.string()),
-        ("te_coupling_score", pa.float64()),
-        ("lock_interface_score", pa.float64()),
-        ("x", pa.float32()),
-        ("y", pa.float32()),
-        ("z", pa.float32()),
-        ("intensity", pa.float32()),
-        ("water_density", pa.float32()),
-        ("wd_change", pa.float32()),
-        ("phase_bits", pa.uint32()),
-    ]
+PHASE_COLUMNS = (
+    "spikes_cold_hold",
+    "spikes_ramp_up",
+    "spikes_warm_hold",
+    "spikes_ramp_down",
+    "spikes_cold_return",
 )
 
 
 @dataclass(frozen=True)
-class EnvelopeHeader:
-    path: Path
-    magic: str
-    schema_version: int
-    endian_marker: int
-    stream_id: int
+class SpikeHeader:
+    stream_id: StreamId
     run_id: str
     stem: str
     record_count: int
@@ -144,722 +86,710 @@ class EnvelopeHeader:
     payload_offset: int
 
 
-@dataclass(frozen=True)
-class MaterializedSite:
-    site_id: str
-    rank: int
-    centroid: tuple[float, float, float]
-    radius_a: float
-    lining_uniprot_residues: tuple[int, ...]
-    driver_uniprot_residues: tuple[int, ...]
+def _read_u64(handle: object) -> int:
+    if not hasattr(handle, "read"):
+        raise TypeError("binary handle does not expose read()")
+    raw = handle.read(8)
+    if not isinstance(raw, bytes) or len(raw) != 8:
+        raise ValueError("unexpected EOF while reading u64")
+    return int(struct.unpack("<Q", raw)[0])
 
 
-@dataclass(frozen=True)
-class InterfaceRow:
-    interface_id: str
-    interface_class: str
-    target_hinge_residue_index: int
-    neighbor_residue_index: int
-    nearest_materialized_pocket_site_id: str
-    te_coupling_score: float
-    lock_interface_score: float
-
-
-def parse_envelope(path: Path) -> EnvelopeHeader:
-    with path.open("rb") as fh:
-        magic = fh.read(8).decode("ascii", errors="replace")
+def parse_header(path: Path) -> SpikeHeader:
+    with path.open("rb") as handle:
+        magic = handle.read(8).decode("ascii", errors="replace")
         if magic != "PRSPK001":
-            raise ValueError(f"{path}: expected PRSPK001, got {magic!r}")
-        schema_version, endian_marker, stream_id = struct.unpack("<III", fh.read(12))
-        run_len = struct.unpack("<Q", fh.read(8))[0]
-        run_id = fh.read(run_len).decode("utf-8", errors="replace")
-        stem_len = struct.unpack("<Q", fh.read(8))[0]
-        stem = fh.read(stem_len).decode("utf-8", errors="replace")
-        record_count, byte_stride, payload_size = struct.unpack("<QQQ", fh.read(24))
-        payload_offset = fh.tell()
-    if endian_marker != 0x01020304:
-        raise ValueError(f"{path}: unsupported endian marker {hex(endian_marker)}")
-    if byte_stride != 96:
-        raise ValueError(f"{path}: expected 96-byte spike stride, got {byte_stride}")
-    return EnvelopeHeader(
-        path=path,
-        magic=magic,
-        schema_version=schema_version,
-        endian_marker=endian_marker,
-        stream_id=stream_id,
+            raise ValueError(f"{path}: expected PRSPK001, got {magic}")
+        schema_version, endian_marker, stream_id = struct.unpack("<III", handle.read(12))
+        if schema_version != 1:
+            raise ValueError(f"{path}: unsupported schema_version {schema_version}")
+        if endian_marker != 0x01020304:
+            raise ValueError(f"{path}: unsupported endian marker {endian_marker}")
+        run_len = _read_u64(handle)
+        run_id = handle.read(run_len).decode("utf-8", errors="replace")
+        stem_len = _read_u64(handle)
+        stem = handle.read(stem_len).decode("utf-8", errors="replace")
+        record_count, byte_stride, payload_size = struct.unpack("<QQQ", handle.read(24))
+        payload_offset = handle.tell()
+    if int(byte_stride) != SPIKE_DTYPE.itemsize:
+        raise ValueError(f"{path}: expected {SPIKE_DTYPE.itemsize} byte stride, got {byte_stride}")
+    return SpikeHeader(
+        stream_id=StreamId(stream_id),
         run_id=run_id,
         stem=stem,
-        record_count=record_count,
-        byte_stride=byte_stride,
-        payload_size=payload_size,
-        payload_offset=payload_offset,
+        record_count=int(record_count),
+        byte_stride=int(byte_stride),
+        payload_size=int(payload_size),
+        payload_offset=int(payload_offset),
     )
 
 
-def read_json(path: Path) -> Any:
-    return json.loads(path.read_text())
+@dataclass(frozen=True)
+class SpikeThresholds:
+    snr3_threshold: float
+    snr5_threshold: float
 
 
-def load_dt_fs_by_stream(path: Path) -> dict[int, float]:
-    data = read_json(path)
-    out: dict[int, float] = {}
-    for row in data.get("streams", []):
-        sid = int(row.get("stream_id", row.get("stream", 0)))
-        out[sid] = float(row.get("dt_fs", 4.0))
-    return out
+@dataclass(frozen=True)
+class ProtocolPhaseBoundaries:
+    cold_hold_end: int
+    ramp_end: int
+    warm_hold_end: int
+    ramp_down_end: int
+    graph_capture_multiplier: float
 
 
-def load_residue_maps(
-    residue_map_path: Path,
-    *,
-    structure_id: str,
-    mapping_parquet: Path | None,
-) -> tuple[np.ndarray, dict[int, dict[str, Any]]]:
-    data = read_json(residue_map_path)
-    rows = data.get("residues", [])
-    if not rows:
-        raise ValueError(f"{residue_map_path}: no residues[] rows found")
+@dataclass
+class SawtoothUnrollState:
+    current_offset: int = 0
+    current_chunk_max: int = 0
+    previous_timestep: int | None = None
 
-    pdb_chain_res_to_uniprot: dict[tuple[str, str], int] = {}
-    if mapping_parquet and mapping_parquet.exists():
-        table = pq.read_table(
-            mapping_parquet,
-            columns=[
-                "pdb_id",
-                "auth_asym_id",
-                "auth_seq_id",
-                "uniprot_residue_index",
-                "is_target_uniprot",
-            ],
+
+def dt_ps_from_ghost_time(item: StreamFile) -> Picosecond:
+    from scripts.prism_n80_extraction_common import json_float, read_json_object
+
+    data = read_json_object(item.path.parent / "ghost_time_map.json")
+    streams = json_list(data.get("streams"))
+    if not streams:
+        return Picosecond(0.004)
+    for row in streams:
+        stream_object = json_object(row)
+        if stream_object and json_int(stream_object.get("stream_id"), -1) == int(item.stream_id):
+            return Picosecond(json_float(stream_object.get("dt_fs"), 4.0) / 1000.0)
+    return Picosecond(0.004)
+
+
+@dataclass(frozen=True)
+class IntegrationStats:
+    raw_records: int
+    kept_records: int
+    streams_processed: int
+    elapsed_seconds: float
+
+
+def load_snr_thresholds(path: Path) -> dict[tuple[str, int, int], SpikeThresholds]:
+    """Load the all-stream SNR mask once and use it as the filtering authority."""
+
+    mask = (
+        pl.scan_parquet(path)
+        .filter(pl.col("sh_channel") == 0)
+        .select(
+            "condition_id",
+            "replica_id",
+            "stream_id",
+            "snr3_threshold",
+            "snr5_threshold",
         )
-        cols = table.to_pydict()
-        for pdb_id, chain, auth_seq, uniprot, is_target in zip(
-            cols["pdb_id"],
-            cols["auth_asym_id"],
-            cols["auth_seq_id"],
-            cols["uniprot_residue_index"],
-            cols["is_target_uniprot"],
-        ):
-            if str(pdb_id).upper() != structure_id.upper() or not bool(is_target):
-                continue
-            try:
-                pdb_chain_res_to_uniprot[(str(chain), str(auth_seq))] = int(uniprot)
-            except (TypeError, ValueError):
-                continue
-
-    max_topo = max(int(r["topology_index"]) for r in rows)
-    topo_to_uniprot = np.full(max_topo + 1, -1, dtype=np.int32)
-    meta: dict[int, dict[str, Any]] = {}
-    for row in rows:
-        topo = int(row["topology_index"])
-        chain = str(row.get("chain", ""))
-        pdb_resid = int(row["pdb_resid"])
-        uniprot = pdb_chain_res_to_uniprot.get((chain, str(pdb_resid)), pdb_resid)
-        topo_to_uniprot[topo] = int(uniprot)
-        meta[topo] = {
-            "chain": chain,
-            "pdb_resid": pdb_resid,
-            "uniprot_residue_index": int(uniprot),
-            "resname": row.get("resname"),
-        }
-    return topo_to_uniprot, meta
-
-
-def load_sites(path: Path, topo_to_uniprot: np.ndarray) -> list[MaterializedSite]:
-    data = read_json(path)
-    sites: list[MaterializedSite] = []
-    for idx, site in enumerate(data.get("binding_sites", [])):
-        centroid = site.get("centroid_xyz") or [math.nan, math.nan, math.nan]
-        rank = int(site.get("new_prism_rank", site.get("rank", idx)))
-        radius = float(site.get("region_radius_a") or site.get("centroid_spread_a") or 0.0)
-        radius = max(radius, float(site.get("centroid_spread_a") or 0.0), 0.0)
-        lining = topology_residues_to_uniprot(site.get("lining_residues") or [], topo_to_uniprot)
-        drivers = topology_residues_to_uniprot(site.get("driver_residues") or [], topo_to_uniprot)
-        sites.append(
-            MaterializedSite(
-                site_id=str(site.get("site_id", f"site_{idx:03d}")),
-                rank=rank,
-                centroid=(float(centroid[0]), float(centroid[1]), float(centroid[2])),
-                radius_a=radius,
-                lining_uniprot_residues=tuple(lining),
-                driver_uniprot_residues=tuple(drivers),
-            )
-        )
-    if not sites:
-        raise ValueError(f"{path}: no materialized binding sites")
-    return sites
-
-
-def topology_residues_to_uniprot(values: Iterable[Any], topo_to_uniprot: np.ndarray) -> list[int]:
-    out: list[int] = []
-    for value in values:
-        try:
-            topo = int(value)
-        except (TypeError, ValueError):
-            continue
-        if 0 <= topo < len(topo_to_uniprot):
-            mapped = int(topo_to_uniprot[topo])
-            if mapped >= 0:
-                out.append(mapped)
-    return out
-
-
-def load_interfaces(path: Path) -> list[InterfaceRow]:
-    table = pq.read_table(path)
-    rows = table.to_pylist()
-    out: list[InterfaceRow] = []
-    for row in rows:
-        target = int(row["target_hinge_residue_index"])
-        neighbor = int(row["neighbor_residue_index"])
-        interface_id = f"{row['target_hinge_label']}__{row['neighbor_label']}"
-        out.append(
-            InterfaceRow(
-                interface_id=interface_id,
-                interface_class=str(row.get("pocket_accessibility_class") or ""),
-                target_hinge_residue_index=target,
-                neighbor_residue_index=neighbor,
-                nearest_materialized_pocket_site_id=str(
-                    row.get("nearest_materialized_pocket_site_id") or ""
-                ),
-                te_coupling_score=float(row.get("te_coupling_score") or 0.0),
-                lock_interface_score=float(row.get("lock_interface_score") or 0.0),
-            )
-        )
-    return out
-
-
-def mechanism_tags(codes: np.ndarray, aromatic_type: np.ndarray) -> np.ndarray:
-    out = np.empty(codes.shape[0], dtype=object)
-    out[:] = "LIF_LOCAL_INTENSITY"
-    out[codes == 1] = "UV_AROMATIC_PERTURBATION"
-    out[codes == 3] = "EFP_ELECTROSTATIC_FIELD"
-    out[codes == 4] = "LADD_ATOM_DEPARTURE"
-    out[codes == 5] = "COFIRE_COHERENCE"
-    out[(codes != 1) & (codes != 3) & (codes != 4) & (codes != 5) & (aromatic_type < 0)] = (
-        "LIF_THERMAL_SHAPE"
+        .collect()
     )
-    return out
+    if mask.is_empty():
+        raise ValueError(f"{path}: no sh_channel=0 SNR mask rows found")
 
-
-def map_nearby_residues(events: np.ndarray, topo_to_uniprot: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    nearby = events["nearby_residues"].astype(np.int32, copy=True)
-    n_res = np.clip(events["n_residues"].astype(np.int32), 0, 8)
-    valid_slots = np.arange(8, dtype=np.int32)[None, :] < n_res[:, None]
-    topo = np.where(valid_slots, nearby, -1).astype(np.int32)
-    uniprot = np.full(topo.shape, -1, dtype=np.int32)
-    valid = (topo >= 0) & (topo < len(topo_to_uniprot))
-    uniprot[valid] = topo_to_uniprot[topo[valid]]
-    return topo, uniprot
-
-
-def annotate_sites(
-    positions: np.ndarray, sites: list[MaterializedSite]
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    centroids = np.array([s.centroid for s in sites], dtype=np.float32)
-    radii = np.array([s.radius_a for s in sites], dtype=np.float32)
-    diff = positions[:, None, :].astype(np.float32) - centroids[None, :, :]
-    dist = np.sqrt(np.sum(diff * diff, axis=2, dtype=np.float32))
-    nearest = np.argmin(dist, axis=1).astype(np.int32)
-    nearest_dist = dist[np.arange(len(positions)), nearest].astype(np.float32)
-    nearest_radius = radii[nearest].astype(np.float32)
-    inside = nearest_dist <= nearest_radius
-    nearest_rank = np.array([sites[i].rank for i in nearest], dtype=np.int32)
-    nearest_site_id = np.array([sites[i].site_id for i in nearest], dtype=object)
-    return nearest_site_id, nearest_rank, nearest_dist, nearest_radius, inside
-
-
-def annotate_best_interfaces(
-    nearby_uniprot: np.ndarray,
-    nearest_site_id: np.ndarray,
-    interfaces: list[InterfaceRow],
-) -> dict[str, np.ndarray]:
-    n = nearby_uniprot.shape[0]
-    best_priority = np.zeros(n, dtype=np.int8)
-    best_abs_score = np.zeros(n, dtype=np.float64)
-    best_interface_id = np.full(n, "", dtype=object)
-    best_class = np.full(n, "", dtype=object)
-    best_basis = np.full(n, "", dtype=object)
-    best_te = np.full(n, np.nan, dtype=np.float64)
-    best_score = np.full(n, np.nan, dtype=np.float64)
-
-    for iface in interfaces:
-        target_present = np.any(nearby_uniprot == iface.target_hinge_residue_index, axis=1)
-        neighbor_present = np.any(nearby_uniprot == iface.neighbor_residue_index, axis=1)
-        pair = target_present & neighbor_present
-        single = target_present ^ neighbor_present
-        site = (
-            nearest_site_id == iface.nearest_materialized_pocket_site_id
-            if iface.nearest_materialized_pocket_site_id
-            else np.zeros(n, dtype=bool)
+    thresholds: dict[tuple[str, int, int], SpikeThresholds] = {}
+    for row in mask.iter_rows(named=True):
+        key = (str(row["condition_id"]), int(row["replica_id"]), int(row["stream_id"]))
+        if key in thresholds:
+            raise ValueError(f"{path}: duplicate SNR mask key {key}")
+        thresholds[key] = SpikeThresholds(
+            snr3_threshold=float(row["snr3_threshold"]),
+            snr5_threshold=float(row["snr5_threshold"]),
         )
-        priority = np.zeros(n, dtype=np.int8)
-        basis = np.full(n, "", dtype=object)
-        priority[site] = 1
-        basis[site] = "site_shell"
-        priority[single] = 2
-        basis[single] = "residue_single"
-        priority[pair] = 3
-        basis[pair] = "residue_pair"
-        abs_score = abs(iface.te_coupling_score)
-        update = (priority > best_priority) | (
-            (priority == best_priority) & (priority > 0) & (abs_score > best_abs_score)
-        )
-        best_priority[update] = priority[update]
-        best_abs_score[update] = abs_score
-        best_interface_id[update] = iface.interface_id
-        best_class[update] = iface.interface_class
-        best_basis[update] = basis[update]
-        best_te[update] = iface.te_coupling_score
-        best_score[update] = iface.lock_interface_score
+    return thresholds
 
-    return {
-        "best_interface_id": best_interface_id,
-        "best_interface_class": best_class,
-        "best_interface_match_basis": best_basis,
-        "best_interface_te_coupling_score": best_te,
-        "best_interface_score": best_score,
+
+def load_protocol_boundaries(path: Path) -> dict[tuple[str, int, int], ProtocolPhaseBoundaries]:
+    """Load five-phase protocol schedule boundaries for each stream."""
+
+    required = {
+        "condition_id",
+        "replica_id",
+        "stream_id",
+        "cold_hold_end",
+        "ramp_end",
+        "warm_hold_end",
+        "ramp_down_end",
     }
+    schema_names = set(pl.scan_parquet(path).collect_schema().names())
+    missing = sorted(required - schema_names)
+    if missing:
+        raise ValueError(f"{path}: missing protocol boundary column(s): {missing}")
+    optional_columns = [
+        name
+        for name in ("total_steps", "observed_timestep_max", "graph_capture_multiplier")
+        if name in schema_names
+    ]
 
-
-def interface_hit_table(
-    *,
-    campaign_id: str,
-    run_label: str,
-    run_id: str,
-    structure_id: str,
-    stream_id: int,
-    event_indices: np.ndarray,
-    spike_ids: np.ndarray,
-    events: np.ndarray,
-    physical_time_ps: np.ndarray,
-    positions: np.ndarray,
-    nearby_uniprot: np.ndarray,
-    nearest_site_id: np.ndarray,
-    interfaces: list[InterfaceRow],
-) -> pa.Table | None:
-    chunks: list[dict[str, Any]] = []
-    for iface in interfaces:
-        target_present = np.any(nearby_uniprot == iface.target_hinge_residue_index, axis=1)
-        neighbor_present = np.any(nearby_uniprot == iface.neighbor_residue_index, axis=1)
-        pair = target_present & neighbor_present
-        single = target_present ^ neighbor_present
-        site = (
-            nearest_site_id == iface.nearest_materialized_pocket_site_id
-            if iface.nearest_materialized_pocket_site_id
-            else np.zeros(len(events), dtype=bool)
+    frame = (
+        pl.scan_parquet(path)
+        .select(
+            [
+                "condition_id",
+                "replica_id",
+                "stream_id",
+                "cold_hold_end",
+                "ramp_end",
+                "warm_hold_end",
+                "ramp_down_end",
+                *optional_columns,
+            ]
         )
-        mask = pair | single | site
-        if not np.any(mask):
-            continue
-        basis = np.full(len(events), "site_shell", dtype=object)
-        basis[single] = "residue_single"
-        basis[pair] = "residue_pair"
-        idx = np.where(mask)[0]
-        chunks.append(
-            {
-                "campaign_id": np.full(len(idx), campaign_id, dtype=object),
-                "run_label": np.full(len(idx), run_label, dtype=object),
-                "run_id": np.full(len(idx), run_id, dtype=object),
-                "structure_id": np.full(len(idx), structure_id, dtype=object),
-                "stream_id": np.full(len(idx), stream_id, dtype=np.uint8),
-                "event_index_in_stream": event_indices[idx].astype(np.int64),
-                "spike_id": spike_ids[idx],
-                "timestep": events["timestep"][idx].astype(np.int32),
-                "physical_time_ps": physical_time_ps[idx].astype(np.float64),
-                "interface_id": np.full(len(idx), iface.interface_id, dtype=object),
-                "interface_class": np.full(len(idx), iface.interface_class, dtype=object),
-                "match_basis": basis[idx],
-                "target_hinge_residue_index": np.full(
-                    len(idx), iface.target_hinge_residue_index, dtype=np.int32
-                ),
-                "neighbor_residue_index": np.full(
-                    len(idx), iface.neighbor_residue_index, dtype=np.int32
-                ),
-                "nearest_materialized_pocket_site_id": np.full(
-                    len(idx), iface.nearest_materialized_pocket_site_id, dtype=object
-                ),
-                "te_coupling_score": np.full(len(idx), iface.te_coupling_score, dtype=np.float64),
-                "lock_interface_score": np.full(
-                    len(idx), iface.lock_interface_score, dtype=np.float64
-                ),
-                "x": positions[idx, 0].astype(np.float32),
-                "y": positions[idx, 1].astype(np.float32),
-                "z": positions[idx, 2].astype(np.float32),
-                "intensity": events["intensity"][idx].astype(np.float32),
-                "water_density": events["water_density"][idx].astype(np.float32),
-                "wd_change": events["wd_change"][idx].astype(np.float32),
-                "phase_bits": events["phase_bits"][idx].astype(np.uint32),
-            }
-        )
-    if not chunks:
-        return None
-    arrays: dict[str, list[np.ndarray]] = {name: [] for name in INTERFACE_HIT_SCHEMA.names}
-    for chunk in chunks:
-        for name in INTERFACE_HIT_SCHEMA.names:
-            arrays[name].append(chunk[name])
-    merged = {name: np.concatenate(parts) for name, parts in arrays.items()}
-    return pa.Table.from_pydict(merged, schema=INTERFACE_HIT_SCHEMA)
-
-
-def event_table(
-    *,
-    campaign_id: str,
-    run_label: str,
-    header: EnvelopeHeader,
-    structure_id: str,
-    event_indices: np.ndarray,
-    events: np.ndarray,
-    dt_fs: float,
-    nearby_topo: np.ndarray,
-    nearby_uniprot: np.ndarray,
-    nearest_site_id: np.ndarray,
-    nearest_site_rank: np.ndarray,
-    nearest_site_distance: np.ndarray,
-    nearest_site_radius: np.ndarray,
-    inside_site: np.ndarray,
-    best_interfaces: dict[str, np.ndarray],
-) -> tuple[pa.Table, np.ndarray, np.ndarray, np.ndarray]:
-    n = len(events)
-    positions = events["position"].astype(np.float32)
-    physical_time_fs = events["timestep"].astype(np.float64) * float(dt_fs)
-    physical_time_ps = physical_time_fs / 1000.0
-    spike_ids = np.array(
-        [f"{header.run_id}:s{header.stream_id}:e{int(i)}" for i in event_indices], dtype=object
+        .unique()
+        .collect()
     )
-    n_res = np.clip(events["n_residues"].astype(np.int32), 0, 8)
-    primary_topo = nearby_topo[:, 0].astype(np.int32)
-    primary_uniprot = nearby_uniprot[:, 0].astype(np.int32)
-
-    data: dict[str, Any] = {
-        "campaign_id": np.full(n, campaign_id, dtype=object),
-        "run_label": np.full(n, run_label, dtype=object),
-        "run_id": np.full(n, header.run_id, dtype=object),
-        "stem": np.full(n, header.stem, dtype=object),
-        "structure_id": np.full(n, structure_id, dtype=object),
-        "stream_id": np.full(n, header.stream_id, dtype=np.uint8),
-        "event_index_in_stream": event_indices.astype(np.int64),
-        "spike_id": spike_ids,
-        "timestep": events["timestep"].astype(np.int32),
-        "physical_time_fs": physical_time_fs.astype(np.float64),
-        "physical_time_ps": physical_time_ps.astype(np.float64),
-        "voxel_idx": events["voxel_idx"].astype(np.int32),
-        "x": positions[:, 0].astype(np.float32),
-        "y": positions[:, 1].astype(np.float32),
-        "z": positions[:, 2].astype(np.float32),
-        "intensity": events["intensity"].astype(np.float32),
-        "spike_source": events["spike_source"].astype(np.int32),
-        "mechanism_tag": mechanism_tags(events["spike_source"], events["aromatic_type"]),
-        "wavelength_nm": events["wavelength_nm"].astype(np.float32),
-        "aromatic_type": events["aromatic_type"].astype(np.int32),
-        "aromatic_residue_id": events["aromatic_residue_id"].astype(np.int32),
-        "water_density": events["water_density"].astype(np.float32),
-        "wd_change": events["wd_change"].astype(np.float32),
-        "vibrational_energy": events["vibrational_energy"].astype(np.float32),
-        "n_nearby_excited": events["n_nearby_excited"].astype(np.int32),
-        "phase_bits": events["phase_bits"].astype(np.uint32),
-        "n_residues": n_res,
-        "primary_topology_residue": primary_topo,
-        "primary_uniprot_residue": primary_uniprot,
-        "nearest_site_id": nearest_site_id,
-        "nearest_site_rank": nearest_site_rank,
-        "nearest_site_distance_a": nearest_site_distance.astype(np.float32),
-        "nearest_site_radius_a": nearest_site_radius.astype(np.float32),
-        "inside_nearest_site_radius": inside_site.astype(bool),
-        **best_interfaces,
-    }
-    for i in range(8):
-        data[f"nearby_topology_residue_{i}"] = nearby_topo[:, i].astype(np.int32)
-        data[f"nearby_uniprot_residue_{i}"] = nearby_uniprot[:, i].astype(np.int32)
-
-    return pa.Table.from_pydict(data, schema=EVENT_SCHEMA), spike_ids, physical_time_ps, positions
-
-
-def open_writer(path: Path, schema: pa.Schema) -> pq.ParquetWriter:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return pq.ParquetWriter(
-        path,
-        schema,
-        compression="zstd",
-        compression_level=6,
-        use_dictionary=True,
-    )
-
-
-def integrate_stream(
-    *,
-    spike_path: Path,
-    out_dir: Path,
-    campaign_id: str,
-    run_label: str,
-    structure_id: str,
-    topo_to_uniprot: np.ndarray,
-    sites: list[MaterializedSite],
-    interfaces: list[InterfaceRow],
-    dt_fs: float,
-    chunk_rows: int,
-    start_record: int,
-    max_records: int | None,
-    emit_interface_hits: bool,
-) -> dict[str, Any]:
-    header = parse_envelope(spike_path)
-    if start_record < 0 or start_record >= header.record_count:
-        raise ValueError(
-            f"{spike_path}: start_record={start_record} outside record_count={header.record_count}"
+    boundaries: dict[tuple[str, int, int], ProtocolPhaseBoundaries] = {}
+    for row in frame.iter_rows(named=True):
+        key = (str(row["condition_id"]), int(row["replica_id"]), int(row["stream_id"]))
+        if key in boundaries:
+            raise ValueError(f"{path}: duplicate protocol boundary key {key}")
+        boundaries[key] = ProtocolPhaseBoundaries(
+            cold_hold_end=int(row["cold_hold_end"]),
+            ramp_end=int(row["ramp_end"]),
+            warm_hold_end=int(row["warm_hold_end"]),
+            ramp_down_end=int(row["ramp_down_end"]),
+            graph_capture_multiplier=(
+                float(row["graph_capture_multiplier"])
+                if "graph_capture_multiplier" in row and row["graph_capture_multiplier"] is not None
+                else (
+                    float(row["total_steps"]) / float(row["observed_timestep_max"])
+                    if "total_steps" in row
+                    and "observed_timestep_max" in row
+                    and row["observed_timestep_max"] is not None
+                    and float(row["observed_timestep_max"]) != 0.0
+                    else 1.0
+                )
+            ),
         )
-    available = header.record_count - start_record
-    limit = min(available, max_records) if max_records else available
-    event_path = out_dir / f"{run_label}_stream{header.stream_id:02d}_spike_events.parquet"
-    hit_path = out_dir / f"{run_label}_stream{header.stream_id:02d}_interface_hits.parquet"
-    event_writer = open_writer(event_path, EVENT_SCHEMA)
-    hit_writer = open_writer(hit_path, INTERFACE_HIT_SCHEMA) if emit_interface_hits else None
-
-    written = 0
-    interface_hits = 0
-    best_interface_counts: dict[str, int] = {}
-    site_counts: dict[str, int] = {}
-    basis_counts: dict[str, int] = {}
-    try:
-        with spike_path.open("rb") as fh:
-            fh.seek(header.payload_offset + start_record * header.byte_stride)
-            while written < limit:
-                n = min(chunk_rows, limit - written)
-                raw = fh.read(n * header.byte_stride)
-                if len(raw) != n * header.byte_stride:
-                    raise EOFError(
-                        f"{spike_path}: short read at event {written}, expected {n * header.byte_stride}, got {len(raw)}"
-                    )
-                events = np.frombuffer(raw, dtype=SPIKE_DTYPE, count=n)
-                event_indices = np.arange(
-                    start_record + written, start_record + written + n, dtype=np.int64
-                )
-                nearby_topo, nearby_uniprot = map_nearby_residues(events, topo_to_uniprot)
-                nearest_site_id, nearest_site_rank, nearest_dist, nearest_radius, inside = (
-                    annotate_sites(events["position"], sites)
-                )
-                best = annotate_best_interfaces(nearby_uniprot, nearest_site_id, interfaces)
-                table, spike_ids, physical_time_ps, positions = event_table(
-                    campaign_id=campaign_id,
-                    run_label=run_label,
-                    header=header,
-                    structure_id=structure_id,
-                    event_indices=event_indices,
-                    events=events,
-                    dt_fs=dt_fs,
-                    nearby_topo=nearby_topo,
-                    nearby_uniprot=nearby_uniprot,
-                    nearest_site_id=nearest_site_id,
-                    nearest_site_rank=nearest_site_rank,
-                    nearest_site_distance=nearest_dist,
-                    nearest_site_radius=nearest_radius,
-                    inside_site=inside,
-                    best_interfaces=best,
-                )
-                event_writer.write_table(table)
-
-                for value, count in zip(*np.unique(best["best_interface_id"], return_counts=True)):
-                    if value:
-                        best_interface_counts[str(value)] = best_interface_counts.get(str(value), 0) + int(count)
-                for value, count in zip(*np.unique(nearest_site_id, return_counts=True)):
-                    site_counts[str(value)] = site_counts.get(str(value), 0) + int(count)
-                for value, count in zip(*np.unique(best["best_interface_match_basis"], return_counts=True)):
-                    if value:
-                        basis_counts[str(value)] = basis_counts.get(str(value), 0) + int(count)
-
-                if hit_writer is not None:
-                    hit_table = interface_hit_table(
-                        campaign_id=campaign_id,
-                        run_label=run_label,
-                        run_id=header.run_id,
-                        structure_id=structure_id,
-                        stream_id=header.stream_id,
-                        event_indices=event_indices,
-                        spike_ids=spike_ids,
-                        events=events,
-                        physical_time_ps=physical_time_ps,
-                        positions=positions,
-                        nearby_uniprot=nearby_uniprot,
-                        nearest_site_id=nearest_site_id,
-                        interfaces=interfaces,
-                    )
-                    if hit_table is not None and hit_table.num_rows:
-                        hit_writer.write_table(hit_table)
-                        interface_hits += hit_table.num_rows
-                written += n
-    finally:
-        event_writer.close()
-        if hit_writer is not None:
-            hit_writer.close()
-
-    return {
-        "spike_path": str(spike_path),
-        "event_path": str(event_path),
-        "interface_hit_path": str(hit_path) if emit_interface_hits else None,
-        "run_id": header.run_id,
-        "stem": header.stem,
-        "stream_id": header.stream_id,
-        "source_record_count": header.record_count,
-        "source_start_record": start_record,
-        "records_written": written,
-        "dt_fs": dt_fs,
-        "interface_hit_rows": interface_hits if emit_interface_hits else None,
-        "best_interface_counts": best_interface_counts,
-        "nearest_site_counts": site_counts,
-        "best_interface_match_basis_counts": basis_counts,
-    }
+    return boundaries
 
 
-def discover_spike_paths(run_dir: Path, streams: list[int] | None) -> list[Path]:
-    all_paths = sorted(run_dir.glob("*_stream*_spikes.bin"))
-    if streams is None:
-        return all_paths
-    wanted = {int(s) for s in streams}
-    out = []
-    for path in all_paths:
-        match = re.search(r"_stream(\d+)_spikes\.bin$", path.name)
-        if match and int(match.group(1)) in wanted:
-            out.append(path)
-    return out
-
-
-def parse_streams(value: str | None) -> list[int] | None:
-    if not value:
-        return None
-    return [int(x.strip()) for x in value.split(",") if x.strip()]
-
-
-def write_site_catalog(out_dir: Path, run_label: str, sites: list[MaterializedSite]) -> Path:
-    path = out_dir / f"{run_label}_materialized_site_catalog.parquet"
-    table = pa.Table.from_pylist(
+def spike_output_schema(metadata: Mapping[str, str]) -> pa.Schema:
+    return pa.schema(
         [
-            {
-                "site_id": s.site_id,
-                "rank": s.rank,
-                "centroid_x": s.centroid[0],
-                "centroid_y": s.centroid[1],
-                "centroid_z": s.centroid[2],
-                "radius_a": s.radius_a,
-                "lining_uniprot_residues": list(s.lining_uniprot_residues),
-                "driver_uniprot_residues": list(s.driver_uniprot_residues),
-            }
-            for s in sites
+            pa.field("campaign_id", pa.large_string()),
+            pa.field("condition_id", pa.large_string()),
+            pa.field("replica_id", pa.uint8()),
+            pa.field("stream_id", pa.uint8()),
+            pa.field("run_id", pa.large_string()),
+            pa.field("event_index_in_stream", pa.int64()),
+            pa.field("timestep", pa.int32()),
+            pa.field("absolute_timestep", pa.int64()),
+            pa.field("true_md_step", pa.float64()),
+            pa.field("time_ps", pa.float64()),
+            pa.field("voxel_idx", pa.int32()),
+            pa.field("x", pa.float32()),
+            pa.field("y", pa.float32()),
+            pa.field("z", pa.float32()),
+            pa.field("intensity", pa.float32()),
+            pa.field("primary_residue_idx", pa.int32()),
+            pa.field("n_residues", pa.int32()),
+            pa.field("spike_source", pa.int32()),
+            pa.field("wavelength_nm", pa.float32()),
+            pa.field("water_density", pa.float32()),
+            pa.field("wd_change", pa.float32()),
+            pa.field("vibrational_energy", pa.float32()),
+            pa.field("phase_bits", pa.uint32()),
+            pa.field("thermal_phase_code", pa.uint8()),
+            pa.field("thermal_phase", pa.large_string()),
+            pa.field("snr3_threshold", pa.float64()),
+            pa.field("snr5_threshold", pa.float64()),
+            pa.field("causal_anchor", pa.bool_()),
+            pa.field("snr3_ratio", pa.float64()),
+        ]
+    ).with_metadata({key.encode("utf-8"): value.encode("utf-8") for key, value in metadata.items()})
+
+
+def spike_batch_frame(
+    *,
+    item: StreamFile,
+    header: SpikeHeader,
+    records: np.ndarray[tuple[int], np.dtype[np.void]],
+    keep_mask: np.ndarray[tuple[int], np.dtype[np.bool_]],
+    absolute_record: int,
+    dt_ps: Picosecond,
+    thresholds: SpikeThresholds,
+) -> pl.DataFrame | None:
+    kept = int(np.count_nonzero(keep_mask))
+    if kept == 0:
+        return None
+
+    timestep = records["timestep"].astype(np.int32, copy=False)[keep_mask]
+    voxel_idx = records["voxel_idx"].astype(np.int32, copy=False)[keep_mask]
+    position = records["position"][keep_mask]
+    intensity = records["intensity"].astype(np.float32, copy=False)[keep_mask]
+    primary_residue = records["nearby_residues"][:, 0].astype(np.int32, copy=False)[keep_mask]
+    filtered = records[keep_mask]
+    event_index = np.arange(absolute_record, absolute_record + len(records), dtype=np.int64)[keep_mask]
+    snr3 = np.full(kept, thresholds.snr3_threshold, dtype=np.float64)
+    snr5 = np.full(kept, thresholds.snr5_threshold, dtype=np.float64)
+
+    return pl.DataFrame(
+        {
+            "campaign_id": [CAMPAIGN_ID] * kept,
+            "condition_id": [item.condition_id] * kept,
+            "replica_id": np.full(kept, item.replica_id, dtype=np.uint8),
+            "stream_id": np.full(kept, int(header.stream_id), dtype=np.uint8),
+            "run_id": [header.run_id] * kept,
+            "event_index_in_stream": event_index,
+            "timestep": timestep,
+            "time_ps": timestep.astype(np.float64, copy=False) * float(dt_ps),
+            "voxel_idx": voxel_idx,
+            "x": position[:, 0].astype(np.float32, copy=False),
+            "y": position[:, 1].astype(np.float32, copy=False),
+            "z": position[:, 2].astype(np.float32, copy=False),
+            "intensity": intensity,
+            "primary_residue_idx": primary_residue,
+            "n_residues": filtered["n_residues"].astype(np.int32, copy=False),
+            "spike_source": filtered["spike_source"].astype(np.int32, copy=False),
+            "wavelength_nm": filtered["wavelength_nm"].astype(np.float32, copy=False),
+            "water_density": filtered["water_density"].astype(np.float32, copy=False),
+            "wd_change": filtered["wd_change"].astype(np.float32, copy=False),
+            "vibrational_energy": filtered["vibrational_energy"].astype(np.float32, copy=False),
+            "phase_bits": filtered["phase_bits"].astype(np.uint32, copy=False),
+            "snr3_threshold": snr3,
+            "snr5_threshold": snr5,
+            "causal_anchor": intensity >= thresholds.snr5_threshold,
+            "snr3_ratio": intensity.astype(np.float64, copy=False) / thresholds.snr3_threshold,
+        }
+    )
+
+
+def unroll_and_bin_spike_frame(
+    frame: pl.DataFrame,
+    *,
+    phase_boundaries: ProtocolPhaseBoundaries,
+    dt_ps: Picosecond,
+    state: SawtoothUnrollState,
+) -> pl.DataFrame:
+    first_timestep = int(frame.select(pl.col("timestep").first()).item())
+    first_row_resets = state.previous_timestep is not None and first_timestep < state.previous_timestep
+    annotated = (
+        frame.with_row_index("_row_nr")
+        .with_columns(
+            pl.when(pl.col("_row_nr") == 0)
+            .then(pl.lit(first_row_resets))
+            .otherwise((pl.col("timestep").diff() < 0).fill_null(False))
+            .alias("_is_reset")
+        )
+        .with_columns(pl.col("_is_reset").cast(pl.UInt32).cum_sum().alias("_chunk_idx"))
+    )
+    chunks = (
+        annotated.group_by("_chunk_idx")
+        .agg(pl.col("timestep").max().alias("_chunk_size"))
+        .sort("_chunk_idx")
+    )
+    first_chunk_id = int(chunks.select(pl.col("_chunk_idx").first()).item())
+    initial_offset = state.current_offset + (state.current_chunk_max if first_row_resets else 0)
+    first_effective_prior = 0 if first_row_resets else state.current_chunk_max
+    chunks = chunks.with_columns(
+        pl.when(pl.col("_chunk_idx") == first_chunk_id)
+        .then(pl.max_horizontal(pl.col("_chunk_size"), pl.lit(first_effective_prior)))
+        .otherwise(pl.col("_chunk_size"))
+        .alias("_effective_chunk_size")
+    ).with_columns(
+        (pl.lit(initial_offset) + pl.col("_effective_chunk_size").shift(1).fill_null(0).cum_sum()).alias("_offset")
+    )
+    out = annotated.join(chunks.select(["_chunk_idx", "_offset"]), on="_chunk_idx", how="left").with_columns(
+        (pl.col("timestep").cast(pl.Int64) + pl.col("_offset").cast(pl.Int64)).alias("absolute_timestep")
+    )
+    absolute = pl.col("absolute_timestep")
+    out = out.with_columns(
+        (absolute.cast(pl.Float64) * float(phase_boundaries.graph_capture_multiplier)).alias("true_md_step")
+    )
+    phase_step = pl.col("true_md_step")
+    out = out.with_columns(
+        [
+            (phase_step * float(dt_ps)).alias("time_ps"),
+            pl.when(phase_step <= phase_boundaries.cold_hold_end)
+            .then(pl.lit(0, dtype=pl.UInt8))
+            .when((phase_step > phase_boundaries.cold_hold_end) & (phase_step <= phase_boundaries.ramp_end))
+            .then(pl.lit(1, dtype=pl.UInt8))
+            .when((phase_step > phase_boundaries.ramp_end) & (phase_step <= phase_boundaries.warm_hold_end))
+            .then(pl.lit(2, dtype=pl.UInt8))
+            .when((phase_step > phase_boundaries.warm_hold_end) & (phase_step <= phase_boundaries.ramp_down_end))
+            .then(pl.lit(3, dtype=pl.UInt8))
+            .otherwise(pl.lit(4, dtype=pl.UInt8))
+            .alias("thermal_phase_code"),
+            pl.when(phase_step <= phase_boundaries.cold_hold_end)
+            .then(pl.lit("phase_cold_hold"))
+            .when((phase_step > phase_boundaries.cold_hold_end) & (phase_step <= phase_boundaries.ramp_end))
+            .then(pl.lit("phase_ramp_up"))
+            .when((phase_step > phase_boundaries.ramp_end) & (phase_step <= phase_boundaries.warm_hold_end))
+            .then(pl.lit("phase_warm_hold"))
+            .when((phase_step > phase_boundaries.warm_hold_end) & (phase_step <= phase_boundaries.ramp_down_end))
+            .then(pl.lit("phase_ramp_down"))
+            .otherwise(pl.lit("phase_cold_return"))
+            .alias("thermal_phase"),
+        ]
+    ).drop(["_row_nr", "_is_reset", "_chunk_idx", "_offset"])
+
+    last_timestep = int(frame.select(pl.col("timestep").last()).item())
+    last_chunk_id = int(chunks.select(pl.col("_chunk_idx").last()).item())
+    last_offset = int(chunks.select(pl.col("_offset").last()).item())
+    last_chunk_size = int(chunks.select(pl.col("_chunk_size").last()).item())
+    if last_chunk_id == first_chunk_id and not first_row_resets:
+        state.current_chunk_max = max(state.current_chunk_max, last_chunk_size)
+    else:
+        state.current_chunk_max = last_chunk_size
+    state.current_offset = last_offset
+    state.previous_timestep = last_timestep
+    return out.select(
+        [
+            "campaign_id",
+            "condition_id",
+            "replica_id",
+            "stream_id",
+            "run_id",
+            "event_index_in_stream",
+            "timestep",
+            "absolute_timestep",
+            "true_md_step",
+            "time_ps",
+            "voxel_idx",
+            "x",
+            "y",
+            "z",
+            "intensity",
+            "primary_residue_idx",
+            "n_residues",
+            "spike_source",
+            "wavelength_nm",
+            "water_density",
+            "wd_change",
+            "vibrational_energy",
+            "phase_bits",
+            "thermal_phase_code",
+            "thermal_phase",
+            "snr3_threshold",
+            "snr5_threshold",
+            "causal_anchor",
+            "snr3_ratio",
         ]
     )
-    pq.write_table(table, path, compression="zstd", compression_level=6)
-    return path
 
 
-def write_interface_catalog(out_dir: Path, interfaces: list[InterfaceRow]) -> Path:
-    path = out_dir / "sar_steric_interface_catalog.parquet"
-    table = pa.Table.from_pylist([iface.__dict__ for iface in interfaces])
-    pq.write_table(table, path, compression="zstd", compression_level=6)
-    return path
+def iter_spike_batches(
+    item: StreamFile,
+    *,
+    thresholds_by_stream: Mapping[tuple[str, int, int], SpikeThresholds],
+    protocol_boundaries_by_stream: Mapping[tuple[str, int, int], ProtocolPhaseBoundaries],
+    max_records: int | None,
+    start_record: int,
+    chunk_records: int,
+) -> Iterator[tuple[pl.DataFrame | None, int, int]]:
+    header = parse_header(item.path)
+    key = (item.condition_id, item.replica_id, int(header.stream_id))
+    thresholds = thresholds_by_stream.get(key)
+    if thresholds is None:
+        raise ValueError(f"missing SNR mask row for {key}")
+    phase_boundaries = protocol_boundaries_by_stream.get(key)
+    if phase_boundaries is None:
+        raise ValueError(f"missing protocol boundary row for {key}")
+    dt_ps = dt_ps_from_ghost_time(item)
+    available = max(header.record_count - start_record, 0)
+    requested = available if max_records is None else min(max_records, available)
+    if requested <= 0:
+        raise ValueError(f"{item.path}: no records selected")
+    remaining = requested
+    absolute_record = start_record
+    unroll_state = SawtoothUnrollState()
+    with item.path.open("rb") as handle:
+        handle.seek(header.payload_offset + (start_record * header.byte_stride))
+        while remaining > 0:
+            batch_records = min(chunk_records, remaining)
+            raw = handle.read(batch_records * header.byte_stride)
+            if len(raw) != batch_records * header.byte_stride:
+                raise ValueError(f"{item.path}: truncated spike batch")
+            records = np.frombuffer(raw, dtype=SPIKE_DTYPE, count=batch_records)
+            intensity = records["intensity"].astype(np.float32, copy=False)
+            keep_mask = intensity >= thresholds.snr3_threshold
+            frame = spike_batch_frame(
+                item=item,
+                header=header,
+                records=records,
+                keep_mask=keep_mask,
+                absolute_record=absolute_record,
+                dt_ps=dt_ps,
+                thresholds=thresholds,
+            )
+            if frame is not None:
+                frame = unroll_and_bin_spike_frame(
+                    frame,
+                    phase_boundaries=phase_boundaries,
+                    dt_ps=dt_ps,
+                    state=unroll_state,
+                )
+            if frame is not None:
+                yield frame, batch_records, frame.height
+            else:
+                yield None, batch_records, 0
+            remaining -= batch_records
+            absolute_record += batch_records
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--campaign-id", required=True)
-    parser.add_argument("--run-label", required=True)
-    parser.add_argument("--structure-id", required=True)
-    parser.add_argument("--run-dir", type=Path, required=True)
-    parser.add_argument("--residue-map", type=Path, required=True)
-    parser.add_argument("--residue-mapping-parquet", type=Path)
-    parser.add_argument("--binding-sites", type=Path, required=True)
-    parser.add_argument("--interfaces", type=Path, required=True)
-    parser.add_argument("--ghost-time-map", type=Path, required=True)
-    parser.add_argument("--out-dir", type=Path, required=True)
-    parser.add_argument("--streams", help="Comma-separated stream ids. Default: all streams.")
-    parser.add_argument("--chunk-rows", type=int, default=100_000)
-    parser.add_argument(
-        "--start-record",
-        type=int,
-        default=0,
-        help="Zero-based event offset inside each stream. Useful for temporal smoke windows.",
+def aggregate_phase_batch(frame: pl.DataFrame) -> pl.DataFrame:
+    break_phase = pl.col("thermal_phase").is_in(["phase_ramp_up", "phase_warm_hold"])
+    return (
+        frame.group_by(["condition_id", "replica_id", "stream_id", "primary_residue_idx"])
+        .agg(
+            [
+                pl.len().cast(pl.UInt64).alias("masked_spike_count"),
+                (pl.col("thermal_phase") == "phase_cold_hold").cast(pl.UInt64).sum().alias("spikes_cold_hold"),
+                (pl.col("thermal_phase") == "phase_ramp_up").cast(pl.UInt64).sum().alias("spikes_ramp_up"),
+                (pl.col("thermal_phase") == "phase_warm_hold").cast(pl.UInt64).sum().alias("spikes_warm_hold"),
+                (pl.col("thermal_phase") == "phase_ramp_down").cast(pl.UInt64).sum().alias("spikes_ramp_down"),
+                (pl.col("thermal_phase") == "phase_cold_return").cast(pl.UInt64).sum().alias("spikes_cold_return"),
+                pl.col("time_ps").filter(break_phase).min().alias("first_break_time_ps"),
+                pl.col("time_ps").filter(break_phase).sum().alias("break_time_ps_sum"),
+                break_phase.cast(pl.UInt64).sum().alias("break_spike_count"),
+            ]
+        )
+        .rename({"primary_residue_idx": "residue_idx"})
     )
+
+
+def reduce_phase_partials(partials: list[pl.DataFrame]) -> pl.DataFrame:
+    combined = pl.concat(partials, how="vertical")
+    return combined.group_by(["condition_id", "replica_id", "stream_id", "residue_idx"]).agg(
+        [
+            pl.col("masked_spike_count").sum().alias("masked_spike_count"),
+            *[pl.col(name).sum().alias(name) for name in PHASE_COLUMNS],
+            pl.col("first_break_time_ps").min().alias("first_break_time_ps"),
+            pl.col("break_time_ps_sum").sum().alias("break_time_ps_sum"),
+            pl.col("break_spike_count").sum().alias("break_spike_count"),
+        ]
+    )
+
+
+def finalize_phase_aggregate(frame: pl.DataFrame) -> pl.DataFrame:
+    return frame.with_columns(
+        [
+            (pl.col("spikes_cold_return").cast(pl.Int64) - pl.col("spikes_cold_hold").cast(pl.Int64)).alias(
+                "hysteresis_delta"
+            ),
+            pl.when(pl.col("break_spike_count") > 0)
+            .then(pl.col("break_time_ps_sum") / pl.col("break_spike_count"))
+            .otherwise(None)
+            .alias("mean_break_time_ps"),
+        ]
+    ).select(
+        [
+            "condition_id",
+            "replica_id",
+            "stream_id",
+            "residue_idx",
+            "masked_spike_count",
+            *PHASE_COLUMNS,
+            "hysteresis_delta",
+            "first_break_time_ps",
+            "mean_break_time_ps",
+            "break_spike_count",
+        ]
+    )
+
+
+def write_full_spike_parquet(
+    *,
+    selected: list[StreamFile],
+    output: Path,
+    snr_mask_parquet: Path,
+    protocol_state_summary: Path,
+    start_record: int,
+    max_records_per_stream: int | None,
+    chunk_records: int,
+) -> IntegrationStats:
+    repo_root = Path.cwd().resolve()
+    raw_bytes = sum(item.path.stat().st_size for item in selected)
+    thresholds_by_stream = load_snr_thresholds(snr_mask_parquet)
+    protocol_boundaries_by_stream = load_protocol_boundaries(protocol_state_summary)
+    missing = [
+        (item.condition_id, item.replica_id, int(item.stream_id))
+        for item in selected
+        if (item.condition_id, item.replica_id, int(item.stream_id)) not in thresholds_by_stream
+    ]
+    if missing:
+        raise ValueError(f"missing SNR mask rows for {len(missing)} selected streams; first={missing[0]}")
+    missing_protocol = [
+        (item.condition_id, item.replica_id, int(item.stream_id))
+        for item in selected
+        if (item.condition_id, item.replica_id, int(item.stream_id)) not in protocol_boundaries_by_stream
+    ]
+    if missing_protocol:
+        raise ValueError(
+            f"missing protocol boundary rows for {len(missing_protocol)} selected streams; "
+            f"first={missing_protocol[0]}"
+        )
+
+    metadata = provenance_metadata(
+        producer_script=Path(__file__),
+        source_parquets=[snr_mask_parquet, protocol_state_summary],
+        schema_version="prism.spike_events_snr_masked.v5",
+        pipeline_stage="phase1_spike_event_integrator",
+        partition_keys=("condition_id", "replica_id", "stream_id", "timestep"),
+        extra={
+            "campaign_id": CAMPAIGN_ID,
+            "raw_input_count": len(selected),
+            "raw_bytes_declared": raw_bytes,
+            "snr_mask_channel": 0,
+            "writer": "pyarrow_streaming_parquet_writer",
+            "thermal_phase_binning": "five_phase_ccns_protocol",
+            "time_unroll": "absolute_timestep * graph_capture_multiplier",
+        },
+        repo_root=repo_root,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists():
+        output.unlink()
+    phase_output = output.parent / "spike_phase_residue_fields.parquet"
+    if phase_output.exists():
+        phase_output.unlink()
+
+    schema = spike_output_schema(metadata)
+    started = time.monotonic()
+    raw_records = 0
+    kept_records = 0
+    streams_processed = 0
+    phase_partials: list[pl.DataFrame] = []
+    phase_reduced: pl.DataFrame | None = None
+    with pq.ParquetWriter(output, schema=schema, compression="zstd", write_statistics=True) as writer:
+        for index, item in enumerate(selected, start=1):
+            stream_raw = 0
+            stream_kept = 0
+            for frame, batch_raw, batch_kept in iter_spike_batches(
+                item,
+                thresholds_by_stream=thresholds_by_stream,
+                protocol_boundaries_by_stream=protocol_boundaries_by_stream,
+                max_records=max_records_per_stream,
+                start_record=start_record,
+                chunk_records=chunk_records,
+            ):
+                stream_raw += batch_raw
+                stream_kept += batch_kept
+                if frame is not None and batch_kept > 0:
+                    phase_partials.append(aggregate_phase_batch(frame))
+                    if len(phase_partials) >= 128:
+                        phase_reduced = reduce_phase_partials(
+                            [phase_reduced, *phase_partials] if phase_reduced is not None else phase_partials
+                        )
+                        phase_partials = []
+                    writer.write_table(frame.to_arrow(), row_group_size=100_000)
+            raw_records += stream_raw
+            kept_records += stream_kept
+            streams_processed += 1
+            emit(
+                "PROGRESS "
+                f"{index}/{len(selected)} streams "
+                f"raw={raw_records} kept={kept_records} "
+                f"last={item.condition_id}/replica_{item.replica_id}/stream_{int(item.stream_id)}"
+            )
+    if phase_partials or phase_reduced is not None:
+        final_phase = finalize_phase_aggregate(
+            reduce_phase_partials([phase_reduced, *phase_partials] if phase_reduced is not None else phase_partials)
+        )
+        final_phase.write_parquet(phase_output, compression="zstd", statistics=True, row_group_size=100_000)
+    elapsed = time.monotonic() - started
+    stats = IntegrationStats(
+        raw_records=raw_records,
+        kept_records=kept_records,
+        streams_processed=streams_processed,
+        elapsed_seconds=elapsed,
+    )
+    append_propagation_entry(
+        output.with_suffix(".propagation.jsonl"),
+        build_entry(
+            module="phase1_spike_event_integrator",
+            operation="write_streaming_prspk001_parquet",
+            inputs={"snr_mask_parquet": snr_mask_parquet},
+            parameters={
+                "decoder": "PRSPK001",
+                "schema_version": "prism.spike_events_snr_masked.v5",
+                "snr_multiplier": 3.0,
+                "causal_anchor_multiplier": 5.0,
+                "snr_mask_channel": 0,
+                "protocol_state_summary": protocol_state_summary,
+                "thermal_phase_binning": {
+                    "phase_cold_hold": "true_md_step <= cold_hold_end",
+                    "phase_ramp_up": "true_md_step > cold_hold_end and true_md_step <= ramp_end",
+                    "phase_warm_hold": "true_md_step > ramp_end and true_md_step <= warm_hold_end",
+                    "phase_ramp_down": "true_md_step > warm_hold_end and true_md_step <= ramp_down_end",
+                    "phase_cold_return": "true_md_step > ramp_down_end",
+                },
+                "true_md_step": "absolute_timestep * graph_capture_multiplier",
+                "hysteresis_delta": "spikes_cold_return - spikes_cold_hold",
+                "first_break_time_ps": "first spike in phase_ramp_up or phase_warm_hold",
+                "start_record": start_record,
+                "max_records_per_stream": max_records_per_stream,
+                "chunk_records": chunk_records,
+                "selected_streams": len(selected),
+                "raw_bytes_declared": raw_bytes,
+                "streaming_binary_reader": True,
+            },
+            output_value={
+                "output_path": output,
+                "phase_residue_output_path": phase_output,
+                "row_count": kept_records,
+                "raw_record_count": raw_records,
+                "elapsed_seconds": elapsed,
+            },
+            output_uncertainty=None,
+            gate_status={
+                "bounded_default_removed": max_records_per_stream is None,
+                "all_selected_streams_processed": streams_processed == len(selected),
+                "snr_mask_applied_before_write": True,
+                "protocol_phase_boundaries_applied": True,
+                "five_phase_hysteresis_aggregate_written": phase_output.exists(),
+                "streaming_pyarrow_writer": True,
+                "append_only_ledger": True,
+            },
+            repo_root=repo_root,
+        ),
+        repo_root=repo_root,
+    )
+    return stats
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--raw-root", type=Path, default=DEFAULT_RAW_ROOT)
+    parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--condition-id")
+    parser.add_argument("--replica-id", type=int)
+    parser.add_argument("--streams")
+    parser.add_argument("--max-streams", type=int)
+    parser.add_argument("--start-record", type=int, default=0)
     parser.add_argument("--max-records-per-stream", type=int)
-    parser.add_argument("--emit-interface-hits", action="store_true")
+    parser.add_argument("--chunk-records", type=int, default=1_000_000)
+    parser.add_argument("--snr-mask-parquet", type=Path, default=DEFAULT_OUTPUT_DIR / "stream_snr_masks.parquet")
+    parser.add_argument(
+        "--protocol-state-summary",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR / "protocol_state_summary.parquet",
+    )
     args = parser.parse_args()
 
-    streams = parse_streams(args.streams)
-    spike_paths = discover_spike_paths(args.run_dir, streams)
-    if not spike_paths:
-        raise SystemExit(f"No spike streams found in {args.run_dir} for streams={streams}")
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    topo_to_uniprot, residue_meta = load_residue_maps(
-        args.residue_map,
-        structure_id=args.structure_id,
-        mapping_parquet=args.residue_mapping_parquet,
+    selected = filter_streams(
+        discover_stream_files(args.raw_root, "spikes.bin"),
+        condition_id=args.condition_id,
+        replica_id=args.replica_id,
+        stream_ids=parse_stream_selector(args.streams),
+        max_streams=args.max_streams,
     )
-    sites = load_sites(args.binding_sites, topo_to_uniprot)
-    interfaces = load_interfaces(args.interfaces)
-    dt_by_stream = load_dt_fs_by_stream(args.ghost_time_map)
-    site_catalog = write_site_catalog(args.out_dir, args.run_label, sites)
-    interface_catalog = write_interface_catalog(args.out_dir, interfaces)
-
-    results = []
-    for spike_path in spike_paths:
-        header = parse_envelope(spike_path)
-        dt_fs = dt_by_stream.get(header.stream_id, 4.0)
-        result = integrate_stream(
-            spike_path=spike_path,
-            out_dir=args.out_dir,
-            campaign_id=args.campaign_id,
-            run_label=args.run_label,
-            structure_id=args.structure_id,
-            topo_to_uniprot=topo_to_uniprot,
-            sites=sites,
-            interfaces=interfaces,
-            dt_fs=dt_fs,
-            chunk_rows=args.chunk_rows,
-            start_record=args.start_record,
-            max_records=args.max_records_per_stream,
-            emit_interface_hits=args.emit_interface_hits,
-        )
-        results.append(result)
-
-    manifest = {
-        "schema": "prism_spike_event_temporal_integration.v1",
-        "campaign_id": args.campaign_id,
-        "run_label": args.run_label,
-        "structure_id": args.structure_id,
-        "run_dir": str(args.run_dir),
-        "residue_map": str(args.residue_map),
-        "residue_mapping_parquet": str(args.residue_mapping_parquet)
-        if args.residue_mapping_parquet
-        else None,
-        "binding_sites": str(args.binding_sites),
-        "interfaces": str(args.interfaces),
-        "ghost_time_map": str(args.ghost_time_map),
-        "site_catalog": str(site_catalog),
-        "interface_catalog": str(interface_catalog),
-        "chunk_rows": args.chunk_rows,
-        "start_record": args.start_record,
-        "max_records_per_stream": args.max_records_per_stream,
-        "emit_interface_hits": args.emit_interface_hits,
-        "residue_index_annotation": {
-            "nearby_topology_residue_*": "Raw topology residue ids from GpuSpikeEvent; padded slots are -1.",
-            "nearby_uniprot_residue_*": "Mapped through residue_map plus residue_index_mapping_matrix when available; padded/unmapped slots are -1.",
-        },
-        "semantic_warnings": [
-            "This table is a raw-event integration layer, not a chronic durability endpoint.",
-            "Materialized-site assignment is nearest-centroid/radius projection, not proof of ligand occupancy.",
-            "Interface matches are event annotations for timestamp mining; interface breakage must be inferred by subsequent temporal models over absence/presence windows.",
-            "warp_matrix, asc_vectors, forces_final, and adaptive_dt are not parsed by this decoder.",
-        ],
-        "streams": results,
-    }
-    manifest_path = args.out_dir / f"{args.run_label}_integration_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    print(f"Wrote {manifest_path}")
-    for result in results:
-        print(
-            f"stream {result['stream_id']}: {result['records_written']} rows -> {result['event_path']}"
-        )
-        if result.get("interface_hit_path"):
-            print(
-                f"stream {result['stream_id']}: {result['interface_hit_rows']} interface-hit rows -> {result['interface_hit_path']}"
-            )
+    output = args.out_dir / "spike_events_snr_masked.parquet"
+    stats = write_full_spike_parquet(
+        selected=selected,
+        output=output,
+        snr_mask_parquet=args.snr_mask_parquet,
+        protocol_state_summary=args.protocol_state_summary,
+        start_record=args.start_record,
+        max_records_per_stream=args.max_records_per_stream,
+        chunk_records=args.chunk_records,
+    )
+    emit(
+        f"WROTE {output} rows={stats.kept_records} raw_records={stats.raw_records} "
+        f"streams={stats.streams_processed} elapsed_seconds={stats.elapsed_seconds:.3f}"
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

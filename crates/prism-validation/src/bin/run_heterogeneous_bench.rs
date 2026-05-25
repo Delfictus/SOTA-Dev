@@ -146,7 +146,7 @@ async fn main() -> Result<()> {
     // Parse dynamics mode
     let dynamics_mode = match args.mode.as_str() {
         "plain-gnm" => DynamicsMode::PlainGnm,
-        "transfer-entropy" => DynamicsMode::TransferEntropyGnm,
+        "transfer-entropy" => DynamicsMode::CausalCouplingGnm,
         "cg" | "coarse-grained" => DynamicsMode::CoarseGrainedAnm,
         "enhanced-gnm" | _ => DynamicsMode::EnhancedGnm,
     };

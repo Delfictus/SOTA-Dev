@@ -1,0 +1,45 @@
+# Deliverable A: Receptor Durability Audit V0.1
+
+Generated: {{ generated_at }}
+
+## Executive Summary
+
+This receptor-side durability audit summarizes the 80-replica unliganded/WT thermodynamic manifold across {{ stream_count }} production streams. The final risk ranking is derived from the fused seven-tensor receptor durability map and synchronized into the Track 0 analyst workbook.
+
+**Claim Boundaries:** This audit provides computationally bounded receptor-side mechanistic evidence. Analog-conditioned interference is provided via expert-in-the-loop emulation (V0.1). This document does not claim in vivo clinical durability.
+
+## The Thermodynamic Manifold
+
+The posthoc manifold contains {{ channel_summary_count }} channel summaries across durability classes and receptor conditions. The mechanical validation pass pruned **{{ mechanically_pruned_count }}** false-positive edges before Track 0 target selection.
+
+| Condition | Durability Class | Edges | Mean Risk | Max Risk | Masked Spikes | Violent Rupture Edges | Mechanically Pruned |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+{% for channel in channel_summaries -%}
+| {{ channel.condition_id }} | {{ channel.durability_class }} | {{ channel.edge_count }} | {{ "%.6f"|format(channel.mean_risk_score) }} | {{ "%.6f"|format(channel.max_risk_score) }} | {{ channel.masked_spike_count }} | {{ channel.violent_rupture_edges }} | {{ channel.mechanically_pruned_edges }} |
+{% endfor %}
+
+## Critical Durability Risks
+
+Selection policy: {{ edge_selection_policy }}
+
+| Rank | Edge ID | Edge Class | Condition | Residue Edge | Contact A | SignedTE | Raw Risk | BOCPD Survival ps | DT Drops | Violent DT Drops | Steering Prior | Variance Penalty | Mechanical Load |
+| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+{% for edge in critical_edges -%}
+| {{ edge.selection_rank }} | {{ edge.edge_id }} | {{ edge.edge_class }} | {{ edge.condition_id }} | {{ edge.edge_label }} | {{ "%.3f"|format(edge.minimum_heavy_atom_distance_angstrom) }} | {{ "%.6f"|format(edge.signed_te_mean) }} | {{ "%.6f"|format(edge.durability_risk_score_raw) }} | {{ "%.6f"|format(edge.mean_survival_time_ps) }} | {{ edge.dt_drop_count }} | {{ edge.violent_dt_drop_count }} | {{ "%.6f"|format(edge.autonomous_steering_prior_multiplier) }} | {{ "%.6f"|format(edge.variance_risk_penalty) }} | {{ "%.6f"|format(edge.mean_abs_mechanical_load) }} |
+{% endfor %}
+
+The pocket-vector and downstream-lock cohorts are selected only after the receptor durability map is inner-joined to the SAR steric interface catalog and residue index mapping matrix. Residue names use canonical three-letter amino acid codes plus biological sequence numbers.
+
+## Track 0 Workbook Synchronization
+
+The Track 0 workbook was regenerated with {{ analog_count }} placeholder analogs across {{ critical_edges|length }} dynamically selected receptor edges, producing {{ workbook_row_count }} analyst-scoring rows.
+
+Workbook path: `{{ workbook_path }}`
+
+## Cryptographic Lineage
+
+| Source Parquet | SHA-256 |
+| --- | --- |
+{% for item in lineage_hashes -%}
+| `{{ item.path }}` | `{{ item.sha256 }}` |
+{% endfor %}

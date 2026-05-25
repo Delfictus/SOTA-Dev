@@ -1,0 +1,1082 @@
+{
+  "artifacts": [
+    {
+      "checksum_fnv1a_64_hex": "af006033e87f5154",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_spikes.bin",
+      "present": true,
+      "record_count": 1124712,
+      "schema_version": 1,
+      "size_bytes": 107972523,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": "962ef8f36d9efc64",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": "9c862fb1df3bc010",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": "81e4cf31c94d4e50",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_spikes.bin",
+      "present": true,
+      "record_count": 1124688,
+      "schema_version": 1,
+      "size_bytes": 107970219,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": "1bcc98c66501933b",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": "3d8aabd78aba8142",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": "d01ebe408048b6b1",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_spikes.bin",
+      "present": true,
+      "record_count": 1140530,
+      "schema_version": 1,
+      "size_bytes": 109491051,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": "4d829e9bfbacd436",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": "3f0e9b46ed6f6801",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": "28403775f66a5ad0",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_spikes.bin",
+      "present": true,
+      "record_count": 1139842,
+      "schema_version": 1,
+      "size_bytes": 109425003,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": "8485433481312471",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": "4196e5cd1f5fbffb",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": "6909ab2c5773dca4",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_spikes.bin",
+      "present": true,
+      "record_count": 1146156,
+      "schema_version": 1,
+      "size_bytes": 110031147,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": "d0701a90835bb8cf",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": "10b6dff58a86f383",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": "69531f09afb70ddd",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_spikes.bin",
+      "present": true,
+      "record_count": 1146208,
+      "schema_version": 1,
+      "size_bytes": 110036139,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": "f41eb5db15f5e8c0",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": "f05f2d799717f7c7",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": "cfbf95ad44e2d515",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_spikes.bin",
+      "present": true,
+      "record_count": 1124963,
+      "schema_version": 1,
+      "size_bytes": 107996619,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": "4733f577dbd60185",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": "9718911ac5b8c834",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": "4e6dea2fdc9e2053",
+      "kind": "spikes",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_spikes.bin",
+      "present": true,
+      "record_count": 1124586,
+      "schema_version": 1,
+      "size_bytes": 107960427,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": "f809ab831505b9fe",
+      "kind": "signal_grid",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_signal_grid.bin",
+      "present": true,
+      "record_count": 2097152,
+      "schema_version": 1,
+      "size_bytes": 33554619,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": "5b0a12b6231eb7b5",
+      "kind": "kcc_v2full",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_kcc_v2full.bin",
+      "present": true,
+      "record_count": 381,
+      "schema_version": 1,
+      "size_bytes": 21910,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4664,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream0_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5760,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4664,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream1_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5759,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4657,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream2_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5727,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4658,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream3_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5727,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4662,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream4_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5760,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4662,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream5_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5761,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4661,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream6_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5727,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_warp_matrix.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 285212672,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_forces_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_aromatic_centroids_final.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 6888,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_adaptive_dt.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 576,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_bocpd.jsonl",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 4661,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream7_protocol_state.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 5729,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream00_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream00_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 0
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream01_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream01_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 1
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream02_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream02_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 2
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream03_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream03_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 3
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream04_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream04_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 4
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream05_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream05_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 5
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream06_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream06_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 6
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream07_asc_vectors.bin",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 75288,
+      "stream_id": 7
+    },
+    {
+      "checksum_fnv1a_64_hex": null,
+      "kind": "rayon_scope_emit",
+      "note": null,
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/mvp_campaigns/TRIAL_ANCHOR_001682/05_RESULTS/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682/replica_0/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682_stream07_noise_floor.json",
+      "present": true,
+      "record_count": null,
+      "schema_version": null,
+      "size_bytes": 1927,
+      "stream_id": 7
+    }
+  ],
+  "binary_envelopes": {
+    "kcc_v2full": {
+      "magic": "PRKCC001",
+      "schema_version": 1,
+      "trailer": "PRKCCEND"
+    },
+    "signal_grid": {
+      "magic": "PRSGD001",
+      "schema_version": 1,
+      "trailer": "PRSGDEND"
+    },
+    "spikes": {
+      "magic": "PRSPK001",
+      "schema_version": 1,
+      "trailer": "PRSPKEND"
+    }
+  },
+  "binding_sites_status": "not_materialized_md_only",
+  "checksum_algorithm": "fnv1a_64",
+  "compression_status": "raw_uncompressed",
+  "elapsed_wall_seconds": 130.790205281,
+  "endian": "little",
+  "missing_required_artifacts": [],
+  "path_b_required": true,
+  "post_md_aggregation_status": "deferred",
+  "required_artifact_summary": {
+    "adaptive_dt": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "aromatic_centroids_final": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "asc_vectors": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "bocpd_log": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "expected_streams": 8,
+    "forces_final": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "kcc_v2full": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "noise_floor": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "protocol_state": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "signal_grid": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "spikes": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "warp_matrix": {
+      "missing_streams": [],
+      "present_streams": 8
+    }
+  },
+  "required_artifacts_complete": true,
+  "run_config": {
+    "adaptive_dt": true,
+    "asymmetric_steering": true,
+    "closed_loop_steering": true,
+    "fast": false,
+    "fused_steps": 6,
+    "hmr": true,
+    "hysteresis": true,
+    "md_only_evidence": true,
+    "multi_differential": true,
+    "multi_stream": 4,
+    "path_a_chunk_size": 50,
+    "path_a_evidence_exit": false,
+    "path_a_max_wall_seconds": 120,
+    "path_a_production_profile": true,
+    "path_a_t7_max_chunks": null,
+    "path_a_v2_trigger_steps": null,
+    "prism_therm": true,
+    "replica_seed": 42,
+    "site_ranker": "phase-manifold",
+    "spike_percentile": 70,
+    "use_xgb_ranker": false
+  },
+  "run_id": "glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682.topology_20260524_064538",
+  "schema_kind": "md_evidence_manifest",
+  "schema_version": 1,
+  "serialization_failure": null,
+  "site_materialization_status": "not_materialized",
+  "stream_count": 8,
+  "streams_serialized": 8,
+  "target": "glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682",
+  "topology_input": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/trial_run/topologies/glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682.topology.json",
+  "total_spikes_md": 9071685,
+  "transform_dag_status": "skipped_md_only_no_site_materialization",
+  "v2_dependent_artifacts_status": "absent_v2_not_live",
+  "v2_was_live": false,
+  "validation_status": "accepted_required_artifacts_present"
+}

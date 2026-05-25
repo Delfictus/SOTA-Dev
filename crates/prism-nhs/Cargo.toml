@@ -58,6 +58,8 @@ log = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = { workspace = true }
+rayon = { workspace = true }
+uuid = { workspace = true }
 # DSTW Option A dispatcher: blake3 hashes for the round-link chain on
 # PRISMExecutionRequest / PRISMExecutionResponse payloads.
 blake3 = "1.5"

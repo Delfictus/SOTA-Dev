@@ -1,0 +1,429 @@
+%% PRISM-4D | GLP-1R Aleniglipron M2 — pharma/med-chem delivery template
+%% Jinja2-rendered template — placeholders are substituted server-side.
+%% Compile final .tex with: latexmk -pdf, or xelatex twice.
+%% Print-safe colors, no tikz dependency.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{microtype}
+\usepackage[a4paper,margin=16mm,top=22mm,bottom=22mm,headheight=14pt,headsep=10pt]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage[most]{tcolorbox}
+\usepackage[colorlinks=true,allcolors=DelfRule]{hyperref}
+\usepackage{textcomp}
+\usepackage{seqsplit}
+\usepackage{xltabular}
+\usepackage{ragged2e}
+\usepackage{etoolbox}
+
+% --- text-overflow hardening (margin protection) ----------------------
+\emergencystretch=8em
+\tolerance=4000
+\hbadness=10000
+% Hyphenate aggressively; permits breaks inside words to avoid
+% margin overflow when a long token is the only choice.
+\hyphenpenalty=200
+\exhyphenpenalty=200
+\pretolerance=-1
+\linepenalty=10
+\setlength{\parskip}{4pt plus 1pt minus 1pt}
+% Apply \sloppy globally — relaxes line-break tolerance, prevents most
+% small textual overflow.
+\AtBeginDocument{\sloppy}
+
+% Make every longtable (including pandoc-generated ones) use small font
+% and tighter column padding so wide tables fit. Combined with the
+% post-processor that converts wide longtables to xltabular X-cols,
+% this prevents the catastrophic 1000pt+ overflows.
+\AtBeginEnvironment{longtable}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+\AtBeginEnvironment{xltabular}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+
+% \texttt content that is one long hex / id blob gets line-broken by
+% \seqsplit. Wrappers around hashes injected by the build-script
+% post-processor.
+
+% Allow URL breaks anywhere — applies to hyperref-styled URLs.
+\PassOptionsToPackage{hyphens}{url}
+
+% --- print-safe epistemic colors -----------------------------------
+\definecolor{DelfBlue}{HTML}{0F2A4A}
+\definecolor{DelfRule}{HTML}{1F3A6B}
+\definecolor{DelfGrey}{HTML}{4A4A4A}
+\definecolor{EpObserved}{HTML}{1B5E20}
+\definecolor{EpDerived}{HTML}{0D47A1}
+\definecolor{EpInferred}{HTML}{4527A0}
+\definecolor{EpProjected}{HTML}{B65000}
+\definecolor{EpHypothesized}{HTML}{8B0000}
+\definecolor{HashBg}{HTML}{F4F4F7}
+
+% --- header / footer ------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{DelfBlue}\textbf{DELFICTUS I/O} \textbar{} PRISM-4D}
+\fancyhead[R]{\small\color{DelfGrey}Med-Chem Appendix}
+\fancyfoot[L]{\scriptsize\color{DelfGrey}Confidential Discussion Material \textbar{} PRISM-4D M2 Evidence Release}
+\fancyfoot[R]{\scriptsize\color{DelfGrey}Page \thepage}
+
+% --- listings (hashes) ---------------------------------------------
+\lstdefinestyle{hashbox}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{HashBg},
+  frame=single,
+  rulecolor=\color{DelfGrey!40},
+  framerule=0.4pt,
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  breakindent=0pt,
+  postbreak=\mbox{\textcolor{DelfGrey}{$\hookrightarrow$}\space},
+  columns=flexible,
+  showspaces=false,
+  showstringspaces=false
+}
+\lstset{style=hashbox}
+
+% --- pandoc stub macros (so .tex compiles standalone) --------------
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+% \passthrough is a transparent wrapper used by pandoc around inline
+% \lstinline. We do NOT wrap in \texttt — that breaks lstinline catcode
+% parsing and causes runaway lines.
+\providecommand{\passthrough}[1]{#1}
+\providecommand{\textsubscript}[1]{\ensuremath{_{#1}}}
+\providecommand{\textquotesingle}{'}
+% pandoc emits \pandocbounded around figures — accept it as a no-op
+\providecommand{\pandocbounded}[1]{#1}
+
+% --- epistemic label macros -----------------------------------------
+\newcommand{\epOBS}{\textcolor{EpObserved}{\textbf{OBSERVED}}}
+\newcommand{\epDER}{\textcolor{EpDerived}{\textbf{DERIVED}}}
+\newcommand{\epINF}{\textcolor{EpInferred}{\textbf{INFERRED}}}
+\newcommand{\epPRJ}{\textcolor{EpProjected}{\textbf{PROJECTED}}}
+\newcommand{\epHYP}{\textcolor{EpHypothesized}{\textbf{HYPOTHESIZED}}}
+
+% --- disclaimer / legend boxes --------------------------------------
+\newtcolorbox{disclaimerbox}{
+  colback=red!3, colframe=EpHypothesized,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+\newtcolorbox{legendbox}{
+  colback=DelfBlue!4, colframe=DelfBlue,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+
+% --- title / identity ----------------------------------------------
+\title{
+  \vspace{-12mm}
+  {\color{DelfBlue}\textbf{\Large PRISM-4D — GLP-1R / Aleniglipron Med-Chem Action Appendix}}\\[2pt]
+  {\color{DelfGrey}\normalsize Medicinal-chemistry / SAR review of M2 replacements}\\[6pt]
+  {\color{DelfGrey}\small Confidential Discussion Material}
+}
+\author{}
+\date{}
+
+% --- DOCUMENT -------------------------------------------------------
+\begin{document}
+
+\maketitle
+\vspace{-14mm}
+
+\begin{flushleft}
+\small
+\begin{tabular}{@{}p{0.32\textwidth}p{0.62\textwidth}@{}}
+\textbf{Campaign}             & glp1r\_aleniglipron \\
+\textbf{Release}              & PRISM\_GLP1R\_M2\_DELIVERABLES\_v1.1 \\
+\textbf{Generated (UTC)}      & 2026-05-24T03:47:26Z \\
+\textbf{Report type}          & Medicinal chemistry — SAR review (PROJECTED / HYPOTHESIZED) \\
+\textbf{CBOM Merkle root}     & \texttt{\small 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856} \\
+\textbf{Executive archive SHA-256} & \texttt{\small b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454} \\
+\end{tabular}
+\end{flushleft}
+
+\vspace{4mm}
+
+\begin{disclaimerbox}
+\textbf{Use of this document.} This package presents computational
+translational evidence from the PRISM-4D engine and downstream analysis
+layers. It is \emph{not} a clinical-effect claim, \emph{not} a
+patient-response prediction, and \emph{not} experimental validation.
+Assay recommendations are falsification gates, not confirmation
+ceremonies. PROJECTED and HYPOTHESIZED items require wet-lab
+falsification before any biological assertion.
+\end{disclaimerbox}
+
+\begin{legendbox}
+\textbf{Epistemic legend.} Every claim, table row, and figure inherits
+exactly one of the following classes, which governs how it may be cited:
+\begin{itemize}[leftmargin=18pt,topsep=2pt,itemsep=1pt]
+  \item \epOBS{} — direct tensor measurement from PRISM-4D engine outputs.
+  \item \epDER{} — deterministic transform of observed tensors.
+  \item \epINF{} — multi-tensor interpretation; not a single-tensor measurement.
+  \item \epPRJ{} — translational extrapolation beyond simulated conditions.
+  \item \epHYP{} — requires wet-lab falsification before any biological claim.
+\end{itemize}
+\end{legendbox}
+
+\vspace{2mm}
+\hrule
+\vspace{4mm}
+
+\hypertarget{section-1--aleniglipron-interference-summary}{%
+\section{Section 1 --- Aleniglipron Interference
+Summary}\label{section-1--aleniglipron-interference-summary}}
+
+\hypertarget{aleniglipron-thermodynamic-field-interference-analysis}{%
+\subsection{Aleniglipron Thermodynamic Field Interference
+Analysis}\label{aleniglipron-thermodynamic-field-interference-analysis}}
+
+\hypertarget{layer-1-whole-molecule-scoring}{%
+\subsubsection{Layer 1: Whole-Molecule Scoring}\label{layer-1-whole-molecule-scoring}}
+
+\begin{itemize}
+\tightlist
+\item
+  Total Pi\_clash across 9 critical edges: 41.8023
+\item
+  Total Pi\_complement: 46.1713
+\item
+  Projected durability score: 546.6557 +/- 60.9397
+\item
+  Confidence class: moderate
+\end{itemize}
+
+\hypertarget{layer-2-fragment-decomposition-brics}{%
+\subsubsection{Layer 2: Fragment Decomposition (BRICS)}\label{layer-2-fragment-decomposition-brics}}
+
+\begin{itemize}
+\tightlist
+\item
+  Fragments identified: 8
+\item
+  Dominant liability fragment: FRAG-C ({[}13*{]}c1c2c(nn1{[}19*{]})CCN({[}31*{]}){[}C@@H{]}2C,
+  20.2\% of total clash)
+\item
+  Inter-fragment coupling: 2.4970
+\end{itemize}
+
+\hypertarget{per-edge-attribution}{%
+\subsubsection{Per-Edge Attribution}\label{per-edge-attribution}}
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Edge & Whole Clash & Sum Fragment Clash & Coupling & Dominant Fragment & Dominant Fraction \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{glp1r\_5VEX\_WT:PHE143}-\textgreater ILE147 & 21.1308 & 19.7931 & 1.3376 & FRAG-C & 20.2\% \\
+\seqsplit{glp1r\_5VEX\_WT:PHE143}-\textgreater TYR148 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_5VEX\_WT:TYR148}-\textgreater TYR152 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_5VEX\_WT:TYR152}-\textgreater TYR148 & 20.6716 & 19.5122 & 1.1593 & FRAG-C & 20.6\% \\
+\seqsplit{glp1r\_6LN2\_A316T:TYR242}-\textgreater ILE313 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:ARG421}-\textgreater TRP417 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:PHE169}-\textgreater SER416 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:TRP417}-\textgreater ARG421 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:TYR241}-\textgreater ARG310 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{structural-rationales}{%
+\subsubsection{Structural Rationales}\label{structural-rationales}}
+
+\textbf{glp1r\_5VEX\_WT:PHE143-\textgreater ILE147:} At glp1r\_5VEX\_WT:PHE143-\textgreater ILE147,
+aleniglipron shows Pi\_clash = 21.13. FRAG-C is the dominant contributor (4.26, 20\% of total).
+Inter-fragment coupling contributes 1.34 additional clash, indicating synergistic steric compression
+when fragments are connected.
+
+\textbf{glp1r\_5VEX\_WT:PHE143-\textgreater TYR148:} Aleniglipron shows negligible steric
+interference at glp1r\_5VEX\_WT:PHE143-\textgreater TYR148 (Pi\_clash = 0.000). No fragment
+contributes significant clash.
+
+\textbf{glp1r\_5VEX\_WT:TYR148-\textgreater TYR152:} Aleniglipron shows negligible steric
+interference at glp1r\_5VEX\_WT:TYR148-\textgreater TYR152 (Pi\_clash = 0.000). No fragment
+contributes significant clash.
+
+\textbf{glp1r\_5VEX\_WT:TYR152-\textgreater TYR148:} At glp1r\_5VEX\_WT:TYR152-\textgreater TYR148,
+aleniglipron shows Pi\_clash = 20.67. FRAG-C is the dominant contributor (4.26, 21\% of total).
+Inter-fragment coupling contributes 1.16 additional clash, indicating synergistic steric compression
+when fragments are connected.
+
+\textbf{glp1r\_6LN2\_A316T:TYR242-\textgreater ILE313:} Aleniglipron shows negligible steric
+interference at glp1r\_6LN2\_A316T:TYR242-\textgreater ILE313 (Pi\_clash = 0.000). No fragment
+contributes significant clash.
+
+\textbf{glp1r\_6XOX\_WT:ARG421-\textgreater TRP417:} Aleniglipron shows negligible steric
+interference at glp1r\_6XOX\_WT:ARG421-\textgreater TRP417 (Pi\_clash = 0.000). No fragment
+contributes significant clash.
+
+\textbf{glp1r\_6XOX\_WT:PHE169-\textgreater SER416:} Aleniglipron shows negligible steric
+interference at glp1r\_6XOX\_WT:PHE169-\textgreater SER416 (Pi\_clash = 0.000). No fragment
+contributes significant clash.
+
+\textbf{glp1r\_6XOX\_WT:TRP417-\textgreater ARG421:} Aleniglipron shows negligible steric
+interference at glp1r\_6XOX\_WT:TRP417-\textgreater ARG421 (Pi\_clash = 0.000). No fragment
+contributes significant clash.
+
+\textbf{glp1r\_6XOX\_WT:TYR241-\textgreater ARG310:} Aleniglipron shows negligible steric
+interference at glp1r\_6XOX\_WT:TYR241-\textgreater ARG310 (Pi\_clash = 0.000). No fragment
+contributes significant clash.
+
+\hypertarget{recommendation}{%
+\subsubsection{Recommendation}\label{recommendation}}
+
+Prioritize modifications to FRAG-C if reducing receptor-side steric clash is the objective; protect
+fragments with low dominant clash unless potency SAR requires changes.
+
+\hypertarget{section-2--zero-shot-top-10-replacements}{%
+\section{Section 2 --- Zero-Shot Top-10
+Replacements}\label{section-2--zero-shot-top-10-replacements}}
+
+\textbf{SAR-contingency notice.} Every replacement below is PROJECTED or HYPOTHESIZED. These are not
+synthesis instructions, not validated compounds, and not biological recommendations. Use as a SAR
+shortlist input only, subject to medicinal-chemistry review and wet-lab falsification.
+
+\hypertarget{zeroshot_top10_replacements}{%
+\section{ZeroShot\_Top10\_Replacements}\label{zeroshot_top10_replacements}}
+
+Top-10 PROJECTED / HYPOTHESIZED fragment replacements derived from the manual emulation track.
+\textbf{These are not validated compounds and not synthesis instructions.}
+\texttt{\seqsplit{solution\_epistemic\_class}} governs how each row may be cited. SMILES
+strings are preserved in the CSV (omitted from MD for width).
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+\seqsplit{solution\_rank} & anchor\_id & sa\_score & \seqsplit{pi\_complement} & pi\_clash &
+\seqsplit{projected\_durability\_improvement} & \seqsplit{liability\_edge\_label} & \seqsplit{solution\_epistemic\_class} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & CAL-ANCHOR-000453 & 3.349 & 14.61 & 0 & 0.7327 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+2 & CAL-ANCHOR-000405 & 3.349 & 14.37 & 0 & 0.7269 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+3 & CAL-ANCHOR-000338 & 3.355 & 14.26 & 0 & 0.7241 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+4 & CAL-ANCHOR-000177 & 3.359 & 14.2 & 0 & 0.7225 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+5 & CAL-ANCHOR-000212 & 3.355 & 14.18 & 0 & 0.722 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+6 & CAL-ANCHOR-000142 & 3.359 & 14.17 & 0 & 0.7217 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+7 & CAL-ANCHOR-000107 & 3.359 & 14.16 & 0 & 0.7216 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+8 & CAL-ANCHOR-000473 & 3.349 & 14.12 & 0 & 0.7206 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+9 & CAL-ANCHOR-000302 & 3.089 & 14 & 0 & 0.7175 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+10 & CAL-ANCHOR-000373 & 3.355 & 13.99 & 0 & 0.7172 & PHE143 -\textgreater{} TYR148 & PROJECTED \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-3--fragment-interference-attribution}{%
+\section{Section 3 --- Fragment Interference
+Attribution}\label{section-3--fragment-interference-attribution}}
+
+\hypertarget{fragment_interference_attribution}{%
+\section{Fragment\_Interference\_Attribution}\label{fragment_interference_attribution}}
+
+Per-edge fragment interference attribution. Decomposes whole-molecule pi clash/complement into
+fragment contributions. INFERRED epistemic class --- multi-tensor interpretation.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+edge\_id & \seqsplit{whole\_molecule\_clash} & \seqsplit{whole\_molecule\_complement} & \seqsplit{sum\_fragment\_clash} &
+\seqsplit{sum\_fragment\_complement} & \seqsplit{dominant\_fragment} & \seqsplit{dominant\_fragment\_clash} & \seqsplit{dominant\_fraction} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{glp1r\_5VEX\_WT:PHE143}-\textgreater ILE147 & 21.13 & 0 & 19.79 & 0 & FRAG-C & 4.261 & 0.2016 \\
+\seqsplit{glp1r\_5VEX\_WT:PHE143}-\textgreater TYR148 & 0 & 25.5 & 0 & 23.83 & FRAG-A & 0 & 0 \\
+\seqsplit{glp1r\_5VEX\_WT:TYR148}-\textgreater TYR152 & 0 & 20.67 & 0 & 19.51 & FRAG-A & 0 & 0 \\
+\seqsplit{glp1r\_5VEX\_WT:TYR152}-\textgreater TYR148 & 20.67 & 0 & 19.51 & 0 & FRAG-C & 4.256 & 0.2059 \\
+\seqsplit{glp1r\_6LN2\_A316T:TYR242}-\textgreater ILE313 & 0 & 0 & 0 & 0 & FRAG-A & 0 & 0 \\
+\seqsplit{glp1r\_6XOX\_WT:ARG421}-\textgreater TRP417 & 0 & 0 & 0 & 0 & FRAG-A & 0 & 0 \\
+\seqsplit{glp1r\_6XOX\_WT:PHE169}-\textgreater SER416 & 0 & 0 & 0 & 0 & FRAG-A & 0 & 0 \\
+\seqsplit{glp1r\_6XOX\_WT:TRP417}-\textgreater ARG421 & 0 & 0 & 0 & 0 & FRAG-A & 0 & 0 \\
+\seqsplit{glp1r\_6XOX\_WT:TYR241}-\textgreater ARG310 & 0 & 0 & 0 & 0 & FRAG-A & 0 & 0 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-4--phase-2d-staged-variant-grid}{%
+\section{Section 4 --- Phase 2D Staged Variant Grid}\label{section-4--phase-2d-staged-variant-grid}}
+
+\textbf{Materialization status.} Phase 2D targets are \emph{staged} --- they appear in the planning
+manifest but have not been engine-executed. Treat the table below as a queue, not an evidence set.
+
+\hypertarget{phase2d_staged_targets}{%
+\section{Phase2D\_Staged\_Targets}\label{phase2d_staged_targets}}
+
+Phase 2D variant-grid staged targets. \textbf{Materialization status:}
+\texttt{\seqsplit{staged\_manifest\_materialized\_not\_executed}} --- these are \emph{staged},
+not engine-executed. The Phase 2D manifest is a planning artifact.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+condition\_id & variant & background & \seqsplit{topology\_source} & \seqsplit{evidence\_status} & \seqsplit{epistemic\_class} &
+n\_replicas & \seqsplit{engine\_run\_id} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{glp1r\_5VEX\_WT} & & WT & & & & & \\
+\seqsplit{glp1r\_6LN2\_A316T} & & A316T & & & & & \\
+\seqsplit{glp1r\_6LN2\_T149M} & & T149M & & & & & \\
+\seqsplit{glp1r\_6LN2\_WT} & & WT & & & & & \\
+\seqsplit{glp1r\_6X1A\_WT} & & WT & & & & & \\
+\seqsplit{glp1r\_6XOX\_A316T} & & A316T & & & & & \\
+\seqsplit{glp1r\_6XOX\_T149M} & & T149M & & & & & \\
+\seqsplit{glp1r\_6XOX\_WT} & & WT & & & & & \\
+\end{xltabular}
+\endgroup
+
+
+
+\vspace{8mm}
+\hrule
+\vspace{2mm}
+\begin{flushleft}\small
+\textbf{Release identity.}\\
+\end{flushleft}
+\begin{lstlisting}[caption={Release identity (verbatim)}]
+campaign_id            : glp1r_aleniglipron
+release_version        : PRISM_GLP1R_M2_DELIVERABLES_v1.1
+generated_at_utc       : 2026-05-24T03:47:26Z
+cbom_merkle_root       : 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856
+executive_archive_sha  : b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454
+\end{lstlisting}
+
+\end{document}

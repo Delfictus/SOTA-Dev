@@ -1,0 +1,12 @@
+{
+  "auto_request": false,
+  "backend_request": "auto",
+  "explicit_request": false,
+  "lattice_kernel_ms": 0.0,
+  "lattice_run_status": "not_requested",
+  "m1_monolithic_discovery": false,
+  "mar_v2_telemetry": false,
+  "n_components": 0,
+  "schema_version": 1,
+  "v2_was_live": false
+}

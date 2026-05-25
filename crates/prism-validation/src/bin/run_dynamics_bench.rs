@@ -46,7 +46,7 @@ enum CliDynamicsMode {
     /// Coarse-grained ANM with HMC (quick sampling)
     CoarseGrained,
     /// Transfer Entropy + GNM fusion (allosteric)
-    TransferEntropy,
+    CausalCoupling,
     /// ML-corrected GNM (maximum accuracy)
     MlCorrected,
     /// Run all modes and compare
@@ -59,7 +59,7 @@ impl From<CliDynamicsMode> for Option<DynamicsMode> {
             CliDynamicsMode::EnhancedGnm => Some(DynamicsMode::EnhancedGnm),
             CliDynamicsMode::AllAtom => Some(DynamicsMode::AllAtomAmber),
             CliDynamicsMode::CoarseGrained => Some(DynamicsMode::CoarseGrainedAnm),
-            CliDynamicsMode::TransferEntropy => Some(DynamicsMode::TransferEntropyGnm),
+            CliDynamicsMode::CausalCoupling => Some(DynamicsMode::CausalCouplingGnm),
             CliDynamicsMode::MlCorrected => Some(DynamicsMode::MlCorrectedGnm),
             CliDynamicsMode::All => None,
         }

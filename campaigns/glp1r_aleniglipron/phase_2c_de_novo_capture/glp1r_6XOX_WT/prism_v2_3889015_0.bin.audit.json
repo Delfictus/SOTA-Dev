@@ -1,0 +1,16 @@
+{
+  "stream_id": 0,
+  "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/phase_2c_de_novo_capture/glp1r_6XOX_WT/prism_v2_3889015_0.bin",
+  "lossless_required": true,
+  "channel_depth": 8,
+  "producer_frames_enqueued": 0,
+  "frames_written": 0,
+  "bytes_written": 8,
+  "send_blocked_ns": "0",
+  "first_step": null,
+  "last_step": null,
+  "expected_floats_per_frame": null,
+  "hash_mismatches": 0,
+  "rolling_hash64": "cbf29ce484222325",
+  "frames": []
+}

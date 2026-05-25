@@ -1,0 +1,41 @@
+2026-05-22 21:28:09 [info     ] loading_protocols
+2026-05-22 21:28:09 [info     ] protocols_loaded               count=160
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=10000 group=A_ThermalShock multiplier=4.9957 stream=0 total=35000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=10000 group=A_ThermalShock multiplier=4.9957 stream=1 total=35000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=C_Equilibrium multiplier=5.7094 stream=2 total=40000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=C_Equilibrium multiplier=5.7094 stream=3 total=40000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=8000 group=B_UVAromatic multiplier=5.2812 stream=4 total=37000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=8000 group=B_UVAromatic multiplier=5.2812 stream=5 total=37000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=D_Hysteresis multiplier=4.8530 stream=6 total=34000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=D_Hysteresis multiplier=4.8530 stream=7 total=34000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=10000 group=A_ThermalShock multiplier=4.9957 stream=8 total=35000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=10000 group=A_ThermalShock multiplier=4.9957 stream=9 total=35000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=C_Equilibrium multiplier=5.7094 stream=10 total=40000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=C_Equilibrium multiplier=5.7094 stream=11 total=40000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=8000 group=B_UVAromatic multiplier=5.2812 stream=12 total=37000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=8000 group=B_UVAromatic multiplier=5.2812 stream=13 total=37000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=D_Hysteresis multiplier=4.8530 stream=14 total=34000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=D_Hysteresis multiplier=4.8530 stream=15 total=34000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=10000 group=A_ThermalShock multiplier=4.9957 stream=16 total=35000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=10000 group=A_ThermalShock multiplier=4.9957 stream=17 total=35000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=C_Equilibrium multiplier=5.7094 stream=18 total=40000
+2026-05-22 21:28:09 [info     ] protocol                       cold_end=6000 group=C_Equilibrium multiplier=5.7094 stream=19 total=40000
+2026-05-22 21:28:09 [info     ] extracting_full_spectrum       sample=0.01
+2026-05-22 21:28:49 [info     ] extraction_complete            conditions=8
+2026-05-22 21:28:49 [info     ] building_residue_phase_tensor
+2026-05-22 21:28:50 [info     ] wrote                          cols=63 path=campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/full_protocol_extraction/residue_phase_tensor.parquet rows=2963
+2026-05-22 21:28:50 [info     ] building_temporal_cascade
+2026-05-22 21:28:50 [info     ] wrote                          path=campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/full_protocol_extraction/temporal_cascade.parquet rows=11060
+2026-05-22 21:28:50 [info     ] building_hysteresis_tensor
+2026-05-22 21:28:50 [info     ] wrote                          path=campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/full_protocol_extraction/hysteresis_tensor.parquet rows=11852
+2026-05-22 21:28:50 [info     ] building_4way_differential
+2026-05-22 21:28:50 [info     ] wrote                          path=campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/full_protocol_extraction/interferometric_differential.parquet rows=2963
+2026-05-22 21:28:50 [info     ] generating_summary
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=1566958 cold_return=793675 condition=glp1r_5VEX_WT n_residues=388 ramp_down=1258284 ramp_up=2069918 total_spikes=9162991 warm_hold=3474156
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=1807497 cold_return=193814 condition=glp1r_6LN2_A316T n_residues=394 ramp_down=542710 ramp_up=1271101 total_spikes=6928400 warm_hold=3113278
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=2054893 cold_return=229508 condition=glp1r_6LN2_T149M n_residues=390 ramp_down=1328240 ramp_up=695915 total_spikes=6799959 warm_hold=2491403
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=1125059 cold_return=1165294 condition=glp1r_6LN2_WT n_residues=389 ramp_down=961756 ramp_up=1281750 total_spikes=6907432 warm_hold=2373573
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=1472484 cold_return=668496 condition=glp1r_6X1A_WT n_residues=357 ramp_down=575194 ramp_up=1443635 total_spikes=6506421 warm_hold=2346612
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=1700757 cold_return=579222 condition=glp1r_6XOX_A316T n_residues=347 ramp_down=1319596 ramp_up=1129237 total_spikes=6634007 warm_hold=1905195
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=1500000 cold_return=1154994 condition=glp1r_6XOX_T149M n_residues=350 ramp_down=1173046 ramp_up=1052970 total_spikes=6906580 warm_hold=2025570
+2026-05-22 21:28:50 [info     ] condition_summary              cold_hold=1190855 cold_return=1083270 condition=glp1r_6XOX_WT n_residues=348 ramp_down=1024736 ramp_up=1256860 total_spikes=6807292 warm_hold=2251571

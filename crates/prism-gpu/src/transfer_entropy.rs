@@ -47,7 +47,7 @@ impl Default for TEParams {
 }
 
 /// Transfer Entropy GPU accelerator
-pub struct TransferEntropyGpu {
+pub struct CausalCouplingGpu {
     context: Arc<CudaContext>,
     stream: Arc<CudaStream>,
 
@@ -71,7 +71,7 @@ pub struct TransferEntropyGpu {
     max_series_length: usize,
 }
 
-impl TransferEntropyGpu {
+impl CausalCouplingGpu {
     /// Creates a new Transfer Entropy GPU accelerator
     ///
     /// # Arguments
@@ -523,7 +523,7 @@ mod tests {
     #[ignore] // Requires GPU
     fn test_te_initialization() {
         let device = CudaContext::new(0).unwrap());
-        let te = TransferEntropyGpu::new(Arc::new(device), 10, 1000);
+        let te = CausalCouplingGpu::new(Arc::new(device), 10, 1000);
         assert!(te.is_ok();
     }
 
@@ -531,7 +531,7 @@ mod tests {
     #[ignore] // Requires GPU
     fn test_te_computation() {
         let device = Arc::new(CudaContext::new(0).unwrap());
-        let mut te = TransferEntropyGpu::new(device, 5, 500).unwrap());
+        let mut te = CausalCouplingGpu::new(device, 5, 500).unwrap());
 
         // Generate synthetic time series
         let data: Vec<f32> = (0..2500).map(|i| (i as f32 * 0.01).sin()).collect();

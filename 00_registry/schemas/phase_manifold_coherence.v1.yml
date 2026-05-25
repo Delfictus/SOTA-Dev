@@ -1,0 +1,136 @@
+schema_version: "phase_manifold_coherence.v1"
+description: "Residue-level multimodal fiber-invariance tensor fused from spike, steering, mechanical, KCC, BOCPD, kinetic strain, aromatic, voxel-context, SNR, and residue-enrichment evidence."
+channels:
+  ch_spike_entropy:
+    source: spike_events_snr_masked.parquet
+    formula: "H=-sum(p_stream*ln(p_stream)); normalized as H/ln(20)"
+  ch_steering_coherence:
+    source: autonomous_steering_tensor.parquet
+    formula: "steering_weight_mean * supporting_stream_count / 20, normalized by condition maximum"
+  ch_load_directionality:
+    source: mechanical_load_network.parquet
+    formula: "abs(mean(mechanical_load)) / max(mean(abs(mechanical_load)), epsilon)"
+  ch_kcc_coherence:
+    source: kcc_residue_fields.parquet
+    formula: "abs(mean(temporal_correlation)) * (1 - coefficient_of_variation), normalized to [0,1]"
+  ch_bocpd_alignment:
+    source: bocpd_survival_regimes.parquet
+    formula: "max unique streams with chunk_close_signal inside a 500-frame window / 20"
+  ch_strain_coherence:
+    source: kinetic_strain_events.parquet
+    formula: "1.0 when all streams have no DT reduction events, otherwise 0.5 * normalized strain density + 0.5 * BOCPD coincidence rate"
+  ch_aromatic_invariance:
+    source: aromatic_reorganization_tensor.parquet
+    formula: "1 - min(centroid_displacement_std / global_p95_displacement_std, 1); nullable for non-aromatic residues"
+  voxel_context:
+    source: signal_grid_variance_channel.parquet
+    formula: "cKDTree query of voxel centers within 4 A of residue C-alpha; categorical class fractions"
+  snr_quality:
+    source: stream_snr_masks.parquet
+    formula: "1 - coefficient_of_variation(snr3_threshold), clipped to [0,1], broadcast by condition"
+  ch_residue_enrichment:
+    source: spike_residue_fields.parquet
+    formula: "mean masked_spike_count per residue normalized by condition maximum of residue enrichment over condition mean"
+fusion:
+  spike_weighted: "ch_spike_entropy * snr_quality"
+  geometric_mean: "exp(mean(log(max(channel, 1e-6)))) over available channels"
+  conservative_min: "min(spike_weighted, ch_load_directionality, ch_kcc_coherence, ch_bocpd_alignment)"
+  coherence_score: "0.7 * geometric_mean + 0.3 * conservative_min"
+  informativeness: "coherence_score multiplied by voxel context weight"
+classification:
+  fiber_invariant: "concordance_ratio >= 0.8 and coherence_score > 0.6"
+  partially_coherent: "concordance_ratio >= 0.5 and coherence_score > 0.3"
+  thermally_activated: "concordance_ratio < 0.3"
+  insufficient_channels: "n_total_channels < 4"
+  mixed_signal: "default fallback"
+columns:
+  condition_id:
+    dtype: string
+    ontology: StructureId
+    nullable: false
+  residue_idx:
+    dtype: int32
+    ontology: ResidueIdx
+    nullable: false
+  residue_name:
+    dtype: string
+    ontology: CanonicalResidueLabel
+    nullable: false
+  ch_spike_entropy:
+    dtype: float64
+    nullable: false
+  ch_steering_coherence:
+    dtype: float64
+    nullable: false
+  ch_load_directionality:
+    dtype: float64
+    nullable: false
+  ch_kcc_coherence:
+    dtype: float64
+    nullable: false
+  ch_bocpd_alignment:
+    dtype: float64
+    nullable: false
+  ch_strain_coherence:
+    dtype: float64
+    nullable: false
+  ch_aromatic_invariance:
+    dtype: float64
+    nullable: true
+  ch_residue_enrichment:
+    dtype: float64
+    nullable: false
+  coherence_score:
+    dtype: float64
+    nullable: false
+    constraints:
+      minimum: 0.0
+      maximum: 1.0
+  geometric_mean:
+    dtype: float64
+    nullable: false
+  conservative_min:
+    dtype: float64
+    nullable: false
+  informativeness:
+    dtype: float64
+    nullable: false
+  voxel_context:
+    dtype: string
+    nullable: false
+    allowed:
+      - core
+      - interface
+      - dynamic
+      - surface
+      - mixed
+  context_weight:
+    dtype: float64
+    nullable: false
+  coherence_class:
+    dtype: string
+    nullable: false
+    allowed:
+      - fiber_invariant
+      - partially_coherent
+      - thermally_activated
+      - mixed_signal
+      - insufficient_channels
+  n_concordant_channels:
+    dtype: uint8
+    nullable: false
+  n_total_channels:
+    dtype: uint8
+    nullable: false
+  concordance_ratio:
+    dtype: float64
+    nullable: false
+  total_spikes:
+    dtype: uint64
+    nullable: false
+  n_active_streams:
+    dtype: uint8
+    nullable: false
+  snr_quality:
+    dtype: float64
+    nullable: false

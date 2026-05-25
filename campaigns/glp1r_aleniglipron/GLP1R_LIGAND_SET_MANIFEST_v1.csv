@@ -1,0 +1,4 @@
+ligand_id,compound_name,canonical_smiles,source_database,known_target,known_activity_type,known_activity_value,activity_units,confidence_class,included_in_track
+ORFORGLIPRON_LY3502970,Orforglipron (LY3502970),COc1ccc(-c2nc(C(=O)N[C@H](Cc3ccccc3)C(=O)O)c(-c3cc(F)ccc3C)n2-c2ccc(C(F)(F)F)cc2)cc1,Clinical_Literature,GLP-1R,EC50,3.0,nM,high_confidence_clinical,Track_A_Benchmark_Set
+DANUGLIPRON_PF06882961,Danuglipron (PF-06882961),N#Cc1ccc(-c2c(-c3ccc(Cl)cc3)ncn2C2CCC(O)CC2)cc1,Clinical_Literature,GLP-1R,EC50,4.5,nM,high_confidence_clinical,Track_A_Benchmark_Set
+LOTIGLIPRON_PF07081532,Lotiglipron (PF-07081532),COc1cc(C)cnc1-c1nc(C(=O)N[C@H](Cc2ccccc2)C(=O)O)c(-c2ccc(Cl)cc2)n1-c1ccc(C#N)cc1,Clinical_Literature,GLP-1R,EC50,4.8,nM,high_confidence_clinical,Track_A_Benchmark_Set

@@ -1,0 +1,970 @@
+{
+  "package_version": "PRISM_GLP1R_M2_DELIVERABLES_v1.1",
+  "created_at_utc": "2026-05-24T03:49:03Z",
+  "delivery_root": "/home/diddy/Desktop/Prism4D-bio/PRISM_GLP1R_M2_DELIVERABLES_v1_1",
+  "entry_count": 134,
+  "total_bytes": 65693117,
+  "entries": [
+    {
+      "relative_path": "01_PDF_DELIVERABLES/BUILD_INSTRUCTIONS.md",
+      "size_bytes": 523,
+      "sha256": "623a3c6d1f0cc4b145d864e7a809d84e9536cf326f1ecc86b75343a1e7d726e4",
+      "category": "pdf",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/BUILD_STATUS.json",
+      "size_bytes": 753,
+      "sha256": "e1797749d88199e00624deacef053748b4cb89374c42a7c045ac87966011fbf8",
+      "category": "pdf",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/PRISM_GLP1R_M2_Audit_CBOM_Appendix.pdf",
+      "size_bytes": 56872,
+      "sha256": "c8bc889c80cf231049985d5eae5d7566f700ad0b0c2d79939b2bf4a940147c4a",
+      "category": "pdf",
+      "source_of_truth": false,
+      "derived_from": [
+        "PRISM_CBOM_v1.0.json",
+        "M2_Replayability_Manifest.json",
+        "GROUND_TRUTH_FILE_MANIFEST.json"
+      ]
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/PRISM_GLP1R_M2_CRO_Falsification_Handoff.pdf",
+      "size_bytes": 37725,
+      "sha256": "829718444ed49234d3019af62dab9d8b297ff4626a4273911778e0292bbf0151",
+      "category": "pdf",
+      "source_of_truth": false,
+      "derived_from": [
+        "CRO_WetLab_Action_Plan.parquet",
+        "M2_Triangulation_Dossier_Final.md",
+        "claim_falsification_graph.json"
+      ]
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/PRISM_GLP1R_M2_Complete_Delivery.pdf",
+      "size_bytes": 273488,
+      "sha256": "4a79e5ac4326f2ab6eb523bdf8089a9a790a73f2bfed0d9a1c20256398b9291a",
+      "category": "pdf",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/PRISM_GLP1R_M2_Complete_Delivery.pdf.sha256",
+      "size_bytes": 103,
+      "sha256": "a4a02cd16784151e0f2afcf5ac90f46f52061c54cf6dd68808d3e2093dbcc27d",
+      "category": "pdf",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/PRISM_GLP1R_M2_Executive_Dossier.pdf",
+      "size_bytes": 59995,
+      "sha256": "f7af2268fb9b5ca54ce26e1a509e96ff5a7644754c44347dc8312fa4f2d5aa30",
+      "category": "pdf",
+      "source_of_truth": false,
+      "derived_from": [
+        "MASTER_DATA_ROOM_INDEX.md",
+        "M2_Executive_Readout_Final.md",
+        "ENTERPRISE_POSITIONING_SUMMARY.md"
+      ]
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/PRISM_GLP1R_M2_MedChem_Action_Appendix.pdf",
+      "size_bytes": 54280,
+      "sha256": "af0afbd24f7ca198a52289cf2aaf0e2303b50ef41ebb71743cded00b56608b2d",
+      "category": "pdf",
+      "source_of_truth": false,
+      "derived_from": [
+        "aleniglipron_interference_summary.md",
+        "teaser_solutions.parquet",
+        "fragment_interference_attribution.parquet"
+      ]
+    },
+    {
+      "relative_path": "01_PDF_DELIVERABLES/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.pdf",
+      "size_bytes": 41070,
+      "sha256": "481d4759f5ba1677d3a294efdffce873893cc2d4fd0205a1264dbe25d2a15347",
+      "category": "pdf",
+      "source_of_truth": false,
+      "derived_from": [
+        "M2_Pharmacological_Dynamics_Intelligence_Report.md"
+      ]
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Audit_CBOM_Appendix.aux",
+      "size_bytes": 1907,
+      "sha256": "1d476ca9846a348fcfdfb0c8e03fb8b216478cf0115d46bfd45b00dd0de56414",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Audit_CBOM_Appendix.log",
+      "size_bytes": 41961,
+      "sha256": "bccaf45d513deb4ee7078592fb3970742382fa0a2f5da793e053f5632d53db9c",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Audit_CBOM_Appendix.out",
+      "size_bytes": 1410,
+      "sha256": "6b2e3f7998326bfd506556160fdf00952a16947f459dd324c0c88810d673a96b",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Audit_CBOM_Appendix.pdf",
+      "size_bytes": 56872,
+      "sha256": "c8bc889c80cf231049985d5eae5d7566f700ad0b0c2d79939b2bf4a940147c4a",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Audit_CBOM_Appendix.tex",
+      "size_bytes": 28063,
+      "sha256": "12a9ca323903439485804cf804e40e4383d70b08afebf6cd562733bb1feb2d77",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_CRO_Falsification_Handoff.aux",
+      "size_bytes": 1571,
+      "sha256": "6a358b6ccec0ded0a1983936a9a64bca7666d3dbf4419c98edbcbe6b4ae88d57",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_CRO_Falsification_Handoff.log",
+      "size_bytes": 43877,
+      "sha256": "27e25eec5e81e8898e8d2c2cf6872e0a0732a1a720e16fdbbb4ca30975c6521e",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_CRO_Falsification_Handoff.out",
+      "size_bytes": 834,
+      "sha256": "d4cd336c932f268164b8a8140339d6f10bf1476793b237637bc58d52e1bc4e0f",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_CRO_Falsification_Handoff.pdf",
+      "size_bytes": 37725,
+      "sha256": "829718444ed49234d3019af62dab9d8b297ff4626a4273911778e0292bbf0151",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_CRO_Falsification_Handoff.tex",
+      "size_bytes": 47069,
+      "sha256": "d57d8565465a3391fbeaf2f2d116a8ffaaeac243cb3b8122d17205ef64ca12c5",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Executive_Dossier.aux",
+      "size_bytes": 3260,
+      "sha256": "5c00300e077bf7fc3ea178fc27a65b2a31dffbe353e95b7fcd282f3b0b5ad607",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Executive_Dossier.log",
+      "size_bytes": 42200,
+      "sha256": "bab6b695b555e639c70a93b2738db86d6150b60ac308b943240d903606c6edfe",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Executive_Dossier.out",
+      "size_bytes": 1857,
+      "sha256": "ca5e676125ad6142dc039b816bd187bea4e87f12e34f3dab5be74cda760855a1",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Executive_Dossier.pdf",
+      "size_bytes": 59995,
+      "sha256": "f7af2268fb9b5ca54ce26e1a509e96ff5a7644754c44347dc8312fa4f2d5aa30",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Executive_Dossier.tex",
+      "size_bytes": 49255,
+      "sha256": "0158c0741e59076f9b5666c81877603f7e38edca6b05f44743b83217f1bd2c2d",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_MedChem_Action_Appendix.aux",
+      "size_bytes": 4521,
+      "sha256": "2bbc7600b27706273388eb30d898911d2072027815fc767f76c819daac9d932e",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_MedChem_Action_Appendix.log",
+      "size_bytes": 43623,
+      "sha256": "02ac606cfba647d8c8ac91e4c99fdf26856f0937774361ced9291bbe9aa122a2",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_MedChem_Action_Appendix.out",
+      "size_bytes": 2998,
+      "sha256": "b0ba628dcb64970a64445a7c5304e7c4d817942b97de4c0f8806b386f6c19b80",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_MedChem_Action_Appendix.pdf",
+      "size_bytes": 54280,
+      "sha256": "af0afbd24f7ca198a52289cf2aaf0e2303b50ef41ebb71743cded00b56608b2d",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_MedChem_Action_Appendix.tex",
+      "size_bytes": 19393,
+      "sha256": "5a8107ee2a2518450613b09b05a92e64bf654dfa3b6e6e157f9527c28c07d4d5",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.aux",
+      "size_bytes": 2518,
+      "sha256": "8aae546f8a96ccbbddc79c6bfa92ee6d624db57703200076255a3baac24bf131",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.log",
+      "size_bytes": 42023,
+      "sha256": "b5bf6c07dec94b9adf99108dd462ef7b6d455900662a2f6547f88f1fbf9875de",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.out",
+      "size_bytes": 1205,
+      "sha256": "2316eeaf42a63ea1f569b4eb59802b6cd7b13b3c303eb9cd9e004c7b326b763f",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.pdf",
+      "size_bytes": 41070,
+      "sha256": "481d4759f5ba1677d3a294efdffce873893cc2d4fd0205a1264dbe25d2a15347",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/generated/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.tex",
+      "size_bytes": 53647,
+      "sha256": "a4651378a54298d5f4f1d34905ae00a8d6e79942a9501d96de6de31f85cc47c7",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "02_LATEX_SOURCE/prism_pharma_report_template.tex.j2",
+      "size_bytes": 7494,
+      "sha256": "5b6c35f4331478f9cbb35d35ac04083849cb8921080feab2aa5b8687c867599f",
+      "category": "latex_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "03_MARKDOWN_SOURCE/MARKDOWN_SOURCE_MANIFEST.json",
+      "size_bytes": 1031,
+      "sha256": "abda68a92eaddaf86a84854af8810d7c274d51ee4d41163fb0579854ae0f6dd4",
+      "category": "markdown_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "03_MARKDOWN_SOURCE/PRISM_GLP1R_M2_Audit_CBOM_Appendix.md",
+      "size_bytes": 15660,
+      "sha256": "3a7c0acfa76396550d0dc82c28f8c0711fae85602cfea0710a0b87cde6bc2996",
+      "category": "markdown_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "03_MARKDOWN_SOURCE/PRISM_GLP1R_M2_CRO_Falsification_Handoff.md",
+      "size_bytes": 27983,
+      "sha256": "d6a3540b0061410f878b33ab8bd0e20a8ad10bee1fd31863e12a62e6ca5a3a0b",
+      "category": "markdown_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "03_MARKDOWN_SOURCE/PRISM_GLP1R_M2_Executive_Dossier.md",
+      "size_bytes": 28224,
+      "sha256": "bc9ef78bce2217afa59a7ed93b8d068cc0c8a5911314155840a654cb3bab6cbf",
+      "category": "markdown_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "03_MARKDOWN_SOURCE/PRISM_GLP1R_M2_MedChem_Action_Appendix.md",
+      "size_bytes": 7230,
+      "sha256": "e18fd4054b3385bddab6d3a1fe4c8057b27d2c992928e1f171671790335a53c4",
+      "category": "markdown_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "03_MARKDOWN_SOURCE/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.md",
+      "size_bytes": 30568,
+      "sha256": "d25fb3b8a6cd39d75a257cdbc7f517ce0e51295084ca794de2a07b8f24807249",
+      "category": "markdown_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "04_TXT_SOURCE/PRISM_GLP1R_M2_Audit_CBOM_Appendix.txt",
+      "size_bytes": 16375,
+      "sha256": "a918c1418ddc178b4045e34870f24993b9e3d26087c6e64d4e4c49a206162c20",
+      "category": "text_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "04_TXT_SOURCE/PRISM_GLP1R_M2_CRO_Falsification_Handoff.txt",
+      "size_bytes": 32939,
+      "sha256": "504d8a8d84cacc8685950a651e3a33913729d9ee8b87280b57073fbbc1b1831b",
+      "category": "text_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "04_TXT_SOURCE/PRISM_GLP1R_M2_Executive_Dossier.txt",
+      "size_bytes": 34003,
+      "sha256": "4fbf6b368cdda2b5dde98e43427760de9912ce0c4145d1c1fe809d33b8039ac8",
+      "category": "text_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "04_TXT_SOURCE/PRISM_GLP1R_M2_MedChem_Action_Appendix.txt",
+      "size_bytes": 10216,
+      "sha256": "dcb98f23db7043fd41b697ef6f7d52fcd653ddef54be2c15dc9ad633a671d81a",
+      "category": "text_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "04_TXT_SOURCE/PRISM_GLP1R_M2_Pharmacological_Dynamics_Intelligence_Report.txt",
+      "size_bytes": 41447,
+      "sha256": "3bc80bf2885d775d2a8193557e42e928665450bbb569a0fdd422ba9093a3eac3",
+      "category": "text_source",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/GROUND_TRUTH_FILE_MANIFEST.json",
+      "size_bytes": 18033,
+      "sha256": "6db24e44612251147953528c1b55d4d752a3b76a74cdb3301faa548ec2dab7de",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/PRISM_GLP1R_M2_EXECUTIVE_RELEASE_v1.1.tar.gz.sha256",
+      "size_bytes": 143,
+      "sha256": "b413f1cc6cd92d5154d4455a4ecbc521386489346c6cb50a845abf67d44ed175",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/CRO_WetLab_Action_Plan.parquet",
+      "size_bytes": 11048,
+      "sha256": "6b7be636f1d2faa75c0bab510b77e5fb951ed4ce11a8e5acc699a9082e1e7d54",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/ENTERPRISE_POSITIONING_SUMMARY.md",
+      "size_bytes": 1249,
+      "sha256": "c437397d898973b5dd5f1d31f944b8162448ea5ef4cb264706f7743b57b5fd60",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Executive_Readout_Final.md",
+      "size_bytes": 8685,
+      "sha256": "884a4543f469d3d6692d34e504613936692c19ff211639f94e9b790d61f4efdb",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Pharmacological_Dynamics_Intelligence_Report.md",
+      "size_bytes": 22944,
+      "sha256": "26cd9ffa14ff4c6efac61a35b885a0299b2223cdaa1ed5321a6615224eb2f03d",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Replayability_Manifest.json",
+      "size_bytes": 15067,
+      "sha256": "c919fc6833af897c4578492f81a65f2146f9f787fc7efafd1294d785dafadcff",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Triangulation_Dossier_Final.md",
+      "size_bytes": 23020,
+      "sha256": "04722905a41d5ee64f44843befd7d77b7027965e3be7f175a73a1c4d119f5a33",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/MASTER_DATA_ROOM_INDEX.md",
+      "size_bytes": 16561,
+      "sha256": "a5d291d61f70f6b9a572fae7ffe870d1fcdc7e18673e51c8bcec661b549bcac0",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/PRISM_CBOM_v1.0.json",
+      "size_bytes": 56338,
+      "sha256": "487e13008025feb92bd97a58ff5758c796a17b8e99a0c217b0c40e8a0bd371c0",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/claim_falsification_graph.json",
+      "size_bytes": 10919,
+      "sha256": "3f4f47e1221eb5fe1deff92bf43aff93bf3a43b2b5a6f07ad00b017b860ac48a",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/assay_routing_recommendations.parquet",
+      "size_bytes": 87298,
+      "sha256": "8425536a2e95186bc0f2502671771f9aa5471d2b3acd569cdce7240ca9f1c14c",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+      "size_bytes": 366026,
+      "sha256": "52643bdd9ee38b1c202e21e8802b94827d2a717ad46c1251695aff6179a73df1",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/occupancy_fatigue_risk.parquet",
+      "size_bytes": 534376,
+      "sha256": "4a5d858c3a7e79546682aae39f435141a0f3e9b86e724171606faedfe0ac3e19",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_coherence.parquet",
+      "size_bytes": 402424,
+      "sha256": "31f1b764566ccd74f3c0eb0d8a353c99603b5ead155ac2e00da009f387df0dc2",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_edge_validation.parquet",
+      "size_bytes": 16616,
+      "sha256": "4e8729ead4be183826c3e75b4b6a130fd4a99e01aed6e904dbc0474279972e3d",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/probabilistic_break_clusters.parquet",
+      "size_bytes": 46107,
+      "sha256": "f11e35dfe5a204711590a667d7028c05568628aa3f737b87ea6beeeebfac7a2c",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_channel_summary.parquet",
+      "size_bytes": 8870,
+      "sha256": "de823ce5d731206b986e44c733b1185a5ad04c488cd3c0703e2cb6f6e484b52e",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_risk_map.parquet",
+      "size_bytes": 561263,
+      "sha256": "2aec5f547d9330533ae4bd8ce86cc04e97d5cc781359843796dd02eef4296bda",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/stream_level_phase_counts.parquet",
+      "size_bytes": 3146024,
+      "sha256": "19da8f333f00594c9ac569cfab82ed7500366ba79dff9e833f887fb5a504d1d1",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade.parquet",
+      "size_bytes": 113968,
+      "sha256": "d751df8769e37f926d5315d3bd4e6957eca14e1cb4b6df71bf026f0d6f9d410c",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade_summary.parquet",
+      "size_bytes": 7999,
+      "sha256": "17d43ec6e44c2e975c2c3356c6dc8834f85fe13cfe2dc1663f2f25fbfec3ffda",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet",
+      "size_bytes": 15160,
+      "sha256": "2bdf777a4faf286ce291ecb12865d05b25cee682c59f286a1578fc459aa08b58",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/tri_state_ligand_fiber_graph.parquet",
+      "size_bytes": 10731,
+      "sha256": "605fa54956edb4c1d5db07112504e26a49c577af6329ce77272443e8423126fa",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/variant_propagation_deltas.parquet",
+      "size_bytes": 95919,
+      "sha256": "a4a38df2e0d92e0a79905ea32080661fb5be3bb45cd6d8d1a0adfbf45e8bcb57",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/wire_conservation_matrix.parquet",
+      "size_bytes": 7739,
+      "sha256": "e9c8d3125f76e72d78b9ad03ae90f93c32daf2e3474e7273ff8b8cb011ee4c2e",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2c_metastable_atlas_triggers.json",
+      "size_bytes": 59830,
+      "sha256": "48068602afca7563380536a4f3761a8fa2190ff3e3108ed4edfe37ed955c0c66",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2c_reintegration_parity.json",
+      "size_bytes": 9938,
+      "sha256": "30e5160165daa814e98aa8a2ac8deb362c790821f6d103472e3106b5005e905c",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2c_snapshot_triggers.json",
+      "size_bytes": 6005,
+      "sha256": "f6db43968d50bd16bb83eca557d4e27ae4224b4b113df65b3683ea6592dda112",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2d_variant_grid_manifest.json",
+      "size_bytes": 13381,
+      "sha256": "b202d98c423b9d26e7adccd052eda48f6e35886e868134aa028130f5cca51658",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2d_variant_grid_manifest.propagation.jsonl",
+      "size_bytes": 2199,
+      "sha256": "48db82590787cf92331944caf0ad52ec620c82340c9c3bdfeb2ac4c45cd10630",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_brics_fragment_registry.json",
+      "size_bytes": 3033,
+      "sha256": "f60ccedd67bec43b23fb342e8bd4e8ba599859a6be89e1ab59cc548d440c1f12",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_interference_summary.md",
+      "size_bytes": 3375,
+      "sha256": "ad9a7d2b9bdb3127a4dff0aacc1b4bab75696d393330b4bdbee1863be92d2224",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_two_layer_gate_report.json",
+      "size_bytes": 2017,
+      "sha256": "5f7fff15a44532def20a5f16fae7d6b16a7084f589c9dd7185d6a76cb0bc144c",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/fragment_interference_attribution.parquet",
+      "size_bytes": 11673,
+      "sha256": "cb6eea0504474ab53fa6421dbdd5063a5a8b8caffcb6c04c4f896801a861a79d",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/teaser_solutions.parquet",
+      "size_bytes": 66952,
+      "sha256": "b3e9742773b68a4b97e37456e5fe50dcc3bfa4cce54e659cd4e39b3e487f3de5",
+      "category": "ground_truth",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/ENTERPRISE_RELEASE_OBSERVABLE_REVIEW.md",
+      "size_bytes": 98207,
+      "sha256": "a507f56658c2d506e69bd33fdfd5f98e3a383bba63b828c87f9739508d4932fe",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/ENTERPRISE_RELEASE_VIEWER.html",
+      "size_bytes": 111615,
+      "sha256": "fcacfa772ed9801b7ee986d44816a6d3f6637c7668e82edff240a4264f05b979",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/PRISM_GLP1R_M2_VISUALIZATION_PACKAGE_v1.1.tar.gz",
+      "size_bytes": 2159679,
+      "sha256": "da1cc4ee2db70764226483187758124271c8610cbafcc3ad22644b4e0a6c29da",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/PRISM_GLP1R_M2_VISUALIZATION_PACKAGE_v1.1.tar.gz.sha256",
+      "size_bytes": 115,
+      "sha256": "38086f08417c1ced9b93a91be7261f965392c5a29d9053c09ae1336e776daf68",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/VISUALIZATION_README.md",
+      "size_bytes": 2840,
+      "sha256": "cbf97a7d07124947980dd67828b32d3bd2a7a65a6b0cfc0913e3b0b253abc687",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/CRO_WetLab_Action_Plan.sample.tsv",
+      "size_bytes": 3660,
+      "sha256": "93918a7c979241aa306bb2fcda31b9f28939fdede7a3e008f88fd818ffaba919",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/assay_routing_recommendations.sample.tsv",
+      "size_bytes": 5005,
+      "sha256": "ca1d7077c714111be2e64648ed95f64e99a033fb44fbb4b5850810177923773b",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/calibration_anchors_3d.sample.tsv",
+      "size_bytes": 45602,
+      "sha256": "916233996cb5bad3611719d8683fd89f8a6bb2b530d5484defe9248b100e4d64",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/fragment_interference_attribution.sample.tsv",
+      "size_bytes": 2953,
+      "sha256": "acd2118ea5fbd9098454c51820cbe27cc116f43611c56dcb9d20c01268c0ffbf",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/gflownet_tso_bridge_boundaries.sample.tsv",
+      "size_bytes": 6295,
+      "sha256": "98e8fc0ebe9c310a4e6651cab6441cd90040a850d6a2c1a7d2a718d2c71a3355",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/hysteresis_tensor.sample.tsv",
+      "size_bytes": 9069,
+      "sha256": "29afd46bfdd868137747a5189e524e7840ace2d68c57b5cf4eaddf621b8a3855",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/phase_manifold_coherence.sample.tsv",
+      "size_bytes": 13460,
+      "sha256": "9ee2a7a8eb34fede8099fbe8c5dc1aee3d1f946e1032b8b1e69065a3a2c857bc",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/phase_manifold_edge_validation.sample.tsv",
+      "size_bytes": 4113,
+      "sha256": "c7ca5db4765e20c3abc7e0fdd97151d7c41a92bf4d2b09dfa846ca476ea0d072",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/teaser_solutions.sample.tsv",
+      "size_bytes": 53831,
+      "sha256": "701f099983d20136753caf00ddc176c26f7c9b764894bbe0d0d2214afae1b2bb",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/temporal_cascade.sample.tsv",
+      "size_bytes": 8189,
+      "sha256": "830878909e48f69822c83af0d709830a6255c51361c98942987f5ebf32e4e45f",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/parquet_samples/translation_pathway_nodes.sample.tsv",
+      "size_bytes": 2971,
+      "sha256": "968f43a0d5c315dffcb29e6f03346be0edd5c5db07a8e2b0cd11066c1287f965",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/visualizer_app/assets/index-BpB3pk6e.css",
+      "size_bytes": 1711,
+      "sha256": "8767504de4b9194ef06653f90d2bdd27a4df3ca20ba540a03cbf222781571e58",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/visualizer_app/assets/index-CqvL8LbP.js",
+      "size_bytes": 1302342,
+      "sha256": "3ab42ca12b9c1e1a7b35b954b1ebb20c70b7fc684427da9395389beaa64ccab3",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/visualizer_app/assets/parquet_wasm_bg-DrNke8Bl.wasm",
+      "size_bytes": 5493393,
+      "sha256": "1e2ff2657d0c6b776eee88fe67392fdab59fea95821089bc60883e948f652eaf",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "06_VISUALIZATION_PACKAGE/visualizer_app/index.html",
+      "size_bytes": 420,
+      "sha256": "96763457c76628a7228aaaef427d24c396e381ee5d312ce14daeae233c29a55a",
+      "category": "visualization",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "07_AUDIT_AND_CBOM/M2_Replayability_Manifest.json",
+      "size_bytes": 15067,
+      "sha256": "c919fc6833af897c4578492f81a65f2146f9f787fc7efafd1294d785dafadcff",
+      "category": "audit_cbom",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "07_AUDIT_AND_CBOM/PRISM_CBOM_v1.0.json",
+      "size_bytes": 56338,
+      "sha256": "487e13008025feb92bd97a58ff5758c796a17b8e99a0c217b0c40e8a0bd371c0",
+      "category": "audit_cbom",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "07_AUDIT_AND_CBOM/PRISM_GLP1R_M2_EXECUTIVE_RELEASE_v1.1.tar.gz.sha256",
+      "size_bytes": 143,
+      "sha256": "b413f1cc6cd92d5154d4455a4ecbc521386489346c6cb50a845abf67d44ed175",
+      "category": "audit_cbom",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "07_AUDIT_AND_CBOM/claim_falsification_graph.json",
+      "size_bytes": 10919,
+      "sha256": "3f4f47e1221eb5fe1deff92bf43aff93bf3a43b2b5a6f07ad00b017b860ac48a",
+      "category": "audit_cbom",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "08_RELEASE_ARCHIVES/PRISM_GLP1R_M2_EXECUTIVE_RELEASE_v1.1.tar.gz",
+      "size_bytes": 19308739,
+      "sha256": "b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454",
+      "category": "release_archive",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "08_RELEASE_ARCHIVES/PRISM_GLP1R_M2_EXECUTIVE_RELEASE_v1.1.tar.gz.sha256",
+      "size_bytes": 143,
+      "sha256": "b413f1cc6cd92d5154d4455a4ecbc521386489346c6cb50a845abf67d44ed175",
+      "category": "release_archive",
+      "source_of_truth": true
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/CBOM_Summary.md",
+      "size_bytes": 726,
+      "sha256": "eb85eb58c52192191642629a107c44219d17b57bc17df777ea0cbc2d969ba3e8",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/CRO_WetLab_Action_Plan.csv",
+      "size_bytes": 3670,
+      "sha256": "33dee033f55986ed6c4e9193c83492b26b1f0a88b5db7f8e64278ae5649c8516",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/CRO_WetLab_Action_Plan.md",
+      "size_bytes": 1966,
+      "sha256": "b8dead7ccfdb06b14d713a5c9ed54522bcde9e31b50423d61e05ce9f499d7d3c",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Claim_Falsification_Graph.csv",
+      "size_bytes": 5579,
+      "sha256": "436f104b99b754143f3c715efd7ceac11e466261085041c5e51da85e2b2d7298",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Claim_Falsification_Graph.md",
+      "size_bytes": 2575,
+      "sha256": "64a4da2725804160bb92729c822eda5f370b1b885d06133eda85cdbe27ac5e29",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Critical_Edge_Validation.csv",
+      "size_bytes": 4113,
+      "sha256": "ed308feb0573b3bafba45ca3c0459e4d95a0a218ce7dbcf4ef8b85dd47b05cf5",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Critical_Edge_Validation.md",
+      "size_bytes": 1673,
+      "sha256": "f6cdc25d66f2340962386976be4fae275a3ba8e340924ce9d1ee5f5b497a8962",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Fragment_Interference_Attribution.csv",
+      "size_bytes": 2957,
+      "sha256": "2b1fc41460c262bef9242c9c0f62f6c50dbb628eb4c3f9f3c7d3491909336737",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Fragment_Interference_Attribution.md",
+      "size_bytes": 1072,
+      "sha256": "efdf921745bd8c1f9d656592575d784f489d2142b64a1cdbb223aeb9aa0a835a",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Phase2C_Metastable_Trigger_Summary.csv",
+      "size_bytes": 2996,
+      "sha256": "c76c70cd6c2c0c65b0ff2b2c13624451881f331cd0f83974114676f0297fa87b",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Phase2C_Metastable_Trigger_Summary.md",
+      "size_bytes": 2237,
+      "sha256": "be3655d4982107a2b7be337db5f3829566e8014d4aebc70b4b95d0764e99d9c5",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Phase2D_Staged_Targets.csv",
+      "size_bytes": 313,
+      "sha256": "0b2462e06bfd9a4c17908aec3b8a96bb8dfc1c79dc4029624f134651f985d0b9",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Phase2D_Staged_Targets.md",
+      "size_bytes": 738,
+      "sha256": "cb31c5f6e67ff421953cab891ab33d1ddfca1168054da7ad725ec6c102a61381",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Translation_Pathway_Nodes.csv",
+      "size_bytes": 2971,
+      "sha256": "84d0916fbc29a93fa552bd74060784177c87d047854e072cb1f8f832610ee8ba",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/Translation_Pathway_Nodes.md",
+      "size_bytes": 942,
+      "sha256": "28064b67311f7acb0ceaff82195bc098ed4d915369bdb1f4693353adbbac7e9f",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/ZeroShot_Top10_Replacements.csv",
+      "size_bytes": 2011,
+      "sha256": "b26351837e07f46cfa1f4ea493e04fbba05e406bb3dce25498b2d0c14bbf2351",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "09_TABLE_EXPORTS/ZeroShot_Top10_Replacements.md",
+      "size_bytes": 1372,
+      "sha256": "fe326d11ed4dbf2bf5ed3a188606b854dd490781c0e316d83537f0648fd63df6",
+      "category": "table_export",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "PRISM_GLP1R_M2_PDF_DELIVERABLES_v1.1.tar.gz",
+      "size_bytes": 29604588,
+      "sha256": "4faeb17c8e6d7a6909aaa98a1e588d3390e19e9ca57e4d6e06341e6b681853bb",
+      "category": "other",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "PRISM_GLP1R_M2_PDF_DELIVERABLES_v1.1.tar.gz.sha256",
+      "size_bytes": 110,
+      "sha256": "88035dfc212186d955a1c79f951516c5251e66fade62fcc8ce0bb7f08ed6acbe",
+      "category": "other",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "PRISM_M2_v1.1_PDF_DELIVERY_INDEX.html",
+      "size_bytes": 17025,
+      "sha256": "c3bdd4a78fb079c5142c16a18ce98d667ea0b37b9116429ff76297ff53c4670c",
+      "category": "other",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "PRISM_M2_v1.1_PDF_DELIVERY_MOBILE_URLS.md",
+      "size_bytes": 8674,
+      "sha256": "129f1a44559dc17da527c4b37945deb778f6eb621a0af7af66a4f51344b63db9",
+      "category": "other",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "scripts/build_delivery_manifests.py",
+      "size_bytes": 12273,
+      "sha256": "dd48636f44a3af31e5f336dd9d59d5d73e1d4bdf83d9b2e845bbba7273d75d74",
+      "category": "script",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "scripts/build_pdf_deliverables.py",
+      "size_bytes": 21802,
+      "sha256": "0ef1c75201cba7ca4d752ac33ae4a75cba956fcaf6e6aa6bef53f5d367f66c18",
+      "category": "script",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "scripts/export_delivery_tables.py",
+      "size_bytes": 11513,
+      "sha256": "0aa728ea36bf4ead3a4aaf43c1922b18ebbd1c9b7d10042c67a4828a03a86d4b",
+      "category": "script",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "scripts/snapshot_ground_truth.py",
+      "size_bytes": 8130,
+      "sha256": "6240c59a170cb7ae5bd88b166b108d070f6389a0d36364536ae814f8aaed5661",
+      "category": "script",
+      "source_of_truth": false
+    },
+    {
+      "relative_path": "scripts/validate_pdf_delivery_bundle.py",
+      "size_bytes": 10229,
+      "sha256": "e495f14ebd9d143be5cfd2737fe777b4d0da9870cac3aeae98c01fccc2897ed7",
+      "category": "script",
+      "source_of_truth": false
+    }
+  ]
+}

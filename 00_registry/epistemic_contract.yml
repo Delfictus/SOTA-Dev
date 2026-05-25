@@ -1,0 +1,42 @@
+schema_version: epistemic_contract.v1
+platform_definition: "epistemically partitioned mechanistic evidence infrastructure"
+classes:
+  OBSERVED:
+    level: 1
+    definition: "Direct tensor-derived measurement present in simulation output."
+    examples:
+      - spike_events_snr_masked.parquet
+      - shear_stress_field.parquet
+      - stream_level_phase_counts.parquet
+  DERIVED:
+    level: 2
+    definition: "Deterministic mathematical transform of observed tensors."
+    examples:
+      - phase_manifold_coherence.parquet
+      - hysteresis_tensor.parquet
+      - probabilistic_break_clusters.parquet
+  INFERRED:
+    level: 3
+    definition: "Mechanistic interpretation derived from multi-tensor convergence."
+    examples:
+      - receptor_durability_risk_map.parquet
+      - translation_pathway_nodes.parquet
+      - assay_routing_recommendations.parquet
+  PROJECTED:
+    level: 4
+    definition: "Translational extrapolation into expected assay behavior."
+    examples:
+      - CRO_WetLab_Action_Plan.parquet
+      - fragment_interference_attribution.parquet
+      - teaser_solutions.parquet
+  HYPOTHESIZED:
+    level: 5
+    definition: "Biological interpretation requiring experimental falsification."
+    examples:
+      - calibration_anchors_3d.parquet
+      - generative fragment poses
+      - scaffold replacement candidates before synthesis and assay
+governance:
+  deterministic_language_policy: "Reports must separate tensor observations from projected wet-lab behavior."
+  false_precision_policy: "Avoid absolute biological timing claims when the evidence supports only relative ordering."
+  falsification_policy: "Projected and hypothesized claims must name an assay and failure condition."

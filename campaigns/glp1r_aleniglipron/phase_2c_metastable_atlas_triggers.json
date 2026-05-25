@@ -1,0 +1,1521 @@
+{
+  "campaign_id": "glp1r_aleniglipron",
+  "phase": "phase_2c_metastable_atlas",
+  "capture_mode": "targeted_window_reintegration_or_representative_capture",
+  "stride": 1,
+  "source_parquet": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/probabilistic_break_clusters.parquet",
+  "source_parquet_sha256": "f11e35dfe5a204711590a667d7028c05568628aa3f737b87ea6beeeebfac7a2c",
+  "cluster_centroid_definition": "mean(first_ramp_md_step) grouped by condition_id, protocol_group, and cluster_id",
+  "window_definition": "[round(centroid) - 2, round(centroid) + 2]",
+  "trigger_count": 52,
+  "triggers": [
+    {
+      "trigger_id": "glp1r_5VEX_WT:A_ThermalShock:C05",
+      "condition_id": "glp1r_5VEX_WT",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_5VEX_WT:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10037.440294180837,
+      "centroid_step": 10037,
+      "temporal_overlap_entropy": 0.0001493640411933052,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 0.9922684290503161,
+      "inter_replicate_stability": 351.6621287204607,
+      "unique_residue_count": 388,
+      "cluster_member_count": 388,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10035,
+          "end_step": 10039,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_5VEX_WT:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_5VEX_WT:B_UVAromatic:C03",
+      "condition_id": "glp1r_5VEX_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_5VEX_WT:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8000.96230506218,
+      "centroid_step": 8001,
+      "temporal_overlap_entropy": 0.03520696940707613,
+      "cluster_confidence": 0.9826421131235906,
+      "mean_cluster_probability": 0.9982436401999163,
+      "inter_replicate_stability": 0.19775669510176833,
+      "unique_residue_count": 358,
+      "cluster_member_count": 358,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 7999,
+          "end_step": 8003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_5VEX_WT:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_5VEX_WT:B_UVAromatic:C04",
+      "condition_id": "glp1r_5VEX_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_5VEX_WT:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8071.661584582383,
+      "centroid_step": 8072,
+      "temporal_overlap_entropy": 4.890439326823544e-06,
+      "cluster_confidence": 0.9964782620824301,
+      "mean_cluster_probability": 0.9333317136186167,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 30,
+      "cluster_member_count": 30,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8070,
+          "end_step": 8074,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_5VEX_WT:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_5VEX_WT:C_Equilibrium:C01",
+      "condition_id": "glp1r_5VEX_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_5VEX_WT:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6018.434417937407,
+      "centroid_step": 6018,
+      "temporal_overlap_entropy": 0.21814410289895658,
+      "cluster_confidence": 0.8849497533764571,
+      "mean_cluster_probability": 0.8654483220568046,
+      "inter_replicate_stability": 55.60472809968246,
+      "unique_residue_count": 142,
+      "cluster_member_count": 142,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6016,
+          "end_step": 6020,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_5VEX_WT:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_5VEX_WT:C_Equilibrium:C02",
+      "condition_id": "glp1r_5VEX_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_5VEX_WT:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6196.710703515755,
+      "centroid_step": 6197,
+      "temporal_overlap_entropy": 0.19776104256849206,
+      "cluster_confidence": 0.8464914113016343,
+      "mean_cluster_probability": 0.9893690139722455,
+      "inter_replicate_stability": 884.7646050551624,
+      "unique_residue_count": 246,
+      "cluster_member_count": 246,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6195,
+          "end_step": 6199,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_5VEX_WT:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_5VEX_WT:D_Hysteresis:C02",
+      "condition_id": "glp1r_5VEX_WT",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_5VEX_WT:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6107.6919341595185,
+      "centroid_step": 6108,
+      "temporal_overlap_entropy": 0.19776104256849172,
+      "cluster_confidence": 0.8464914113016382,
+      "mean_cluster_probability": 0.7279314704287625,
+      "inter_replicate_stability": 884.76460505516,
+      "unique_residue_count": 388,
+      "cluster_member_count": 388,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6106,
+          "end_step": 6110,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_5VEX_WT:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_A316T:A_ThermalShock:C05",
+      "condition_id": "glp1r_6LN2_A316T",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_A316T:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10007.86435272415,
+      "centroid_step": 10008,
+      "temporal_overlap_entropy": 0.0001493640411933052,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 0.9950565749531093,
+      "inter_replicate_stability": 351.6621287204607,
+      "unique_residue_count": 394,
+      "cluster_member_count": 394,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10006,
+          "end_step": 10010,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_A316T:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_A316T:B_UVAromatic:C03",
+      "condition_id": "glp1r_6LN2_A316T",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_A316T:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8000.958529544056,
+      "centroid_step": 8001,
+      "temporal_overlap_entropy": 0.03520696940707612,
+      "cluster_confidence": 0.9826421131235902,
+      "mean_cluster_probability": 0.9982378016533971,
+      "inter_replicate_stability": 0.19775669510176846,
+      "unique_residue_count": 369,
+      "cluster_member_count": 369,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 7999,
+          "end_step": 8003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_A316T:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_A316T:B_UVAromatic:C04",
+      "condition_id": "glp1r_6LN2_A316T",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_A316T:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8036.274770106858,
+      "centroid_step": 8036,
+      "temporal_overlap_entropy": 4.8904393268235425e-06,
+      "cluster_confidence": 0.9964782620824301,
+      "mean_cluster_probability": 0.9999983336984793,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 25,
+      "cluster_member_count": 25,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8034,
+          "end_step": 8038,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_A316T:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_A316T:C_Equilibrium:C01",
+      "condition_id": "glp1r_6LN2_A316T",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_A316T:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6006.14107768254,
+      "centroid_step": 6006,
+      "temporal_overlap_entropy": 0.21814410289895575,
+      "cluster_confidence": 0.8849497533764541,
+      "mean_cluster_probability": 0.8998644769802324,
+      "inter_replicate_stability": 55.604728099682276,
+      "unique_residue_count": 41,
+      "cluster_member_count": 41,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6004,
+          "end_step": 6008,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_A316T:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_A316T:C_Equilibrium:C02",
+      "condition_id": "glp1r_6LN2_A316T",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_A316T:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6287.785642114035,
+      "centroid_step": 6288,
+      "temporal_overlap_entropy": 0.19776104256849217,
+      "cluster_confidence": 0.8464914113016364,
+      "mean_cluster_probability": 0.9999997147759346,
+      "inter_replicate_stability": 884.7646050551605,
+      "unique_residue_count": 353,
+      "cluster_member_count": 353,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6286,
+          "end_step": 6290,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_A316T:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_A316T:D_Hysteresis:C02",
+      "condition_id": "glp1r_6LN2_A316T",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_A316T:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6108.920623900759,
+      "centroid_step": 6109,
+      "temporal_overlap_entropy": 0.19776104256849167,
+      "cluster_confidence": 0.8464914113016384,
+      "mean_cluster_probability": 0.7312411153578346,
+      "inter_replicate_stability": 884.76460505516,
+      "unique_residue_count": 394,
+      "cluster_member_count": 394,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6107,
+          "end_step": 6111,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_A316T:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_T149M:A_ThermalShock:C05",
+      "condition_id": "glp1r_6LN2_T149M",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_T149M:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10007.650816342955,
+      "centroid_step": 10008,
+      "temporal_overlap_entropy": 0.0001493640411933052,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 0.9948718440036831,
+      "inter_replicate_stability": 351.6621287204607,
+      "unique_residue_count": 390,
+      "cluster_member_count": 390,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10006,
+          "end_step": 10010,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_T149M:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_T149M:B_UVAromatic:C03",
+      "condition_id": "glp1r_6LN2_T149M",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_T149M:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8000.979830631352,
+      "centroid_step": 8001,
+      "temporal_overlap_entropy": 0.03520696940707613,
+      "cluster_confidence": 0.9826421131235906,
+      "mean_cluster_probability": 0.9982207940363353,
+      "inter_replicate_stability": 0.1977566951017683,
+      "unique_residue_count": 357,
+      "cluster_member_count": 357,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 7999,
+          "end_step": 8003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_T149M:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_T149M:B_UVAromatic:C04",
+      "condition_id": "glp1r_6LN2_T149M",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_T149M:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8035.9115844011485,
+      "centroid_step": 8036,
+      "temporal_overlap_entropy": 4.890439326823545e-06,
+      "cluster_confidence": 0.9964782620824301,
+      "mean_cluster_probability": 0.9999983168671509,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 33,
+      "cluster_member_count": 33,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8034,
+          "end_step": 8038,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_T149M:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_T149M:C_Equilibrium:C01",
+      "condition_id": "glp1r_6LN2_T149M",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_T149M:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6009.652207187894,
+      "centroid_step": 6010,
+      "temporal_overlap_entropy": 0.21814410289895575,
+      "cluster_confidence": 0.8849497533764542,
+      "mean_cluster_probability": 0.8919756209169213,
+      "inter_replicate_stability": 55.60472809968228,
+      "unique_residue_count": 37,
+      "cluster_member_count": 37,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6008,
+          "end_step": 6012,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_T149M:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_T149M:C_Equilibrium:C02",
+      "condition_id": "glp1r_6LN2_T149M",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_T149M:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6198.7148058580115,
+      "centroid_step": 6199,
+      "temporal_overlap_entropy": 0.19776104256849217,
+      "cluster_confidence": 0.8464914113016364,
+      "mean_cluster_probability": 0.9995802495265554,
+      "inter_replicate_stability": 884.7646050551605,
+      "unique_residue_count": 353,
+      "cluster_member_count": 353,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6197,
+          "end_step": 6201,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_T149M:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_T149M:D_Hysteresis:C02",
+      "condition_id": "glp1r_6LN2_T149M",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_T149M:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6107.90103803272,
+      "centroid_step": 6108,
+      "temporal_overlap_entropy": 0.1977610425684917,
+      "cluster_confidence": 0.8464914113016383,
+      "mean_cluster_probability": 0.7258367930528451,
+      "inter_replicate_stability": 884.76460505516,
+      "unique_residue_count": 390,
+      "cluster_member_count": 390,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6106,
+          "end_step": 6110,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_T149M:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_WT:A_ThermalShock:C05",
+      "condition_id": "glp1r_6LN2_WT",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_WT:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10007.77295217101,
+      "centroid_step": 10008,
+      "temporal_overlap_entropy": 0.0001493640411933052,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 0.9930843778832527,
+      "inter_replicate_stability": 351.6621287204607,
+      "unique_residue_count": 389,
+      "cluster_member_count": 389,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10006,
+          "end_step": 10010,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_WT:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_WT:B_UVAromatic:C03",
+      "condition_id": "glp1r_6LN2_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_WT:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8000.976023793106,
+      "centroid_step": 8001,
+      "temporal_overlap_entropy": 0.03520696940707613,
+      "cluster_confidence": 0.9826421131235904,
+      "mean_cluster_probability": 0.9982648551553458,
+      "inter_replicate_stability": 0.19775669510176838,
+      "unique_residue_count": 363,
+      "cluster_member_count": 363,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 7999,
+          "end_step": 8003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_WT:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_WT:B_UVAromatic:C04",
+      "condition_id": "glp1r_6LN2_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_WT:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8039.134434610698,
+      "centroid_step": 8039,
+      "temporal_overlap_entropy": 4.890439326823543e-06,
+      "cluster_confidence": 0.9964782620824301,
+      "mean_cluster_probability": 0.9999970626094986,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 26,
+      "cluster_member_count": 26,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8037,
+          "end_step": 8041,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_WT:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_WT:C_Equilibrium:C01",
+      "condition_id": "glp1r_6LN2_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_WT:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6003.644874516695,
+      "centroid_step": 6004,
+      "temporal_overlap_entropy": 0.21814410289895575,
+      "cluster_confidence": 0.8849497533764541,
+      "mean_cluster_probability": 0.9051634894666072,
+      "inter_replicate_stability": 55.604728099682276,
+      "unique_residue_count": 42,
+      "cluster_member_count": 42,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6002,
+          "end_step": 6006,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_WT:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_WT:C_Equilibrium:C02",
+      "condition_id": "glp1r_6LN2_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_WT:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6198.173345006997,
+      "centroid_step": 6198,
+      "temporal_overlap_entropy": 0.19776104256849225,
+      "cluster_confidence": 0.8464914113016361,
+      "mean_cluster_probability": 0.9995608793891865,
+      "inter_replicate_stability": 884.7646050551606,
+      "unique_residue_count": 347,
+      "cluster_member_count": 347,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6196,
+          "end_step": 6200,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_WT:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6LN2_WT:D_Hysteresis:C02",
+      "condition_id": "glp1r_6LN2_WT",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6LN2_WT:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6108.546170514582,
+      "centroid_step": 6109,
+      "temporal_overlap_entropy": 0.19776104256849172,
+      "cluster_confidence": 0.8464914113016382,
+      "mean_cluster_probability": 0.7299913386249071,
+      "inter_replicate_stability": 884.76460505516,
+      "unique_residue_count": 389,
+      "cluster_member_count": 389,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6107,
+          "end_step": 6111,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6LN2_WT:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6X1A_WT:A_ThermalShock:C05",
+      "condition_id": "glp1r_6X1A_WT",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_6X1A_WT:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10022.994748355648,
+      "centroid_step": 10023,
+      "temporal_overlap_entropy": 0.00014936404119330525,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 0.9411764705882353,
+      "inter_replicate_stability": 351.6621287204607,
+      "unique_residue_count": 357,
+      "cluster_member_count": 357,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10021,
+          "end_step": 10025,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6X1A_WT:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6X1A_WT:B_UVAromatic:C03",
+      "condition_id": "glp1r_6X1A_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6X1A_WT:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8003.379962810399,
+      "centroid_step": 8003,
+      "temporal_overlap_entropy": 0.03520696940707624,
+      "cluster_confidence": 0.9826421131235933,
+      "mean_cluster_probability": 0.871439968387789,
+      "inter_replicate_stability": 0.19775669510176888,
+      "unique_residue_count": 176,
+      "cluster_member_count": 176,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8001,
+          "end_step": 8005,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6X1A_WT:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6X1A_WT:B_UVAromatic:C04",
+      "condition_id": "glp1r_6X1A_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6X1A_WT:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8107.009862447075,
+      "centroid_step": 8107,
+      "temporal_overlap_entropy": 4.8904393268235315e-06,
+      "cluster_confidence": 0.9964782620824318,
+      "mean_cluster_probability": 0.9999999999998841,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 181,
+      "cluster_member_count": 181,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8105,
+          "end_step": 8109,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6X1A_WT:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6X1A_WT:C_Equilibrium:C01",
+      "condition_id": "glp1r_6X1A_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6X1A_WT:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6001.071746892771,
+      "centroid_step": 6001,
+      "temporal_overlap_entropy": 0.2181441028989561,
+      "cluster_confidence": 0.8849497533764554,
+      "mean_cluster_probability": 0.9069993243570552,
+      "inter_replicate_stability": 55.604728099682596,
+      "unique_residue_count": 344,
+      "cluster_member_count": 344,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 5999,
+          "end_step": 6003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6X1A_WT:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6X1A_WT:C_Equilibrium:C02",
+      "condition_id": "glp1r_6X1A_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6X1A_WT:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6306.039700993487,
+      "centroid_step": 6306,
+      "temporal_overlap_entropy": 0.19776104256849084,
+      "cluster_confidence": 0.8464914113016356,
+      "mean_cluster_probability": 0.9999999988869127,
+      "inter_replicate_stability": 884.7646050551647,
+      "unique_residue_count": 13,
+      "cluster_member_count": 13,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6304,
+          "end_step": 6308,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6X1A_WT:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6X1A_WT:D_Hysteresis:C01",
+      "condition_id": "glp1r_6X1A_WT",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6X1A_WT:D_Hysteresis:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6030.564413345663,
+      "centroid_step": 6031,
+      "temporal_overlap_entropy": 0.21814410289895625,
+      "cluster_confidence": 0.884949753376456,
+      "mean_cluster_probability": 0.8665049257359854,
+      "inter_replicate_stability": 55.604728099682596,
+      "unique_residue_count": 354,
+      "cluster_member_count": 354,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6029,
+          "end_step": 6033,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6X1A_WT:D_Hysteresis:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6X1A_WT:D_Hysteresis:C02",
+      "condition_id": "glp1r_6X1A_WT",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6X1A_WT:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6093.032369307938,
+      "centroid_step": 6093,
+      "temporal_overlap_entropy": 0.1977610425684909,
+      "cluster_confidence": 0.8464914113016357,
+      "mean_cluster_probability": 0.5693574448645417,
+      "inter_replicate_stability": 884.7646050551645,
+      "unique_residue_count": 3,
+      "cluster_member_count": 3,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6091,
+          "end_step": 6095,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6X1A_WT:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_A316T:A_ThermalShock:C05",
+      "condition_id": "glp1r_6XOX_A316T",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_A316T:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10007.279700186607,
+      "centroid_step": 10007,
+      "temporal_overlap_entropy": 0.00014936404119330525,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 1.0,
+      "inter_replicate_stability": 351.66212872046066,
+      "unique_residue_count": 347,
+      "cluster_member_count": 347,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10005,
+          "end_step": 10009,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_A316T:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_A316T:B_UVAromatic:C03",
+      "condition_id": "glp1r_6XOX_A316T",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_A316T:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8000.961909843629,
+      "centroid_step": 8001,
+      "temporal_overlap_entropy": 0.035206969407076134,
+      "cluster_confidence": 0.9826421131235924,
+      "mean_cluster_probability": 0.9982430290250193,
+      "inter_replicate_stability": 0.19775669510176774,
+      "unique_residue_count": 322,
+      "cluster_member_count": 322,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 7999,
+          "end_step": 8003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_A316T:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_A316T:B_UVAromatic:C04",
+      "condition_id": "glp1r_6XOX_A316T",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_A316T:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8034.956163693671,
+      "centroid_step": 8035,
+      "temporal_overlap_entropy": 4.8904393268235425e-06,
+      "cluster_confidence": 0.9964782620824301,
+      "mean_cluster_probability": 0.999997778264639,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 25,
+      "cluster_member_count": 25,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8033,
+          "end_step": 8037,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_A316T:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_A316T:C_Equilibrium:C01",
+      "condition_id": "glp1r_6XOX_A316T",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_A316T:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6001.239787942941,
+      "centroid_step": 6001,
+      "temporal_overlap_entropy": 0.218144102898956,
+      "cluster_confidence": 0.884949753376455,
+      "mean_cluster_probability": 0.9067700394268003,
+      "inter_replicate_stability": 55.60472809968259,
+      "unique_residue_count": 336,
+      "cluster_member_count": 336,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 5999,
+          "end_step": 6003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_A316T:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_A316T:C_Equilibrium:C02",
+      "condition_id": "glp1r_6XOX_A316T",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_A316T:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6303.454227511185,
+      "centroid_step": 6303,
+      "temporal_overlap_entropy": 0.19776104256849084,
+      "cluster_confidence": 0.8464914113016359,
+      "mean_cluster_probability": 0.999999998782669,
+      "inter_replicate_stability": 884.7646050551647,
+      "unique_residue_count": 11,
+      "cluster_member_count": 11,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6301,
+          "end_step": 6305,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_A316T:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_A316T:D_Hysteresis:C01",
+      "condition_id": "glp1r_6XOX_A316T",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_A316T:D_Hysteresis:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6030.581309158533,
+      "centroid_step": 6031,
+      "temporal_overlap_entropy": 0.21814410289895614,
+      "cluster_confidence": 0.8849497533764555,
+      "mean_cluster_probability": 0.8669907353479324,
+      "inter_replicate_stability": 55.604728099682596,
+      "unique_residue_count": 346,
+      "cluster_member_count": 346,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6029,
+          "end_step": 6033,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_A316T:D_Hysteresis:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_A316T:D_Hysteresis:C02",
+      "condition_id": "glp1r_6XOX_A316T",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_A316T:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6119.611761347416,
+      "centroid_step": 6120,
+      "temporal_overlap_entropy": 0.1977610425684909,
+      "cluster_confidence": 0.8464914113016357,
+      "mean_cluster_probability": 0.8551263345162665,
+      "inter_replicate_stability": 884.7646050551646,
+      "unique_residue_count": 1,
+      "cluster_member_count": 1,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6118,
+          "end_step": 6122,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_A316T:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_T149M:A_ThermalShock:C05",
+      "condition_id": "glp1r_6XOX_T149M",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_T149M:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10028.386895227175,
+      "centroid_step": 10028,
+      "temporal_overlap_entropy": 0.00014936404119330525,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 0.9257142857142857,
+      "inter_replicate_stability": 351.66212872046066,
+      "unique_residue_count": 350,
+      "cluster_member_count": 350,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10026,
+          "end_step": 10030,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_T149M:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_T149M:B_UVAromatic:C03",
+      "condition_id": "glp1r_6XOX_T149M",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_T149M:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8003.179041307603,
+      "centroid_step": 8003,
+      "temporal_overlap_entropy": 0.03520696940707632,
+      "cluster_confidence": 0.9826421131235898,
+      "mean_cluster_probability": 0.880681225294142,
+      "inter_replicate_stability": 0.19775669510176888,
+      "unique_residue_count": 128,
+      "cluster_member_count": 128,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8001,
+          "end_step": 8005,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_T149M:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_T149M:B_UVAromatic:C04",
+      "condition_id": "glp1r_6XOX_T149M",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_T149M:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8100.853531130466,
+      "centroid_step": 8101,
+      "temporal_overlap_entropy": 4.890439326823541e-06,
+      "cluster_confidence": 0.9964782620824322,
+      "mean_cluster_probability": 0.999999999999874,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 222,
+      "cluster_member_count": 222,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8099,
+          "end_step": 8103,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_T149M:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_T149M:C_Equilibrium:C01",
+      "condition_id": "glp1r_6XOX_T149M",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_T149M:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6001.02319183115,
+      "centroid_step": 6001,
+      "temporal_overlap_entropy": 0.21814410289895605,
+      "cluster_confidence": 0.8849497533764552,
+      "mean_cluster_probability": 0.9070266744852392,
+      "inter_replicate_stability": 55.60472809968259,
+      "unique_residue_count": 340,
+      "cluster_member_count": 340,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 5999,
+          "end_step": 6003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_T149M:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_T149M:C_Equilibrium:C02",
+      "condition_id": "glp1r_6XOX_T149M",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_T149M:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6284.666349755671,
+      "centroid_step": 6285,
+      "temporal_overlap_entropy": 0.19776104256849086,
+      "cluster_confidence": 0.8464914113016357,
+      "mean_cluster_probability": 0.9644870187798336,
+      "inter_replicate_stability": 884.7646050551646,
+      "unique_residue_count": 10,
+      "cluster_member_count": 10,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6283,
+          "end_step": 6287,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_T149M:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_T149M:D_Hysteresis:C01",
+      "condition_id": "glp1r_6XOX_T149M",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_T149M:D_Hysteresis:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6030.3484707522875,
+      "centroid_step": 6030,
+      "temporal_overlap_entropy": 0.21814410289895614,
+      "cluster_confidence": 0.8849497533764555,
+      "mean_cluster_probability": 0.8675542925120454,
+      "inter_replicate_stability": 55.604728099682596,
+      "unique_residue_count": 347,
+      "cluster_member_count": 347,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6028,
+          "end_step": 6032,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_T149M:D_Hysteresis:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_T149M:D_Hysteresis:C02",
+      "condition_id": "glp1r_6XOX_T149M",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_T149M:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6501.955946255718,
+      "centroid_step": 6502,
+      "temporal_overlap_entropy": 0.1977610425684909,
+      "cluster_confidence": 0.8464914113016357,
+      "mean_cluster_probability": 0.23266977978844183,
+      "inter_replicate_stability": 884.7646050551645,
+      "unique_residue_count": 3,
+      "cluster_member_count": 3,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6500,
+          "end_step": 6504,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_T149M:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_WT:A_ThermalShock:C05",
+      "condition_id": "glp1r_6XOX_WT",
+      "protocol_group": "A_ThermalShock",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_WT:A_ThermalShock:C05",
+      "cluster_id": 5,
+      "centroid_md_step": 10005.741220394722,
+      "centroid_step": 10006,
+      "temporal_overlap_entropy": 0.00014936404119330525,
+      "cluster_confidence": 0.9802303887685185,
+      "mean_cluster_probability": 0.9944263182760125,
+      "inter_replicate_stability": 351.66212872046066,
+      "unique_residue_count": 348,
+      "cluster_member_count": 348,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 10004,
+          "end_step": 10008,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_WT:A_ThermalShock:C05; temporal_overlap_entropy=0.000149 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_WT:B_UVAromatic:C03",
+      "condition_id": "glp1r_6XOX_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_WT:B_UVAromatic:C03",
+      "cluster_id": 3,
+      "centroid_md_step": 8000.96749490576,
+      "centroid_step": 8001,
+      "temporal_overlap_entropy": 0.035206969407076134,
+      "cluster_confidence": 0.9826421131235924,
+      "mean_cluster_probability": 0.9982516658912701,
+      "inter_replicate_stability": 0.19775669510176774,
+      "unique_residue_count": 322,
+      "cluster_member_count": 322,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 7999,
+          "end_step": 8003,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_WT:B_UVAromatic:C03; temporal_overlap_entropy=0.035207 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_WT:B_UVAromatic:C04",
+      "condition_id": "glp1r_6XOX_WT",
+      "protocol_group": "B_UVAromatic",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_WT:B_UVAromatic:C04",
+      "cluster_id": 4,
+      "centroid_md_step": 8029.071823298252,
+      "centroid_step": 8029,
+      "temporal_overlap_entropy": 4.890439326823543e-06,
+      "cluster_confidence": 0.9964782620824301,
+      "mean_cluster_probability": 0.9999973296449988,
+      "inter_replicate_stability": 1261.3595000221394,
+      "unique_residue_count": 26,
+      "cluster_member_count": 26,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 8027,
+          "end_step": 8031,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_WT:B_UVAromatic:C04; temporal_overlap_entropy=0.000005 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_WT:C_Equilibrium:C01",
+      "condition_id": "glp1r_6XOX_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_WT:C_Equilibrium:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6019.060504533601,
+      "centroid_step": 6019,
+      "temporal_overlap_entropy": 0.21814410289895628,
+      "cluster_confidence": 0.8849497533764558,
+      "mean_cluster_probability": 0.8698428555238136,
+      "inter_replicate_stability": 55.60472809968249,
+      "unique_residue_count": 166,
+      "cluster_member_count": 166,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6017,
+          "end_step": 6021,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_WT:C_Equilibrium:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_WT:C_Equilibrium:C02",
+      "condition_id": "glp1r_6XOX_WT",
+      "protocol_group": "C_Equilibrium",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_WT:C_Equilibrium:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6192.41535835076,
+      "centroid_step": 6192,
+      "temporal_overlap_entropy": 0.19776104256849122,
+      "cluster_confidence": 0.8464914113016366,
+      "mean_cluster_probability": 0.9775782796956763,
+      "inter_replicate_stability": 884.7646050551648,
+      "unique_residue_count": 182,
+      "cluster_member_count": 182,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6190,
+          "end_step": 6194,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_WT:C_Equilibrium:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_WT:D_Hysteresis:C01",
+      "condition_id": "glp1r_6XOX_WT",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_WT:D_Hysteresis:C01",
+      "cluster_id": 1,
+      "centroid_md_step": 6051.711216587559,
+      "centroid_step": 6052,
+      "temporal_overlap_entropy": 0.2181441028989559,
+      "cluster_confidence": 0.8849497533764545,
+      "mean_cluster_probability": 0.7981527970494552,
+      "inter_replicate_stability": 55.60472809968231,
+      "unique_residue_count": 1,
+      "cluster_member_count": 1,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6050,
+          "end_step": 6054,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_WT:D_Hysteresis:C01; temporal_overlap_entropy=0.218144 documents cluster boundary uncertainty."
+        }
+      ]
+    },
+    {
+      "trigger_id": "glp1r_6XOX_WT:D_Hysteresis:C02",
+      "condition_id": "glp1r_6XOX_WT",
+      "protocol_group": "D_Hysteresis",
+      "Cooperative_Cluster_ID": "glp1r_6XOX_WT:D_Hysteresis:C02",
+      "cluster_id": 2,
+      "centroid_md_step": 6108.241515506262,
+      "centroid_step": 6108,
+      "temporal_overlap_entropy": 0.19776104256849225,
+      "cluster_confidence": 0.8464914113016361,
+      "mean_cluster_probability": 0.7347743392351451,
+      "inter_replicate_stability": 884.7646050551606,
+      "unique_residue_count": 347,
+      "cluster_member_count": 347,
+      "capture_selection": {
+        "mode": "cluster_centroid_high_resolution_window",
+        "stride": 1,
+        "window_radius_steps": 2,
+        "epistemic_fuzziness_metric": "temporal_overlap_entropy"
+      },
+      "windows": [
+        {
+          "start_step": 6106,
+          "end_step": 6110,
+          "stride": 1,
+          "rationale": "Metastable atlas capture centered on cooperative break cluster glp1r_6XOX_WT:D_Hysteresis:C02; temporal_overlap_entropy=0.197761 documents cluster boundary uncertainty."
+        }
+      ]
+    }
+  ]
+}

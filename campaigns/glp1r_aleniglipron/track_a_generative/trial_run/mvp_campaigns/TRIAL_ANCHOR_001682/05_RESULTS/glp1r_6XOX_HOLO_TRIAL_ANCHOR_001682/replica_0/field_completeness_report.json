@@ -1,0 +1,196 @@
+{
+  "fields": {
+    "adaptive_dt_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "VRAM-Teardown emit",
+      "status": "available"
+    },
+    "all_stream_spikes": {
+      "source": "Path B: concat per-stream spikes.bin",
+      "status": "deferred"
+    },
+    "aromatic_centroids_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "VRAM-Teardown emit",
+      "status": "available"
+    },
+    "asc_vectors_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "rayon-scope emit",
+      "status": "available"
+    },
+    "binding_sites_materialized": {
+      "source": "site presentation surface, not spike teacher evidence",
+      "status": "out_of_scope_current_teacher_training"
+    },
+    "bocpd_log_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "rayon-scope emit",
+      "status": "available"
+    },
+    "cubical_ph_centroids": {
+      "source": "optional site centroid refinement, not spike teacher evidence",
+      "status": "out_of_scope_current_teacher_training"
+    },
+    "engine_ghost_site_centroids": {
+      "source": "V2-live ghost_site_map entries when available",
+      "stage2_policy": "do not block MD evidence or spike teacher packaging on centroids",
+      "status": "out_of_scope_current_teacher_training"
+    },
+    "forces_final_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "VRAM-Teardown emit",
+      "status": "available"
+    },
+    "kcc_v2full_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "kcc_v2full.bin per stream",
+      "status": "available"
+    },
+    "ligsite_pockets": {
+      "source": "optional geometry QA, not spike teacher evidence",
+      "status": "out_of_scope_current_teacher_training"
+    },
+    "merged_kcc": {
+      "source": "Path B: merge per-stream kcc_v2full.bin",
+      "status": "deferred"
+    },
+    "merged_signal_grid": {
+      "source": "Path B: sum per-stream signal_grid.bin",
+      "status": "deferred"
+    },
+    "noise_floor_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "rayon-scope emit",
+      "status": "available"
+    },
+    "protocol_state_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "rayon-scope emit",
+      "status": "available"
+    },
+    "ranked_sites": {
+      "model": "phase_manifold_v1",
+      "ranker": "phase-manifold",
+      "source": "Path B: phase_manifold_rerank only applies after site materialization",
+      "status": "out_of_scope_current_teacher_training"
+    },
+    "rt_clustering_sites": {
+      "source": "site materialization surface, not spike teacher evidence",
+      "status": "out_of_scope_current_teacher_training"
+    },
+    "signal_preservation_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "signal_grid.bin per stream",
+      "status": "available"
+    },
+    "spike_teacher_feature_pack": {
+      "source": "Path B: all_stream_spikes + signal_grid + kcc_v2full + asc_vectors + protocol_state + noise_floor",
+      "status": "deferred_required"
+    },
+    "spikes_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "spikes.bin per stream",
+      "status": "available"
+    },
+    "stage2_site_support": {
+      "outputs": [
+        "site_id",
+        "centroid_xyz",
+        "aabb",
+        "residue_support"
+      ],
+      "source": "only needed for later site-ranking, docking, visualization, or DCC benchmark surfaces",
+      "status": "out_of_scope_current_teacher_training"
+    },
+    "transform_dag": {
+      "reason": "v2_was_live=false in MD-only mode",
+      "status": "absent"
+    },
+    "v2_f2_sidecars": {
+      "reason": "v2_was_live=false in MD-only mode",
+      "status": "absent"
+    },
+    "warp_matrix_per_stream": {
+      "expected_streams": 8,
+      "missing_streams": [],
+      "present_streams": 8,
+      "source": "VRAM-Teardown emit",
+      "status": "available"
+    }
+  },
+  "missing_required_artifacts": [],
+  "path_b_required": true,
+  "required_artifact_summary": {
+    "adaptive_dt": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "aromatic_centroids_final": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "asc_vectors": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "bocpd_log": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "expected_streams": 8,
+    "forces_final": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "kcc_v2full": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "noise_floor": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "protocol_state": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "signal_grid": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "spikes": {
+      "missing_streams": [],
+      "present_streams": 8
+    },
+    "warp_matrix": {
+      "missing_streams": [],
+      "present_streams": 8
+    }
+  },
+  "required_artifacts_complete": true,
+  "run_id": "glp1r_6XOX_HOLO_TRIAL_ANCHOR_001682.topology_20260524_064538",
+  "schema_kind": "field_completeness_report",
+  "schema_version": 1,
+  "validation_status": "accepted_required_artifacts_present"
+}

@@ -1,0 +1,7 @@
+{
+  "candidate_source": "real512_o3a_zmatrix_pre_gflownet",
+  "epistemic_class": "PROJECTED",
+  "mock_id_count": 0,
+  "training_artifact_generated": false,
+  "training_status": "not_trained"
+}

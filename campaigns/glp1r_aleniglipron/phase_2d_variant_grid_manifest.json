@@ -1,0 +1,613 @@
+{
+  "schema_version": "PRISM.phase_2d_variant_grid_manifest.v1",
+  "campaign_id": "glp1r_aleniglipron",
+  "created_at_utc": "2026-05-24T07:32:39.239591+00:00",
+  "created_by": "materialize_phase_2d_variant_grid_manifest_v1_1",
+  "git_sha": "d08607bf36b455265c8684fe501495a026498ee9",
+  "epistemic_class": "PROJECTED",
+  "materialization_status": "staged_manifest_materialized_not_executed",
+  "engine_execution_status": {
+    "prism4d_engine_run_executed_for_this_manifest": false,
+    "reason": "This artifact materializes Phase 2D scope and launch contract only. It is not a completed Phase 2D result tensor."
+  },
+  "scope": {
+    "phase": "2D",
+    "name": "Variant-conditioned propagation expansion grid",
+    "purpose": "Define next-SOW variant expansion grid and acceptance outputs for WT/variant resilience assessment.",
+    "commercial_boundary": "Included as a staged manifest in M2 release; execution requires Phase 2D SOW authorization."
+  },
+  "current_covered_backgrounds": [
+    "A316T",
+    "T149M",
+    "WT"
+  ],
+  "current_condition_records": [
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "state": "glp1r_5VEX",
+      "background": "WT"
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "state": "glp1r_6LN2",
+      "background": "A316T"
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "state": "glp1r_6LN2",
+      "background": "T149M"
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "state": "glp1r_6LN2",
+      "background": "WT"
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "state": "glp1r_6X1A",
+      "background": "WT"
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "state": "glp1r_6XOX",
+      "background": "A316T"
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "state": "glp1r_6XOX",
+      "background": "T149M"
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "state": "glp1r_6XOX",
+      "background": "WT"
+    }
+  ],
+  "state_background_matrix": [
+    {
+      "state": "glp1r_5VEX",
+      "backgrounds_present": [
+        "WT"
+      ],
+      "has_WT": true,
+      "has_A316T": false,
+      "has_T149M": false
+    },
+    {
+      "state": "glp1r_6LN2",
+      "backgrounds_present": [
+        "A316T",
+        "T149M",
+        "WT"
+      ],
+      "has_WT": true,
+      "has_A316T": true,
+      "has_T149M": true
+    },
+    {
+      "state": "glp1r_6X1A",
+      "backgrounds_present": [
+        "WT"
+      ],
+      "has_WT": true,
+      "has_A316T": false,
+      "has_T149M": false
+    },
+    {
+      "state": "glp1r_6XOX",
+      "backgrounds_present": [
+        "A316T",
+        "T149M",
+        "WT"
+      ],
+      "has_WT": true,
+      "has_A316T": true,
+      "has_T149M": true
+    }
+  ],
+  "existing_variant_evidence": {
+    "covered_backgrounds": [
+      "A316T",
+      "T149M",
+      "WT"
+    ],
+    "known_non_wt_backgrounds": [
+      "A316T",
+      "T149M"
+    ],
+    "variant_delta_summary": {
+      "row_count": 2267,
+      "columns": [
+        "condition_family",
+        "mutation_label",
+        "mutant_condition_id",
+        "wt_condition_id",
+        "edge_id",
+        "edge_class",
+        "edge_from_residue",
+        "edge_to_residue",
+        "mutant_risk",
+        "wt_risk",
+        "propagation_delta_risk",
+        "mutant_signed_te",
+        "wt_signed_te",
+        "resilience_shift_signed_te",
+        "mutant_validation_status",
+        "wt_validation_status",
+        "mutant_mechanically_pruned",
+        "wt_mechanically_pruned"
+      ]
+    }
+  },
+  "phase_2d_expansion_strategy": {
+    "target_background_count": "12-18 total backgrounds after SOW authorization",
+    "staged_biological_targets": [
+      {
+        "variant": "N182A",
+        "epistemic_class": "PROJECTED",
+        "source_status": "platform_nominated_requires_canonical_residue_mapping_confirmation",
+        "numbering_policy": "Do not execute until UniProt/PDB/internal residue-index correspondence is confirmed.",
+        "rationale": "Wire-severing perturbation candidate targeting the PRISM-nominated ASN182 transmission feature to test mechanical-load decoupling."
+      },
+      {
+        "variant": "H108Q",
+        "epistemic_class": "PROJECTED",
+        "source_status": "user_supplied_pending_literature_or_program_confirmation",
+        "numbering_policy": "Requires canonical GLP-1R numbering confirmation before execution.",
+        "rationale": "Candidate active-state background probe intended to test baseline shifts in quiet-thermal lock behavior without overclaiming prior biological validation."
+      },
+      {
+        "variant": "L260A",
+        "epistemic_class": "PROJECTED",
+        "source_status": "user_supplied_pending_literature_or_program_confirmation",
+        "numbering_policy": "Requires canonical GLP-1R numbering confirmation before execution.",
+        "rationale": "Candidate pathway-bifurcation probe intended to test whether tensor channels separate G-protein-proximal and arrestin-proximal response surfaces."
+      },
+      {
+        "variant": "P356L",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal, functional_or_clinical_loss_signal",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "rsid": "rs769043958",
+        "pdb_chain_residue_6xox": "P356_TM6",
+        "functional_source": "gnomAD v4.1 ultra-rare | ClinVar",
+        "clinical_association": "TM6_conserved_proline_kink_essential_for_activation"
+      },
+      {
+        "variant": "R190Q",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "rsid": "rs372839838",
+        "pdb_chain_residue_6xox": "R190_TM2",
+        "functional_source": "gnomAD v4.1",
+        "clinical_association": "charge_reversal_TM2"
+      },
+      {
+        "variant": "E138A",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "User-supplied high-risk Phase 3 pharmacogenomic sentinel staged for PRISM falsification.",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "rsid": "user_supplied",
+        "pdb_chain_residue_6xox": "E138",
+        "functional_source": "user_supplied_phase3_sentinel",
+        "clinical_association": "user_supplied_phase3_pgx_sentinel"
+      },
+      {
+        "variant": "R131Q",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs3765467",
+        "pdb_chain_residue_6xox": "R131_ECD",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_or_clinical_loss_signal",
+        "functional_source": "Gao Nat Metab 2023 | Li DNA Cell Biol 2020;39(9):1700-1710",
+        "clinical_association": "early_onset_T2D_risk_J_Diabetes_Res_2023 | reduced_insulin_secretion_beta_cell_apoptosis"
+      },
+      {
+        "variant": "T149M",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs367543060",
+        "pdb_chain_residue_6xox": "T149_TM1",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Beinborn 2005 | Gao Nat Metab 2023 (Cluster 1 LoF)",
+        "clinical_association": "reduced_GLP1_binding_affinity_to_intracellular_signaling"
+      },
+      {
+        "variant": "C226R",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs758195928",
+        "pdb_chain_residue_6xox": "C226_TM3",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Danish cohort PMC10584003 (LoS variant from 8642 individuals)",
+        "clinical_association": "TM3_disulfide_bond_disruption"
+      },
+      {
+        "variant": "R227H",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs759060369",
+        "pdb_chain_residue_6xox": "R227_TM3",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Danish cohort PMC10584003 (LoS variant)",
+        "clinical_association": "TM3_polar_network_disruption"
+      },
+      {
+        "variant": "L232R",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs773209498",
+        "pdb_chain_residue_6xox": "L232_TM3",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Danish cohort PMC10584003 (LoS variant)",
+        "clinical_association": "TM3_hydrophobic_core_disruption"
+      },
+      {
+        "variant": "Y291C",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs774789265",
+        "pdb_chain_residue_6xox": "Y291_ECL2",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal, functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Gao Nat Metab 2023 (Cluster 2 partial LoF)",
+        "clinical_association": "pathway_specific_biased_receptor_favors_Gs"
+      },
+      {
+        "variant": "W297R",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs770538906",
+        "pdb_chain_residue_6xox": "W297_TM5",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Danish cohort PMC10584003 (LoS variant)",
+        "clinical_association": "TM5_aromatic_anchor_disruption"
+      },
+      {
+        "variant": "L305R",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs776543210",
+        "pdb_chain_residue_6xox": "L305_TM5",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Danish cohort PMC10584003 (LoS variant)",
+        "clinical_association": "TM5_helix_packing_disruption"
+      },
+      {
+        "variant": "A316T",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs10305492",
+        "pdb_chain_residue_6xox": "A316",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal, functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Gao Nat Metab 2023;5:1673-1684 | Lagou Nat Genet 2023;55:1448-1461 | Bitsi Sci Adv 2026;eadw0899",
+        "clinical_association": "protective_T2D_cardiovascular_lower_fasting_glucose_but_blunted_GLP1RA_response"
+      },
+      {
+        "variant": "V349M",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs781234567",
+        "pdb_chain_residue_6xox": "V349_TM6",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal, functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Danish cohort PMC10584003 (LoS variant)",
+        "clinical_association": "TM6_activation_relay"
+      },
+      {
+        "variant": "F380L",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs785678901",
+        "pdb_chain_residue_6xox": "F380_TM7",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk, functional_or_clinical_loss_signal",
+        "functional_source": "Danish cohort PMC10584003 (LoS variant)",
+        "clinical_association": "TM7_signal_integration"
+      },
+      {
+        "variant": "R380C",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs201672448",
+        "pdb_chain_residue_6xox": "R380_TM7",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_cluster_high_risk",
+        "functional_source": "gnomAD v4.1 | Nat Med 2025",
+        "clinical_association": "TM7_signal_integration"
+      },
+      {
+        "variant": "G168S",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs6923761",
+        "pdb_chain_residue_6xox": "G168",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal, functional_or_clinical_loss_signal",
+        "functional_source": "Lagou Nat Genet 2023 (MD_sim: increased_flexibility_168-178) | de Luis 2014",
+        "clinical_association": "reduced_gliptin_response_Javorsky_2016 | cardiovascular_metabolic_associations"
+      },
+      {
+        "variant": "S333C",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs10305510",
+        "pdb_chain_residue_6xox": "S333_ICL3",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal",
+        "functional_source": "gnomAD v4.1 (MAF >1%)",
+        "clinical_association": "ICL3_G_protein_coupling_interface"
+      },
+      {
+        "variant": "D344E",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs2295006",
+        "pdb_chain_residue_6xox": "D344_TM6",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal",
+        "functional_source": "Hinds Diabetes Obes Metab 2024;doi:10.1111/dom.15288",
+        "clinical_association": "altered_response_to_G_protein_biased_agonist_SRB107"
+      },
+      {
+        "variant": "I357R",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs780304258",
+        "pdb_chain_residue_6xox": "I357_TM6",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: biased_signaling_or_structural_activation_signal, functional_or_clinical_loss_signal",
+        "functional_source": "Gao Nat Metab 2023",
+        "clinical_association": "adjacent_to_P356_kink"
+      },
+      {
+        "variant": "R421W",
+        "status": "queued_for_md_simulation",
+        "risk_class": "HIGH RISK",
+        "epistemic_class": "PROJECTED",
+        "source_status": "phase3_pgx_high_risk_source_manifest",
+        "rsid": "rs146868158",
+        "pdb_chain_residue_6xox": "R421_C_terminal",
+        "numbering_policy": "Queued backgrounds require topology build and matched WT controls before PRISM-4D execution.",
+        "rationale": "High-risk PGx variant selected from GLP1R functional/clinical source data: functional_or_clinical_loss_signal",
+        "functional_source": "Lagou Nat Genet 2023 (P_RG_GWAS=0.036) | Danish cohort PMC10584003",
+        "clinical_association": "random_glucose_association"
+      }
+    ],
+    "selection_rules": [
+      "Prioritize variant backgrounds by clinical/population relevance only when supplied by Structure or backed by agreed citation source.",
+      "Prioritize residues proximal to validated_constitutive pocket_vector and downstream_lock edges.",
+      "Prioritize mutations affecting translation-wire residues, downstream-lock neighborhoods, or hysteresis-sensitive corridors.",
+      "Reject expansion candidates without mappable receptor topology or residue-index correspondence.",
+      "Do not claim biological effect from manifest materialization alone; all outputs remain projected until PRISM execution and wet-lab falsification."
+    ],
+    "required_inputs_before_execution": [
+      "Approved variant/background list",
+      "Residue-index mapping for each background",
+      "State-compatible topology or mutagenesis build path",
+      "Matched WT control policy",
+      "Agreed acceptance thresholds for convergence, pruning, and falsification routing",
+      "Citation or client confirmation for any target described as population, clinical, CAM, biased-signaling, or literature-backed."
+    ],
+    "pan_variant_grid_status": "phase3_high_risk_variants_staged_pending_md",
+    "pan_variant_grid_count": 20,
+    "pgx_source_manifest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/Phase3_PGx_Exclusion_Manifest.json"
+  },
+  "planned_output_contract": [
+    "variant_propagation_deltas.parquet",
+    "variant_resilience_scorecard.parquet",
+    "variant_conditioned_phase_manifold_coherence.parquet",
+    "variant_hysteresis_recovery_matrix.parquet",
+    "variant_assay_routing_delta.parquet",
+    "variant_negative_evidence_register.parquet",
+    "Phase_2D_Variant_Resilience_Dossier.md"
+  ],
+  "acceptance_criteria": {
+    "minimum_evidence": "Two-of-three independent evidence classes required before routing a variant-sensitive surface as actionable.",
+    "required_controls": [
+      "WT matched state",
+      "A316T/T149M reference backgrounds where applicable",
+      "mechanically_pruned negative register",
+      "phase-validation status propagation"
+    ],
+    "claim_policy": {
+      "OBSERVED": "Only direct tensor measurements after execution.",
+      "DERIVED": "Deterministic transforms of executed tensors.",
+      "PROJECTED": "This manifest and all pre-execution variant recommendations.",
+      "HYPOTHESIZED": "Biological interpretation requiring wet-lab falsification."
+    }
+  },
+  "critical_edges_used_for_prioritization": [
+    {
+      "edge_id": "glp1r_6XOX_WT:ARG421->TRP417",
+      "condition_id": "glp1r_6XOX_WT",
+      "edge_label": "ARG421 -> TRP417",
+      "edge_class": "downstream_lock",
+      "edge_coherence_score": 0.48942915387209407,
+      "validation_status": "validated_constitutive"
+    },
+    {
+      "edge_id": "glp1r_6XOX_WT:PHE169->SER416",
+      "condition_id": "glp1r_6XOX_WT",
+      "edge_label": "PHE169 -> SER416",
+      "edge_class": "downstream_lock",
+      "edge_coherence_score": 0.5090207090585028,
+      "validation_status": "validated_constitutive"
+    },
+    {
+      "edge_id": "glp1r_6XOX_WT:TYR241->ARG310",
+      "condition_id": "glp1r_6XOX_WT",
+      "edge_label": "TYR241 -> ARG310",
+      "edge_class": "downstream_lock",
+      "edge_coherence_score": 0.5089561805440997,
+      "validation_status": "validated_constitutive"
+    },
+    {
+      "edge_id": "glp1r_6XOX_WT:TRP417->ARG421",
+      "condition_id": "glp1r_6XOX_WT",
+      "edge_label": "TRP417 -> ARG421",
+      "edge_class": "downstream_lock",
+      "edge_coherence_score": 0.48942915387209407,
+      "validation_status": "validated_constitutive"
+    },
+    {
+      "edge_id": "glp1r_6LN2_A316T:TYR242->ILE313",
+      "condition_id": "glp1r_6LN2_A316T",
+      "edge_label": "TYR242 -> ILE313",
+      "edge_class": "downstream_lock",
+      "edge_coherence_score": 0.329839245304709,
+      "validation_status": "partial_validation"
+    },
+    {
+      "edge_id": "glp1r_5VEX_WT:PHE143->TYR148",
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_label": "PHE143 -> TYR148",
+      "edge_class": "pocket_vector",
+      "edge_coherence_score": 0.5317046895331821,
+      "validation_status": "partial_validation"
+    },
+    {
+      "edge_id": "glp1r_5VEX_WT:TYR152->TYR148",
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_label": "TYR152 -> TYR148",
+      "edge_class": "pocket_vector",
+      "edge_coherence_score": 0.5174494292946039,
+      "validation_status": "partial_validation"
+    },
+    {
+      "edge_id": "glp1r_5VEX_WT:TYR148->TYR152",
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_label": "TYR148 -> TYR152",
+      "edge_class": "pocket_vector",
+      "edge_coherence_score": 0.5174494292946039,
+      "validation_status": "partial_validation"
+    },
+    {
+      "edge_id": "glp1r_5VEX_WT:PHE143->ILE147",
+      "condition_id": "glp1r_5VEX_WT",
+      "edge_label": "PHE143 -> ILE147",
+      "edge_class": "pocket_vector",
+      "edge_coherence_score": 0.5195156258171149,
+      "validation_status": "validated_constitutive"
+    }
+  ],
+  "source_artifacts": [
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/variant_propagation_deltas.parquet",
+      "exists": true,
+      "sha256": "a4a38df2e0d92e0a79905ea32080661fb5be3bb45cd6d8d1a0adfbf45e8bcb57"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_risk_map.parquet",
+      "exists": true,
+      "sha256": "2aec5f547d9330533ae4bd8ce86cc04e97d5cc781359843796dd02eef4296bda"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_edge_validation.parquet",
+      "exists": true,
+      "sha256": "4e8729ead4be183826c3e75b4b6a130fd4a99e01aed6e904dbc0474279972e3d"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_coherence.parquet",
+      "exists": true,
+      "sha256": "31f1b764566ccd74f3c0eb0d8a353c99603b5ead155ac2e00da009f387df0dc2"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet",
+      "exists": true,
+      "sha256": "2bdf777a4faf286ce291ecb12865d05b25cee682c59f286a1578fc459aa08b58"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+      "exists": true,
+      "sha256": "52643bdd9ee38b1c202e21e8802b94827d2a717ad46c1251695aff6179a73df1"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/occupancy_fatigue_risk.parquet",
+      "exists": true,
+      "sha256": "4a5d858c3a7e79546682aae39f435141a0f3e9b86e724171606faedfe0ac3e19"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/M2_Replayability_Manifest.json",
+      "exists": true,
+      "sha256": "c919fc6833af897c4578492f81a65f2146f9f787fc7efafd1294d785dafadcff"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/PRISM_CBOM_v1.0.json",
+      "exists": true,
+      "sha256": "a5dc1b8e57bd25067c68a7e6e781ac2e78c52899c0da407aec91212b8bc3dde0"
+    },
+    {
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/Phase3_PGx_Exclusion_Manifest.json",
+      "sha256": "e0b35b63d24b06dae8cacb17c726afb3bb14e44811552bbed68b6297db5028ea"
+    },
+    {
+      "path": "/home/diddy/Downloads/files(15)/gnomAD_GLP1R_missense_variants.csv",
+      "sha256": "123b465fb7a30d0cf9b54101b674f63ed6cd1602c263fbf77ff2af8bf8ffea58"
+    },
+    {
+      "path": "/home/diddy/Downloads/files(15)/GLP1R_functional_assay_clusters.csv",
+      "sha256": "d73f106b0a8b228051f1322998370d8308b5a69508c379b48e8d834f05a64b1f"
+    },
+    {
+      "path": "/home/diddy/Downloads/files(15)/GLP1R_structural_domain_map.csv",
+      "sha256": "67a1d71a9aa13afb4f191059371e29ad6c54137f33bcbcd280dcc874b185ecc6"
+    },
+    {
+      "path": "/home/diddy/Downloads/files(15)/GLP1R_cross_species_conservation.csv",
+      "sha256": "c2686e9efdb62b41ea5f0f675c0577020565fba1a9d8b445bd23e90589694aff"
+    }
+  ],
+  "non_claim_disclaimer": "This manifest is a materialized launch/scope artifact. It does not represent completed Phase 2D simulation results, clinical claims, patient-response claims, or experimentally validated pharmacology.",
+  "updated_at_utc": "2026-05-25T02:10:20.912197+00:00"
+}

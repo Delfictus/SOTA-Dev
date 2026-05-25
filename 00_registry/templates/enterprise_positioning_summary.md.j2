@@ -1,0 +1,25 @@
+# Enterprise Positioning Summary
+
+PRISM is **an immutable pharmacological evidence environment for receptor-state transition analysis under non-equilibrium perturbation**.
+
+## Evidence Boundary
+
+The platform partitions claims into epistemic classes before they enter reports, visualizers, or CRO handoffs. Observed tensors and deterministic transforms remain distinct from projected assay behavior and hypothesized chemistry.
+
+| Epistemic class | Level | Definition |
+|---|---:|---|
+{% for row in epistemic_classes -%}
+| {{ row.name }} | {{ row.level }} | {{ row.definition }} |
+{% endfor %}
+
+## Release Seal
+
+Campaign Merkle root:
+
+```text
+{{ campaign_merkle_root }}
+```
+
+## Translation Rule
+
+Projected or hypothesized claims are only presented with a source tensor, a transform chain, an assay gate, and a failure condition. This converts deterministic biological language into falsifiable evidence handling.

@@ -1,0 +1,126 @@
+{
+  "complement_overlap_after": null,
+  "complement_overlap_before": null,
+  "kabsch_used_only_as_initializer": true,
+  "ligand_centroid_after": [
+    139.55524694516868,
+    154.7685754927685,
+    125.36533088487185
+  ],
+  "ligand_centroid_before": [
+    17.31727575757576,
+    -38.116496969696975,
+    -52.43571515151515
+  ],
+  "ligand_inside_grid": true,
+  "no_fly_min_distance_after": 19.66075528076575,
+  "no_fly_min_distance_before": 20.93921801683422,
+  "o3a_error": null,
+  "o3a_score": 51.37641685280423,
+  "pose_comparison": {
+    "compact_pseudo_ligand_o3a": {
+      "complement_overlap_score": 30.0,
+      "conformer_id": 0,
+      "cryptic_overlap_score": 18.0,
+      "grid_boundary_penalty": 0.0,
+      "grid_inside_status": true,
+      "guard_level_passed": "standard",
+      "ligand_centroid_after_o3a": [
+        139.55524694516868,
+        154.7685754927685,
+        125.36533088487185
+      ],
+      "ligand_strain_penalty": 0.0,
+      "method": "compact_pseudo_ligand_o3a",
+      "min_receptor_heavy_distance_A": 1.6702479877715382,
+      "no_fly_min_distance_A": 19.66075528076575,
+      "o3a_rmsd": 0.5379482574578036,
+      "o3a_score": 51.37641685280423,
+      "probe_atom_count": 121,
+      "reason_failed_guard": null,
+      "reference_atom_count": 24,
+      "reference_type": "compact_pseudo_ligand",
+      "repairable_guard_passed": false,
+      "rigid_core_clash_score": 15.0,
+      "selection_score": 33.0
+    },
+    "compact_pseudoligand_manifest_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/6XOX_PRISM_compact_negative_image_pseudoligand_manifest.json",
+    "diffuse_pseudo_ligand_o3a": {
+      "complement_overlap_score": 12.0,
+      "conformer_id": 0,
+      "cryptic_overlap_score": 4.0,
+      "grid_boundary_penalty": 0.0,
+      "grid_inside_status": true,
+      "guard_level_passed": "standard",
+      "ligand_centroid_after_o3a": [
+        141.61331753859892,
+        158.08510526744664,
+        116.22082281079152
+      ],
+      "ligand_strain_penalty": 0.013344099835359259,
+      "method": "diffuse_pseudo_ligand_o3a",
+      "min_receptor_heavy_distance_A": 1.5793695357295516,
+      "no_fly_min_distance_A": 24.992951074323727,
+      "o3a_rmsd": 0.6616420436662047,
+      "o3a_score": 34.15614969933372,
+      "probe_atom_count": 121,
+      "reason_failed_guard": null,
+      "reference_atom_count": 16,
+      "reference_type": "diffuse_pseudo_ligand",
+      "repairable_guard_passed": false,
+      "rigid_core_clash_score": 20.0,
+      "selection_score": -4.01334409983536
+    },
+    "kabsch_fallback": {
+      "complement_overlap_score": 18.0,
+      "conformer_id": null,
+      "cryptic_overlap_score": 11.0,
+      "grid_boundary_penalty": 0.0,
+      "grid_inside_status": true,
+      "guard_level_passed": "standard",
+      "ligand_centroid_after_o3a": [
+        137.75789604576184,
+        156.42296303938062,
+        123.99450944214962
+      ],
+      "ligand_strain_penalty": 0.0,
+      "method": "kabsch_fallback",
+      "min_receptor_heavy_distance_A": 1.5854937207999493,
+      "no_fly_min_distance_A": 20.93921801683422,
+      "o3a_rmsd": null,
+      "o3a_score": null,
+      "probe_atom_count": 121,
+      "reason_failed_guard": null,
+      "reference_atom_count": 0,
+      "reference_type": "kabsch_fallback",
+      "repairable_guard_passed": false,
+      "rigid_core_clash_score": 15.0,
+      "selection_score": 14.0
+    },
+    "o3a_failure_report_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/o3a_failure_report.json",
+    "selected_final_method": "compact_pseudo_ligand_o3a",
+    "validation": {
+      "complement_overlap_after_kabsch": 18.0,
+      "complement_overlap_after_o3a": 30.0,
+      "guard_level_passed": "standard",
+      "ligand_inside_grid": true,
+      "no_fly_min_distance_A": 19.66075528076575,
+      "post_min_heavy_distance_A": 1.6702479877715382,
+      "repairable_guard_passed": false,
+      "rigid_core_clash_after_kabsch": 15.0,
+      "rigid_core_clash_after_o3a": 15.0,
+      "selected_alignment_method_not_kabsch": true
+    }
+  },
+  "pseudo_ligand_manifest_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/6XOX_PRISM_negative_image_pseudoligand_manifest.json",
+  "rigid_core_clash_after": 1.6702479877715382,
+  "rigid_core_clash_before": 1.5854937207999493,
+  "selected_alignment_method": "compact_pseudo_ligand_o3a",
+  "sha256": {
+    "output_o3a_relaxed_sdf": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d",
+    "output_o3a_sdf": "df737e9e2dc50e14d166b7553fe974697fe23126e6a5123bd61fd5169e6838dc",
+    "pseudo_ligand_manifest": "bcc776ecba222b74ca2ca88616ae05345a480dbef1e6a57c3725142e0f4b35cb",
+    "source_ligand_sdf": "c55dcf6e792dbd6f8366f46cda481db7839963f3685735aaf9e244e130d57e99"
+  },
+  "torsion_relaxation_status": "already_relaxed_by_o3a_ladder"
+}

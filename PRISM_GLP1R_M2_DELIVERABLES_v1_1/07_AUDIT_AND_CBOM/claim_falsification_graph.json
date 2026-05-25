@@ -1,0 +1,292 @@
+{
+  "campaign_id": "glp1r_aleniglipron",
+  "schema_version": "PRISM.claim_falsification_graph.v1.1",
+  "generated_at_utc": "2026-05-24T00:27:55.997922+00:00",
+  "graph_semantics": {
+    "purpose": "Trace translational claims to source tensors and falsification assays.",
+    "claim_policy": {
+      "OBSERVED": "Direct tensor-derived measurement.",
+      "DERIVED": "Deterministic transform of observed tensors.",
+      "INFERRED": "Mechanistic interpretation from multi-tensor convergence.",
+      "PROJECTED": "Translational extrapolation requiring falsification.",
+      "HYPOTHESIZED": "Biological interpretation requiring experimental falsification."
+    }
+  },
+  "claims": [
+    {
+      "id": "claim:HDX-MS:glp1r_6XOX_WT:144",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:144",
+      "epistemic_class": "PROJECTED",
+      "transform_chain": "tensor source -> assay_routing_recommendations -> CRO_WetLab_Action_Plan",
+      "failure_condition": "Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted peptide window.",
+      "assay_category": "HDX-MS",
+      "condition_id": "glp1r_6XOX_WT",
+      "residue": "ASN182:144"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_6X1A_WT:333",
+      "label": "Predicted shear-associated exposure asymmetry at PHE367:333",
+      "epistemic_class": "PROJECTED",
+      "transform_chain": "tensor source -> assay_routing_recommendations -> CRO_WetLab_Action_Plan",
+      "failure_condition": "Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted peptide window.",
+      "assay_category": "HDX-MS",
+      "condition_id": "glp1r_6X1A_WT",
+      "residue": "PHE367:333"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_6XOX_A316T:144",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:144",
+      "epistemic_class": "PROJECTED",
+      "transform_chain": "tensor source -> assay_routing_recommendations -> CRO_WetLab_Action_Plan",
+      "failure_condition": "Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted peptide window.",
+      "assay_category": "HDX-MS",
+      "condition_id": "glp1r_6XOX_A316T",
+      "residue": "ASN182:144"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_6X1A_WT:148",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:148",
+      "epistemic_class": "PROJECTED",
+      "transform_chain": "tensor source -> assay_routing_recommendations -> CRO_WetLab_Action_Plan",
+      "failure_condition": "Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted peptide window.",
+      "assay_category": "HDX-MS",
+      "condition_id": "glp1r_6X1A_WT",
+      "residue": "ASN182:148"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_5VEX_WT:46",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:46",
+      "epistemic_class": "PROJECTED",
+      "transform_chain": "tensor source -> assay_routing_recommendations -> CRO_WetLab_Action_Plan",
+      "failure_condition": "Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted peptide window.",
+      "assay_category": "HDX-MS",
+      "condition_id": "glp1r_5VEX_WT",
+      "residue": "ASN182:46"
+    },
+    {
+      "id": "claim:WASHOUT:glp1r_6LN2_A316T",
+      "label": "Predicted persistent recovery impairment signature in 6LN2_A316T.",
+      "epistemic_class": "PROJECTED",
+      "transform_chain": "tensor source -> assay_routing_recommendations -> CRO_WetLab_Action_Plan",
+      "failure_condition": "Falsification Condition: No WT-normalized recovery impairment after 4-hour washout relative to matched WT control.",
+      "assay_category": "Washout_Recovery_Assay",
+      "condition_id": "glp1r_6LN2_A316T",
+      "residue": "variant_level:None"
+    },
+    {
+      "id": "claim:HYSTERESIS:6LN2_A316T",
+      "label": "Elevated thermal hysteresis asymmetry consistent with persistent recovery impairment signature",
+      "epistemic_class": "INFERRED",
+      "transform_chain": "hysteresis_tensor -> occupancy/recovery interpretation -> CRO falsification gate",
+      "failure_condition": "Falsified if matched WT-normalized washout assay shows no recovery asymmetry."
+    },
+    {
+      "id": "claim:COUPLING:ALENI-PARENT",
+      "label": "Positive inter-fragment coupling in projected scaffold-field scoring",
+      "epistemic_class": "PROJECTED",
+      "transform_chain": "fragment_interference_attribution -> thermodynamic ray-casting -> SAR contingency register",
+      "supporting_values": {
+        "total_positive_inter_fragment_coupling": 2.4969787615913965,
+        "max_whole_molecule_clash": 21.130765779240214
+      },
+      "failure_condition": "Falsified if matched analog controls do not show differential target engagement or orthogonal structural response."
+    }
+  ],
+  "nodes": [
+    {
+      "id": "claim:HDX-MS:glp1r_6XOX_WT:144",
+      "type": "claim",
+      "epistemic_class": "PROJECTED",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:144"
+    },
+    {
+      "id": "tensor_source:shear_stress > condition p90",
+      "type": "source_tensor_or_trigger",
+      "label": "shear_stress > condition p90"
+    },
+    {
+      "id": "assay:HDX-MS:glp1r_6XOX_WT:ASN182:144",
+      "type": "falsification_assay",
+      "label": "HDX-MS"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_6X1A_WT:333",
+      "type": "claim",
+      "epistemic_class": "PROJECTED",
+      "label": "Predicted shear-associated exposure asymmetry at PHE367:333"
+    },
+    {
+      "id": "assay:HDX-MS:glp1r_6X1A_WT:PHE367:333",
+      "type": "falsification_assay",
+      "label": "HDX-MS"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_6XOX_A316T:144",
+      "type": "claim",
+      "epistemic_class": "PROJECTED",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:144"
+    },
+    {
+      "id": "assay:HDX-MS:glp1r_6XOX_A316T:ASN182:144",
+      "type": "falsification_assay",
+      "label": "HDX-MS"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_6X1A_WT:148",
+      "type": "claim",
+      "epistemic_class": "PROJECTED",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:148"
+    },
+    {
+      "id": "assay:HDX-MS:glp1r_6X1A_WT:ASN182:148",
+      "type": "falsification_assay",
+      "label": "HDX-MS"
+    },
+    {
+      "id": "claim:HDX-MS:glp1r_5VEX_WT:46",
+      "type": "claim",
+      "epistemic_class": "PROJECTED",
+      "label": "Predicted shear-associated exposure asymmetry at ASN182:46"
+    },
+    {
+      "id": "assay:HDX-MS:glp1r_5VEX_WT:ASN182:46",
+      "type": "falsification_assay",
+      "label": "HDX-MS"
+    },
+    {
+      "id": "claim:WASHOUT:glp1r_6LN2_A316T",
+      "type": "claim",
+      "epistemic_class": "PROJECTED",
+      "label": "Predicted persistent recovery impairment signature in 6LN2_A316T."
+    },
+    {
+      "id": "tensor_source:hysteresis_ratio < 0.5",
+      "type": "source_tensor_or_trigger",
+      "label": "hysteresis_ratio < 0.5"
+    },
+    {
+      "id": "assay:Washout_Recovery_Assay:glp1r_6LN2_A316T:variant_level:None",
+      "type": "falsification_assay",
+      "label": "Washout_Recovery_Assay"
+    },
+    {
+      "id": "claim:HYSTERESIS:6LN2_A316T",
+      "type": "claim",
+      "epistemic_class": "INFERRED",
+      "label": "Elevated thermal hysteresis asymmetry consistent with persistent recovery impairment signature"
+    },
+    {
+      "id": "tensor:hysteresis_tensor",
+      "type": "source_tensor",
+      "label": "hysteresis_tensor.parquet"
+    },
+    {
+      "id": "assay:washout_recovery",
+      "type": "falsification_assay",
+      "label": "Washout recovery assay"
+    },
+    {
+      "id": "claim:COUPLING:ALENI-PARENT",
+      "type": "claim",
+      "epistemic_class": "PROJECTED",
+      "label": "Positive inter-fragment coupling in projected scaffold-field scoring"
+    },
+    {
+      "id": "tensor:fragment_interference_attribution",
+      "type": "source_tensor",
+      "label": "fragment_interference_attribution.parquet"
+    },
+    {
+      "id": "assay:matched_analog_controls",
+      "type": "falsification_assay",
+      "label": "Matched analog controls"
+    }
+  ],
+  "edges": [
+    {
+      "source": "tensor_source:shear_stress > condition p90",
+      "target": "claim:HDX-MS:glp1r_6XOX_WT:144",
+      "relationship": "supports_projected_claim"
+    },
+    {
+      "source": "claim:HDX-MS:glp1r_6XOX_WT:144",
+      "target": "assay:HDX-MS:glp1r_6XOX_WT:ASN182:144",
+      "relationship": "requires_falsification_by"
+    },
+    {
+      "source": "tensor_source:shear_stress > condition p90",
+      "target": "claim:HDX-MS:glp1r_6X1A_WT:333",
+      "relationship": "supports_projected_claim"
+    },
+    {
+      "source": "claim:HDX-MS:glp1r_6X1A_WT:333",
+      "target": "assay:HDX-MS:glp1r_6X1A_WT:PHE367:333",
+      "relationship": "requires_falsification_by"
+    },
+    {
+      "source": "tensor_source:shear_stress > condition p90",
+      "target": "claim:HDX-MS:glp1r_6XOX_A316T:144",
+      "relationship": "supports_projected_claim"
+    },
+    {
+      "source": "claim:HDX-MS:glp1r_6XOX_A316T:144",
+      "target": "assay:HDX-MS:glp1r_6XOX_A316T:ASN182:144",
+      "relationship": "requires_falsification_by"
+    },
+    {
+      "source": "tensor_source:shear_stress > condition p90",
+      "target": "claim:HDX-MS:glp1r_6X1A_WT:148",
+      "relationship": "supports_projected_claim"
+    },
+    {
+      "source": "claim:HDX-MS:glp1r_6X1A_WT:148",
+      "target": "assay:HDX-MS:glp1r_6X1A_WT:ASN182:148",
+      "relationship": "requires_falsification_by"
+    },
+    {
+      "source": "tensor_source:shear_stress > condition p90",
+      "target": "claim:HDX-MS:glp1r_5VEX_WT:46",
+      "relationship": "supports_projected_claim"
+    },
+    {
+      "source": "claim:HDX-MS:glp1r_5VEX_WT:46",
+      "target": "assay:HDX-MS:glp1r_5VEX_WT:ASN182:46",
+      "relationship": "requires_falsification_by"
+    },
+    {
+      "source": "tensor_source:hysteresis_ratio < 0.5",
+      "target": "claim:WASHOUT:glp1r_6LN2_A316T",
+      "relationship": "supports_projected_claim"
+    },
+    {
+      "source": "claim:WASHOUT:glp1r_6LN2_A316T",
+      "target": "assay:Washout_Recovery_Assay:glp1r_6LN2_A316T:variant_level:None",
+      "relationship": "requires_falsification_by"
+    },
+    {
+      "source": "tensor:hysteresis_tensor",
+      "target": "claim:HYSTERESIS:6LN2_A316T",
+      "relationship": "supports_inference"
+    },
+    {
+      "source": "claim:HYSTERESIS:6LN2_A316T",
+      "target": "assay:washout_recovery",
+      "relationship": "requires_falsification_by"
+    },
+    {
+      "source": "tensor:fragment_interference_attribution",
+      "target": "claim:COUPLING:ALENI-PARENT",
+      "relationship": "supports_projected_claim"
+    },
+    {
+      "source": "claim:COUPLING:ALENI-PARENT",
+      "target": "assay:matched_analog_controls",
+      "relationship": "requires_falsification_by"
+    }
+  ],
+  "summary": {
+    "claim_count": 8,
+    "node_count": 20,
+    "edge_count": 16
+  }
+}

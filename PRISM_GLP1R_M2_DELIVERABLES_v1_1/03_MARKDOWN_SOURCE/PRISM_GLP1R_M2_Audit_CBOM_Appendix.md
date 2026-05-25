@@ -1,0 +1,155 @@
+# Section 1 — Release Identity
+
+- **Campaign ID:** `glp1r_aleniglipron`
+- **Release version:** `PRISM_GLP1R_M2_DELIVERABLES_v1.1`
+- **CBOM Merkle root:** `1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856`
+- **Executive archive SHA-256:** `b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454`
+
+# Section 2 — CBOM Summary
+
+# CBOM Summary
+
+- **Campaign ID:** `glp1r_aleniglipron`
+- **Campaign Merkle root:** `1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856`
+- **Schema version:** `PRISM_CBOM.v1.0`
+- **Directories:** 39
+- **Files:** 264
+
+## Environment
+
+- **os_kernel:** `6.14.0-37-generic`
+- **platform:** `Linux-6.14.0-37-generic-x86_64-with-glibc2.39`
+- **polars_version:** `1.33.1`
+- **python_version:** `3.12.3`
+
+## File breakdown by epistemic role / category
+
+| role / category | count |
+|---|---|
+| unknown | 264 |
+
+## File breakdown by extension
+
+| extension | count |
+|---|---|
+| `.parquet` | 98 |
+| `.jsonl` | 81 |
+| `.json` | 58 |
+| `.md` | 20 |
+| `.csv` | 3 |
+| `.css` | 1 |
+| `.js` | 1 |
+| `.wasm` | 1 |
+| `.html` | 1 |
+
+
+# Section 3 — Replayability Manifest (verbatim, JSON)
+
+```
+{
+  "environment": {
+    "created_at_utc": "2026-05-23T08:52:02.373889+00:00",
+    "cuda_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Mon_Mar_02_09:52:23_PM_PST_2026\nCuda compilation tools, release 13.2, V13.2.51\nBuild cuda_13.2.r13.2/compiler.37434383_0",
+    "nvidia_driver": "595.45.04",
+    "os_kernel": "6.14.0-37-generic",
+    "platform": "Linux-6.14.0-37-generic-x86_64-with-glibc2.39",
+    "polars": "1.33.1",
+    "python": "3.12.3"
+  },
+  "parameter_freeze": {
+    "path": "00_registry/physical_constants.yml",
+    "sha256": "d15a29775009bbdb2dedd543316aaf8d350821507701be7753b6a32f197a8559"
+  },
+  "propagation_ledger_hashes": {
+    "campaigns/glp1r_aleniglipron/dstw_ingest/round_000/wt_physics_payload.propagation.jsonl": "c636033e14581aa1726628909b5223d0c44047ee746f7d03727adf542c8a8cd6",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/autonomous_steering_tensor.propagation.jsonl": "dfa504bd4b4f618722c6f82c108967704569f73aec32f574ca7e282f487f70f5",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/protocol_state_summary.propagation.jsonl": "2eda3c46b6a10721db005e0c5c23729d10330ec4bf55738b15fbc8ae51fc4e99",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/spike_events_snr_masked.propagation.jsonl": "03a8aa0523315cdae0d03361fb86b8852b0539c8000e2a7ddd39e45fc118a731",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/kcc_decoder_probe_5vex_r0_s0/kcc_residue_fields.propagation.jsonl": "a094ac30569df1049c0ebdd8bb76a247e31a617fc472176d3750fa3bfd333cb2",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/aromatic_reorganization_tensor.propagation.jsonl": "c3a5468167e3a619e9942a5810c0b09fb0a2252c33dfe7d984975632f08fd36e",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/assay_routing_recommendations.propagation.jsonl": "53a81a7cb6bdc5a06dfb28b2e2d1a6fcc946ff9134704f9e5d9f1becd3597847",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/autonomous_steering_tensor.propagation.jsonl": "64b7716ecdc0c2d1eb33769aee9b2fc6caa46220cc2346918b8f613d7fcc3a70",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/bocpd_survival_regimes.propagation.jsonl": "bb8e7d4e517f0bbfa3e4da9e8f4504b63ab7cfb1c06f3f78a555ded71b9ffb1e",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/bounded_warp_gradient_glp1r_5VEX_WT/warp_gradient_field.propagation.jsonl": "c7095572ab16dfaa99071c47d0bfa11bc763dc12ced190035bb3ff70b5bf5cd4",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/enriched_edge_validation.propagation.jsonl": "a7f200f900e886bb9c984f8dac5ac14250f5fc9e7689496b5ecbaffa6bdf9cce",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/enriched_pathway_nodes.propagation.jsonl": "a6edc6721197e7e1fe0e39dda981c7d8d93f2a514a3166951453d95f515f8720",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/kcc_residue_fields.propagation.jsonl": "a99edb114e062ac9e46de92d608f5369ec106f4622dd92c45eb71201d5cf239b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/kinetic_strain_events.propagation.jsonl": "fda2d73159bffe673d14dda81145b5bf603c31edc610718f2b13e6b45a4f75f9",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.propagation.jsonl": "b620ddb061e2b14559165525f91a88cdf69662b53e48d6487508336faa940507",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/occupancy_fatigue_risk.propagation.jsonl": "6b55d853c5a01a16c184a44a3dbef79e909ea94b453cfcd692fd4e1f2f682a38",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_coherence.propagation.jsonl": "11347e063730d7363f1b6f772ae84432f148abff81367e62779ac0a22134f5d6",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_edge_validation.propagation.jsonl": "630d3eb61a0a1999f68a48b2605b6f6d408c8042a0fea9c264aae2280d6031ba",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/probabilistic_break_clusters.propagation.jsonl": "d644c216e43bd5366fb64021b147b1ede219c2d708e1d8d375400770619527c2",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/protocol_state_summary.propagation.jsonl": "8c3293252a8b8d7d0572ec22f35dac6ec61217ff6be6edbaceea37db4dfa8426",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_channel_summary.propagation.jsonl": "dbb2f4b61af45946a5f579eb913a8e45330de8fd488559c66cf9e6204b035163",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_risk_map.propagation.jsonl": "17c00d753d5fcafeceb365df3ea4a95ad4fcd722ab946a458f1fa88d1f7fb4bc",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.propagation.jsonl": "1c25245a83bc2f0ccd5d7855f8ccdae9f0f6c18a7474ec473ba638e4000c833b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.propagation.jsonl": "77e95ae39714af4b800542c638536a7fef0b73fdd16d42bfd19503713facae80",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/spike_events_snr_masked.propagation.jsonl": "a07a147eb962c882c73ebf2154bef43083bd09fc254a7aa675f806002e06112a",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/stream_snr_masks.propagation.jsonl": "69508b1cfa57dde3579a64f435d861c5aa461e99452e41eca5199ee10fda312a",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade_summary.propagation.jsonl": "6d12e5a73eddf79e9ad76954fc2777aeec879362d6bc4062b4678dca251ba586",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.propagation.jsonl": "77dc79781fc465a856d8c6eadf2e3588431dab4fb0efb77ae8fe4d9bb81aa0bb",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/tri_state_ligand_fiber_graph.propagation.jsonl": "c1aab965b2a47bae47fc1e45bb4261abe8a3b7a7711ab4a19df3912c0340e4fe",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/variant_propagation_deltas.propagation.jsonl": "fa32efada842bd92ccc292c390cebfe0e35606f63a76e30ad9d605cb89501f96",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/wire_conservation_matrix.propagation.jsonl": "ba19d996e7ae7633fc3dd6bb277374cebbc5b181eb58c3f12e928eb2168bbd6b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale_smoke/phase_manifold_coherence.propagation.jsonl": "e98d03b7cbc4537d7f0b9af773cd8370a05ce014ba95b2f92aa33802980cb10b",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale_smoke/phase_manifold_edge_validation.propagation.jsonl": "ce978786e033f85fafa3836952e8745a9e59f00751f5e79a861db4812378315f",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale_smoke/spike_events_snr_masked.propagation.jsonl": "db056610dfbbd7fcbe3bb18179c510781dc9a7a6bc84e5c0f099d7ce265a82a1",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_hysteresis_probe_5vex_r0_s0/autonomous_steering_tensor.propagation.jsonl": "a236e085f9de411bb352c4bc50d82b64b619dc6f6a29fe147a2d807c8e870537",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_hysteresis_probe_5vex_r0_s0/protocol_state_summary.propagation.jsonl": "e8bee506baf90ee2a52fc8ff8a9dfc5361eccadd5b52cfba963c5c347c2ed928",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_probe_5vex_r0_s0/autonomous_steering_tensor.propagation.jsonl": "ddcff6e579f5645df68d9099ce2ad27842f90e57166067190dce341dcd938ecb",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/protocol_probe_5vex_r0_s0/protocol_state_summary.propagation.jsonl": "397e4e30ebd1835662f68ac54959d504c8918678fb3625ab49f830d234a3a64c",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/p
+```
+
+# Section 4 — Ground-Truth Source Manifest (head)
+
+| epistemic | category | size | sha256 (head) | path |
+|---|---|---|---|---|
+| OBSERVED | release_signature | 143 | `b413f1cc6cd92d51…` | `05_GROUND_TRUTH_DATA/PRISM_GLP1R_M2_EXECUTIVE_RELEASE_v1.1.tar.gz.sha256` |
+| PROJECTED | cro_action_plan | 11,048 | `6b7be636f1d2faa7…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/CRO_WetLab_Action_Plan.parquet` |
+| DERIVED | executive_positioning | 1,249 | `c437397d898973b5…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/ENTERPRISE_POSITIONING_SUMMARY.md` |
+| DERIVED | executive_readout | 8,685 | `884a4543f469d3d6…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Executive_Readout_Final.md` |
+| INFERRED | scientific_report | 22,944 | `26cd9ffa14ff4c6e…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Pharmacological_Dynamics_Intelligence_Report.md` |
+| OBSERVED | replay_manifest | 15,067 | `c919fc6833af897c…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Replayability_Manifest.json` |
+| INFERRED | triangulation_dossier | 23,020 | `04722905a41d5ee6…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/M2_Triangulation_Dossier_Final.md` |
+| DERIVED | master_index | 16,561 | `a5d291d61f70f6b9…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/MASTER_DATA_ROOM_INDEX.md` |
+| OBSERVED | cbom | 56,338 | `487e13008025feb9…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/PRISM_CBOM_v1.0.json` |
+| DERIVED | claim_audit | 10,919 | `3f4f47e1221eb5fe…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/claim_falsification_graph.json` |
+| PROJECTED | tensor_assay_routing | 87,298 | `8425536a2e95186b…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/assay_routing_recommendations.parquet` |
+| OBSERVED | tensor_hysteresis | 366,026 | `52643bdd9ee38b1c…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet` |
+| INFERRED | tensor_fatigue_risk | 534,376 | `4a5d858c3a7e7954…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/occupancy_fatigue_risk.parquet` |
+| OBSERVED | tensor_phase_manifold | 402,424 | `31f1b764566ccd74…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_coherence.parquet` |
+| DERIVED | tensor_edge_validation | 16,616 | `4e8729ead4be1838…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_edge_validation.parquet` |
+| INFERRED | tensor_break_clusters | 46,107 | `f11e35dfe5a20471…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/probabilistic_break_clusters.parquet` |
+| DERIVED | tensor_durability_summary | 8,870 | `de823ce5d731206b…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_channel_summary.parquet` |
+| INFERRED | tensor_durability_risk | 561,263 | `2aec5f547d933053…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/receptor_durability_risk_map.parquet` |
+| OBSERVED | tensor_stream_phase_counts | 3,146,024 | `19da8f333f00594c…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/stream_level_phase_counts.parquet` |
+| OBSERVED | tensor_temporal_cascade | 113,968 | `d751df8769e37f92…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade.parquet` |
+| DERIVED | tensor_temporal_summary | 7,999 | `17d43ec6e44c2e97…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade_summary.parquet` |
+| DERIVED | tensor_translation_pathway | 15,160 | `2bdf777a4faf286c…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet` |
+| DERIVED | tensor_ligand_fiber | 10,731 | `605fa54956edb4c1…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/tri_state_ligand_fiber_graph.parquet` |
+| DERIVED | tensor_variant_deltas | 95,919 | `a4a38df2e0d92e0a…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/variant_propagation_deltas.parquet` |
+| OBSERVED | tensor_wire_conservation | 7,739 | `e9c8d3125f76e72d…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/wire_conservation_matrix.parquet` |
+| OBSERVED | phase2c_triggers | 59,830 | `48068602afca7563…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2c_metastable_atlas_triggers.json` |
+| DERIVED | phase2c_parity | 9,938 | `30e5160165daa814…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2c_reintegration_parity.json` |
+| OBSERVED | phase2c_triggers | 6,005 | `f6db43968d50bd16…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2c_snapshot_triggers.json` |
+| PROJECTED | phase2d_staged | 13,381 | `b202d98c423b9d26…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2d_variant_grid_manifest.json` |
+| DERIVED | phase2d_propagation | 2,199 | `48db82590787cf92…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/phase_2d_variant_grid_manifest.propagation.jsonl` |
+| DERIVED | brics_registry | 3,033 | `f60ccedd67bec43b…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_brics_fragment_registry.json` |
+| INFERRED | interference_narrative | 3,375 | `ad9a7d2b9bdb3127…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_interference_summary.md` |
+| DERIVED | two_layer_gate | 2,017 | `5f7fff15a44532de…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_two_layer_gate_report.json` |
+| INFERRED | fragment_interference | 11,673 | `cb6eea0504474ab5…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/fragment_interference_attribution.parquet` |
+| HYPOTHESIZED | medchem_replacements | 66,952 | `b3e9742773b68a4b…` | `05_GROUND_TRUTH_DATA/campaigns/glp1r_aleniglipron/track_0_manual_emulation/teaser_solutions.parquet` |
+
+
+# Section 5 — Environment Fingerprint (verbatim)
+
+```
+{
+  "os_kernel": "6.14.0-37-generic",
+  "platform": "Linux-6.14.0-37-generic-x86_64-with-glibc2.39",
+  "polars_version": "1.33.1",
+  "python_version": "3.12.3"
+}
+```

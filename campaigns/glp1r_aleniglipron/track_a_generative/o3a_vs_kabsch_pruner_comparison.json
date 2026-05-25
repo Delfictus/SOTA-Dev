@@ -1,0 +1,357 @@
+{
+  "flags": [
+    "O3A output is duplicate-heavy"
+  ],
+  "interpretation": "O3A is preferred when it improves complement overlap while preserving collision and no-fly guards; survivor count is not required to increase.",
+  "kabsch": {
+    "clash_distribution": {
+      "max": 3.414776488561051,
+      "mean": 1.323774736893921,
+      "median": 1.1036391506751888,
+      "min": 0.35,
+      "p95": 2.598054833375542
+    },
+    "cryptic_bonus_distribution": {
+      "max": 8.0,
+      "mean": 2.3567961165048543,
+      "median": 2.0,
+      "min": 0.0,
+      "p95": 4.0
+    },
+    "duplicate_rate": 0.4271844660194175,
+    "mean_adjusted_clash": 0.655086877905754,
+    "mean_complement": 0.6624348958333334,
+    "median_selected_dihedral": 120.0,
+    "name": "kabsch",
+    "score_distribution": {
+      "max": 2.4601066986740987,
+      "mean": 0.2375139128678423,
+      "median": 0.1849510716601444,
+      "min": -0.02186717186833638,
+      "p95": 0.56132974620995
+    },
+    "selected_pose_method": null,
+    "survival_tier_distribution": {
+      "cryptic_rescue": 363,
+      "normal": 461
+    },
+    "survivor_count": 824,
+    "top_dihedral_bins": "60:180,120:165,0:146,180:145,240:123,300:65",
+    "unique_smiles_count": 472
+  },
+  "o3a": {
+    "clash_distribution": {
+      "max": 3.4941039555515085,
+      "mean": 1.7182602543506396,
+      "median": 1.5611742801565347,
+      "min": 0.35,
+      "p95": 3.2678916537673333
+    },
+    "cryptic_bonus_distribution": {
+      "max": 12.0,
+      "mean": 3.3890675241157555,
+      "median": 4.0,
+      "min": 0.0,
+      "p95": 6.0
+    },
+    "duplicate_rate": 0.4683815648445874,
+    "mean_adjusted_clash": 1.2272636313189749,
+    "mean_complement": 1.24365234375,
+    "median_selected_dihedral": 180.0,
+    "name": "o3a",
+    "score_distribution": {
+      "max": 2.525983857944775,
+      "mean": 0.35866452381546143,
+      "median": 0.29950359172169805,
+      "min": -0.02776373299598305,
+      "p95": 0.8265361910937185
+    },
+    "selected_pose_method": "compact_pseudo_ligand_o3a",
+    "survival_tier_distribution": {
+      "cryptic_rescue": 360,
+      "normal": 573
+    },
+    "survivor_count": 933,
+    "top_dihedral_bins": "180:231,240:193,120:158,60:145,300:142,0:64",
+    "unique_smiles_count": 496
+  },
+  "top_25_kabsch_only_candidates": [
+    {
+      "anchor_id": "CAL-ANCHOR-000007",
+      "canonical_smiles": "O=C1N=CC=N1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.5398933013259014,
+      "score": 1.2300533493370494,
+      "selected_dihedral_deg": 0.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000013",
+      "canonical_smiles": "O=CO",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.5398933013259014,
+      "score": 2.4601066986740987,
+      "selected_dihedral_deg": 0.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000005",
+      "canonical_smiles": "CC(=O)Nc1ccc(O)cc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 1.5611742801565347,
+      "score": 0.6097064299608663,
+      "selected_dihedral_deg": 60.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000510",
+      "canonical_smiles": "CNC1(c2ccccc2)C[C@H]1C",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 1.5611742801565347,
+      "score": 0.34840367426335217,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000062",
+      "canonical_smiles": "C[C@@H]1CC1(Nc1ccccc1)C(=O)O",
+      "cryptic_bonus": 4.0,
+      "fragment_pi_clash_adjusted": 2.0815657068753795,
+      "score": 0.546492699236069,
+      "selected_dihedral_deg": 240.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000011",
+      "canonical_smiles": "O=c1[nH]cno1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.5398933013259014,
+      "score": 2.4601066986740987,
+      "selected_dihedral_deg": 0.0
+    }
+  ],
+  "top_25_o3a_only_candidates": [
+    {
+      "anchor_id": "CAL-ANCHOR-000479",
+      "canonical_smiles": "CC1CC1(C(=O)O)c1ccccc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.47401614205522524,
+      "score": 0.280664873104975,
+      "selected_dihedral_deg": 120.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000012",
+      "canonical_smiles": "c1ccccc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.4995344818340238,
+      "score": 1.250232759082988,
+      "selected_dihedral_deg": 60.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000166",
+      "canonical_smiles": "C[C@H]1c2c(nn(-c3ccccc3)c2-c2ccc(O)cc2)CCN1c1ccccc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.976498183446735,
+      "score": 0.33594464628369614,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000058",
+      "canonical_smiles": "CC1CC1(Nc1ccccc1)c1ccccc1",
+      "cryptic_bonus": 6.0,
+      "fragment_pi_clash_adjusted": 2.338073055040958,
+      "score": 1.0827408681198802,
+      "selected_dihedral_deg": 240.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000009",
+      "canonical_smiles": "C1CCOCC1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.47401614205522524,
+      "score": 0.6314959644861937,
+      "selected_dihedral_deg": 300.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000181",
+      "canonical_smiles": "O=C(Nc1ccc(O)cc1)c1ccccc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.5024820413915098,
+      "score": 0.31218974482606127,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000183",
+      "canonical_smiles": "O=C(NC1CCOCC1)c1ccccc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.47401614205522524,
+      "score": 0.8419946193149249,
+      "selected_dihedral_deg": 60.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000030",
+      "canonical_smiles": "c1ccc(NC2CCOCC2)cc1",
+      "cryptic_bonus": 6.0,
+      "fragment_pi_clash_adjusted": 2.385139112403052,
+      "score": 0.7349845430663275,
+      "selected_dihedral_deg": 120.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000303",
+      "canonical_smiles": "CCP(=O)(CC)c1ccc(NC)cc1-n1ccn(-c2ccccc2)c1=O",
+      "cryptic_bonus": 6.0,
+      "fragment_pi_clash_adjusted": 2.441974334718544,
+      "score": 0.5465021387734547,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000002",
+      "canonical_smiles": "c1ccncc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.9480322841104505,
+      "score": 1.0259838579447749,
+      "selected_dihedral_deg": 60.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000230",
+      "canonical_smiles": "CNc1ccc2c(c1)cc(-c1ccc(O)cc1)n2-c1ccccc1",
+      "cryptic_bonus": 6.0,
+      "fragment_pi_clash_adjusted": 3.1580747182107367,
+      "score": 0.4653644885152244,
+      "selected_dihedral_deg": 60.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000069",
+      "canonical_smiles": "C[C@H]1CC1(Nc1ccccc1)c1noc(=O)[nH]1",
+      "cryptic_bonus": 4.0,
+      "fragment_pi_clash_adjusted": 2.3955990500549245,
+      "score": 0.46044009499450755,
+      "selected_dihedral_deg": 120.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000280",
+      "canonical_smiles": "CC1CC1(c1noc(=O)[nH]1)n1ccn(-c2ccccc2)c1=O",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.35,
+      "score": 0.44166666666666665,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000221",
+      "canonical_smiles": "CNc1cc2cc(-c3noc(=O)[nH]3)ccc2n1-c1ccccc1",
+      "cryptic_bonus": 4.0,
+      "fragment_pi_clash_adjusted": 2.3524800126626335,
+      "score": 0.2904699992085854,
+      "selected_dihedral_deg": 300.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000478",
+      "canonical_smiles": "CNC1(c2ccccc2)CC1C",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.4995344818340238,
+      "score": 1.250232759082988,
+      "selected_dihedral_deg": 300.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000489",
+      "canonical_smiles": "CNC(=O)C1(c2ccccc2)CC1C",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.4995344818340238,
+      "score": 0.625116379541494,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000226",
+      "canonical_smiles": "CNc1ccc2c(c1)cc(C(=O)O)n2-c1ccccc1",
+      "cryptic_bonus": 8.0,
+      "fragment_pi_clash_adjusted": 2.7729980300632486,
+      "score": 0.6151334646624501,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000511",
+      "canonical_smiles": "C[C@@H]1CC1(C(=O)O)c1ccccc1",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.47401614205522524,
+      "score": 0.6314959644861937,
+      "selected_dihedral_deg": 240.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000380",
+      "canonical_smiles": "CNn1ccn(-c2ccccc2)c1=O",
+      "cryptic_bonus": 4.0,
+      "fragment_pi_clash_adjusted": 2.877532834275456,
+      "score": 0.5102055971437119,
+      "selected_dihedral_deg": 300.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000040",
+      "canonical_smiles": "Cc1cc(-n2ccn(Nc3ccccc3)c2=O)cc(C)c1F",
+      "cryptic_bonus": 4.0,
+      "fragment_pi_clash_adjusted": 2.80162925944431,
+      "score": 0.3498642283796409,
+      "selected_dihedral_deg": 60.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000068",
+      "canonical_smiles": "C[C@H]1CC1(Nc1ccccc1)C(=O)O",
+      "cryptic_bonus": 2.0,
+      "fragment_pi_clash_adjusted": 0.47401614205522524,
+      "score": 0.8419946193149249,
+      "selected_dihedral_deg": 60.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000208",
+      "canonical_smiles": "Cc1cc(N2CCc3nn(-c4ccccc4)c(-c4noc(=O)[nH]4)c3C2C)cc(C)c1F",
+      "cryptic_bonus": 4.0,
+      "fragment_pi_clash_adjusted": 1.5948416862155836,
+      "score": 0.3146541652703155,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000387",
+      "canonical_smiles": "CNC(=O)n1ccn(-c2ccccc2)c1=O",
+      "cryptic_bonus": 4.0,
+      "fragment_pi_clash_adjusted": 1.3897265970534274,
+      "score": 1.152568350736643,
+      "selected_dihedral_deg": 240.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000192",
+      "canonical_smiles": "CC1c2c(nn(-c3ccccc3)c2C(=O)O)CCN1c1noc(=O)[nH]1",
+      "cryptic_bonus": 8.0,
+      "fragment_pi_clash_adjusted": 2.2740577445706225,
+      "score": 0.7661387325306698,
+      "selected_dihedral_deg": 180.0
+    },
+    {
+      "anchor_id": "CAL-ANCHOR-000179",
+      "canonical_smiles": "CC(=O)NC(=O)c1ccccc1",
+      "cryptic_bonus": 6.0,
+      "fragment_pi_clash_adjusted": 1.9424398528845206,
+      "score": 0.8821950183894349,
+      "selected_dihedral_deg": 120.0
+    }
+  ],
+  "top_25_overlap_by_canonical_smiles": [
+    "CC(=O)N1CCc2nn(-c3cc(C)c(F)c(C)c3)c(-c3ccccc3)c2C1C",
+    "CC(=O)N1CCc2nn(-c3cc(C)c(F)c(C)c3)c(-c3ccccc3)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3cc(C)c(F)c(C)c3)c(-c3ccccc3)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccc(O)cc3)c(-c3ccccc3)c2C1C",
+    "CC(=O)N1CCc2nn(-c3ccc(O)cc3)c(-c3ccccc3)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccc(O)cc3)c(-c3ccccc3)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3cc(C)c(F)c(C)c3)c2C1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3cc(C)c(F)c(C)c3)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3cc(C)c(F)c(C)c3)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3ccc(O)cc3)c2C1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3ccc(O)cc3)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3ccc(O)cc3)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3ccccc3)c2C1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3ccccc3)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3ccccc3)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3noc(=O)[nH]3)c2C1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3noc(=O)[nH]3)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(-c3noc(=O)[nH]3)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(C(=O)O)c2C1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(C(=O)O)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(C(=O)O)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(C3CCOCC3)c2C1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(C3CCOCC3)c2[C@@H]1C",
+    "CC(=O)N1CCc2nn(-c3ccccc3)c(C3CCOCC3)c2[C@H]1C",
+    "CC(=O)N1CCc2nn(-c3noc(=O)[nH]3)c(-c3ccccc3)c2C1C"
+  ]
+}

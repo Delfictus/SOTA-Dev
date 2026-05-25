@@ -1,0 +1,3 @@
+full_vspace_launch run_id=20260524T144638Z utc=2026-05-24T14:46:38Z
+reaction_registry_valid path=/home/diddy/Desktop/Prism4D-bio/00_registry/chemistry/reaction_rules.v1.yml reactions=4 enabled=RXN_AMIDE_COUPLING,RXN_SUZUKI_ARYL_ARYL,RXN_BUCHWALD_HARTWIG,RXN_SULFONAMIDE
+smart_ingest_start source=campaigns/glp1r_aleniglipron/track_a_generative/115k_curated_anchors.csv output_tmp=campaigns/glp1r_aleniglipron/track_a_generative/enamine_115k_synthons_3d.parquet.tmp.20260524T144638Z

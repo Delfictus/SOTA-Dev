@@ -299,7 +299,7 @@ Status: [Missing]
 Findings:
 
 - Rust still uses primitive `u32`, `i32`, `f32`, and `f64` at DSTW/Arrow/Parquet boundaries.
-- Requested newtypes such as `ResidueIdx`, `TransferEntropy`, `FrustrationPenalty`, and `PoseUncertainty` are not enforced.
+- Requested newtypes such as `ResidueIdx`, `CausalCoupling`, `FrustrationPenalty`, and `PoseUncertainty` are not enforced.
 
 Engineering implication:
 
@@ -325,7 +325,7 @@ Present:
   - `ScaffoldIdx`
   - `VoxelIdx`
 - Physics NewTypes:
-  - `TransferEntropy`
+  - `CausalCoupling`
   - `HysteresisEnthalpy`
   - `HydrationVariance`
   - `SpatialVariance`

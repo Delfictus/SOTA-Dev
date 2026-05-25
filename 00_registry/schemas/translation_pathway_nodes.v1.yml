@@ -1,0 +1,76 @@
+schema_version: "translation_pathway_nodes.v1"
+description: "Triple-evidence allosteric translation wire nodes selected by mechanical load, KCC causal coupling, multimodal coherence, and spatial betweenness between pocket and lock centroids."
+math:
+  load_directionality: "abs(mean_signed_load) / max(mean_abs_load, epsilon)"
+  triple_evidence_filter: "top 50 percent mechanical load and top 50 percent absolute KCC temporal correlation and coherence_class in {fiber_invariant, partially_coherent}"
+  betweenness: "dot(residue_ca - pocket_centroid, lock_centroid - pocket_centroid) / ||lock_centroid - pocket_centroid||^2"
+  spatial_filter: "0.1 <= betweenness <= 0.9 and lateral_displacement_A < 15"
+  wire_score: "load_normalized * abs_kcc_normalized * coherence_score"
+columns:
+  condition_id:
+    dtype: string
+    ontology: StructureId
+    nullable: false
+  residue_idx:
+    dtype: int32
+    ontology: ResidueIdx
+    nullable: false
+  residue_name:
+    dtype: string
+    ontology: CanonicalResidueLabel
+    nullable: false
+  mean_abs_load:
+    dtype: float64
+    nullable: false
+  mean_signed_load:
+    dtype: float64
+    nullable: false
+  load_std:
+    dtype: float64
+    nullable: false
+  load_directionality:
+    dtype: float64
+    nullable: false
+  temporal_correlation:
+    dtype: float64
+    nullable: false
+  direction_score:
+    dtype: float64
+    nullable: false
+  kcc_coherence:
+    dtype: float64
+    nullable: false
+  coherence_score:
+    dtype: float64
+    nullable: false
+  coherence_class:
+    dtype: string
+    nullable: false
+  n_concordant_channels:
+    dtype: uint8
+    nullable: false
+  dist_to_pocket_centroid_A:
+    dtype: float64
+    nullable: false
+  dist_to_lock_centroid_A:
+    dtype: float64
+    nullable: false
+  betweenness:
+    dtype: float64
+    nullable: false
+  lateral_displacement_A:
+    dtype: float64
+    nullable: false
+  wire_score:
+    dtype: float64
+    nullable: false
+  pathway_rank:
+    dtype: uint8
+    nullable: false
+  evidence_class:
+    dtype: string
+    nullable: false
+    allowed:
+      - triple_validated
+      - dual_evidence
+      - single_evidence

@@ -2,6 +2,7 @@
 name = "prism-escape-extract"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 [[bin]]
 name = "prism-escape-extract"

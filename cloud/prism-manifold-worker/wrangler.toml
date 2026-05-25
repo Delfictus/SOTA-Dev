@@ -1,0 +1,36 @@
+name = "prism-manifold-worker"
+main = "src/index.ts"
+compatibility_date = "2026-05-03"
+
+[vars]
+CLOUDFLARE_ACCOUNT_ID = "0b9ebf4f9a2a36c66302cbb9f32ab1f9"
+R2_BUCKET_NAME = "prism-tensors"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "prism_metadata"
+database_id = "ef63a188-0634-4f68-bd6d-1b4cc1232b06"
+
+[[vectorize]]
+binding = "VECTOR_INDEX"
+index_name = "dkl_latent_space"
+
+[[r2_buckets]]
+binding = "TENSOR_BUCKET"
+bucket_name = "prism-tensors"
+
+[[kv_namespaces]]
+binding = "CONFIG_CACHE"
+id = "342b9ddad269400085325884befca1f5"
+
+[[queues.producers]]
+binding = "DAG_QUEUE"
+queue = "prism-dag-queue"
+
+[[durable_objects.bindings]]
+name = "SCAFFOLD_DO"
+class_name = "ScaffoldState"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ScaffoldState"]

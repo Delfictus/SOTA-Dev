@@ -1,0 +1,129 @@
+{
+  "assumptions": [
+    "Counts are SMARTS-role-compatible virtual combinations, not guaranteed wet-lab syntheses.",
+    "2-step pathways count Scaffold + bifunctional bridge synthon + terminal synthon combinations.",
+    "Bifunctional bridge synthons are rows tagged as first reaction synthon and second reaction scaffold.",
+    "No Rust V-space pruning was executed by this planner.",
+    "Runtime estimate uses the supplied benchmark of 100,000 pairs in 14 seconds."
+  ],
+  "benchmark_pairs": 100000,
+  "benchmark_seconds_per_100k_pairs": 14.0,
+  "dihedral_samples": 6,
+  "enabled_reactions": [
+    {
+      "enabled": true,
+      "reaction_class": "amide_coupling",
+      "reaction_id": "RXN_AMIDE_COUPLING",
+      "reaction_name": "Carboxylic Acid Amide Coupling",
+      "scaffold_role_label": "Carboxylic_Acid",
+      "synthon_role_label": "Amine",
+      "torsion_degrees": [
+        0,
+        180
+      ]
+    },
+    {
+      "enabled": true,
+      "reaction_class": "suzuki_coupling",
+      "reaction_id": "RXN_SUZUKI_ARYL_ARYL",
+      "reaction_name": "Suzuki Aryl-Aryl Coupling",
+      "scaffold_role_label": "Aryl_Halide",
+      "synthon_role_label": "Boronic_Acid_or_Ester",
+      "torsion_degrees": [
+        0,
+        60,
+        120,
+        180,
+        240,
+        300
+      ]
+    },
+    {
+      "enabled": true,
+      "reaction_class": "buchwald_hartwig",
+      "reaction_id": "RXN_BUCHWALD_HARTWIG",
+      "reaction_name": "Buchwald-Hartwig Aryl Amination",
+      "scaffold_role_label": "Aryl_Halide",
+      "synthon_role_label": "Amine",
+      "torsion_degrees": [
+        0,
+        60,
+        120,
+        180,
+        240,
+        300
+      ]
+    },
+    {
+      "enabled": true,
+      "reaction_class": "sulfonamide",
+      "reaction_id": "RXN_SULFONAMIDE",
+      "reaction_name": "Sulfonyl Chloride Amine Coupling",
+      "scaffold_role_label": "Sulfonyl_Chloride",
+      "synthon_role_label": "Amine",
+      "torsion_degrees": [
+        0,
+        60,
+        120,
+        180,
+        240,
+        300
+      ]
+    }
+  ],
+  "estimated_disk_gb": 23.58623232,
+  "estimated_disk_gib": 21.96639060974121,
+  "estimated_rotamers": 69100284600,
+  "estimated_runtime_days": 18.661342291666667,
+  "estimated_runtime_hours": 447.872215,
+  "estimated_survivors": 11516715,
+  "gate": "DENDRITIC_38B_PLANNER_VALIDATED",
+  "generated_at_utc": "2026-05-24T23:06:01.660940+00:00",
+  "git_sha": "d08607bf36b455265c8684fe501495a026498ee9",
+  "input_selection": {
+    "fallback_input": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/enamine_115k_synthons_3d.parquet",
+    "fallback_ok_rows": 105768,
+    "fallback_rows": 115000,
+    "requested_input": "campaigns/glp1r_aleniglipron/track_a_generative/enamine_115k_synthons_3d.parquet",
+    "requested_ok_rows": 105768,
+    "requested_rows": 115000,
+    "selected_input": "campaigns/glp1r_aleniglipron/track_a_generative/enamine_115k_synthons_3d.parquet",
+    "selection_reason": "requested_input_meets_full_library_threshold"
+  },
+  "one_step_pairs": 560970,
+  "one_step_pathway_count": 4,
+  "parquet_row_bytes_assumption": 2048,
+  "pathway_count": 10,
+  "planning_artifacts": {
+    "reaction_pair_counts": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/reaction_pair_counts.parquet",
+    "resume_ledger": "campaigns/glp1r_aleniglipron/track_a_generative/resume_ledger.json",
+    "shard_plan": "campaigns/glp1r_aleniglipron/track_a_generative/shard_plan.parquet",
+    "vspace_38b_dendritic_plan": "campaigns/glp1r_aleniglipron/track_a_generative/vspace_38b_dendritic_plan.json"
+  },
+  "reaction_registry": "00_registry/chemistry/reaction_rules.v1.yml",
+  "role_counts": {
+    "RXN_AMIDE_COUPLING": {
+      "scaffold": 21509,
+      "synthon": 93495
+    },
+    "RXN_BUCHWALD_HARTWIG": {
+      "scaffold": 12499,
+      "synthon": 93495
+    },
+    "RXN_SULFONAMIDE": {
+      "scaffold": 0,
+      "synthon": 93495
+    },
+    "RXN_SUZUKI_ARYL_ARYL": {
+      "scaffold": 12499,
+      "synthon": 0
+    }
+  },
+  "scaffold_anchor_count": 2,
+  "shard_count": 120,
+  "shard_pair_count": 100000000,
+  "survival_rate_assumption": 0.001,
+  "total_valid_pairs": 11516714100,
+  "two_step_pairs": 11516153130,
+  "two_step_pathway_count": 6
+}

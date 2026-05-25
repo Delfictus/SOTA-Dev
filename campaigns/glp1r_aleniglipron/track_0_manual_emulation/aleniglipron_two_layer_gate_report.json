@@ -1,0 +1,61 @@
+{
+  "created_at_utc": "2026-05-23T06:23:33.288831+00:00",
+  "gate_1": {
+    "desalted_smiles": "CCP(=O)(CC)c1ccc(-n2ccn(-c3c4c(nn3-c3cc(C)c(F)c(C)c3)CCN(C(=O)c3cc5cc(C6CCOCC6)ccc5n3C3(c5noc(=O)[nH]5)CC3C)C4C)c2=O)cc1NC",
+    "mw": 916.0079999999997,
+    "n_heavy_atoms": 66,
+    "rotatable_bonds": 11,
+    "status": "PASS"
+  },
+  "gate_2": {
+    "alignment_method": "centroid_translation_to_binding_site",
+    "alignment_validation": {
+      "atom_idx": 0,
+      "condition_id": "glp1r_5VEX_WT",
+      "grid_dim": 96,
+      "grid_indices": [
+        41,
+        29,
+        27
+      ],
+      "in_bounds": true,
+      "variance_class": "thermally_destabilized",
+      "voxel_idx": 251657,
+      "xyz_angstrom": [
+        23.97,
+        -31.2279,
+        -50.5861
+      ]
+    },
+    "energy_max_kcal_mol": 130.09,
+    "energy_min_kcal_mol": 123.18,
+    "energy_spread_kcal_mol": 6.909999999999997,
+    "n_conformers": 10,
+    "status": "PASS"
+  },
+  "gate_3": {
+    "edges_scored": 9,
+    "projected_durability_score": 546.65574459633,
+    "projected_durability_uncertainty": 60.93969312509165,
+    "status": "PASS"
+  },
+  "gate_4": {
+    "n_fragments": 8,
+    "parent_heavy_atoms": 66,
+    "status": "PASS",
+    "sum_fragment_heavy_atoms": 62
+  },
+  "gate_5": {
+    "fragment_attribution_rows": 9,
+    "status": "PASS",
+    "total_inter_fragment_coupling": 2.4969787615913965
+  },
+  "outputs": {
+    "analog_registry": "campaigns/glp1r_aleniglipron/track_0_manual_emulation/analog_registry.json",
+    "attribution_parquet": "campaigns/glp1r_aleniglipron/track_0_manual_emulation/fragment_interference_attribution.parquet",
+    "fragment_registry": "campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_brics_fragment_registry.json",
+    "summary_markdown": "campaigns/glp1r_aleniglipron/track_0_manual_emulation/aleniglipron_interference_summary.md",
+    "whole_sdf": "campaigns/glp1r_aleniglipron/track_0_manual_emulation/conformers/ALENI-PARENT_whole_molecule_aligned.sdf"
+  },
+  "schema_version": 1
+}

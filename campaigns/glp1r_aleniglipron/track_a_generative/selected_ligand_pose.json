@@ -1,0 +1,16 @@
+{
+  "collision_distance_after_A": 1.6702479877715382,
+  "collision_distance_before_A": 1.5854937207999493,
+  "complement_overlap_after": 30.0,
+  "complement_overlap_before": 18.0,
+  "fallback_reason": "",
+  "fallback_used": false,
+  "guard_level_passed": "standard",
+  "input_manifest_sha256": "fb99ead06a8e82805d63ccb035626b7c27661458f9277f29e098632d2a79be8b",
+  "ligand_inside_grid": true,
+  "no_fly_min_distance_A": 19.66075528076575,
+  "o3a_score": 51.37641685280423,
+  "selected_ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf",
+  "selected_pose_method": "compact_pseudo_ligand_o3a",
+  "selected_sdf_sha256": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d"
+}

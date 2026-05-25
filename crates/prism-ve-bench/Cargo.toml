@@ -4,6 +4,7 @@ version = "1.0.0"
 edition = "2021"
 authors = ["PRISM-VE Team"]
 description = "PRISM-VE VASIL Benchmark - GPU Feature Extraction"
+license.workspace = true
 
 [[bin]]
 name = "vasil-benchmark"

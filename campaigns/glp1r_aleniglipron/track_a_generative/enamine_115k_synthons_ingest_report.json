@@ -1,0 +1,37 @@
+{
+  "charge_failure_counts": {},
+  "charge_method_counts": {
+    "openff_nagl:openff-gnn-am1bcc-1.0.0.pt": 105768
+  },
+  "compatible_synthon_count": 105768,
+  "conformer_generation_seconds": 62.69441212294623,
+  "conformer_success_rate": 0.9197217391304348,
+  "hpc": {
+    "charge_failure_counts": {},
+    "charge_method_counts": {
+      "openff_nagl:openff-gnn-am1bcc-1.0.0.pt": 105768
+    },
+    "cpu_conformer_pool": true,
+    "nagl_batch_size": 1000,
+    "nagl_charge_seconds": 1858.1822801029775,
+    "nagl_model": "openff-gnn-am1bcc-1.0.0.pt",
+    "openff_nagl": true,
+    "processes": 24,
+    "pyg_batching": true,
+    "torch_cuda_available": true,
+    "torch_cuda_device": "NVIDIA GeForce RTX 5080"
+  },
+  "per_reaction_match_counts": {
+    "RXN_AMIDE_COUPLING": 103462,
+    "RXN_BUCHWALD_HARTWIG": 97007,
+    "RXN_SULFONAMIDE": 93495,
+    "RXN_SUZUKI_ARYL_ARYL": 12499
+  },
+  "reject_reason_counts": {
+    "accepted": 105768,
+    "failed_conformer_etkdg_-1": 59,
+    "no_compatible_reaction_role": 9173
+  },
+  "total_input": 115000,
+  "valid_mol_count": 115000
+}

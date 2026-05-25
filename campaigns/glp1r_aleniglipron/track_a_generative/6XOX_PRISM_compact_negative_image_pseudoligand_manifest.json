@@ -1,0 +1,272 @@
+{
+  "bbox_xyz": {
+    "max": [
+      142.8999411702156,
+      162.81907747983934,
+      129.00629366636275
+    ],
+    "min": [
+      131.22766872644425,
+      149.97957779169082,
+      117.3340212225914
+    ]
+  },
+  "centroid_xyz": [
+    138.7173768778642,
+    154.59985230068364,
+    123.75377106666566
+  ],
+  "max_distance_to_kabsch_ligand_A": 4.318260610090862,
+  "min_distance_to_kabsch_ligand_A": 0.5487112412426892,
+  "no_fly_excluded_count": 0,
+  "pseudo_atom_count": 24,
+  "representative_points": [
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 0.5487112412426892,
+      "selection_weight": 17.45128875875731,
+      "voxel_idx": 308103,
+      "x": 140.56548668146132,
+      "y": 152.3140322804451,
+      "z": 127.83906642198562
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 0.5645856587448324,
+      "selection_weight": 17.435414341255168,
+      "voxel_idx": 234661,
+      "x": 138.23103219270706,
+      "y": 155.8157140135765,
+      "z": 118.50124846696853
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 0.9247291419854535,
+      "selection_weight": 17.075270858014548,
+      "voxel_idx": 317416,
+      "x": 141.73271392583848,
+      "y": 153.48125952482224,
+      "z": 129.00629366636275
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 0.9859229859024629,
+      "selection_weight": 17.014077014097538,
+      "voxel_idx": 317222,
+      "x": 139.3982594370842,
+      "y": 151.14680503606797,
+      "z": 129.00629366636275
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.1076017250767765,
+      "selection_weight": 16.892398274923224,
+      "voxel_idx": 280357,
+      "x": 138.23103219270706,
+      "y": 151.14680503606797,
+      "z": 124.33738468885423
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.184390898269966,
+      "selection_weight": 16.815609101730033,
+      "voxel_idx": 299271,
+      "x": 140.56548668146132,
+      "y": 156.98294125795366,
+      "z": 126.67183917760849
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.3859993910189858,
+      "selection_weight": 16.614000608981016,
+      "voxel_idx": 234658,
+      "x": 134.72935045957564,
+      "y": 155.8157140135765,
+      "z": 118.50124846696853
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.49361138024858,
+      "selection_weight": 16.50638861975142,
+      "voxel_idx": 308292,
+      "x": 137.06380494832993,
+      "y": 154.64848676919937,
+      "z": 127.83906642198562
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.57070232878755,
+      "selection_weight": 16.42929767121245,
+      "voxel_idx": 234471,
+      "x": 140.56548668146132,
+      "y": 153.48125952482224,
+      "z": 118.50124846696853
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.6972562285251669,
+      "selection_weight": 16.302743771474834,
+      "voxel_idx": 271815,
+      "x": 140.56548668146132,
+      "y": 159.31739574670792,
+      "z": 123.17015744447708
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.8700977341999725,
+      "selection_weight": 16.129902265800027,
+      "voxel_idx": 262403,
+      "x": 135.8965777039528,
+      "y": 156.98294125795366,
+      "z": 122.00293020009994
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 1.9594028347832269,
+      "selection_weight": 16.040597165216774,
+      "voxel_idx": 317896,
+      "x": 141.73271392583848,
+      "y": 159.31739574670792,
+      "z": 129.00629366636275
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 2.3052147610459754,
+      "selection_weight": 15.694785238954024,
+      "voxel_idx": 298694,
+      "x": 139.3982594370842,
+      "y": 149.97957779169082,
+      "z": 126.67183917760849
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 2.3934433046094936,
+      "selection_weight": 15.606556695390505,
+      "voxel_idx": 298788,
+      "x": 137.06380494832993,
+      "y": 151.14680503606797,
+      "z": 126.67183917760849
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 2.789902639557338,
+      "selection_weight": 15.210097360442662,
+      "voxel_idx": 225638,
+      "x": 139.3982594370842,
+      "y": 158.15016850233079,
+      "z": 117.3340212225914
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 2.844979278106166,
+      "selection_weight": 15.155020721893834,
+      "voxel_idx": 252807,
+      "x": 140.56548668146132,
+      "y": 152.3140322804451,
+      "z": 120.83570295572281
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 2.85341022567982,
+      "selection_weight": 15.14658977432018,
+      "voxel_idx": 280738,
+      "x": 134.72935045957564,
+      "y": 155.8157140135765,
+      "z": 124.33738468885423
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 3.144193554238043,
+      "selection_weight": 14.855806445761957,
+      "voxel_idx": 243785,
+      "x": 142.8999411702156,
+      "y": 154.64848676919937,
+      "z": 119.66847571134568
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 3.188164501628765,
+      "selection_weight": 14.811835498371234,
+      "voxel_idx": 262209,
+      "x": 133.5621232151985,
+      "y": 154.64848676919937,
+      "z": 122.00293020009994
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 3.2827787843314757,
+      "selection_weight": 14.717221215668523,
+      "voxel_idx": 262888,
+      "x": 141.73271392583848,
+      "y": 162.81907747983934,
+      "z": 122.00293020009994
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 3.6919076372471786,
+      "selection_weight": 14.308092362752822,
+      "voxel_idx": 280264,
+      "x": 141.73271392583848,
+      "y": 149.97957779169082,
+      "z": 124.33738468885423
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 3.8518885071033626,
+      "selection_weight": 14.148111492896637,
+      "voxel_idx": 252991,
+      "x": 131.22766872644425,
+      "y": 154.64848676919937,
+      "z": 120.83570295572281
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 4.252596687747218,
+      "selection_weight": 13.747403312252782,
+      "voxel_idx": 298786,
+      "x": 134.72935045957564,
+      "y": 151.14680503606797,
+      "z": 126.67183917760849
+    },
+    {
+      "complement": 1.0,
+      "cryptic_bonus": 2.0,
+      "distance_to_kabsch_ligand_A": 4.318260610090862,
+      "selection_weight": 13.681739389909138,
+      "voxel_idx": 280649,
+      "x": 142.8999411702156,
+      "y": 154.64848676919937,
+      "z": 124.33738468885423
+    }
+  ],
+  "rigid_core_excluded_count": 0,
+  "selected_voxel_count": 101,
+  "sha256": {
+    "output_pseudoligand": "2407469ab50cc0f1aaa894fad17d7e3c0c89be25bf571aa8f0c016534670da12"
+  },
+  "source_voxel_count": 11732,
+  "target_condition": "glp1r_6XOX_WT"
+}

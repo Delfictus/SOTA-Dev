@@ -1,0 +1,34 @@
+{
+  "outputs": {
+    "hysteresis_tensor.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/full_protocol_reextraction_probe/hysteresis_tensor.parquet",
+      "rows": 1552,
+      "seconds": 0.0028478149324655533
+    },
+    "interferometric_differential.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/full_protocol_reextraction_probe/interferometric_differential.parquet",
+      "rows": 388,
+      "seconds": 0.004082029918208718
+    },
+    "residue_phase_tensor.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/full_protocol_reextraction_probe/residue_phase_tensor.parquet",
+      "rows": 388,
+      "seconds": 1.5102998029906303
+    },
+    "stream_level_phase_counts.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/full_protocol_reextraction_probe/stream_level_phase_counts.parquet",
+      "rows": 7760,
+      "seconds": 0.5622591850114986
+    },
+    "temporal_cascade.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/full_protocol_reextraction_probe/temporal_cascade.parquet",
+      "rows": 1552,
+      "seconds": 0.009567785076797009
+    }
+  },
+  "protocol_state_summary": "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/protocol_state_summary.parquet",
+  "sample_fraction": 1.0,
+  "snr_masks": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/stream_snr_masks.parquet",
+  "spike_parquet": "campaigns/glp1r_aleniglipron/integrated_spike_events/capture_probe_5vex_r0_s0_5_10_15/spike_events_snr_masked.parquet",
+  "total_seconds": 2.0934239809866995
+}

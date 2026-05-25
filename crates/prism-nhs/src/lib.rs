@@ -394,6 +394,8 @@ pub mod batch_scheduler;
 pub mod clustering;
 pub mod composition;
 pub mod input;
+/// Rust-native parquet/provenance bridge for PRISM-DSTW extraction artifacts.
+pub mod io;
 pub mod mapping;
 pub mod neuromorphic;
 pub mod pipeline;

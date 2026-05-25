@@ -214,7 +214,7 @@ impl GpuContext {
     ///
     /// Modules loaded by their own constructors with explicit kernel lists:
     /// - pimc.ptx (loaded by PimcGpu::new())
-    /// - transfer_entropy.ptx (loaded by TransferEntropyGpu::new())
+    /// - transfer_entropy.ptx (loaded by CausalCouplingGpu::new())
     /// - ensemble_exchange.ptx (loaded by CmaEnsembleGpu::new())
     /// - molecular_dynamics.ptx (loaded by MolecularDynamicsGpu::new())
     ///

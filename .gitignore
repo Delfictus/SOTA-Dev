@@ -1,4 +1,11 @@
 target/
+node_modules/
+apps/*/node_modules/
+cloud/*/node_modules/
+apps/*/.vite/
+apps/*/dist/
+cloud/*/dist/
+*.tsbuildinfo
 
 # Large test/output directories (273GB+ combined)
 production_test/
@@ -48,6 +55,7 @@ __pycache__/
 
 # Build artifacts
 *.zip
+*.tar.gz
 release/dist/
 
 # Local test results

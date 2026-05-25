@@ -1,0 +1,126 @@
+{
+  "pseudo_atom_count": 16,
+  "release_delta_threshold": 34.945,
+  "representative_points": [
+    {
+      "release_delta": 55.395,
+      "variance_class": "thermally_destabilized",
+      "x": 146.401622903347,
+      "y": 146.47789605855942,
+      "z": 125.50461193323136
+    },
+    {
+      "release_delta": 55.28,
+      "variance_class": "thermally_destabilized",
+      "x": 147.56885014772416,
+      "y": 148.81235054731368,
+      "z": 129.00629366636275
+    },
+    {
+      "release_delta": 53.16,
+      "variance_class": "thermally_destabilized",
+      "x": 148.7360773921013,
+      "y": 158.15016850233079,
+      "z": 118.50124846696853
+    },
+    {
+      "release_delta": 52.97,
+      "variance_class": "thermally_destabilized",
+      "x": 145.23439565896987,
+      "y": 152.3140322804451,
+      "z": 118.50124846696853
+    },
+    {
+      "release_delta": 52.48,
+      "variance_class": "thermally_destabilized",
+      "x": 140.56548668146132,
+      "y": 153.48125952482224,
+      "z": 118.50124846696853
+    },
+    {
+      "release_delta": 51.45,
+      "variance_class": "thermally_destabilized",
+      "x": 144.06716841459274,
+      "y": 152.3140322804451,
+      "z": 122.00293020009994
+    },
+    {
+      "release_delta": 49.87,
+      "variance_class": "thermally_destabilized",
+      "x": 138.23103219270706,
+      "y": 144.14344156980513,
+      "z": 122.00293020009994
+    },
+    {
+      "release_delta": 46.35,
+      "variance_class": "thermally_destabilized",
+      "x": 148.7360773921013,
+      "y": 153.48125952482224,
+      "z": 120.83570295572281
+    },
+    {
+      "release_delta": 45.285,
+      "variance_class": "thermally_destabilized",
+      "x": 138.23103219270706,
+      "y": 156.98294125795366,
+      "z": 118.50124846696853
+    },
+    {
+      "release_delta": 45.075,
+      "variance_class": "thermally_destabilized",
+      "x": 151.07053188085555,
+      "y": 153.48125952482224,
+      "z": 126.67183917760849
+    },
+    {
+      "release_delta": 43.765,
+      "variance_class": "thermally_destabilized",
+      "x": 141.73271392583848,
+      "y": 147.64512330293655,
+      "z": 116.16679397821426
+    },
+    {
+      "release_delta": 43.67,
+      "variance_class": "thermally_destabilized",
+      "x": 139.3982594370842,
+      "y": 151.14680503606797,
+      "z": 125.50461193323136
+    },
+    {
+      "release_delta": 42.215,
+      "variance_class": "thermally_destabilized",
+      "x": 142.8999411702156,
+      "y": 154.64848676919937,
+      "z": 120.83570295572281
+    },
+    {
+      "release_delta": 42.015,
+      "variance_class": "thermally_destabilized",
+      "x": 149.90330463647842,
+      "y": 151.14680503606797,
+      "z": 131.34074815511704
+    },
+    {
+      "release_delta": 41.985,
+      "variance_class": "thermally_destabilized",
+      "x": 152.23775912523269,
+      "y": 159.31739574670792,
+      "z": 113.83233948946
+    },
+    {
+      "release_delta": 41.95,
+      "variance_class": "thermally_destabilized",
+      "x": 151.07053188085555,
+      "y": 153.48125952482224,
+      "z": 119.66847571134568
+    }
+  ],
+  "sha256": {
+    "output_pseudoligand": "33afd16871276c054bffd02bc9ffe6421ff2c913cf514bf6654121ba6e05209f",
+    "source_signal_grid": "c8dee22395bbd5dfec96830084e501fef8608280207c4d42fc99a7501022b30c",
+    "source_voxel_thresholds": "abc714723cef77b0e0123b215b367d5ce6f4a67c115b9c7e9c5d3c6ebad3267c"
+  },
+  "source_signal_grid": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+  "source_voxel_thresholds": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/voxel_thresholds.json",
+  "target_condition": "glp1r_6XOX_WT"
+}

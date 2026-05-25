@@ -1,0 +1,113 @@
+# Section 1 — Aleniglipron Interference Summary
+
+## Aleniglipron Thermodynamic Field Interference Analysis
+
+### Layer 1: Whole-Molecule Scoring
+- Total Pi_clash across 9 critical edges: 41.8023
+- Total Pi_complement: 46.1713
+- Projected durability score: 546.6557 +/- 60.9397
+- Confidence class: moderate
+
+### Layer 2: Fragment Decomposition (BRICS)
+- Fragments identified: 8
+- Dominant liability fragment: FRAG-C ([13*]c1c2c(nn1[19*])CCN([31*])[C@@H]2C, 20.2% of total clash)
+- Inter-fragment coupling: 2.4970
+
+### Per-Edge Attribution
+| Edge | Whole Clash | Sum Fragment Clash | Coupling | Dominant Fragment | Dominant Fraction |
+|---|---:|---:|---:|---|---:|
+| glp1r_5VEX_WT:PHE143->ILE147 | 21.1308 | 19.7931 | 1.3376 | FRAG-C | 20.2% |
+| glp1r_5VEX_WT:PHE143->TYR148 | 0.0000 | 0.0000 | 0.0000 | FRAG-A | 0.0% |
+| glp1r_5VEX_WT:TYR148->TYR152 | 0.0000 | 0.0000 | 0.0000 | FRAG-A | 0.0% |
+| glp1r_5VEX_WT:TYR152->TYR148 | 20.6716 | 19.5122 | 1.1593 | FRAG-C | 20.6% |
+| glp1r_6LN2_A316T:TYR242->ILE313 | 0.0000 | 0.0000 | 0.0000 | FRAG-A | 0.0% |
+| glp1r_6XOX_WT:ARG421->TRP417 | 0.0000 | 0.0000 | 0.0000 | FRAG-A | 0.0% |
+| glp1r_6XOX_WT:PHE169->SER416 | 0.0000 | 0.0000 | 0.0000 | FRAG-A | 0.0% |
+| glp1r_6XOX_WT:TRP417->ARG421 | 0.0000 | 0.0000 | 0.0000 | FRAG-A | 0.0% |
+| glp1r_6XOX_WT:TYR241->ARG310 | 0.0000 | 0.0000 | 0.0000 | FRAG-A | 0.0% |
+
+
+### Structural Rationales
+**glp1r_5VEX_WT:PHE143->ILE147:** At glp1r_5VEX_WT:PHE143->ILE147, aleniglipron shows Pi_clash = 21.13. FRAG-C is the dominant contributor (4.26, 20% of total). Inter-fragment coupling contributes 1.34 additional clash, indicating synergistic steric compression when fragments are connected.
+
+**glp1r_5VEX_WT:PHE143->TYR148:** Aleniglipron shows negligible steric interference at glp1r_5VEX_WT:PHE143->TYR148 (Pi_clash = 0.000). No fragment contributes significant clash.
+
+**glp1r_5VEX_WT:TYR148->TYR152:** Aleniglipron shows negligible steric interference at glp1r_5VEX_WT:TYR148->TYR152 (Pi_clash = 0.000). No fragment contributes significant clash.
+
+**glp1r_5VEX_WT:TYR152->TYR148:** At glp1r_5VEX_WT:TYR152->TYR148, aleniglipron shows Pi_clash = 20.67. FRAG-C is the dominant contributor (4.26, 21% of total). Inter-fragment coupling contributes 1.16 additional clash, indicating synergistic steric compression when fragments are connected.
+
+**glp1r_6LN2_A316T:TYR242->ILE313:** Aleniglipron shows negligible steric interference at glp1r_6LN2_A316T:TYR242->ILE313 (Pi_clash = 0.000). No fragment contributes significant clash.
+
+**glp1r_6XOX_WT:ARG421->TRP417:** Aleniglipron shows negligible steric interference at glp1r_6XOX_WT:ARG421->TRP417 (Pi_clash = 0.000). No fragment contributes significant clash.
+
+**glp1r_6XOX_WT:PHE169->SER416:** Aleniglipron shows negligible steric interference at glp1r_6XOX_WT:PHE169->SER416 (Pi_clash = 0.000). No fragment contributes significant clash.
+
+**glp1r_6XOX_WT:TRP417->ARG421:** Aleniglipron shows negligible steric interference at glp1r_6XOX_WT:TRP417->ARG421 (Pi_clash = 0.000). No fragment contributes significant clash.
+
+**glp1r_6XOX_WT:TYR241->ARG310:** Aleniglipron shows negligible steric interference at glp1r_6XOX_WT:TYR241->ARG310 (Pi_clash = 0.000). No fragment contributes significant clash.
+
+### Recommendation
+Prioritize modifications to FRAG-C if reducing receptor-side steric clash is the objective; protect fragments with low dominant clash unless potency SAR requires changes.
+
+# Section 2 — Zero-Shot Top-10 Replacements
+
+**SAR-contingency notice.** Every replacement below is PROJECTED or HYPOTHESIZED. These are not synthesis instructions, not validated compounds, and not biological recommendations. Use as a SAR shortlist input only, subject to medicinal-chemistry review and wet-lab falsification.
+
+# ZeroShot_Top10_Replacements
+
+Top-10 PROJECTED / HYPOTHESIZED fragment replacements derived from the manual emulation track. **These are not validated compounds and not synthesis instructions.** `solution_epistemic_class` governs how each row may be cited. SMILES strings are preserved in the CSV (omitted from MD for width).
+
+| solution_rank | anchor_id | sa_score | pi_complement | pi_clash | projected_durability_improvement | liability_edge_label | solution_epistemic_class |
+|---|---|---|---|---|---|---|---|
+| 1 | CAL-ANCHOR-000453 | 3.349 | 14.61 | 0 | 0.7327 | PHE143 -> TYR148 | PROJECTED |
+| 2 | CAL-ANCHOR-000405 | 3.349 | 14.37 | 0 | 0.7269 | PHE143 -> TYR148 | PROJECTED |
+| 3 | CAL-ANCHOR-000338 | 3.355 | 14.26 | 0 | 0.7241 | PHE143 -> TYR148 | PROJECTED |
+| 4 | CAL-ANCHOR-000177 | 3.359 | 14.2 | 0 | 0.7225 | PHE143 -> TYR148 | PROJECTED |
+| 5 | CAL-ANCHOR-000212 | 3.355 | 14.18 | 0 | 0.722 | PHE143 -> TYR148 | PROJECTED |
+| 6 | CAL-ANCHOR-000142 | 3.359 | 14.17 | 0 | 0.7217 | PHE143 -> TYR148 | PROJECTED |
+| 7 | CAL-ANCHOR-000107 | 3.359 | 14.16 | 0 | 0.7216 | PHE143 -> TYR148 | PROJECTED |
+| 8 | CAL-ANCHOR-000473 | 3.349 | 14.12 | 0 | 0.7206 | PHE143 -> TYR148 | PROJECTED |
+| 9 | CAL-ANCHOR-000302 | 3.089 | 14 | 0 | 0.7175 | PHE143 -> TYR148 | PROJECTED |
+| 10 | CAL-ANCHOR-000373 | 3.355 | 13.99 | 0 | 0.7172 | PHE143 -> TYR148 | PROJECTED |
+
+
+
+# Section 3 — Fragment Interference Attribution
+
+# Fragment_Interference_Attribution
+
+Per-edge fragment interference attribution. Decomposes whole-molecule pi clash/complement into fragment contributions. INFERRED epistemic class — multi-tensor interpretation.
+
+| edge_id | whole_molecule_clash | whole_molecule_complement | sum_fragment_clash | sum_fragment_complement | dominant_fragment | dominant_fragment_clash | dominant_fraction |
+|---|---|---|---|---|---|---|---|
+| glp1r_5VEX_WT:PHE143->ILE147 | 21.13 | 0 | 19.79 | 0 | FRAG-C | 4.261 | 0.2016 |
+| glp1r_5VEX_WT:PHE143->TYR148 | 0 | 25.5 | 0 | 23.83 | FRAG-A | 0 | 0 |
+| glp1r_5VEX_WT:TYR148->TYR152 | 0 | 20.67 | 0 | 19.51 | FRAG-A | 0 | 0 |
+| glp1r_5VEX_WT:TYR152->TYR148 | 20.67 | 0 | 19.51 | 0 | FRAG-C | 4.256 | 0.2059 |
+| glp1r_6LN2_A316T:TYR242->ILE313 | 0 | 0 | 0 | 0 | FRAG-A | 0 | 0 |
+| glp1r_6XOX_WT:ARG421->TRP417 | 0 | 0 | 0 | 0 | FRAG-A | 0 | 0 |
+| glp1r_6XOX_WT:PHE169->SER416 | 0 | 0 | 0 | 0 | FRAG-A | 0 | 0 |
+| glp1r_6XOX_WT:TRP417->ARG421 | 0 | 0 | 0 | 0 | FRAG-A | 0 | 0 |
+| glp1r_6XOX_WT:TYR241->ARG310 | 0 | 0 | 0 | 0 | FRAG-A | 0 | 0 |
+
+
+
+# Section 4 — Phase 2D Staged Variant Grid
+
+**Materialization status.** Phase 2D targets are *staged* — they appear in the planning manifest but have not been engine-executed. Treat the table below as a queue, not an evidence set.
+
+# Phase2D_Staged_Targets
+
+Phase 2D variant-grid staged targets. **Materialization status:** `staged_manifest_materialized_not_executed` — these are *staged*, not engine-executed. The Phase 2D manifest is a planning artifact.
+
+| condition_id | variant | background | topology_source | evidence_status | epistemic_class | n_replicas | engine_run_id |
+|---|---|---|---|---|---|---|---|
+| glp1r_5VEX_WT |  | WT |  |  |  |  |  |
+| glp1r_6LN2_A316T |  | A316T |  |  |  |  |  |
+| glp1r_6LN2_T149M |  | T149M |  |  |  |  |  |
+| glp1r_6LN2_WT |  | WT |  |  |  |  |  |
+| glp1r_6X1A_WT |  | WT |  |  |  |  |  |
+| glp1r_6XOX_A316T |  | A316T |  |  |  |  |  |
+| glp1r_6XOX_T149M |  | T149M |  |  |  |  |  |
+| glp1r_6XOX_WT |  | WT |  |  |  |  |  |
+

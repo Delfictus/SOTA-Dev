@@ -1,0 +1,37 @@
+{
+  "completed_shards": [
+    {
+      "attempted_a": 1070,
+      "attempted_b": 78496150,
+      "completed_at_unix_s": 1779666452,
+      "final_survivors": 37757029,
+      "intermediate_a_dropped": 230,
+      "output": "campaigns/glp1r_aleniglipron/track_a_generative/fullscale_shards/shard_0000.parquet",
+      "pathway_id": "TWO_STEP__RXN_AMIDE_COUPLING__RXN_AMIDE_COUPLING",
+      "plan_shard_id": 3,
+      "requested_shard_id": 0,
+      "status": "COMPLETED"
+    },
+    {
+      "attempted_a": 1071,
+      "attempted_b": 88593610,
+      "completed_at_unix_s": 1779667290,
+      "final_survivors": 40728273,
+      "intermediate_a_dropped": 122,
+      "output": "campaigns/glp1r_aleniglipron/track_a_generative/fullscale_shards/shard_0001.parquet",
+      "pathway_id": "TWO_STEP__RXN_AMIDE_COUPLING__RXN_AMIDE_COUPLING",
+      "plan_shard_id": 4,
+      "requested_shard_id": 1,
+      "status": "COMPLETED"
+    }
+  ],
+  "failed_shards": [],
+  "gate": "DENDRITIC_38B_PLANNER_VALIDATED",
+  "generated_at_utc": "2026-05-24T23:06:01.660940+00:00",
+  "in_progress_shards": [],
+  "next_pending_shard_id": 2,
+  "plan_path": "campaigns/glp1r_aleniglipron/track_a_generative/vspace_38b_dendritic_plan.json",
+  "shard_plan_path": "campaigns/glp1r_aleniglipron/track_a_generative/shard_plan.parquet",
+  "status": "running",
+  "total_shards": 120
+}

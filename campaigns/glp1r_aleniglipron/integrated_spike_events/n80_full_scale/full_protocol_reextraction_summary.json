@@ -1,0 +1,41 @@
+{
+  "outputs": {
+    "hysteresis_tensor.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+      "reused": false,
+      "rows": 11852,
+      "seconds": 0.015055975061841309
+    },
+    "interferometric_differential.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/interferometric_differential.parquet",
+      "reused": false,
+      "rows": 2963,
+      "seconds": 0.033608485013246536
+    },
+    "residue_phase_tensor.parquet": {
+      "accounting": "{\"duplicate_key_rows\": 0, \"entropy_event_count\": 5620333375, \"invalid_accounting_rows\": 0, \"residue_rows\": 2963, \"residue_total_spikes\": 5620333375, \"source_event_count\": 5620333375, \"stream_total_spikes\": 5620333375, \"wavelength_event_count\": 5620333375}",
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/residue_phase_tensor.parquet",
+      "reused": false,
+      "rows": 2963,
+      "seconds": 0.007656218949705362
+    },
+    "stream_level_phase_counts.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/stream_level_phase_counts.parquet",
+      "retagged": true,
+      "reused": true,
+      "rows": 296300,
+      "seconds": 0.04275859799236059
+    },
+    "temporal_cascade.parquet": {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade.parquet",
+      "reused": false,
+      "rows": 11852,
+      "seconds": 0.008183568948879838
+    }
+  },
+  "protocol_state_summary": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/protocol_state_summary.parquet",
+  "sample_fraction": 1.0,
+  "snr_masks": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/stream_snr_masks.parquet",
+  "spike_parquet": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/spike_events_snr_masked.parquet",
+  "total_seconds": 213.9142739790259
+}

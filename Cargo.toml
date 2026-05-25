@@ -37,6 +37,7 @@ members = [
     # Neuromorphic Holographic Stream (NHS) - Revolutionary Cryptic Site Detection
     # ═══════════════════════════════════════════════════════════════════════════
     "crates/prism-nhs",             # NHS: 30,000× faster than explicit solvent with UV bias
+    "crates/prism-forge",           # PRISM-FORGE: reaction-native 3D generative chemistry kernel
     "crates/prism-cuda-ext",        # PRISM-TWIN: Advanced CUDA — device-side compaction, conditional graphs, TMA
     "crates/sdst",                  # PRISM-Therm: Spike-Driven Sparse Temporal Hash (SDST) FFI
 
@@ -110,14 +111,11 @@ rayon = "1.7"
 crossbeam-utils = "0.8"
 
 # Telemetry and metrics
-prometheus = "0.13"
+prometheus = "0.14"
 axum = "0.7"
 hyper = "1.0"
 log = "0.4"
 env_logger = "0.10"
-
-# Database for telemetry
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }

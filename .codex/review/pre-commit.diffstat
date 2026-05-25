@@ -1,7 +1,15 @@
- .codex/review/context.txt                 |     4 +-
- .codex/review/pre-commit.diff             | 16201 +++++++++++++++++-----------
- .codex/review/pre-commit.diffstat         |    12 +-
- crates/prism-nhs/src/bin/nhs_rt_full.rs   |   306 +
- crates/prism-nhs/src/fused_engine.rs      |    37 +
- crates/prism-nhs/src/persistent_engine.rs |    43 +
- 6 files changed, 10520 insertions(+), 6083 deletions(-)
+ .../track_a_generative/daemon_smoke_preflight.json |    21 +
+ .../gflownet_top_100_pgx_screened.parquet          |   Bin 0 -> 105122 bytes
+ .../gflownet_top_100_pgx_screened_report.json      |    32 +
+ .../track_a_generative/lock_region_mask.json       | 14893 +++++++++++++++++++
+ .../shard_r2_recovery_preflight.json               |    32 +
+ crates/prism-forge/src/bin/oracle_scorer.rs        |   602 +
+ scripts/audit_pgx_resilience.py                    |   337 +
+ scripts/generate_lock_region_mask.py               |   219 +
+ scripts/preflight_daemon_smoke.py                  |    60 +
+ scripts/preflight_shard_r2_recovery.py             |    72 +
+ scripts/train_gflownet_policy.py                   |  1338 ++
+ .../orchestration/multi_scaffold_entropy_router.py |   387 +
+ src/prism_dstw/orchestration/rust_reward_oracle.py |   323 +
+ tests/test_multi_scaffold_entropy_router.py        |    81 +
+ 14 files changed, 18397 insertions(+)

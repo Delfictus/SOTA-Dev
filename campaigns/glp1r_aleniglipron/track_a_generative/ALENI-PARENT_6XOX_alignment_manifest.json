@@ -1,0 +1,101 @@
+{
+  "grid_bounds_6XOX": {
+    "grid_shape": [
+      96,
+      96,
+      96
+    ],
+    "max_xyz": [
+      206.51382598876955,
+      215.92791709899905,
+      200.79076919555666
+    ],
+    "min_xyz": [
+      94.46001052856445,
+      103.87410163879395,
+      88.73695373535156
+    ],
+    "spacing_A": 1.1672272443771363
+  },
+  "kabsch_rmsd_A": 2.558353889811092,
+  "kabsch_rotation_matrix": [
+    [
+      -0.2910697082136115,
+      0.19139068814344157,
+      -0.9373622722578622
+    ],
+    [
+      0.7458849622016751,
+      -0.5681684350597759,
+      -0.3476208459847175
+    ],
+    [
+      -0.5991110482388461,
+      -0.8003463212220726,
+      0.022621184417409634
+    ]
+  ],
+  "kabsch_translation_vector": [
+    104.24414227027627,
+    96.23247605318096,
+    102.77150982010066
+  ],
+  "ligand_centroid_after_kabsch": [
+    141.05972638570665,
+    149.0335097210732,
+    121.71677873340634
+  ],
+  "ligand_centroid_after_min": [
+    137.75789604576184,
+    156.42296303938062,
+    123.99450944214962
+  ],
+  "ligand_centroid_before": [
+    17.31727575757576,
+    -38.116496969696975,
+    -52.43571515151515
+  ],
+  "ligand_inside_grid_after_alignment": true,
+  "matched_ca_count": 24,
+  "matched_residue_ids": [
+    142,
+    147,
+    151,
+    146,
+    199,
+    202,
+    174,
+    249,
+    223,
+    227,
+    150,
+    237,
+    241,
+    145,
+    193,
+    143,
+    144,
+    256,
+    252,
+    141,
+    219,
+    156,
+    155,
+    238
+  ],
+  "output_kabsch_sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_kabsch.sdf",
+  "output_minimized_sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_minimized.sdf",
+  "post_min_heavy_distance_A": 1.5854937207999493,
+  "pre_min_heavy_distance_A": 0.12531179826840907,
+  "selected_source_condition": "glp1r_5VEX_WT",
+  "sha256": {
+    "output_kabsch_sdf": "d305f64739f742edfdb6d74dceb1b6aa773924320d820a4a131c602d4c6f7670",
+    "output_minimized_sdf": "a3037e54bddade586956d583a2d087b5b33c0b785bea4f526857a8149b609674",
+    "source_ligand_sdf": "c55dcf6e792dbd6f8366f46cda481db7839963f3685735aaf9e244e130d57e99",
+    "source_topology": "3b81cb65e8f13ae52f3c53dd0bc9c32b1d943b789272ed518c4c4211a463b1e5",
+    "target_topology": "e3d5ab6eccff69e4add57f9e4a898f4f9e00e7e58ffae6c0875a50ce9f541b00"
+  },
+  "source_ligand_sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_0_manual_emulation/conformers/ALENI-PARENT_am1bcc.sdf",
+  "source_topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_5VEX_WT.topology.json",
+  "target_topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json"
+}

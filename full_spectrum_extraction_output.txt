@@ -1,0 +1,370 @@
+
+======================================================================
+  1. PROTOCOL PHASE BOUNDARIES — ALL CONDITIONS
+======================================================================
+glp1r_5VEX_WT stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=254.0
+glp1r_5VEX_WT stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=258.0
+glp1r_5VEX_WT stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=258.0
+glp1r_6LN2_A316T stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=258.0
+glp1r_6LN2_A316T stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=280.0
+glp1r_6LN2_A316T stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=280.0
+glp1r_6LN2_T149M stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=280.0
+glp1r_6LN2_T149M stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=254.0
+glp1r_6LN2_T149M stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=254.0
+glp1r_6LN2_WT stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=274.0
+glp1r_6LN2_WT stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=274.0
+glp1r_6LN2_WT stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=274.0
+glp1r_6X1A_WT stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=211.0
+glp1r_6X1A_WT stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=274.0
+glp1r_6X1A_WT stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=274.0
+glp1r_6XOX_A316T stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=258.0
+glp1r_6XOX_A316T stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=280.0
+glp1r_6XOX_A316T stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=280.0
+glp1r_6XOX_T149M stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=280.0
+glp1r_6XOX_T149M stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=254.0
+glp1r_6XOX_T149M stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=254.0
+glp1r_6XOX_WT stream 0: cold_end=10000 ramp_end=14000 warm_end=26000 ramp_down_end=31000 total=35000 dt=0.006000 uv_energy=48.0 uv_interval=200 uv_wl=254.0
+glp1r_6XOX_WT stream 10: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=258.0
+glp1r_6XOX_WT stream 11: cold_end=6000 ramp_end=16000 warm_end=32000 ramp_down_end=37000 total=40000 dt=0.004000 uv_energy=25.0 uv_interval=400 uv_wl=258.0
+
+======================================================================
+  2. SPIKE TEMPORAL STRUCTURE — FULL 5.62B DATASET
+======================================================================
+Row groups: 60035, Total rows: 5,620,333,379
+
+--- Row group sampling (every 1000th) ---
+
+GLOBAL timestep range: 6 to 8289
+GLOBAL time_ps range: 0.0240 to 33.1560
+Conditions: ['glp1r_5VEX_WT', 'glp1r_6LN2_A316T', 'glp1r_6LN2_T149M', 'glp1r_6LN2_WT', 'glp1r_6X1A_WT', 'glp1r_6XOX_A316T', 'glp1r_6XOX_T149M', 'glp1r_6XOX_WT']
+Streams: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19]
+
+--- glp1r_5VEX_WT temporal histogram ---
+         0 |    200,000 ####################
+      2000 |    500,000 ##################################################
+      4000 |    200,000 ####################
+      6000 |    100,000 ##########
+
+--- glp1r_6LN2_A316T temporal histogram ---
+         0 |    200,000 ###################################
+      2000 |     47,765 ########
+      4000 |    282,955 ##################################################
+      6000 |    100,006 #################
+
+--- glp1r_6LN2_T149M temporal histogram ---
+         0 |    276,543 ##################################################
+      2000 |    100,000 ##################
+      4000 |    100,000 ##################
+      6000 |    114,614 ####################
+
+--- glp1r_6LN2_WT temporal histogram ---
+         0 |    359,645 ##################################################
+      2000 |    240,355 #################################
+      4000 |    100,000 #############
+
+--- glp1r_6X1A_WT temporal histogram ---
+         0 |    138,489 ##########################
+      2000 |    261,511 ##################################################
+      4000 |    100,000 ###################
+      6000 |    100,000 ###################
+      8000 |    100,000 ###################
+
+--- glp1r_6XOX_A316T temporal histogram ---
+         0 |    100,000 ################
+      2000 |    300,000 ##################################################
+      4000 |    100,000 ################
+      6000 |    200,000 #################################
+
+--- glp1r_6XOX_T149M temporal histogram ---
+      2000 |    181,151 #########################################
+      4000 |    210,319 ################################################
+      6000 |    216,523 ##################################################
+
+--- glp1r_6XOX_WT temporal histogram ---
+         0 |    100,000 ################
+      2000 |    110,417 #################
+      4000 |    307,535 ##################################################
+      6000 |    282,048 #############################################
+
+======================================================================
+  3. PER-RESIDUE FIRST SPIKE DURING RAMP (temporal cascade)
+======================================================================
+glp1r_5VEX_WT: ALL residues fire before step 5000
+
+  First-spike distribution: min=6, max=3274, mean=330, median=6
+           6-     333:  204 residues
+         333-     660:  136 residues
+         660-     986:   37 residues
+         986-    1313:    0 residues
+        1313-    1640:    0 residues
+        1640-    1967:    0 residues
+        1967-    2294:    0 residues
+        2294-    2620:    6 residues
+        2620-    2947:    4 residues
+        2947-    3274:    1 residues
+
+======================================================================
+  4. SPIKE COLUMN DEEP DIVE — phase_bits, spike_source, wavelength
+======================================================================
+Sample size: 100,000 from middle row group
+
+phase_bits: nunique=8, min=151, max=158
+shape: (8, 2)
+┌────────────┬───────┐
+│ phase_bits ┆ count │
+│ ---        ┆ ---   │
+│ u32        ┆ u64   │
+╞════════════╪═══════╡
+│ 151        ┆ 71730 │
+│ 152        ┆ 18190 │
+│ 158        ┆ 9795  │
+│ 154        ┆ 93    │
+│ 153        ┆ 90    │
+│ 155        ┆ 50    │
+│ 156        ┆ 28    │
+│ 157        ┆ 24    │
+└────────────┴───────┘
+
+spike_source: nunique=2, min=1, max=2
+shape: (2, 2)
+┌──────────────┬───────┐
+│ spike_source ┆ count │
+│ ---          ┆ ---   │
+│ i32          ┆ u64   │
+╞══════════════╪═══════╡
+│ 2            ┆ 96276 │
+│ 1            ┆ 3724  │
+└──────────────┴───────┘
+
+wavelength_nm: nunique=3, min=0.0, max=274.0
+shape: (3, 2)
+┌───────────────┬───────┐
+│ wavelength_nm ┆ count │
+│ ---           ┆ ---   │
+│ f32           ┆ u64   │
+╞═══════════════╪═══════╡
+│ 0.0           ┆ 94504 │
+│ 274.0         ┆ 4651  │
+│ 258.0         ┆ 845   │
+└───────────────┴───────┘
+
+--- intensity distribution ---
+min=1.10, max=64.80, mean=24.47, std=24.23
+
+--- water_density distribution ---
+min=0.0000, max=0.0136, mean=0.0124
+
+--- wd_change distribution ---
+min=0.0000, max=0.0001, mean=0.0000
+
+--- vibrational_energy distribution ---
+min=0.0000, max=0.0000, mean=0.0000
+
+--- causal_anchor breakdown ---
+shape: (1, 2)
+┌───────────────┬────────┐
+│ causal_anchor ┆ count  │
+│ ---           ┆ ---    │
+│ bool          ┆ u64    │
+╞═══════════════╪════════╡
+│ true          ┆ 100000 │
+└───────────────┴────────┘
+
+======================================================================
+  5. KCC DEEP DIVE — ALL non-NaN columns
+======================================================================
+Rows: 652600, Columns: ['campaign_id', 'condition_id', 'replica_id', 'stream_id', 'run_id', 'stem', 'residue_idx', 'temporal_corr', 'direction_score', 'motion_efficiency', 'burst_motion', 'phase_shift', 'causal_lag', 'lag_corr_peak', 'local_cov', 'net_dx', 'net_dy', 'net_dz', 'sum_m', 'residue_count', 'active_causal']
+  residue_idx: min=0, max=436, mean=204.26
+  temporal_corr: valid=652600, min=-0.915747, max=0.844052, mean=-0.193000, std=0.215237
+  direction_score: valid=652600, min=0.001008, max=0.518414, mean=0.102512, std=0.048482
+  motion_efficiency: valid=652600, min=0.002389, max=0.015202, mean=0.006737, std=0.002059
+  burst_motion: valid=652600, min=0.000000, max=86683.648438, mean=19.254908, std=800.752661
+  phase_shift: valid=652600, min=-0.969871, max=0.886316, mean=0.019781, std=0.123717
+  causal_lag: ALL NaN
+  lag_corr_peak: ALL NaN
+  local_cov: valid=652600, min=0.000000, max=2.257526, mean=0.358266, std=0.414386
+  net_dx: valid=652600, min=-0.246917, max=0.203247, mean=-0.000044, std=0.034323
+  net_dy: valid=652600, min=-0.198616, max=0.224503, mean=-0.000009, std=0.034382
+  net_dz: valid=652600, min=-0.219955, max=0.247673, mean=-0.000064, std=0.034400
+  sum_m: valid=652600, min=0.155471, max=1.319389, mean=0.537678, std=0.171175
+  residue_count: min=13, max=19, mean=15.91
+  active_causal: min=0, max=19, mean=9.85
+
+KCC for 396 critical edge residues: 587000 rows
+shape: (396, 6)
+┌─────────────┬───────────┬──────────┬──────────┬──────────┬─────────────┐
+│ residue_idx ┆ mean_tc   ┆ std_tc   ┆ mean_dir ┆ mean_eff ┆ mean_active │
+│ ---         ┆ ---       ┆ ---      ┆ ---      ┆ ---      ┆ ---         │
+│ i32         ┆ f64       ┆ f64      ┆ f64      ┆ f64      ┆ f64         │
+╞═════════════╪═══════════╪══════════╪══════════╪══════════╪═════════════╡
+│ 436         ┆ 0.007551  ┆ 0.107382 ┆ 0.104463 ┆ 0.00677  ┆ 0.166667    │
+│ 271         ┆ 0.0       ┆ 0.0      ┆ 0.099406 ┆ 0.006834 ┆ 0.0         │
+│ 400         ┆ 0.0       ┆ 0.0      ┆ 0.106816 ┆ 0.006787 ┆ 0.0         │
+│ 397         ┆ 0.0       ┆ 0.0      ┆ 0.102406 ┆ 0.006833 ┆ 0.0         │
+│ 393         ┆ 0.0       ┆ 0.0      ┆ 0.104388 ┆ 0.006791 ┆ 0.0         │
+│ …           ┆ …         ┆ …        ┆ …        ┆ …        ┆ …           │
+│ 419         ┆ -0.328002 ┆ 0.229878 ┆ 0.109966 ┆ 0.006317 ┆ 5.875       │
+│ 426         ┆ -0.338841 ┆ 0.233481 ┆ 0.106927 ┆ 0.006134 ┆ 2.9         │
+│ 424         ┆ -0.344833 ┆ 0.243667 ┆ 0.108313 ┆ 0.006047 ┆ 2.901667    │
+│ 422         ┆ -0.364944 ┆ 0.207429 ┆ 0.10924  ┆ 0.006163 ┆ 3.0         │
+│ 423         ┆ -0.371037 ┆ 0.192597 ┆ 0.108812 ┆ 0.006081 ┆ 3.0         │
+└─────────────┴───────────┴──────────┴──────────┴──────────┴─────────────┘
+
+======================================================================
+  6. BOCPD DEEP DIVE — regime transitions vs protocol phase
+======================================================================
+Rows: 3200, Columns: ['frame_idx', 'chunk_idx', 'stream', 'spike_delta', 'observation', 'posterior_max', 'map_run_length', 'recent_p', 'recent_log_odds_bits', 'reset_probability', 'chunk_close_signal', 'n_observations', 'condition_id', 'replica_id', 'stream_id', 'dt_ps', 'timestep_min', 'timestep_max', 'start_temp_K', 'end_temp_K', 'cold_hold_end', 'ramp_end', 'warm_hold_end', 'ramp_down_end', 'time_ps', 'survival_time_ps', 'thermal_phase', 'temperature_K', 'regime_id']
+
+--- Regime transitions by thermal_phase ---
+shape: (1, 2)
+┌───────────────┬───────┐
+│ thermal_phase ┆ count │
+│ ---           ┆ ---   │
+│ str           ┆ u64   │
+╞═══════════════╪═══════╡
+│ Cold_Hold     ┆ 3200  │
+└───────────────┴───────┘
+
+--- Regime transitions by condition ---
+shape: (8, 6)
+┌──────────────────┬───────────┬───────────────┬───────────┬─────────────────┬────────────────┐
+│ condition_id     ┆ n_regimes ┆ mean_survival ┆ max_frame ┆ mean_reset_prob ┆ mean_posterior │
+│ ---              ┆ ---       ┆ ---           ┆ ---       ┆ ---             ┆ ---            │
+│ str              ┆ u64       ┆ f64           ┆ i64       ┆ f64             ┆ f64            │
+╞══════════════════╪═══════════╪═══════════════╪═══════════╪═════════════════╪════════════════╡
+│ glp1r_5VEX_WT    ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.000554        ┆ 0.99917        │
+│ glp1r_6LN2_A316T ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.0005535       ┆ 0.99917        │
+│ glp1r_6LN2_T149M ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.000554        ┆ 0.99917        │
+│ glp1r_6LN2_WT    ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.0005535       ┆ 0.99917        │
+│ glp1r_6X1A_WT    ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.000554        ┆ 0.99917        │
+│ glp1r_6XOX_A316T ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.000554        ┆ 0.99917        │
+│ glp1r_6XOX_T149M ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.000554        ┆ 0.99917        │
+│ glp1r_6XOX_WT    ┆ 400       ┆ 0.006         ┆ 500       ┆ 0.0005535       ┆ 0.99917        │
+└──────────────────┴───────────┴───────────────┴───────────┴─────────────────┴────────────────┘
+
+--- frame_idx distribution ---
+min=0, max=500, nunique=2
+shape: (2, 2)
+┌───────────┬───────┐
+│ frame_idx ┆ count │
+│ ---       ┆ ---   │
+│ i64       ┆ u64   │
+╞═══════════╪═══════╡
+│ 0         ┆ 1600  │
+│ 500       ┆ 1600  │
+└───────────┴───────┘
+
+======================================================================
+  7. STEERING TENSOR — phase-specific targeting
+======================================================================
+Rows: 6126, Columns: ['condition_id', 'residue_idx', 'thermal_phase', 'steering_weight_sum', 'steering_weight_mean', 'steering_weight_max', 'steering_focus_observations', 'supporting_stream_count', 'supporting_replica_count', 'mean_temperature_K']
+
+Top 20 globally steered residues:
+shape: (20, 5)
+┌─────────────┬────────────────────┬──────────────┬──────────┬──────────────┐
+│ residue_idx ┆ global_mean_weight ┆ n_conditions ┆ n_phases ┆ mean_streams │
+│ ---         ┆ ---                ┆ ---          ┆ ---      ┆ ---          │
+│ i32         ┆ f64                ┆ u64          ┆ u64      ┆ f64          │
+╞═════════════╪════════════════════╪══════════════╪══════════╪══════════════╡
+│ 399         ┆ 0.752499           ┆ 2            ┆ 2        ┆ 7.5          │
+│ 403         ┆ 0.716554           ┆ 3            ┆ 2        ┆ 5.666667     │
+│ 420         ┆ 0.622713           ┆ 4            ┆ 2        ┆ 7.0          │
+│ 431         ┆ 0.607095           ┆ 3            ┆ 2        ┆ 7.166667     │
+│ 436         ┆ 0.606718           ┆ 3            ┆ 2        ┆ 5.0          │
+│ …           ┆ …                  ┆ …            ┆ …        ┆ …            │
+│ 383         ┆ 0.5865             ┆ 5            ┆ 2        ┆ 8.0          │
+│ 311         ┆ 0.585747           ┆ 7            ┆ 2        ┆ 9.571429     │
+│ 404         ┆ 0.583461           ┆ 4            ┆ 2        ┆ 6.125        │
+│ 60          ┆ 0.5833             ┆ 8            ┆ 2        ┆ 7.25         │
+│ 235         ┆ 0.582795           ┆ 6            ┆ 2        ┆ 10.333333    │
+└─────────────┴────────────────────┴──────────────┴──────────┴──────────────┘
+
+--- Top 5 steered residues per thermal phase ---
+
+Cold_Hold:
+shape: (5, 2)
+┌─────────────┬──────────┐
+│ residue_idx ┆ mean_w   │
+│ ---         ┆ ---      │
+│ i32         ┆ f64      │
+╞═════════════╪══════════╡
+│ 399         ┆ 0.752499 │
+│ 403         ┆ 0.718293 │
+│ 420         ┆ 0.627133 │
+│ 431         ┆ 0.608238 │
+│ 436         ┆ 0.606718 │
+└─────────────┴──────────┘
+
+Ramp_Up:
+shape: (5, 2)
+┌─────────────┬──────────┐
+│ residue_idx ┆ mean_w   │
+│ ---         ┆ ---      │
+│ i32         ┆ f64      │
+╞═════════════╪══════════╡
+│ 399         ┆ 0.752499 │
+│ 403         ┆ 0.714816 │
+│ 420         ┆ 0.618294 │
+│ 436         ┆ 0.606718 │
+│ 431         ┆ 0.605951 │
+└─────────────┴──────────┘
+
+======================================================================
+  8. AROMATIC TENSOR — displacement at critical edges
+======================================================================
+Rows: 2336, Columns: ['campaign_id', 'condition_id', 'ring_idx', 'cold_stream_count', 'warm_stream_count', 'cold_mean_x', 'cold_mean_y', 'cold_mean_z', 'warm_mean_x', 'warm_mean_y', 'warm_mean_z', 'centroid_displacement_x', 'centroid_displacement_y', 'centroid_displacement_z', 'centroid_displacement_std']
+
+--- Displacement magnitude distribution ---
+min=0.001292, max=0.028613, mean=0.010434, std=0.004279
+
+Top 15 most displaced aromatics:
+shape: (15, 6)
+┌─────────────────┬──────────┬─────────────────┬─────────────────┬────────────────┬────────────────┐
+│ condition_id    ┆ ring_idx ┆ displacement_ma ┆ centroid_displa ┆ cold_stream_co ┆ warm_stream_co │
+│ ---             ┆ ---      ┆ gnitude         ┆ cement_std      ┆ unt            ┆ unt            │
+│ str             ┆ i32      ┆ ---             ┆ ---             ┆ ---            ┆ ---            │
+│                 ┆          ┆ f32             ┆ f64             ┆ i32            ┆ i32            │
+╞═════════════════╪══════════╪═════════════════╪═════════════════╪════════════════╪════════════════╡
+│ glp1r_6LN2_T149 ┆ 445      ┆ 0.028613        ┆ 0.055756        ┆ 196            ┆ 4              │
+│ M               ┆          ┆                 ┆                 ┆                ┆                │
+│ glp1r_6XOX_A316 ┆ 497      ┆ 0.027372        ┆ 0.070206        ┆ 196            ┆ 4              │
+│ T               ┆          ┆                 ┆                 ┆                ┆                │
+│ glp1r_6X1A_WT   ┆ 351      ┆ 0.02705         ┆ 0.062728        ┆ 196            ┆ 4              │
+│ glp1r_6X1A_WT   ┆ 350      ┆ 0.026989        ┆ 0.029079        ┆ 196            ┆ 4              │
+│ glp1r_6LN2_T149 ┆ 254      ┆ 0.026325        ┆ 0.045604        ┆ 196            ┆ 4              │
+│ M               ┆          ┆                 ┆                 ┆                ┆                │
+│ …               ┆ …        ┆ …               ┆ …               ┆ …              ┆ …              │
+│ glp1r_6LN2_T149 ┆ 148      ┆ 0.023586        ┆ 0.047364        ┆ 196            ┆ 4              │
+│ M               ┆          ┆                 ┆                 ┆                ┆                │
+│ glp1r_6X1A_WT   ┆ 63       ┆ 0.023546        ┆ 0.041076        ┆ 196            ┆ 4              │
+│ glp1r_6XOX_T149 ┆ 318      ┆ 0.023459        ┆ 0.057652        ┆ 196            ┆ 4              │
+│ M               ┆          ┆                 ┆                 ┆                ┆                │
+│ glp1r_6XOX_T149 ┆ 263      ┆ 0.023446        ┆ 0.025443        ┆ 196            ┆ 4              │
+│ M               ┆          ┆                 ┆                 ┆                ┆                │
+│ glp1r_6XOX_A316 ┆ 381      ┆ 0.023433        ┆ 0.057131        ┆ 196            ┆ 4              │
+│ T               ┆          ┆                 ┆                 ┆                ┆                │
+└─────────────────┴──────────┴─────────────────┴─────────────────┴────────────────┴────────────────┘
+
+======================================================================
+  9. MECHANICAL LOAD — per-stream variation (not just aggregate)
+======================================================================
+Traceback (most recent call last):
+  File "/home/diddy/Desktop/Prism4D-bio/scripts/full_spectrum_extraction.py", line 313, in <module>
+    .collect()
+     ^^^^^^^^^
+  File "/home/diddy/.local/lib/python3.12/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/diddy/.local/lib/python3.12/site-packages/polars/lazyframe/opt_flags.py", line 330, in wrapper
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/diddy/.local/lib/python3.12/site-packages/polars/lazyframe/frame.py", line 2407, in collect
+    return wrap_df(ldf.collect(engine, callback))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+polars.exceptions.ColumnNotFoundError: unable to find column "residue_idx"; valid columns: ["campaign_id", "condition_id", "replica_id", "stream_id", "atom_idx", "force_x", "force_y", "force_z", "asc_x", "asc_y", "asc_z", "mechanical_load"]
+
+Resolved plan until failure:
+
+	---> FAILED HERE RESOLVING 'sink' <---
+Parquet SCAN [campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet]
+PROJECT */12 COLUMNS

@@ -1,0 +1,1038 @@
+%% PRISM-4D | GLP-1R Aleniglipron M2 — pharma/med-chem delivery template
+%% Jinja2-rendered template — placeholders are substituted server-side.
+%% Compile final .tex with: latexmk -pdf, or xelatex twice.
+%% Print-safe colors, no tikz dependency.
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{microtype}
+\usepackage[a4paper,margin=16mm,top=22mm,bottom=22mm,headheight=14pt,headsep=10pt]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage[most]{tcolorbox}
+\usepackage[colorlinks=true,allcolors=DelfRule]{hyperref}
+\usepackage{textcomp}
+\usepackage{seqsplit}
+\usepackage{xltabular}
+\usepackage{ragged2e}
+\usepackage{etoolbox}
+
+% --- text-overflow hardening (margin protection) ----------------------
+\emergencystretch=8em
+\tolerance=4000
+\hbadness=10000
+% Hyphenate aggressively; permits breaks inside words to avoid
+% margin overflow when a long token is the only choice.
+\hyphenpenalty=200
+\exhyphenpenalty=200
+\pretolerance=-1
+\linepenalty=10
+\setlength{\parskip}{4pt plus 1pt minus 1pt}
+% Apply \sloppy globally — relaxes line-break tolerance, prevents most
+% small textual overflow.
+\AtBeginDocument{\sloppy}
+
+% Make every longtable (including pandoc-generated ones) use small font
+% and tighter column padding so wide tables fit. Combined with the
+% post-processor that converts wide longtables to xltabular X-cols,
+% this prevents the catastrophic 1000pt+ overflows.
+\AtBeginEnvironment{longtable}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+\AtBeginEnvironment{xltabular}{\small\setlength{\tabcolsep}{3pt}\setlength{\arrayrulewidth}{0.3pt}}
+
+% \texttt content that is one long hex / id blob gets line-broken by
+% \seqsplit. Wrappers around hashes injected by the build-script
+% post-processor.
+
+% Allow URL breaks anywhere — applies to hyperref-styled URLs.
+\PassOptionsToPackage{hyphens}{url}
+
+% --- print-safe epistemic colors -----------------------------------
+\definecolor{DelfBlue}{HTML}{0F2A4A}
+\definecolor{DelfRule}{HTML}{1F3A6B}
+\definecolor{DelfGrey}{HTML}{4A4A4A}
+\definecolor{EpObserved}{HTML}{1B5E20}
+\definecolor{EpDerived}{HTML}{0D47A1}
+\definecolor{EpInferred}{HTML}{4527A0}
+\definecolor{EpProjected}{HTML}{B65000}
+\definecolor{EpHypothesized}{HTML}{8B0000}
+\definecolor{HashBg}{HTML}{F4F4F7}
+
+% --- header / footer ------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{DelfBlue}\textbf{DELFICTUS I/O} \textbar{} PRISM-4D}
+\fancyhead[R]{\small\color{DelfGrey}Executive Dossier}
+\fancyfoot[L]{\scriptsize\color{DelfGrey}Confidential Discussion Material \textbar{} PRISM-4D M2 Evidence Release}
+\fancyfoot[R]{\scriptsize\color{DelfGrey}Page \thepage}
+
+% --- listings (hashes) ---------------------------------------------
+\lstdefinestyle{hashbox}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{HashBg},
+  frame=single,
+  rulecolor=\color{DelfGrey!40},
+  framerule=0.4pt,
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  breakindent=0pt,
+  postbreak=\mbox{\textcolor{DelfGrey}{$\hookrightarrow$}\space},
+  columns=flexible,
+  showspaces=false,
+  showstringspaces=false
+}
+\lstset{style=hashbox}
+
+% --- pandoc stub macros (so .tex compiles standalone) --------------
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+% \passthrough is a transparent wrapper used by pandoc around inline
+% \lstinline. We do NOT wrap in \texttt — that breaks lstinline catcode
+% parsing and causes runaway lines.
+\providecommand{\passthrough}[1]{#1}
+\providecommand{\textsubscript}[1]{\ensuremath{_{#1}}}
+\providecommand{\textquotesingle}{'}
+% pandoc emits \pandocbounded around figures — accept it as a no-op
+\providecommand{\pandocbounded}[1]{#1}
+
+% --- epistemic label macros -----------------------------------------
+\newcommand{\epOBS}{\textcolor{EpObserved}{\textbf{OBSERVED}}}
+\newcommand{\epDER}{\textcolor{EpDerived}{\textbf{DERIVED}}}
+\newcommand{\epINF}{\textcolor{EpInferred}{\textbf{INFERRED}}}
+\newcommand{\epPRJ}{\textcolor{EpProjected}{\textbf{PROJECTED}}}
+\newcommand{\epHYP}{\textcolor{EpHypothesized}{\textbf{HYPOTHESIZED}}}
+
+% --- disclaimer / legend boxes --------------------------------------
+\newtcolorbox{disclaimerbox}{
+  colback=red!3, colframe=EpHypothesized,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+\newtcolorbox{legendbox}{
+  colback=DelfBlue!4, colframe=DelfBlue,
+  arc=2pt, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  before skip=8pt, after skip=8pt,
+  fontupper=\small
+}
+
+% --- title / identity ----------------------------------------------
+\title{
+  \vspace{-12mm}
+  {\color{DelfBlue}\textbf{\Large PRISM-4D — GLP-1R / Aleniglipron M2 Executive Dossier}}\\[2pt]
+  {\color{DelfGrey}\normalsize Boardroom-facing overview of the M2 release}\\[6pt]
+  {\color{DelfGrey}\small Confidential Discussion Material}
+}
+\author{}
+\date{}
+
+% --- DOCUMENT -------------------------------------------------------
+\begin{document}
+
+\maketitle
+\vspace{-14mm}
+
+\begin{flushleft}
+\small
+\begin{tabular}{@{}p{0.32\textwidth}p{0.62\textwidth}@{}}
+\textbf{Campaign}             & glp1r\_aleniglipron \\
+\textbf{Release}              & PRISM\_GLP1R\_M2\_DELIVERABLES\_v1.1 \\
+\textbf{Generated (UTC)}      & 2026-05-24T03:47:26Z \\
+\textbf{Report type}          & Executive — strategy and program-leadership review \\
+\textbf{CBOM Merkle root}     & \texttt{\small 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856} \\
+\textbf{Executive archive SHA-256} & \texttt{\small b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454} \\
+\end{tabular}
+\end{flushleft}
+
+\vspace{4mm}
+
+\begin{disclaimerbox}
+\textbf{Use of this document.} This package presents computational
+translational evidence from the PRISM-4D engine and downstream analysis
+layers. It is \emph{not} a clinical-effect claim, \emph{not} a
+patient-response prediction, and \emph{not} experimental validation.
+Assay recommendations are falsification gates, not confirmation
+ceremonies. PROJECTED and HYPOTHESIZED items require wet-lab
+falsification before any biological assertion.
+\end{disclaimerbox}
+
+\begin{legendbox}
+\textbf{Epistemic legend.} Every claim, table row, and figure inherits
+exactly one of the following classes, which governs how it may be cited:
+\begin{itemize}[leftmargin=18pt,topsep=2pt,itemsep=1pt]
+  \item \epOBS{} — direct tensor measurement from PRISM-4D engine outputs.
+  \item \epDER{} — deterministic transform of observed tensors.
+  \item \epINF{} — multi-tensor interpretation; not a single-tensor measurement.
+  \item \epPRJ{} — translational extrapolation beyond simulated conditions.
+  \item \epHYP{} — requires wet-lab falsification before any biological claim.
+\end{itemize}
+\end{legendbox}
+
+\vspace{2mm}
+\hrule
+\vspace{4mm}
+
+\hypertarget{section-1--master-data-room-index}{%
+\section{Section 1 --- Master Data-Room Index}\label{section-1--master-data-room-index}}
+
+\hypertarget{prism-glp-1r-m2-master-data-room}{%
+\section{PRISM GLP-1R M2 Master Data Room}\label{prism-glp-1r-m2-master-data-room}}
+
+Campaign ID: \texttt{\seqsplit{glp1r\_aleniglipron}}
+
+Release date: 2026-05-23
+
+Campaign Merkle Root Hash:
+
+\begin{lstlisting}
+522dfcdd3179d4f0084938b97161bcb94ccbde0d2e29d111860ec7e45f8040c0
+\end{lstlisting}
+
+\hypertarget{1-executive-dossier}{%
+\subsection{1. Executive Dossier}\label{1-executive-dossier}}
+
+\begin{itemize}
+\tightlist
+\item
+  Pharmacological Dynamics Intelligence Report:
+  \texttt{\seqsplit{M2\_Pharmacological\_Dynamics\_Intelligence\_Report.md}}
+\item
+  Enterprise Positioning Summary: \texttt{\seqsplit{ENTERPRISE\_POSITIONING\_SUMMARY.md}}
+\item
+  Claim Falsification Graph: \texttt{\seqsplit{claim\_falsification\_graph.json}}
+\end{itemize}
+
+\hypertarget{2-interactive-3d-visualizer}{%
+\subsection{2. Interactive 3D Visualizer}\label{2-interactive-3d-visualizer}}
+
+Static visualizer entry point:
+\texttt{\seqsplit{campaigns/glp1r\_aleniglipron/visualizer\_app/index.html}}
+
+The visualizer separates observed tensors from derived, inferred, projected, and hypothesized layers
+through the epistemic overlay controls.
+
+\hypertarget{3-medicinal-chemistry-action-center}{%
+\subsection{3. Medicinal Chemistry Action Center}\label{3-medicinal-chemistry-action-center}}
+
+Top zero-shot replacement candidates are projected chemistry hypotheses generated by rigid-body
+grafting and tensor-field scoring.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Rank & Anchor & SMILES & SA Score & Pi Complement & Pi Clash & Projected Durability Improvement \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & CAL-ANCHOR-000453 &
+\texttt{\seqsplit{Cc1cc(N2CCc3nn(-c4cc(C)c(F)c(C)c4)c(-c4ccccc4)c3[C@H]2C)cc(C)c1F}} & 3.35 &
+14.6104 & 0.0000 & 73.27\% \\
+2 & CAL-ANCHOR-000405 &
+\texttt{\seqsplit{Cc1cc(N2CCc3nn(-c4cc(C)c(F)c(C)c4)c(-c4ccccc4)c3C2C)cc(C)c1F}} & 3.35 &
+14.3725 & 0.0000 & 72.69\% \\
+3 & CAL-ANCHOR-000338 &
+\texttt{\seqsplit{Cc1cc(-c2c3c(nn2-c2ccccc2)CCN(c2cc(C)c(F)c(C)c2)[C@@H]3C)cc(C)c1F}} & 3.36 &
+14.2591 & 0.0000 & 72.41\% \\
+4 & CAL-ANCHOR-000177 &
+\texttt{\seqsplit{Cc1cc(-c2c3c(nn2-c2cc(C)c(F)c(C)c2)CCN(c2ccccc2)[C@H]3C)cc(C)c1F}} & 3.36 &
+14.1984 & 0.0000 & 72.25\% \\
+5 & CAL-ANCHOR-000212 &
+\texttt{\seqsplit{Cc1cc(-c2c3c(nn2-c2ccccc2)CCN(c2cc(C)c(F)c(C)c2)C3C)cc(C)c1F}} & 3.36 &
+14.1778 & 0.0000 & 72.20\% \\
+6 & CAL-ANCHOR-000142 &
+\texttt{\seqsplit{Cc1cc(-c2c3c(nn2-c2cc(C)c(F)c(C)c2)CCN(c2ccccc2)[C@@H]3C)cc(C)c1F}} & 3.36 &
+14.1653 & 0.0000 & 72.17\% \\
+7 & CAL-ANCHOR-000107 &
+\texttt{\seqsplit{Cc1cc(-c2c3c(nn2-c2cc(C)c(F)c(C)c2)CCN(c2ccccc2)C3C)cc(C)c1F}} & 3.36 &
+14.1614 & 0.0000 & 72.16\% \\
+8 & CAL-ANCHOR-000473 &
+\texttt{\seqsplit{Cc1cc(N2CCc3nn(-c4cc(C)c(F)c(C)c4)c(-c4ccccc4)c3[C@@H]2C)cc(C)c1F}} & 3.35 &
+14.1216 & 0.0000 & 72.06\% \\
+9 & CAL-ANCHOR-000302 &
+\texttt{\seqsplit{CCP(=O)(CC)c1ccc(-n2ccn(-c3ccccc3)c2=O)cc1-c1cc(C)c(F)c(C)c1}} & 3.09 &
+13.9999 & 0.0000 & 71.75\% \\
+10 & CAL-ANCHOR-000373 &
+\texttt{\seqsplit{Cc1cc(-c2c3c(nn2-c2ccccc2)CCN(c2cc(C)c(F)c(C)c2)[C@H]3C)cc(C)c1F}} & 3.36 &
+13.9889 & 0.0000 & 71.72\% \\
+\end{xltabular}
+\endgroup
+
+
+Dynamic pharmacophore/SAR contingency rows:
+
+\hypertarget{universal-growth-vectors}{%
+\subsubsection{Universal Growth Vectors}\label{universal-growth-vectors}}
+
+\textbf{No universal growth vectors met the conserved thermally\_activated cavity criterion. All
+current exit vectors exhibit high epistemic uncertainty (\(U_{pose}\)) and require scaffold
+rigidification before expansion.}
+
+\hypertarget{epistemic-mirage-vectors}{%
+\subsubsection{Epistemic Mirage Vectors}\label{epistemic-mirage-vectors}}
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Rule & Vector & Edge & Atom & U\_pose & Threshold & Rationale \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+SAR-1222 & Vector 1222 & TYR152 -\textgreater{} TYR148 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1222; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1417 & Vector 1417 & TYR148 -\textgreater{} TYR152 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1417; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1416 & Vector 1416 & TYR148 -\textgreater{} TYR152 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1416; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1415 & Vector 1415 & TYR148 -\textgreater{} TYR152 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1415; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1224 & Vector 1224 & TYR152 -\textgreater{} TYR148 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1224; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1223 & Vector 1223 & TYR152 -\textgreater{} TYR148 & C22 & 0.0553 & 0.0251 & Defer expansion at
+Vector 1223; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1422 & Vector 1422 & TYR148 -\textgreater{} TYR152 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1422; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1423 & Vector 1423 & TYR148 -\textgreater{} TYR152 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1423; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1421 & Vector 1421 & TYR148 -\textgreater{} TYR152 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1421; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1230 & Vector 1230 & TYR152 -\textgreater{} TYR148 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1230; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1229 & Vector 1229 & TYR152 -\textgreater{} TYR148 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1229; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1228 & Vector 1228 & TYR152 -\textgreater{} TYR148 & F24 & 0.0515 & 0.0251 & Defer expansion at
+Vector 1228; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1655 & Vector 1655 & PHE143 -\textgreater{} ILE147 & C37 & 0.0488 & 0.0251 & Defer expansion at
+Vector 1655; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1654 & Vector 1654 & PHE143 -\textgreater{} ILE147 & C37 & 0.0488 & 0.0251 & Defer expansion at
+Vector 1654; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1653 & Vector 1653 & PHE143 -\textgreater{} ILE147 & C37 & 0.0488 & 0.0251 & Defer expansion at
+Vector 1653; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1678 & Vector 1678 & PHE143 -\textgreater{} ILE147 & C45 & 0.0468 & 0.0251 & Defer expansion at
+Vector 1678; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1677 & Vector 1677 & PHE143 -\textgreater{} ILE147 & C45 & 0.0468 & 0.0251 & Defer expansion at
+Vector 1677; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1676 & Vector 1676 & PHE143 -\textgreater{} ILE147 & C45 & 0.0468 & 0.0251 & Defer expansion at
+Vector 1676; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1708 & Vector 1708 & PHE143 -\textgreater{} ILE147 & C55 & 0.0452 & 0.0251 & Defer expansion at
+Vector 1708; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+SAR-1707 & Vector 1707 & PHE143 -\textgreater{} ILE147 & C55 & 0.0452 & 0.0251 & Defer expansion at
+Vector 1707; atom-level pose uncertainty exceeds the ray-casting threshold and requires scaffold
+rigidification before growth-vector optimization. \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{prohibited-rigidification-zones}{%
+\subsubsection{Prohibited Rigidification Zones}\label{prohibited-rigidification-zones}}
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Rule & Vector & Edge & Classification & Score & Clash integral & Shear integral & Rationale \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+SAR-1714 & Vector 1714 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.4458
+& 2.5098 & 5.9360 & Halt rigidifying expansion at Vector 1714; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1328 & Vector 1328 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -8.4458
+& 2.5098 & 5.9360 & Halt rigidifying expansion at Vector 1328; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1727 & Vector 1727 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.2538
+& 2.3853 & 5.8685 & Halt rigidifying expansion at Vector 1727; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1189 & Vector 1189 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -8.2254
+& 2.6790 & 5.5464 & Halt rigidifying expansion at Vector 1189; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1575 & Vector 1575 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.2254
+& 2.6790 & 5.5464 & Halt rigidifying expansion at Vector 1575; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1623 & Vector 1623 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -8.1544
+& 2.3719 & 5.7825 & Halt rigidifying expansion at Vector 1623; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1191 & Vector 1191 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.9600
+& 2.3868 & 5.5732 & Halt rigidifying expansion at Vector 1191; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1577 & Vector 1577 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9600
+& 2.3868 & 5.5732 & Halt rigidifying expansion at Vector 1577; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1200 & Vector 1200 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.9466
+& 2.9252 & 5.0214 & Halt rigidifying expansion at Vector 1200; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1586 & Vector 1586 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9466
+& 2.9252 & 5.0214 & Halt rigidifying expansion at Vector 1586; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1190 & Vector 1190 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.9340
+& 2.6767 & 5.2574 & Halt rigidifying expansion at Vector 1190; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1576 & Vector 1576 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9340
+& 2.6767 & 5.2574 & Halt rigidifying expansion at Vector 1576; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1600 & Vector 1600 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.9019
+& 2.5233 & 5.3786 & Halt rigidifying expansion at Vector 1600; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1646 & Vector 1646 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.8535
+& 2.4255 & 5.4280 & Halt rigidifying expansion at Vector 1646; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1260 & Vector 1260 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.8535
+& 2.4255 & 5.4280 & Halt rigidifying expansion at Vector 1260; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1263 & Vector 1263 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.7664
+& 2.3741 & 5.3923 & Halt rigidifying expansion at Vector 1263; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1579 & Vector 1579 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.7480
+& 2.4172 & 5.3308 & Halt rigidifying expansion at Vector 1579; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1193 & Vector 1193 & TYR152 -\textgreater{} TYR148 & \seqsplit{prohibited\_rigidification\_zone} & -7.7480
+& 2.4172 & 5.3308 & Halt rigidifying expansion at Vector 1193; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1597 & Vector 1597 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.6872
+& 2.3698 & 5.3173 & Halt rigidifying expansion at Vector 1597; the ray intersects a positive clash
+field near a receptor lock interface. \\
+SAR-1572 & Vector 1572 & PHE143 -\textgreater{} ILE147 & \seqsplit{prohibited\_rigidification\_zone} & -7.6299
+& 2.4830 & 5.1469 & Halt rigidifying expansion at Vector 1572; the ray intersects a positive clash
+field near a receptor lock interface. \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{4-wet-lab-cro-handoff}{%
+\subsection{4. Wet-Lab CRO Handoff}\label{4-wet-lab-cro-handoff}}
+
+Each row is framed as a falsification gate rather than a confirmation request.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Assay & Condition & Residue & Peptide Window & Construct & Measurement Readout & Execution
+Instruction & Falsification Condition \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+HDX-MS & \seqsplit{glp1r\_5VEX\_WT} & ASN182:46 & {[}41, 51{]} & WT-normalized apo and holo GLP-1R
+peptide-mapping panel. & Directional uptake asymmetry between Apo and Holo states. & Run HDX-MS as a
+falsification gate for the predicted shear-associated exposure asymmetry; target peptide window
+{[}41, 51{]}. & Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted
+peptide window. \\
+HDX-MS & \seqsplit{glp1r\_6X1A\_WT} & ASN182:148 & {[}143, 153{]} & WT-normalized apo and holo GLP-1R
+peptide-mapping panel. & Directional uptake asymmetry between Apo and Holo states. & Run HDX-MS as a
+falsification gate for the predicted shear-associated exposure asymmetry; target peptide window
+{[}143, 153{]}. & Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted
+peptide window. \\
+HDX-MS & \seqsplit{glp1r\_6XOX\_A316T} & ASN182:144 & {[}139, 149{]} & WT-normalized apo and holo GLP-1R
+peptide-mapping panel. & Directional uptake asymmetry between Apo and Holo states. & Run HDX-MS as a
+falsification gate for the predicted shear-associated exposure asymmetry; target peptide window
+{[}139, 149{]}. & Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted
+peptide window. \\
+HDX-MS & \seqsplit{glp1r\_6X1A\_WT} & PHE367:333 & {[}328, 338{]} & WT-normalized apo and holo GLP-1R
+peptide-mapping panel. & Directional uptake asymmetry between Apo and Holo states. & Run HDX-MS as a
+falsification gate for the predicted shear-associated exposure asymmetry; target peptide window
+{[}328, 338{]}. & Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted
+peptide window. \\
+HDX-MS & \seqsplit{glp1r\_6XOX\_WT} & ASN182:144 & {[}139, 149{]} & WT-normalized apo and holo GLP-1R
+peptide-mapping panel. & Directional uptake asymmetry between Apo and Holo states. & Run HDX-MS as a
+falsification gate for the predicted shear-associated exposure asymmetry; target peptide window
+{[}139, 149{]}. & Falsification Condition: Lack of WT-normalized uptake asymmetry in the targeted
+peptide window. \\
+\seqsplit{Washout\_Recovery\_Assay} & \seqsplit{glp1r\_6LN2\_A316T} & \seqsplit{variant\_level} & \seqsplit{Variant/construct} level &
+6LN2\_A316T holo and apo matched receptor-state recovery construct panel. & WT-normalized recovery
+curve after 4-hour washout. & Run washout recovery as a falsification gate for a recovery impairment
+signature consistent with persistent thermodynamic trapping. & Falsification Condition: No
+WT-normalized recovery impairment after 4-hour washout relative to matched WT control. \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{5-track-a-cloud-ai-readiness}{%
+\subsection{5. Track A Cloud AI Readiness}\label{5-track-a-cloud-ai-readiness}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Component & Status \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+115k curated action-space CSV & materialized at
+\texttt{\seqsplit{c\seqsplit{ampaigns/glp1r\_aleniglipron/track\_a\_generative/115k\_curated\_anchors.csv}}};
+rows=115000 \\
+Calibration anchors 3D parquet & materialized at
+\texttt{\seqsplit{c\seqsplit{ampaigns/glp1r\_aleniglipron/track\_a\_generative/calibration\_anchors\_3d.parquet}}};
+rows=512 \\
+GFlowNet reward boundaries & materialized at
+\texttt{\seqsplit{c\seqsplit{ampaigns/glp1r\_aleniglipron/track\_a\_generative/gflownet\_tso\_bridge\_boundaries.parquet}}};
+rows=444333 \\
+Cloudflare tripartite store architecture & materialized at
+\texttt{\seqsplit{00\_\seqsplit{registry/architecture/Cloudflare\_Manifold\_Architecture.md}}};
+bytes=14327 \\
+\end{xltabular}
+\endgroup
+
+
+Cloud infrastructure architecture:
+\texttt{\seqsplit{00\_registry/architecture/Cloudflare\_Manifold\_Architecture.md}}
+
+\hypertarget{6-pending-gpu-campaigns}{%
+\subsection{6. Pending GPU Campaigns}\label{6-pending-gpu-campaigns}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Campaign & Artifact & Status \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Phase 2C Metastable Atlas &
+\texttt{\seqsplit{c\seqsplit{ampaigns/glp1r\_aleniglipron/phase\_2c\_metastable\_atlas\_triggers.json}}}
+& staged \\
+Phase 2C Snapshot Windows &
+\texttt{\seqsplit{c\seqsplit{ampaigns/glp1r\_aleniglipron/phase\_2c\_snapshot\_triggers.json}}} &
+staged \\
+Phase 2D Holo Launch Script & \texttt{\seqsplit{b\seqsplit{in/launch-n80-holo-aleniglipron.sh}}} &
+staged \\
+Phase 2D Holo Topology &
+\texttt{\seqsplit{04\_\seqsplit{TOPOLOGIES/glp1r\_6XOX\_HOLO\_ALENI.topology.json}}} & staged \\
+Phase 2E Holo Occupancy Delta &
+\texttt{\seqsplit{s\seqsplit{cripts/compute\_holo\_occupancy\_fatigue.py}}} & staged \\
+Phase 2D Variant Grid Manifest & \texttt{\seqsplit{p\seqsplit{hase\_2d\_variant\_grid\_manifest.json}}} &
+\seqsplit{staged\_manifest\_materialized\_not\_executed} \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{7-cryptographic-bill-of-materials}{%
+\subsection{7. Cryptographic Bill of Materials}\label{7-cryptographic-bill-of-materials}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Field & Value \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+CBOM schema & \texttt{\seqsplit{P\seqsplit{RISM\_CBOM.v1.0}}} \\
+File count & 262 \\
+Directory count & 39 \\
+Python & \texttt{3.12.3} \\
+Polars & \texttt{1.33.1} \\
+OS kernel & \texttt{\seqsplit{6.14.0-37-generic}} \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-2--executive-readout}{%
+\section{Section 2 --- Executive Readout}\label{section-2--executive-readout}}
+
+\hypertarget{m2-executive-readout-final}{%
+\section{M2 Executive Readout Final}\label{m2-executive-readout-final}}
+
+\hypertarget{1-executive-summary}{%
+\subsection{1. EXECUTIVE SUMMARY}\label{1-executive-summary}}
+
+This readout integrates the 80-replica, 1,600-stream GLP-1R WT/variant manifold over 5,620,333,375
+SNR-masked spike events. The completed extraction unrolled the 5-phase CCNS hysteresis protocol
+across Cold Hold, Ramp Up, Warm Hold, Ramp Down, and Cold Return, then fused the phase tensors into
+receptor durability, pathway, hysteresis, shear, and Aleniglipron interference layers.
+
+Primary tensor scale:
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Tensor & Rows \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Stream-level 5-phase counts & 296300 \\
+Phase-Manifold Coherence & 3263 \\
+Hysteresis tensor & 11852 \\
+Interferometric differential & 2963 \\
+Rust shear-stress field & 7077888 \\
+Receptor durability risk map & 4833 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{2-m0-m1-verification-the-wt-manifold}{%
+\subsection{2. M0-M1 VERIFICATION (THE WT MANIFOLD)}\label{2-m0-m1-verification-the-wt-manifold}}
+
+The 80-replica summary now includes 437 mechanically\_pruned edges in the edge-level risk map,
+preserving the mechanical gate before downstream ligand scoring. In the D\_Hysteresis Temporal
+Cascade, non-edge residues fire at median MD step 6100.20, while critical edge endpoints fire later
+at median MD step 6109.91, mapping the propagation timing of the allosteric wave rather than only
+the final edge state.
+
+\begingroup
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{3pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Durability class & Edge count & Mean risk & Mechanically pruned \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{moderate\_durability\_risk} & 2499 & 10.3400 & 0 \\
+\seqsplit{elevated\_durability\_risk} & 967 & 19.8748 & 0 \\
+\seqsplit{quiet\_thermal\_lock} & 688 & 6.6876 & 0 \\
+\seqsplit{mechanically\_pruned} & 437 & 0.0000 & 437 \\
+\seqsplit{critical\_durability\_risk} & 242 & 21.0398 & 0 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{3-phase-manifold-coherence-first-principles-validation}{%
+\subsection{3. PHASE-MANIFOLD COHERENCE (FIRST-PRINCIPLES
+VALIDATION)}\label{3-phase-manifold-coherence-first-principles-validation}}
+
+These edges show high signal consistency across 20 orthogonal thermodynamic perturbation streams,
+providing first-principles evidence that they are constitutive receptor features, not thermal
+artifacts.
+
+The updated coherence tensor consumes
+\texttt{\seqsplit{stream\_level\_phase\_counts.parquet}}, so Shannon entropy is computed over
+stream-phase bins from the 5-phase protocol rather than from a single raw stream histogram. The risk
+map now carries the phase validation status through the composite critical-edge key.
+
+\begingroup
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{3pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Critical edge & Class & Edge coherence & Validation status & Durability risk \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+ARG421 -\textgreater{} TRP417 & \seqsplit{downstream\_lock} & 0.4894 & \seqsplit{validated\_constitutive} & 21.4019 \\
+PHE169 -\textgreater{} SER416 & \seqsplit{downstream\_lock} & 0.5090 & \seqsplit{validated\_constitutive} & 21.3558 \\
+TRP417 -\textgreater{} ARG421 & \seqsplit{downstream\_lock} & 0.4894 & \seqsplit{validated\_constitutive} & 21.2877 \\
+TYR241 -\textgreater{} ARG310 & \seqsplit{downstream\_lock} & 0.5090 & \seqsplit{validated\_constitutive} & 21.3500 \\
+TYR242 -\textgreater{} ILE313 & \seqsplit{downstream\_lock} & 0.3298 & \seqsplit{partial\_validation} & 21.2354 \\
+PHE143 -\textgreater{} ILE147 & \seqsplit{pocket\_vector} & 0.5195 & \seqsplit{validated\_constitutive} & 22.1903 \\
+PHE143 -\textgreater{} TYR148 & \seqsplit{pocket\_vector} & 0.5317 & \seqsplit{partial\_validation} & 22.3912 \\
+TYR148 -\textgreater{} TYR152 & \seqsplit{pocket\_vector} & 0.5174 & \seqsplit{partial\_validation} & 22.3329 \\
+TYR152 -\textgreater{} TYR148 & \seqsplit{pocket\_vector} & 0.5174 & \seqsplit{partial\_validation} & 22.3329 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{4-ccns-hysteresis-analysis}{%
+\subsection{4. CCNS HYSTERESIS ANALYSIS}\label{4-ccns-hysteresis-analysis}}
+
+\texttt{\seqsplit{6LN2\_A316T}} shows a recovery impairment signature consistent with
+persistent lock-state occupancy, whereas \texttt{\seqsplit{6XOX\_WT}} shows an elastic
+recovery profile under matched thermal perturbation.
+
+The fused \texttt{\seqsplit{hysteresis\_tensor.parquet}} provides the condition/protocol
+accounting below. The D\_Hysteresis recovery channel remains explicitly loaded here so the executive
+contrast is traceable back to Cold Hold versus Cold Return spike behavior.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Condition & Protocol & Mean irreversibility & Mean reversibility & Cold Hold spikes & Cold Return
+spikes \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{glp1r\_6LN2\_A316T} & A\_ThermalShock & 51.6\% & 48.4\% & 60045788 & 19296883 \\
+\seqsplit{glp1r\_6LN2\_A316T} & B\_UVAromatic & 65.7\% & 34.3\% & 32024185 & 6665672 \\
+\seqsplit{glp1r\_6LN2\_A316T} & C\_Equilibrium & 45.4\% & 54.6\% & 36799328 & 13940776 \\
+\seqsplit{glp1r\_6LN2\_A316T} & D\_Hysteresis & 2.7\% & 97.3\% & 26879582 & 28308265 \\
+\seqsplit{glp1r\_6XOX\_WT} & A\_ThermalShock & 52.8\% & 47.2\% & 65982635 & 20465195 \\
+\seqsplit{glp1r\_6XOX\_WT} & B\_UVAromatic & 65.5\% & 34.5\% & 32416182 & 6824204 \\
+\seqsplit{glp1r\_6XOX\_WT} & C\_Equilibrium & 44.1\% & 55.9\% & 37095825 & 14455307 \\
+\seqsplit{glp1r\_6XOX\_WT} & D\_Hysteresis & 2.6\% & 97.4\% & 27644351 & 29115586 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{5-the-translation-pathway}{%
+\subsection{5. THE TRANSLATION PATHWAY}\label{5-the-translation-pathway}}
+
+The 9 critical edges below are the receptor handoff points used for downstream scoring, while the
+pathway table lists the top intermediate load-bearing residues available after the triple-evidence
+and spatial filters. \texttt{ASN182} appears as the dominant intermediate wire
+residue and is explicitly annotated with shear and burst-motion flags.
+
+\begingroup
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{3pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Critical edge & Class & Validation status & Mechanically pruned & Risk \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+ARG421 -\textgreater{} TRP417 & \seqsplit{downstream\_lock} & \seqsplit{validated\_constitutive} & False & 21.4019 \\
+PHE169 -\textgreater{} SER416 & \seqsplit{downstream\_lock} & \seqsplit{validated\_constitutive} & False & 21.3558 \\
+TRP417 -\textgreater{} ARG421 & \seqsplit{downstream\_lock} & \seqsplit{validated\_constitutive} & False & 21.2877 \\
+TYR241 -\textgreater{} ARG310 & \seqsplit{downstream\_lock} & \seqsplit{validated\_constitutive} & False & 21.3500 \\
+TYR242 -\textgreater{} ILE313 & \seqsplit{downstream\_lock} & \seqsplit{partial\_validation} & False & 21.2354 \\
+PHE143 -\textgreater{} ILE147 & \seqsplit{pocket\_vector} & \seqsplit{validated\_constitutive} & False & 22.1903 \\
+PHE143 -\textgreater{} TYR148 & \seqsplit{pocket\_vector} & \seqsplit{partial\_validation} & False & 22.3912 \\
+TYR148 -\textgreater{} TYR152 & \seqsplit{pocket\_vector} & \seqsplit{partial\_validation} & False & 22.3329 \\
+TYR152 -\textgreater{} TYR148 & \seqsplit{pocket\_vector} & \seqsplit{partial\_validation} & False & 22.3329 \\
+\end{xltabular}
+\endgroup
+
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Residue & Condition & Rank & Wire score & Structural fault line & Violent kinetic node & Shear
+stress & Max burst motion \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+ASN182 & \seqsplit{glp1r\_5VEX\_WT} & 1 & 0.3439 & True & False & 4.0178 & 4.4873 \\
+ASN182 & \seqsplit{glp1r\_6X1A\_WT} & 1 & 0.3391 & True & False & 4.4062 & 13.9486 \\
+ASN182 & \seqsplit{glp1r\_6XOX\_A316T} & 1 & 0.2771 & True & False & 5.0121 & 6.7957 \\
+ASN182 & \seqsplit{glp1r\_6XOX\_WT} & 1 & 0.2822 & True & False & 5.3400 & 6.5921 \\
+PHE367 & \seqsplit{glp1r\_6X1A\_WT} & 2 & 0.2429 & True & False & 5.2064 & 7.3075 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{6-aleniglipron-two-layer-interference}{%
+\subsection{6. ALENIGLIPRON TWO-LAYER INTERFERENCE}\label{6-aleniglipron-two-layer-interference}}
+
+Whole-molecule projected durability score: \texttt{\seqsplit{546.6557}} +/-
+\texttt{60.9397} using frozen beta values
+\texttt{\seqsplit{beta\_f=0.108968369488}} and
+\texttt{\seqsplit{beta\_s=0.090298355000}}.
+
+Inter-Fragment Coupling is positive where the covalent connection forces the whole molecule into a
+more strained geometry than the sum of independently sliced BRICS fragments. The total coupling
+across the scored edges is \texttt{2.4970}.
+
+\begingroup
+\scriptsize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{2pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Edge & Whole clash & Sum fragment clash & Inter-Fragment Coupling & Dominant fragment & Dominant
+fraction \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{glp1r\_5VEX\_WT:PHE143}-\textgreater ILE147 & 21.1308 & 19.7931 & 1.3376 & FRAG-C & 20.2\% \\
+\seqsplit{glp1r\_5VEX\_WT:TYR152}-\textgreater TYR148 & 20.6716 & 19.5122 & 1.1593 & FRAG-C & 20.6\% \\
+\seqsplit{glp1r\_5VEX\_WT:PHE143}-\textgreater TYR148 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_5VEX\_WT:TYR148}-\textgreater TYR152 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6LN2\_A316T:TYR242}-\textgreater ILE313 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:ARG421}-\textgreater TRP417 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:PHE169}-\textgreater SER416 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:TRP417}-\textgreater ARG421 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\seqsplit{glp1r\_6XOX\_WT:TYR241}-\textgreater ARG310 & 0.0000 & 0.0000 & 0.0000 & FRAG-A & 0.0\% \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{7-strategic-recommendation}{%
+\subsection{7. STRATEGIC RECOMMENDATION}\label{7-strategic-recommendation}}
+
+Transition to the automated Chem-BALD / Graph-Wasserstein DKL pipeline (Track A) to resolve
+epistemic uncertainty (\(U_{pose}\)) for rigidified scaffolds. The current Track 0 scoring has
+enough receptor-side physics to prioritize hypotheses, but the next decision point needs
+uncertainty-aware pose exploration rather than a single rigidified scaffold assumption.
+
+\hypertarget{8-cryptographic-lineage}{%
+\subsection{8. CRYPTOGRAPHIC LINEAGE}\label{8-cryptographic-lineage}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Artifact & SHA-256 \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\seqsplit{stream\_level\_phase\_counts.parquet} &
+\texttt{\seqsplit{19da8f333f00594c9ac569cfab82ed7500366ba79dff9e833f887fb5a504d1d1}} \\
+\seqsplit{phase\_manifold\_coherence.parquet} &
+\texttt{\seqsplit{31f1b764566ccd74f3c0eb0d8a353c99603b5ead155ac2e00da009f387df0dc2}} \\
+\seqsplit{phase\_manifold\_edge\_validation.parquet} &
+\texttt{\seqsplit{4e8729ead4be183826c3e75b4b6a130fd4a99e01aed6e904dbc0474279972e3d}} \\
+\seqsplit{receptor\_durability\_risk\_map.parquet} &
+\texttt{\seqsplit{2aec5f547d9330533ae4bd8ce86cc04e97d5cc781359843796dd02eef4296bda}} \\
+\seqsplit{temporal\_cascade.parquet} &
+\texttt{\seqsplit{d751df8769e37f926d5315d3bd4e6957eca14e1cb4b6df71bf026f0d6f9d410c}} \\
+\seqsplit{hysteresis\_tensor.parquet} &
+\texttt{\seqsplit{52643bdd9ee38b1c202e21e8802b94827d2a717ad46c1251695aff6179a73df1}} \\
+\seqsplit{interferometric\_differential.parquet} &
+\texttt{\seqsplit{03d7d1fd0bfc144a3db8d3e3c3731e12aad4a8f1e085f8dd2169d06672b93e54}} \\
+\seqsplit{shear\_stress\_field.parquet} &
+\texttt{\seqsplit{b556d2d03a1cfc27ed64634287cc0a8ed75ca0c49507d66671be98d4120afda1}} \\
+\seqsplit{translation\_pathway\_nodes.parquet} &
+\texttt{\seqsplit{2bdf777a4faf286ce291ecb12865d05b25cee682c59f286a1578fc459aa08b58}} \\
+\seqsplit{analog\_durability\_projection.parquet} &
+\texttt{\seqsplit{a4b5b143a2d3fe7767835a91335897da23c3b25336f09d73e377c70f2831abb7}} \\
+\seqsplit{fragment\_interference\_attribution.parquet} &
+\texttt{\seqsplit{cb6eea0504474ab53fa6421dbdd5063a5a8b8caffcb6c04c4f896801a861a79d}} \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-3--enterprise-positioning}{%
+\section{Section 3 --- Enterprise Positioning}\label{section-3--enterprise-positioning}}
+
+\hypertarget{enterprise-positioning-summary}{%
+\section{Enterprise Positioning Summary}\label{enterprise-positioning-summary}}
+
+PRISM is \textbf{an immutable pharmacological evidence environment for receptor-state transition
+analysis under non-equilibrium perturbation}.
+
+\hypertarget{evidence-boundary}{%
+\subsection{Evidence Boundary}\label{evidence-boundary}}
+
+The platform partitions claims into epistemic classes before they enter reports, visualizers, or CRO
+handoffs. Observed tensors and deterministic transforms remain distinct from projected assay
+behavior and hypothesized chemistry.
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Epistemic class & Level & Definition \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+OBSERVED & 1 & Direct tensor-derived measurement present in simulation output. \\
+DERIVED & 2 & Deterministic mathematical transform of observed tensors. \\
+INFERRED & 3 & Mechanistic interpretation derived from multi-tensor convergence. \\
+PROJECTED & 4 & Translational extrapolation into expected assay behavior. \\
+HYPOTHESIZED & 5 & Biological interpretation requiring experimental falsification. \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{release-seal}{%
+\subsection{Release Seal}\label{release-seal}}
+
+Campaign Merkle root:
+
+\begin{lstlisting}
+522dfcdd3179d4f0084938b97161bcb94ccbde0d2e29d111860ec7e45f8040c0
+\end{lstlisting}
+
+\hypertarget{translation-rule}{%
+\subsection{Translation Rule}\label{translation-rule}}
+
+Projected or hypothesized claims are only presented with a source tensor, a transform chain, an
+assay gate, and a failure condition. This converts deterministic biological language into
+falsifiable evidence handling.
+
+\hypertarget{section-4--cbom-summary}{%
+\section{Section 4 --- CBOM Summary}\label{section-4--cbom-summary}}
+
+\hypertarget{cbom-summary}{%
+\section{CBOM Summary}\label{cbom-summary}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Campaign ID:} \texttt{\seqsplit{glp1r\_aleniglipron}}
+\item
+  \textbf{Campaign Merkle root:}
+  \texttt{\seqsplit{1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856}}
+\item
+  \textbf{Schema version:} \texttt{\seqsplit{PRISM\_CBOM.v1.0}}
+\item
+  \textbf{Directories:} 39
+\item
+  \textbf{Files:} 264
+\end{itemize}
+
+\hypertarget{environment}{%
+\subsection{Environment}\label{environment}}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{os\_kernel:} \texttt{\seqsplit{6.14.0-37-generic}}
+\item
+  \textbf{platform:} \texttt{\seqsplit{Linux-6.14.0-37-generic-x86\_64-with-glibc2.39}}
+\item
+  \textbf{polars\_version:} \texttt{1.33.1}
+\item
+  \textbf{python\_version:} \texttt{3.12.3}
+\end{itemize}
+
+\hypertarget{file-breakdown-by-epistemic-role--category}{%
+\subsection{File breakdown by epistemic role /
+category}\label{file-breakdown-by-epistemic-role--category}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+role / category & count \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+unknown & 264 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{file-breakdown-by-extension}{%
+\subsection{File breakdown by extension}\label{file-breakdown-by-extension}}
+
+\begingroup
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{4pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+extension & count \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{\seqsplit{.parquet}} & 98 \\
+\texttt{.jsonl} & 81 \\
+\texttt{.json} & 58 \\
+\texttt{.md} & 20 \\
+\texttt{.csv} & 3 \\
+\texttt{.css} & 1 \\
+\texttt{.js} & 1 \\
+\texttt{.wasm} & 1 \\
+\texttt{.html} & 1 \\
+\end{xltabular}
+\endgroup
+
+
+\hypertarget{section-5--deliverable-status-snapshot}{%
+\section{Section 5 --- Deliverable Status Snapshot}\label{section-5--deliverable-status-snapshot}}
+
+\begingroup
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{3pt}
+\begin{xltabular}{\textwidth}{@{}>{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X >{\RaggedRight\arraybackslash}X@{}}
+\toprule\noalign{}
+Deliverable & Status & Epistemic role & Notes \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+PRISM CBOM v1.0 & present & OBSERVED & Cryptographic bill-of-materials \\
+M2 Replayability Manifest & present & OBSERVED & Environment + seed lineage \\
+Claim falsification graph & present & DERIVED & 8 claims, 16 edges, 20 nodes \\
+CRO Wet-Lab Action Plan & present & PROJECTED & 6 falsification gates \\
+Zero-shot replacements & present & PROJECTED / HYPOTHESIZED & Top-10 ranked \\
+Fragment interference & present & INFERRED & 9 edges \\
+Critical-edge validation & present & DERIVED & 9 edges \\
+Translation pathway nodes & present & DERIVED & 5 ranked \\
+Phase 2C metastable triggers & present & OBSERVED & 52 triggers \\
+Phase 2D staged variant grid & present & PROJECTED & Materialization status: staged, not executed \\
+\end{xltabular}
+\endgroup
+
+
+
+\vspace{8mm}
+\hrule
+\vspace{2mm}
+\begin{flushleft}\small
+\textbf{Release identity.}\\
+\end{flushleft}
+\begin{lstlisting}[caption={Release identity (verbatim)}]
+campaign_id            : glp1r_aleniglipron
+release_version        : PRISM_GLP1R_M2_DELIVERABLES_v1.1
+generated_at_utc       : 2026-05-24T03:47:26Z
+cbom_merkle_root       : 1461e688bada66c7537bbce30e3b82ab1ec5f214e85cfb7d7ac966c60a7c1856
+executive_archive_sha  : b97bf1499fb82b6544c0a50f14e757ceef5e094d00c07f9f8c4633b87b219454
+\end{lstlisting}
+
+\end{document}

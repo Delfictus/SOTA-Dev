@@ -2,6 +2,7 @@
 name = "prism-spike-shipper"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "Kernel inotify → validate → Parquet/zstd → R2 spike-exfil daemon"
 
 [[bin]]
@@ -37,7 +38,7 @@ libc = "0.2"
 # ── Native S3 (replaces rclone subprocess entirely) ───────────────────────────
 # aws-sdk-s3 v1 shares hyper v1 with the workspace, so no version conflict.
 # Persistent HTTP/2 connection pool — no fork, no TLS re-handshake per call.
-aws-sdk-s3 = "1"
+aws-sdk-s3 = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio", "sigv4a"] }
 
 # Zero-copy byte buffer; Bytes::clone() is an atomic refcount, not a memcpy.
 bytes = "1"

@@ -1,0 +1,141 @@
+{
+  "package": "PRISM_TRACK_A_GFLOWNET_V1_INFERENCE",
+  "phase": "1_input_pinning",
+  "generated_at_utc": "2026-05-24T13:37:58Z",
+  "model": {
+    "path": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_policy_v1.pt",
+    "size_bytes": 1036389,
+    "sha256": "a35e756400e7dcc568a39b0944c580785de76f678ae2dbda1eab81149e4e1be7",
+    "training_timestamp_utc": "2026-05-24T12:53:32.209528+00:00",
+    "architecture": {
+      "class": "FiberBundleGFlowNetPolicy",
+      "phase_labels": [
+        "Cold Hold",
+        "Ramp Up",
+        "Warm Hold",
+        "Ramp Down",
+        "Cold Return"
+      ],
+      "x_phase_shape": [
+        96,
+        5,
+        8
+      ],
+      "base_feature_dim": 12,
+      "phase_feature_dim": 8,
+      "edge_feature_dim": 6,
+      "valid_action_count": 496,
+      "learn_anchor_embeddings": true
+    }
+  },
+  "rust_oracle": {
+    "binary_path": "target/release/oracle_scorer",
+    "sha256": "694e5633710796e94f6c9a1b8e4bd73b7151b98f4fbac463f3a1576590609699",
+    "size_bytes": 7412944,
+    "version_probe": "Error: unknown argument --version"
+  },
+  "selected_ligand_pose": {
+    "path": "campaigns/glp1r_aleniglipron/track_a_generative/selected_ligand_pose.json",
+    "pose_id": "compact_pseudo_ligand_o3a",
+    "pose_doc": {
+      "collision_distance_after_A": 1.6702479877715382,
+      "collision_distance_before_A": 1.5854937207999493,
+      "complement_overlap_after": 30.0,
+      "complement_overlap_before": 18.0,
+      "fallback_reason": "",
+      "fallback_used": false,
+      "guard_level_passed": "standard",
+      "input_manifest_sha256": "fb99ead06a8e82805d63ccb035626b7c27661458f9277f29e098632d2a79be8b",
+      "ligand_inside_grid": true,
+      "no_fly_min_distance_A": 19.66075528076575,
+      "o3a_score": 51.37641685280423,
+      "selected_ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf",
+      "selected_pose_method": "compact_pseudo_ligand_o3a",
+      "selected_sdf_sha256": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d"
+    }
+  },
+  "pinned_inputs": [
+    {
+      "key": "ligand_sdf",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/ALENI-PARENT_6XOX_frame_o3a_relaxed.sdf",
+      "size_bytes": 17082,
+      "live_sha256": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d",
+      "training_sha256": "3fa32e22cab38b39d9715763aa94bd062665489c0c19646a7de1fa76bb9fb35d",
+      "matches_training": true,
+      "drift_reason": ""
+    },
+    {
+      "key": "anchors",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/calibration_anchors_3d.parquet",
+      "size_bytes": 690742,
+      "live_sha256": "031fc21785a21afcaa5d04a0853e7a96444f02d929450867b360d153f26af559",
+      "training_sha256": "031fc21785a21afcaa5d04a0853e7a96444f02d929450867b360d153f26af559",
+      "matches_training": true,
+      "drift_reason": ""
+    },
+    {
+      "key": "survivors",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_real512_o3a_zmatrix.parquet",
+      "size_bytes": 364271,
+      "live_sha256": "0631849cd3bb380352aa2c2c1ad120177c2732ffe08432b2cb2a2183ab63657b",
+      "training_sha256": "0631849cd3bb380352aa2c2c1ad120177c2732ffe08432b2cb2a2183ab63657b",
+      "matches_training": true,
+      "drift_reason": ""
+    },
+    {
+      "key": "residue_phase",
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/residue_phase_tensor.parquet",
+      "size_bytes": 311325,
+      "live_sha256": "0b4c2dfb367b66b917b82527c3b55e87c00d598c15c7ae7eeb3e9b7e2aa0498f",
+      "training_sha256": "0b4c2dfb367b66b917b82527c3b55e87c00d598c15c7ae7eeb3e9b7e2aa0498f",
+      "matches_training": true,
+      "drift_reason": ""
+    },
+    {
+      "key": "interferometric",
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/interferometric_differential.parquet",
+      "size_bytes": 670088,
+      "live_sha256": "03d7d1fd0bfc144a3db8d3e3c3731e12aad4a8f1e085f8dd2169d06672b93e54",
+      "training_sha256": "03d7d1fd0bfc144a3db8d3e3c3731e12aad4a8f1e085f8dd2169d06672b93e54",
+      "matches_training": true,
+      "drift_reason": ""
+    }
+  ],
+  "additional_inputs": [
+    {
+      "key": "voxel_thresholds",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/voxel_thresholds.json",
+      "size_bytes": 368,
+      "live_sha256": "abc714723cef77b0e0123b215b367d5ce6f4a67c115b9c7e9c5d3c6ebad3267c"
+    },
+    {
+      "key": "phase_manifold_coherence",
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/phase_manifold_coherence.parquet",
+      "size_bytes": 402424,
+      "live_sha256": "31f1b764566ccd74f3c0eb0d8a353c99603b5ead155ac2e00da009f387df0dc2"
+    },
+    {
+      "key": "selected_ligand_pose",
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/selected_ligand_pose.json",
+      "size_bytes": 737,
+      "live_sha256": "aa06e334297c3bee66a15855b76890a75241eee9d80b31a7675eaeabb2f30c64"
+    }
+  ],
+  "git": {
+    "sha": "d08607bf36b455265c8684fe501495a026498ee9",
+    "dirty_state": "dirty"
+  },
+  "inference_seeds": [
+    1224046340,
+    300609032,
+    1524655372,
+    601218064
+  ],
+  "epistemic_policy": {
+    "all_candidates_default_class": "PROJECTED",
+    "promotion_rule": "no candidate may be promoted to OBSERVED",
+    "wet_lab_assertion": "no candidate constitutes wet-lab validation",
+    "reward_authority": "Rust oracle_scorer via BatchedRustOracle"
+  },
+  "drift_overrides": {}
+}

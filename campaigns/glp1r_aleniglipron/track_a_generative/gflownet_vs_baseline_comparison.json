@@ -1,0 +1,46 @@
+{
+  "package": "PRISM_TRACK_A_GFLOWNET_V1_INFERENCE",
+  "phase": "4_baseline_comparison",
+  "generated_at_utc": "2026-05-24T13:58:31Z",
+  "baselines": {
+    "random_uniform": {
+      "n": 496,
+      "mean": 0.46838399547077036,
+      "p95": 0.8867555813414956,
+      "max": 2.525983857944775,
+      "unique": 496,
+      "consensus_stable": 496
+    },
+    "reward_weighted_replay": {
+      "n": 496,
+      "mean": 0.4683839954707704,
+      "p95": 0.8867555813414956,
+      "max": 2.525983857944775,
+      "unique": 496,
+      "consensus_stable": 496
+    },
+    "top_real512": {
+      "n": 94,
+      "mean": 0.9194395342675182,
+      "p95": 1.5662137736688735,
+      "max": 2.525983857944775,
+      "unique": 94,
+      "consensus_stable": 94
+    }
+  },
+  "trained": {
+    "n": 496,
+    "mean": 0.46838399547077036,
+    "p95": 0.8867555813414956,
+    "max": 2.525983857944775,
+    "unique": 496,
+    "consensus_stable": 496
+  },
+  "beats_random": {
+    "reward_p95": false,
+    "top_reward": false,
+    "nontrivial_unique_count": false,
+    "consensus_stable_count": false
+  },
+  "verdict_vs_random": "FAIL"
+}

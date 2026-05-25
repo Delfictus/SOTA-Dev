@@ -1,0 +1,66 @@
+### r2 bucket create prism-tensors
+
+ ⛅️ wrangler 4.86.0 (update available 4.94.0)
+─────────────────────────────────────────────
+Creating bucket 'prism-tensors'...
+✅ Created bucket 'prism-tensors' with default storage class of Standard.
+To access your new R2 Bucket in your Worker, add the following snippet to your configuration file:
+[[r2_buckets]]
+bucket_name = "prism-tensors"
+binding = "prism_tensors"
+
+### d1 create prism_metadata
+
+ ⛅️ wrangler 4.86.0 (update available 4.94.0)
+─────────────────────────────────────────────
+✅ Successfully created DB 'prism_metadata' in region WNAM
+Created your new D1 database.
+
+To access your new D1 Database in your Worker, add the following snippet to your configuration file:
+[[d1_databases]]
+binding = "prism_metadata"
+database_name = "prism_metadata"
+database_id = "ef63a188-0634-4f68-bd6d-1b4cc1232b06"
+
+### vectorize create dkl_latent_space
+
+ ⛅️ wrangler 4.86.0 (update available 4.94.0)
+─────────────────────────────────────────────
+🚧 Creating index: 'dkl_latent_space'
+✅ Successfully created a new Vectorize index: 'dkl_latent_space'
+To access your new Vectorize Index in your Worker, add the following snippet to your configuration file:
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "dkl_latent_space"
+
+### kv namespace create CONFIG_CACHE
+
+ ⛅️ wrangler 4.86.0 (update available 4.94.0)
+─────────────────────────────────────────────
+Resource location: remote 
+
+🌀 Creating namespace with title "CONFIG_CACHE"
+✨ Success!
+To access your new KV Namespace in your Worker, add the following snippet to your configuration file:
+[[kv_namespaces]]
+binding = "CONFIG_CACHE"
+id = "342b9ddad269400085325884befca1f5"
+
+### queues create prism-dag-queue
+
+ ⛅️ wrangler 4.86.0 (update available 4.94.0)
+─────────────────────────────────────────────
+🌀 Creating queue 'prism-dag-queue'
+✅ Created queue 'prism-dag-queue'
+
+Configure your Worker to send messages to this queue:
+
+[[queues.producers]]
+queue = "prism-dag-queue"
+binding = "prism_dag_queue"
+
+Configure your Worker to consume messages from this queue:
+
+[[queues.consumers]]
+queue = "prism-dag-queue"
+

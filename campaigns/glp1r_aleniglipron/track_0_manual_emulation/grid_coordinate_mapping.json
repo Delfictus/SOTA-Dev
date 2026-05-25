@@ -1,0 +1,287 @@
+{
+  "conditions": {
+    "glp1r_5VEX_WT": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        -20.23443341255188,
+        -61.99657440185547,
+        -79.47610855102539
+      ],
+      "padded_extent_angstrom": 99.43302631378174,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.056475904583931,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_5VEX_WT.topology.json"
+    },
+    "glp1r_6LN2_A316T": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        -14.25527572631836,
+        0.49573659896850586,
+        19.21337366104126
+      ],
+      "padded_extent_angstrom": 111.05834722518921,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.1799949392676354,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_A316T.topology.json"
+    },
+    "glp1r_6LN2_T149M": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        -15.228372812271118,
+        0.3051316738128662,
+        18.965768814086914
+      ],
+      "padded_extent_angstrom": 111.57962799072266,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.1855335474014281,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_T149M.topology.json"
+    },
+    "glp1r_6LN2_WT": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        -14.569213390350342,
+        0.7442378997802734,
+        19.004759788513184
+      ],
+      "padded_extent_angstrom": 110.97800731658936,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.179141327738762,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_WT.topology.json"
+    },
+    "glp1r_6X1A_WT": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        89.24896240234375,
+        76.96658134460449,
+        90.71432113647461
+      ],
+      "padded_extent_angstrom": 116.59479141235352,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.238819658756256,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6X1A_WT.topology.json"
+    },
+    "glp1r_6XOX_A316T": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        94.52105522155762,
+        103.63471031188965,
+        88.30329895019531
+      ],
+      "padded_extent_angstrom": 112.3823070526123,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.1940620124340058,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_A316T.topology.json"
+    },
+    "glp1r_6XOX_T149M": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        95.18477439880371,
+        103.14645767211914,
+        87.38940238952637
+      ],
+      "padded_extent_angstrom": 110.4883861541748,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.1739391028881072,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_T149M.topology.json"
+    },
+    "glp1r_6XOX_WT": {
+      "grid_dim": 96,
+      "nx": 96,
+      "ny": 96,
+      "nz": 96,
+      "origin_xyz_angstrom": [
+        94.46001052856445,
+        103.87410163879395,
+        88.73695373535156
+      ],
+      "padded_extent_angstrom": 109.85668182373047,
+      "padding_each_side_angstrom": 5.0,
+      "spacing_angstrom": 1.1672272443771363,
+      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json"
+    }
+  },
+  "created_at_utc": "2026-05-22T23:57:59.872932+00:00",
+  "cross_validation": {
+    "passed_coordinate_formula_control": true,
+    "passed_requested_assertion": false,
+    "requested_5VEX_LEU144": {
+      "ca_atom_idx": 134,
+      "ca_xyz_angstrom": [
+        21.035995483398438,
+        -36.12187623977661,
+        -56.722702980041504
+      ],
+      "canonical_residue_label": "LEU144",
+      "cold_stream_count": 200,
+      "condition_id": "glp1r_5VEX_WT",
+      "expected_variance_class": "stable_occupied",
+      "grid_indices": [
+        39,
+        24,
+        21
+      ],
+      "hit_count_cold_mean": 28.0,
+      "hit_count_warm_mean": 0.0,
+      "interpretation": "requested stable_occupied assertion is impossible for this condition because the variance channel contains zero warm streams",
+      "observed_variance_class": "thermally_destabilized",
+      "passed": false,
+      "residue_idx": 8,
+      "topology_residue_id": 143,
+      "topology_residue_name": "LEU",
+      "voxel_idx": 195879,
+      "warm_stream_count": 0
+    },
+    "stable_occupied_controls": [
+      {
+        "ca_atom_idx": 1725,
+        "ca_xyz_angstrom": [
+          12.27124571800232,
+          18.940969705581665,
+          65.78707695007324
+        ],
+        "canonical_residue_label": "LEU144",
+        "cold_stream_count": 196,
+        "condition_id": "glp1r_6LN2_T149M",
+        "expected_variance_class": "stable_occupied",
+        "grid_indices": [
+          23,
+          15,
+          39
+        ],
+        "hit_count_cold_mean": 31.433673469387756,
+        "hit_count_warm_mean": 37.5,
+        "interpretation": "matched expected variance class",
+        "observed_variance_class": "stable_occupied",
+        "passed": true,
+        "residue_idx": 109,
+        "topology_residue_id": 143,
+        "topology_residue_name": "LEU",
+        "voxel_idx": 360887,
+        "warm_stream_count": 4
+      },
+      {
+        "ca_atom_idx": 1735,
+        "ca_xyz_angstrom": [
+          136.89969062805176,
+          110.9035873413086,
+          145.38618087768555
+        ],
+        "canonical_residue_label": "LEU144",
+        "cold_stream_count": 196,
+        "condition_id": "glp1r_6X1A_WT",
+        "expected_variance_class": "stable_occupied",
+        "grid_indices": [
+          38,
+          27,
+          44
+        ],
+        "hit_count_cold_mean": 33.795918367346935,
+        "hit_count_warm_mean": 37.0,
+        "interpretation": "matched expected variance class",
+        "observed_variance_class": "stable_occupied",
+        "passed": true,
+        "residue_idx": 110,
+        "topology_residue_id": 143,
+        "topology_residue_name": "LEU",
+        "voxel_idx": 408134,
+        "warm_stream_count": 4
+      },
+      {
+        "ca_atom_idx": 1680,
+        "ca_xyz_angstrom": [
+          143.51900100708008,
+          151.9750690460205,
+          117.5438404083252
+        ],
+        "canonical_residue_label": "LEU144",
+        "cold_stream_count": 196,
+        "condition_id": "glp1r_6XOX_A316T",
+        "expected_variance_class": "stable_occupied",
+        "grid_indices": [
+          41,
+          40,
+          24
+        ],
+        "hit_count_cold_mean": 31.897959183673468,
+        "hit_count_warm_mean": 37.0,
+        "interpretation": "matched expected variance class",
+        "observed_variance_class": "stable_occupied",
+        "passed": true,
+        "residue_idx": 106,
+        "topology_residue_id": 143,
+        "topology_residue_name": "LEU",
+        "voxel_idx": 225065,
+        "warm_stream_count": 4
+      },
+      {
+        "ca_atom_idx": 1680,
+        "ca_xyz_angstrom": [
+          143.22864532470703,
+          151.83122634887695,
+          117.70587921142578
+        ],
+        "canonical_residue_label": "LEU144",
+        "cold_stream_count": 196,
+        "condition_id": "glp1r_6XOX_T149M",
+        "expected_variance_class": "stable_occupied",
+        "grid_indices": [
+          40,
+          41,
+          25
+        ],
+        "hit_count_cold_mean": 32.576530612244895,
+        "hit_count_warm_mean": 37.0,
+        "interpretation": "matched expected variance class",
+        "observed_variance_class": "stable_occupied",
+        "passed": true,
+        "residue_idx": 106,
+        "topology_residue_id": 143,
+        "topology_residue_name": "LEU",
+        "voxel_idx": 234376,
+        "warm_stream_count": 4
+      }
+    ]
+  },
+  "forward_mapping": {
+    "ix": "trunc((x - origin_x) / spacing)",
+    "iy": "trunc((y - origin_y) / spacing)",
+    "iz": "trunc((z - origin_z) / spacing)",
+    "voxel_idx": "iz * nx * ny + iy * nx + ix"
+  },
+  "inverse_mapping": {
+    "center_x": "origin_x + (ix + 0.5) * spacing",
+    "center_y": "origin_y + (iy + 0.5) * spacing",
+    "center_z": "origin_z + (iz + 0.5) * spacing",
+    "ix": "voxel_idx % nx",
+    "iy": "(voxel_idx / nx) % ny",
+    "iz": "voxel_idx / (nx * ny)"
+  },
+  "rust_producer_sources": [
+    "crates/prism-nhs/src/fused_engine.rs:new_on_stream uses min_position - 5.0A origin",
+    "crates/prism-nhs/src/bin/nhs_rt_full.rs:grid_spacing_for_coverage uses max(0.5, padded_extent / grid_dim * 1.02)",
+    "crates/prism-nhs/src/bin/nhs_rt_full.rs spatial grid state uses idx = iz * dim * dim + iy * dim + ix"
+  ],
+  "schema_version": "grid_coordinate_mapping.v1",
+  "units": "angstrom"
+}

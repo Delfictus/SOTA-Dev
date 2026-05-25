@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import NewType
 
 
@@ -10,6 +11,9 @@ CampaignId = NewType("CampaignId", str)
 RunLabel = NewType("RunLabel", str)
 StructureId = NewType("StructureId", str)
 StreamId = NewType("StreamId", int)
+TimeStep = NewType("TimeStep", int)
+Picosecond = NewType("Picosecond", float)
+RunLength = NewType("RunLength", int)
 ScopeType = NewType("ScopeType", str)
 ScopeId = NewType("ScopeId", str)
 
@@ -33,6 +37,32 @@ ComplementPenalty = NewType("ComplementPenalty", float)
 PoseUncertainty = NewType("PoseUncertainty", float)
 ScalingConstant = NewType("ScalingConstant", float)
 AngstromDistance = NewType("AngstromDistance", float)
+ShearStress = NewType("ShearStress", float)
+
+
+class EpistemicClass(str, Enum):
+    """Track A epistemic partitions written into Arrow metadata."""
+
+    OBSERVED = "OBSERVED"
+    DERIVED = "DERIVED"
+    INFERRED = "INFERRED"
+    PROJECTED = "PROJECTED"
+    HYPOTHESIZED = "HYPOTHESIZED"
+
+
+def epistemic_metadata(epistemic_class: EpistemicClass) -> dict[str, str]:
+    """Return the canonical Arrow key-value metadata tag for epistemic class."""
+
+    return {
+        "Epistemic_Class": epistemic_class.value,
+        "epistemic_class": epistemic_class.value,
+    }
+
+
+def shear_stress(value: float) -> ShearStress:
+    if not value >= 0.0:
+        raise ValueError(f"ShearStress must be non-negative, got {value}")
+    return ShearStress(value)
 
 
 @dataclass(frozen=True)
