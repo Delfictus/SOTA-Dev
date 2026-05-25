@@ -35,6 +35,8 @@ class OracleProposal:
     anchor_id: str
     canonical_smiles: str
     trajectory_id: str
+    coordinates_json: str | None = None
+    score_atom_offset: int = 0
 
 
 @dataclass(frozen=True)
@@ -175,6 +177,8 @@ class SurvivorCorpusOracle:
                 "trajectory_id": [proposal.trajectory_id for proposal in proposals],
                 "anchor_id": [proposal.anchor_id for proposal in proposals],
                 "canonical_smiles": [proposal.canonical_smiles for proposal in proposals],
+                "coordinates_json": [proposal.coordinates_json or "" for proposal in proposals],
+                "score_atom_offset": [int(proposal.score_atom_offset) for proposal in proposals],
             }
         )
 
@@ -187,16 +191,7 @@ class SurvivorCorpusOracle:
             raise RustOracleError(f"survivor corpus not found: {self.survivor_corpus}")
         if self.reward_path.exists():
             self.reward_path.unlink()
-        command = [
-            str(self.oracle_binary),
-            "--batch",
-            str(self.batch_path),
-            "--rewards",
-            str(self.reward_path),
-            "--survivors",
-            str(self.survivor_corpus),
-            *self.extra_args,
-        ]
+        command = self.build_command()
         start = time.perf_counter()
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -211,6 +206,20 @@ class SurvivorCorpusOracle:
                 f"code={process.returncode}\nstdout={stdout.decode()}\nstderr={stderr.decode()}"
             )
         return elapsed_ms
+
+    def build_command(self) -> list[str]:
+        """Return the exact Rust command used for survivor-corpus scoring."""
+
+        return [
+            str(self.oracle_binary),
+            "--batch",
+            str(self.batch_path),
+            "--rewards",
+            str(self.reward_path),
+            "--survivors",
+            str(self.survivor_corpus),
+            *self.extra_args,
+        ]
 
     def read_rewards(self) -> pl.DataFrame:
         """Read the Rust oracle reward parquet."""
@@ -329,13 +338,106 @@ class SurvivorCorpusOracle:
         return None
 
 
+@dataclass
+class LiveSignalGridOracle(SurvivorCorpusOracle):
+    """Live signal-grid scorer backed by ``oracle_scorer --live-scoring``.
+
+    This mode scores proposal atom coordinates directly against the loaded
+    signal grid at runtime. It is intentionally separate from survivor lookup
+    so callers must opt in before scoring molecules outside the survivor
+    corpus.
+    """
+
+    signal_grid: Path = Path(
+        "campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_population_consensus.parquet"
+    )
+    grid_config: Path = Path(
+        "campaigns/glp1r_aleniglipron/track_0_manual_emulation/grid_coordinate_mapping.json"
+    )
+    shear_stress: Path | None = Path(
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.parquet"
+    )
+    lock_mask: Path | None = Path("campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json")
+
+    def prepare_batch(self, proposals: Sequence[OracleProposal]) -> pl.DataFrame:
+        """Create a live-scoring batch with mandatory atom coordinates."""
+
+        missing = [proposal.trajectory_id for proposal in proposals if not proposal.coordinates_json]
+        if missing:
+            raise RustOracleError(
+                "live signal-grid oracle requires coordinates_json for every proposal; "
+                f"missing={missing[:5]}"
+            )
+        return super().prepare_batch(proposals)
+
+    async def invoke_rust(self) -> float:
+        """Run the Rust scorer in live signal-grid mode."""
+
+        if not self.oracle_binary.is_file():
+            raise RustOracleError(f"Rust oracle binary not found: {self.oracle_binary}")
+        if not self.signal_grid.is_file():
+            raise RustOracleError(f"signal grid not found: {self.signal_grid}")
+        if not self.grid_config.is_file():
+            raise RustOracleError(f"grid config not found: {self.grid_config}")
+        if self.shear_stress is not None and not self.shear_stress.is_file():
+            raise RustOracleError(f"shear stress field not found: {self.shear_stress}")
+        if self.lock_mask is not None and not self.lock_mask.is_file():
+            raise RustOracleError(f"lock mask not found: {self.lock_mask}")
+        if self.reward_path.exists():
+            self.reward_path.unlink()
+        command = self.build_command()
+        start = time.perf_counter()
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        if process.returncode != 0:
+            raise RustOracleError(
+                "Rust live oracle exited nonzero "
+                f"code={process.returncode}\nstdout={stdout.decode()}\nstderr={stderr.decode()}"
+            )
+        return elapsed_ms
+
+    def build_command(self) -> list[str]:
+        """Return the exact Rust command used for live signal-grid scoring."""
+
+        return [
+            str(self.oracle_binary),
+            "--live-scoring",
+            "--input",
+            str(self.batch_path),
+            "--output",
+            str(self.reward_path),
+            "--survivors",
+            str(self.survivor_corpus),
+            "--signal-grid",
+            str(self.signal_grid),
+            "--grid-config",
+            str(self.grid_config),
+            *(
+                ["--shear-stress", str(self.shear_stress)]
+                if self.shear_stress is not None
+                else []
+            ),
+            *(["--lock-mask", str(self.lock_mask)] if self.lock_mask is not None else []),
+            *self.extra_args,
+        ]
+
+
 BatchedRustOracle = SurvivorCorpusOracle
 
 
 def proposals_from_rows(rows: pl.DataFrame, indices: Sequence[int]) -> list[OracleProposal]:
     """Build proposal objects from an anchor/action dataframe."""
 
-    selected = rows[["anchor_id", "canonical_smiles"]].to_dicts()
+    selected_columns = ["anchor_id", "canonical_smiles"]
+    for optional_column in ("coordinates_json", "score_atom_offset"):
+        if optional_column in rows.columns:
+            selected_columns.append(optional_column)
+    selected = rows.select(selected_columns).to_dicts()
     proposals: list[OracleProposal] = []
     for batch_index, action_index in enumerate(indices):
         row = selected[action_index]
@@ -348,6 +450,12 @@ def proposals_from_rows(rows: pl.DataFrame, indices: Sequence[int]) -> list[Orac
                 anchor_id=anchor_id,
                 canonical_smiles=canonical_smiles,
                 trajectory_id=f"trajectory-{batch_index:06d}",
+                coordinates_json=(
+                    str(row.get("coordinates_json"))
+                    if isinstance(row.get("coordinates_json"), str)
+                    else None
+                ),
+                score_atom_offset=int(row.get("score_atom_offset") or 0),
             )
         )
     return proposals
@@ -371,6 +479,7 @@ def telemetry_to_dict(telemetry: OracleTelemetry) -> dict[str, float | int]:
 
 __all__ = [
     "BatchedRustOracle",
+    "LiveSignalGridOracle",
     "SurvivorCorpusOracle",
     "OracleBatchResult",
     "OracleProposal",

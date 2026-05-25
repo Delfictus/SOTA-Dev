@@ -24,6 +24,7 @@ use prism_forge::reactions::kinematics::{
     execute_3d_reaction, DihedralConstraint, ReactionKinematicRule,
 };
 use prism_forge::reactions::reaction_registry::{AssemblyPlan, ReactionRegistry};
+use prism_forge::scoring::{score_positions_with_field, VoxelField};
 use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -227,22 +228,6 @@ struct GridGeometry {
     nz: i64,
     spacing_a: f32,
     origin: [f32; 3],
-}
-
-#[derive(Debug, Clone)]
-struct VoxelField {
-    complement: f64,
-    clash: f64,
-    raw_clash: f64,
-    cryptic_bonus: f64,
-    stable_occupied: bool,
-    thermally_destabilized: bool,
-    thermally_activated: bool,
-    thermally_released: bool,
-    coherence_score: f64,
-    coherence_factor: f64,
-    coherence_missing: bool,
-    primary_residue_idx: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -2571,10 +2556,6 @@ fn score_product(
 ) -> ScoreDecision {
     let mut scaffold_context_pi_complement = 0.0;
     let mut scaffold_context_pi_clash = 0.0;
-    let mut fragment_pi_complement = 0.0;
-    let mut fragment_pi_clash = 0.0;
-    let mut fragment_cryptic_bonus = 0.0;
-    let mut cryptic_bonus_atoms = 0_u64;
     let mut mapped_atoms = 0_u64;
     let mut scaffold_context_complement_voxels = HashSet::new();
     let mut fragment_complement_unique_voxels = HashSet::new();
@@ -2596,6 +2577,7 @@ fn score_product(
         .take(score_atom_offset)
         .map(|xyz| [xyz[0], xyz[1], xyz[2]])
         .collect();
+    let mut scored_atom_positions: Vec<(f64, f64, f64)> = Vec::new();
     for (atom_idx, xyz) in product.coordinates.chunks_exact(3).enumerate() {
         let is_fragment_atom = atom_idx >= score_atom_offset;
         if !is_fragment_atom {
@@ -2633,6 +2615,7 @@ fn score_product(
             return ScoreDecision::Drop(DropReason::NoFly, None);
         }
         mapped_atoms += 1;
+        scored_atom_positions.push((f64::from(xyz[0]), f64::from(xyz[1]), f64::from(xyz[2])));
         if diagnostics.complement_voxels.contains(&voxel_idx) {
             atoms_in_complement_voxels += 1;
             if !has_target_within_radius_voxels(
@@ -2657,8 +2640,6 @@ fn score_product(
             diagnostics.nearest_cryptic_distance([xyz[0], xyz[1], xyz[2]], voxel_idx, geometry),
         );
         if let Some(voxel) = field.get(&voxel_idx) {
-            fragment_pi_complement += voxel.complement;
-            fragment_pi_clash += voxel.clash;
             if voxel.complement > 0.0 {
                 if !has_target_within_radius_voxels(
                     voxel_idx,
@@ -2669,7 +2650,6 @@ fn score_product(
                     fragment_complement_unique_voxels.insert(voxel_idx);
                 }
             }
-            fragment_cryptic_bonus += voxel.cryptic_bonus;
             if voxel.raw_clash > 0.0 {
                 raw_pi_clash_sum += voxel.raw_clash;
                 adjusted_pi_clash_sum += voxel.clash;
@@ -2683,11 +2663,19 @@ fn score_product(
                     coherence_missing_residue_hits += 1;
                 }
             }
-            if voxel.cryptic_bonus > 0.0 {
-                cryptic_bonus_atoms += 1;
-            }
         }
     }
+    let shared_score = score_positions_with_field(
+        &scored_atom_positions,
+        field,
+        |x, y, z| coordinate_to_voxel([x as f32, y as f32, z as f32], geometry),
+        &HashSet::new(),
+        &HashMap::new(),
+    );
+    let fragment_pi_complement = shared_score.pi_complement;
+    let fragment_pi_clash = shared_score.pi_clash_pocket + shared_score.pi_clash_lock;
+    let fragment_cryptic_bonus = shared_score.cryptic_bonus;
+    let cryptic_bonus_atoms = shared_score.cryptic_bonus_atoms;
     let placement_metrics = PlacementMetrics {
         min_atom_to_complement_a,
         min_atom_to_cryptic_bonus_a,
@@ -3389,6 +3377,12 @@ fn load_signal_field(
                     coherence_factor,
                     coherence_missing,
                     primary_residue_idx: residue_idx,
+                    cold_mean: cold,
+                    warm_mean: warm,
+                    delta: dynamic_class.gain_delta,
+                    consensus_complement_bonus: 0.0,
+                    on_activation_pathway: residue_idx
+                        .is_some_and(|value| pathway_context.kinetic_burst_residues.contains(&value)),
                 },
             );
         }

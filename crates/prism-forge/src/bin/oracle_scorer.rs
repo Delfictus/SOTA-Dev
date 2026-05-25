@@ -1,12 +1,14 @@
 use anyhow::{anyhow, Context, Result};
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Float64Array, LargeStringArray, RecordBatch, StringArray,
+    Array, ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, LargeStringArray,
+    RecordBatch, StringArray, UInt32Array, UInt64Array,
 };
 use arrow_schema::{DataType, Field, Schema};
 use parquet::arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter};
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
-use serde_json::json;
+use prism_forge::scoring::{load_shear_field, score_molecule, LoadedSignalGrid, MoleculeScore};
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::{create_dir_all, File};
@@ -20,6 +22,8 @@ const DEFAULT_SURVIVORS: &str =
     "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_full_scale.parquet";
 const DEFAULT_LOCK_MASK: &str =
     "campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json";
+const COULOMBIC_INEFFICIENCY: f64 = 0.05;
+const FRAGMENT_CONTEXT_EXCLUSION_A: f64 = 2.32;
 
 #[derive(Debug, Clone)]
 struct Config {
@@ -27,6 +31,10 @@ struct Config {
     rewards: PathBuf,
     survivors: PathBuf,
     lock_mask: Option<PathBuf>,
+    live_scoring: bool,
+    signal_grid: PathBuf,
+    grid_config: PathBuf,
+    shear_stress: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -36,6 +44,16 @@ impl Default for Config {
             rewards: PathBuf::from(DEFAULT_REWARDS),
             survivors: PathBuf::from(DEFAULT_SURVIVORS),
             lock_mask: Some(PathBuf::from(DEFAULT_LOCK_MASK)),
+            live_scoring: false,
+            signal_grid: PathBuf::from(
+                "campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_population_consensus.parquet",
+            ),
+            grid_config: PathBuf::from(
+                "campaigns/glp1r_aleniglipron/track_0_manual_emulation/grid_coordinate_mapping.json",
+            ),
+            shear_stress: Some(PathBuf::from(
+                "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.parquet",
+            )),
         }
     }
 }
@@ -61,6 +79,7 @@ struct SurvivorReward {
     survival_tier: String,
     selected_dihedral_deg: f64,
     lock_proxy_method: String,
+    lock_phase_provenance: String,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +87,8 @@ struct Proposal {
     trajectory_id: String,
     anchor_id: String,
     canonical_smiles: String,
+    coordinates_json: String,
+    score_atom_offset: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +101,7 @@ struct RewardRow {
     adjusted_pi_clash: f64,
     pi_clash_pocket: f64,
     pi_clash_lock: f64,
+    sigma_shear: f64,
     pi_clash_lock_per_phase: [f64; 5],
     lock_geometry_score: f64,
     lock_geometry_atom_count: u64,
@@ -106,7 +128,76 @@ fn main() -> Result<()> {
         ),
         None => None,
     };
-    let survivors = load_survivors(&config.survivors, lock_mask.as_ref())
+    if config.live_scoring {
+        let grid = LoadedSignalGrid::from_parquet(
+            &config.signal_grid.display().to_string(),
+            &config.grid_config.display().to_string(),
+        )
+        .with_context(|| {
+            format!(
+                "load live signal grid {} with config {}",
+                config.signal_grid.display(),
+                config.grid_config.display()
+            )
+        })?;
+        let shear_field = match &config.shear_stress {
+            Some(path) => load_shear_field(path, &grid.condition_id)
+                .with_context(|| format!("load shear stress {}", path.display()))?,
+            None => HashMap::new(),
+        };
+        let proposals = load_batch(&config.batch)
+            .with_context(|| format!("load batch {}", config.batch.display()))?;
+        let lock_voxels = lock_mask
+            .as_ref()
+            .map(|mask| mask.lock_voxels.clone())
+            .unwrap_or_default();
+        let mut reward_rows = Vec::with_capacity(proposals.len());
+        for proposal in proposals {
+            let positions = parse_coordinates_json(&proposal.coordinates_json).with_context(|| {
+                format!(
+                    "parse coordinates_json for trajectory={} smiles={}",
+                    proposal.trajectory_id, proposal.canonical_smiles
+                )
+            })?;
+            let score_positions = if proposal.score_atom_offset < positions.len() {
+                live_fragment_positions(&positions, proposal.score_atom_offset)
+            } else {
+                positions.clone()
+            };
+            let score = score_molecule(&score_positions, &grid, &lock_voxels, &shear_field);
+            reward_rows.push(reward_row_from_live_score(proposal, score));
+        }
+        write_rewards(&config.rewards, &reward_rows)?;
+        let mean_reward = if reward_rows.is_empty() {
+            0.0
+        } else {
+            reward_rows.iter().map(|row| row.reward).sum::<f64>() / reward_rows.len() as f64
+        };
+        println!(
+            "oracle_scorer mode=live_signal_grid batch={} valid={} invalid=0 reward_mean={:.6} grid_condition={} field_voxels={} shear_voxels={} elapsed_ms={:.3} rewards={}",
+            reward_rows.len(),
+            reward_rows.len(),
+            mean_reward,
+            grid.condition_id,
+            grid.field.len(),
+            shear_field.len(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            config.rewards.display()
+        );
+        return Ok(());
+    }
+    let phase_grid = LoadedSignalGrid::from_parquet(
+        &config.signal_grid.display().to_string(),
+        &config.grid_config.display().to_string(),
+    )
+    .with_context(|| {
+        format!(
+            "load lock phase signal grid {} with config {}",
+            config.signal_grid.display(),
+            config.grid_config.display()
+        )
+    })?;
+    let survivors = load_survivors(&config.survivors, lock_mask.as_ref(), Some(&phase_grid))
         .with_context(|| format!("load survivor corpus {}", config.survivors.display()))?;
     let proposals = load_batch(&config.batch)
         .with_context(|| format!("load batch {}", config.batch.display()))?;
@@ -123,6 +214,7 @@ fn main() -> Result<()> {
                 adjusted_pi_clash: 0.0,
                 pi_clash_pocket: 0.0,
                 pi_clash_lock: 0.0,
+                sigma_shear: 0.0,
                 pi_clash_lock_per_phase: [0.0; 5],
                 lock_geometry_score: 0.0,
                 lock_geometry_atom_count: 0,
@@ -154,6 +246,7 @@ fn main() -> Result<()> {
             adjusted_pi_clash: reward.adjusted_pi_clash,
             pi_clash_pocket: reward.pi_clash_pocket,
             pi_clash_lock: reward.pi_clash_lock,
+            sigma_shear: 0.0,
             pi_clash_lock_per_phase: reward.pi_clash_lock_per_phase,
             lock_geometry_score: reward.lock_geometry_score,
             lock_geometry_atom_count: reward.lock_geometry_atom_count,
@@ -188,14 +281,14 @@ fn main() -> Result<()> {
                 "intracellular_penetration_depth_angstrom": reward.intracellular_penetration_depth_angstrom,
                 "lock_steric_volume_angstrom3": reward.lock_steric_volume_angstrom3,
                 "lock_proxy_method": reward.lock_proxy_method,
-                "lock_phase_provenance": "REPLICATED_AGGREGATE",
+                "lock_phase_provenance": reward.lock_phase_provenance,
                 "cryptic_bonus": reward.cryptic_bonus,
                 "consensus_complement_bonus": reward.consensus_complement_bonus,
                 "survival_tier": reward.survival_tier,
                 "selected_dihedral_deg": reward.selected_dihedral_deg
             })
             .to_string(),
-            lock_phase_provenance: "REPLICATED_AGGREGATE".to_owned(),
+            lock_phase_provenance: reward.lock_phase_provenance.clone(),
             oracle_valid: true,
         });
     }
@@ -223,17 +316,27 @@ fn parse_args() -> Result<Config> {
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--batch" => config.batch = PathBuf::from(value_after(&mut args, "--batch")?),
-            "--rewards" => config.rewards = PathBuf::from(value_after(&mut args, "--rewards")?),
+            "--live-scoring" => config.live_scoring = true,
+            "--batch" | "--input" => config.batch = PathBuf::from(value_after(&mut args, &arg)?),
+            "--rewards" | "--output" => config.rewards = PathBuf::from(value_after(&mut args, &arg)?),
             "--survivors" => {
                 config.survivors = PathBuf::from(value_after(&mut args, "--survivors")?)
+            }
+            "--signal-grid" => {
+                config.signal_grid = PathBuf::from(value_after(&mut args, "--signal-grid")?)
+            }
+            "--grid-config" => {
+                config.grid_config = PathBuf::from(value_after(&mut args, "--grid-config")?)
+            }
+            "--shear-stress" => {
+                config.shear_stress = Some(PathBuf::from(value_after(&mut args, "--shear-stress")?))
             }
             "--lock-mask" => {
                 config.lock_mask = Some(PathBuf::from(value_after(&mut args, "--lock-mask")?))
             }
             "--help" | "-h" => {
                 println!(
-                    "oracle_scorer --batch <parquet> --rewards <parquet> --survivors <parquet> [--lock-mask <json>]"
+                    "oracle_scorer [--live-scoring --signal-grid <parquet> --grid-config <json> --shear-stress <parquet>] --batch|--input <parquet> --rewards|--output <parquet> [--survivors <parquet>] [--lock-mask <json>]"
                 );
                 std::process::exit(0);
             }
@@ -269,18 +372,33 @@ fn load_batch(path: &Path) -> Result<Vec<Proposal>> {
         let trajectory = string_column(&batch, "trajectory_id")?;
         let anchors = string_column(&batch, "anchor_id")?;
         let smiles = string_column(&batch, "canonical_smiles")?;
+        let coordinates = optional_string_column(&batch, "coordinates_json");
+        let offsets = optional_u64_column(&batch, "score_atom_offset");
         for row_idx in 0..batch.num_rows() {
             proposals.push(Proposal {
                 trajectory_id: string_value(trajectory, row_idx)?,
                 anchor_id: string_value(anchors, row_idx)?,
                 canonical_smiles: string_value(smiles, row_idx)?,
+                coordinates_json: coordinates
+                    .as_ref()
+                    .and_then(|array| string_value(*array, row_idx).ok())
+                    .unwrap_or_default(),
+                score_atom_offset: offsets
+                    .as_ref()
+                    .and_then(|array| optional_u64_value(*array, row_idx).ok().flatten())
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or(0),
             });
         }
     }
     Ok(proposals)
 }
 
-fn load_survivors(path: &Path, lock_mask: Option<&LockRegionMask>) -> Result<Vec<SurvivorReward>> {
+fn load_survivors(
+    path: &Path,
+    lock_mask: Option<&LockRegionMask>,
+    phase_grid: Option<&LoadedSignalGrid>,
+) -> Result<Vec<SurvivorReward>> {
     let mut survivors = Vec::new();
     for batch in read_batches(path)? {
         let anchors = string_column(&batch, "anchor_id")?;
@@ -288,7 +406,8 @@ fn load_survivors(path: &Path, lock_mask: Option<&LockRegionMask>) -> Result<Vec
         let complements = f64_column(&batch, "fragment_pi_complement")?;
         let clashes = f64_column(&batch, "fragment_pi_clash_adjusted")?;
         let cryptic = f64_column(&batch, "cryptic_bonus")?;
-        let consensus_bonus = optional_f64_column(&batch, "consensus_complement_bonus")
+        let consensus_bonus = optional_f64_column(&batch, "scaffold_consensus_bonus")
+            .or_else(|| optional_f64_column(&batch, "consensus_complement_bonus"))
             .or_else(|| optional_f64_column(&batch, "population_consensus_bonus"))
             .or_else(|| optional_f64_column(&batch, "population_consensus_bonus_scaled"));
         let tiers = string_column(&batch, "survival_tier")?;
@@ -300,7 +419,12 @@ fn load_survivors(path: &Path, lock_mask: Option<&LockRegionMask>) -> Result<Vec
                 .as_ref()
                 .and_then(|array| string_value(*array, row_idx).ok())
                 .unwrap_or_default();
-            let lock_proxy = bifurcate_clash(&coordinates_json, adjusted_pi_clash, lock_mask);
+            let lock_proxy = bifurcate_clash(
+                &coordinates_json,
+                adjusted_pi_clash,
+                lock_mask,
+                phase_grid,
+            );
             survivors.push(SurvivorReward {
                 anchor_id: string_value(anchors, row_idx)?,
                 canonical_smiles: string_value(smiles, row_idx)?,
@@ -327,6 +451,7 @@ fn load_survivors(path: &Path, lock_mask: Option<&LockRegionMask>) -> Result<Vec
                 survival_tier: string_value(tiers, row_idx)?,
                 selected_dihedral_deg: f64_value(dihedrals, row_idx)?,
                 lock_proxy_method: lock_proxy.method,
+                lock_phase_provenance: lock_proxy.lock_phase_provenance,
             });
         }
     }
@@ -345,6 +470,7 @@ struct ClashBifurcation {
     intracellular_penetration_depth_angstrom: f64,
     lock_steric_volume_angstrom3: f64,
     method: String,
+    lock_phase_provenance: String,
 }
 
 #[derive(Debug, Clone)]
@@ -459,10 +585,151 @@ fn bifurcated_reward(
     (pi_complement + cryptic_bonus + pi_clash_lock - pi_clash_pocket).max(1.0e-8)
 }
 
+fn parse_coordinates_json(raw: &str) -> Result<Vec<(f64, f64, f64)>> {
+    if raw.trim().is_empty() {
+        return Err(anyhow!("coordinates_json is empty"));
+    }
+    let value: Value = serde_json::from_str(raw)?;
+    if let Some(rows) = value.as_array() {
+        if rows.iter().all(|row| row.as_array().is_some()) {
+            let mut positions = Vec::with_capacity(rows.len());
+            for row in rows {
+                let coords = row.as_array().ok_or_else(|| anyhow!("coordinate row is not an array"))?;
+                if coords.len() < 3 {
+                    return Err(anyhow!("coordinate row has fewer than 3 values"));
+                }
+                positions.push((
+                    coords[0].as_f64().ok_or_else(|| anyhow!("x coordinate is not numeric"))?,
+                    coords[1].as_f64().ok_or_else(|| anyhow!("y coordinate is not numeric"))?,
+                    coords[2].as_f64().ok_or_else(|| anyhow!("z coordinate is not numeric"))?,
+                ));
+            }
+            return Ok(positions);
+        }
+        if rows.len() % 3 == 0 {
+            let values = rows
+                .iter()
+                .map(|entry| entry.as_f64().ok_or_else(|| anyhow!("flat coordinate is not numeric")))
+                .collect::<Result<Vec<_>>>()?;
+            let positions = values
+                .chunks_exact(3)
+                .map(|xyz| (xyz[0], xyz[1], xyz[2]))
+                .collect::<Vec<_>>();
+            return Ok(positions);
+        }
+    }
+    Err(anyhow!("coordinates_json must be [[x,y,z],...] or a flat xyz array"))
+}
+
+fn live_fragment_positions(
+    positions: &[(f64, f64, f64)],
+    score_atom_offset: usize,
+) -> Vec<(f64, f64, f64)> {
+    let scaffold_positions = &positions[..score_atom_offset];
+    positions
+        .iter()
+        .skip(score_atom_offset)
+        .copied()
+        .filter(|xyz| {
+            min_distance_to_positions(*xyz, scaffold_positions) > FRAGMENT_CONTEXT_EXCLUSION_A
+        })
+        .collect()
+}
+
+fn min_distance_to_positions(
+    xyz: (f64, f64, f64),
+    positions: &[(f64, f64, f64)],
+) -> f64 {
+    positions
+        .iter()
+        .map(|other| {
+            let dx = xyz.0 - other.0;
+            let dy = xyz.1 - other.1;
+            let dz = xyz.2 - other.2;
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+fn reward_row_from_live_score(proposal: Proposal, score: MoleculeScore) -> RewardRow {
+    let lock_phase = phase_profile(score.lock_cold, score.lock_warm, score.lock_delta);
+    let lock_voxel_indices_json = json!(score.occupied_lock_voxels).to_string();
+    let lock_volume = f64::from(score.lock_atom_count) * 20.0;
+    let phase_provenance = lock_phase_provenance(&lock_phase);
+    RewardRow {
+        trajectory_id: proposal.trajectory_id,
+        anchor_id: proposal.anchor_id,
+        canonical_smiles: proposal.canonical_smiles,
+        reward: score.reward.max(1.0e-8),
+        pi_complement: score.pi_complement,
+        adjusted_pi_clash: score.pi_clash_pocket + score.pi_clash_lock,
+        pi_clash_pocket: score.pi_clash_pocket,
+        pi_clash_lock: score.pi_clash_lock,
+        sigma_shear: score.sigma_shear,
+        pi_clash_lock_per_phase: lock_phase,
+        lock_geometry_score: score.pi_clash_lock,
+        lock_geometry_atom_count: u64::from(score.lock_atom_count),
+        lock_voxel_indices_json,
+        lock_occupancy_per_phase: lock_phase,
+        intracellular_penetration_depth_angstrom: 0.0,
+        lock_steric_volume_angstrom3: lock_volume,
+        cryptic_bonus: score.cryptic_bonus,
+        consensus_complement_bonus: score.consensus_bonus,
+        survival_tier: "live_signal_grid".to_owned(),
+        selected_dihedral_deg: 0.0,
+        reward_components_json: json!({
+            "oracle_mode": "live_signal_grid",
+            "rust_reward_authority": true,
+            "fragment_pi_complement": score.pi_complement,
+            "adjusted_pi_clash": score.pi_clash_pocket + score.pi_clash_lock,
+            "pi_clash_pocket": score.pi_clash_pocket,
+            "pi_clash_lock": score.pi_clash_lock,
+            "sigma_shear": score.sigma_shear,
+            "consensus_complement_bonus": score.consensus_bonus,
+            "cryptic_bonus": score.cryptic_bonus,
+            "lock_phase_provenance": phase_provenance,
+            "pathway_voxels": score.pathway_voxels,
+            "void_atom_count": score.void_atom_count
+        })
+        .to_string(),
+        lock_phase_provenance: phase_provenance,
+        oracle_valid: true,
+    }
+}
+
+fn phase_profile(cold: f64, warm: f64, delta: f64) -> [f64; 5] {
+    let thermal_delta = if delta.is_finite() {
+        delta
+    } else {
+        warm - cold
+    };
+    [
+        cold,
+        cold + 0.5 * thermal_delta,
+        warm,
+        warm - 0.5 * thermal_delta,
+        cold * (1.0 + COULOMBIC_INEFFICIENCY),
+    ]
+}
+
+fn lock_phase_provenance(phases: &[f64; 5]) -> String {
+    let distinct = phases
+        .iter()
+        .map(|value| (value * 1.0e12).round() as i128)
+        .collect::<HashSet<_>>()
+        .len();
+    if distinct >= 4 {
+        "PHASE_RESOLVED".to_owned()
+    } else {
+        "REPLICATED_AGGREGATE".to_owned()
+    }
+}
+
 fn bifurcate_clash(
     coordinates_json: &str,
     adjusted_pi_clash: f64,
     lock_mask: Option<&LockRegionMask>,
+    phase_grid: Option<&LoadedSignalGrid>,
 ) -> ClashBifurcation {
     let parsed = serde_json::from_str::<Vec<Vec<f64>>>(coordinates_json);
     let Ok(coords) = parsed else {
@@ -477,12 +744,17 @@ fn bifurcate_clash(
             intracellular_penetration_depth_angstrom: 0.0,
             lock_steric_volume_angstrom3: 0.0,
             method: "missing_coordinates_fallback_all_pocket".to_owned(),
+            lock_phase_provenance: "UNKNOWN".to_owned(),
         };
     };
     if let Some(mask) = lock_mask {
         let mut occupied_lock_voxels = HashSet::new();
         let mut lock_atom_count: u64 = 0;
         let mut min_lock_atom_z = f64::INFINITY;
+        let mut lock_cold = 0.0;
+        let mut lock_warm = 0.0;
+        let mut lock_delta = 0.0;
+        let mut lock_phase_samples = 0_u64;
         for coord in &coords {
             let Some(voxel_idx) = mask.voxel_idx_for_xyz(coord) else {
                 continue;
@@ -490,6 +762,12 @@ fn bifurcate_clash(
             if mask.contains_voxel(voxel_idx) {
                 lock_atom_count += 1;
                 occupied_lock_voxels.insert(voxel_idx);
+                if let Some(field) = phase_grid.and_then(|grid| grid.field.get(&voxel_idx)) {
+                    lock_cold += field.cold_mean;
+                    lock_warm += field.warm_mean;
+                    lock_delta += field.delta;
+                    lock_phase_samples += 1;
+                }
                 if coord.len() >= 3 {
                     min_lock_atom_z = min_lock_atom_z.min(coord[2]);
                 }
@@ -507,19 +785,33 @@ fn bifurcate_clash(
             (mask.lock_centroid_z - min_lock_atom_z).max(0.0)
         };
         let steric_volume = lock_atom_count as f64 * 20.0;
+        let (lock_occupancy_per_phase, lock_phase_provenance) = if lock_phase_samples > 0 {
+            (
+                phase_profile(lock_cold, lock_warm, lock_delta),
+                "PHASE_RESOLVED".to_owned(),
+            )
+        } else if lock_atom_count > 0 {
+            (
+                [pi_clash_lock; 5],
+                "REPLICATED_AGGREGATE".to_owned(),
+            )
+        } else {
+            ([0.0; 5], "PHASE_RESOLVED".to_owned())
+        };
         return ClashBifurcation {
             pi_clash_pocket: adjusted_pi_clash * (1.0 - lock_fraction),
             pi_clash_lock,
-            pi_clash_lock_per_phase: [pi_clash_lock; 5],
+            pi_clash_lock_per_phase: lock_occupancy_per_phase,
             lock_geometry_score: pi_clash_lock,
             lock_geometry_atom_count: lock_atom_count,
             lock_voxel_indices_json,
-            lock_occupancy_per_phase: [pi_clash_lock; 5],
+            lock_occupancy_per_phase,
             intracellular_penetration_depth_angstrom: penetration_depth,
             lock_steric_volume_angstrom3: steric_volume,
             method: format!(
-                "residue_lock_region_mask_v2:lock_atoms={lock_atom_count}:total_atoms={atom_count}:phase_lock=static_aggregate_replicated:steric_volume_proxy=20A3_per_atom"
+                "residue_lock_region_mask_v2:lock_atoms={lock_atom_count}:total_atoms={atom_count}:phase_lock={lock_phase_provenance}:steric_volume_proxy=20A3_per_atom"
             ),
+            lock_phase_provenance,
         };
     }
     ClashBifurcation {
@@ -533,6 +825,7 @@ fn bifurcate_clash(
         intracellular_penetration_depth_angstrom: 0.0,
         lock_steric_volume_angstrom3: 0.0,
         method: "lock_mask_missing_legacy_z_proxy_invalidated_all_pocket".to_owned(),
+        lock_phase_provenance: "UNKNOWN".to_owned(),
     }
 }
 
@@ -580,6 +873,21 @@ fn optional_f64_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a Flo
     batch.column(idx).as_any().downcast_ref::<Float64Array>()
 }
 
+fn optional_u64_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a dyn Array> {
+    let idx = batch.schema().index_of(name).ok()?;
+    let array = batch.column(idx).as_ref();
+    if array.as_any().downcast_ref::<UInt64Array>().is_some()
+        || array.as_any().downcast_ref::<UInt32Array>().is_some()
+        || array.as_any().downcast_ref::<Int64Array>().is_some()
+        || array.as_any().downcast_ref::<Int32Array>().is_some()
+        || array.as_any().downcast_ref::<Float64Array>().is_some()
+    {
+        Some(array)
+    } else {
+        None
+    }
+}
+
 fn f64_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float64Array> {
     column(batch, name)?
         .as_any()
@@ -614,6 +922,37 @@ fn optional_f64_value(array: Option<&Float64Array>, row_idx: usize, default: f64
     }
 }
 
+fn optional_u64_value(array: &dyn Array, row_idx: usize) -> Result<Option<u64>> {
+    if array.is_null(row_idx) {
+        return Ok(None);
+    }
+    if let Some(values) = array.as_any().downcast_ref::<UInt64Array>() {
+        return Ok(Some(values.value(row_idx)));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<UInt32Array>() {
+        return Ok(Some(u64::from(values.value(row_idx))));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Int64Array>() {
+        let value = values.value(row_idx);
+        return u64::try_from(value)
+            .map(Some)
+            .map_err(|_| anyhow!("negative u64-compatible value at row {row_idx}: {value}"));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Int32Array>() {
+        let value = values.value(row_idx);
+        return u64::try_from(value)
+            .map(Some)
+            .map_err(|_| anyhow!("negative u64-compatible value at row {row_idx}: {value}"));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Float64Array>() {
+        let value = values.value(row_idx);
+        if value.is_finite() && value >= 0.0 {
+            return Ok(Some(value as u64));
+        }
+    }
+    Ok(None)
+}
+
 fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
     if let Some(parent) = path.parent() {
         create_dir_all(parent)?;
@@ -627,6 +966,7 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         Field::new("adjusted_pi_clash", DataType::Float64, false),
         Field::new("pi_clash_pocket", DataType::Float64, false),
         Field::new("pi_clash_lock", DataType::Float64, false),
+        Field::new("sigma_shear", DataType::Float64, false),
         Field::new("pi_clash_lock_cold_hold", DataType::Float64, false),
         Field::new("pi_clash_lock_ramp_up", DataType::Float64, false),
         Field::new("pi_clash_lock_warm_hold", DataType::Float64, false),
@@ -688,6 +1028,9 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         )),
         Arc::new(Float64Array::from(
             rows.iter().map(|row| row.pi_clash_lock).collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter().map(|row| row.sigma_shear).collect::<Vec<_>>(),
         )),
         Arc::new(Float64Array::from(
             rows.iter()

@@ -39,6 +39,7 @@ from prism_dstw.orchestration.multi_scaffold_entropy_router import (
     phase_occupancy_from_fiber_bundle,
 )
 from prism_dstw.orchestration.rust_reward_oracle import (
+    LiveSignalGridOracle,
     OracleProposal,
     SurvivorCorpusOracle,
     telemetry_to_dict,
@@ -178,9 +179,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--oracle-mode",
-        choices=("survivor_lookup",),
+        choices=("survivor_lookup", "live_signal_grid"),
         default="survivor_lookup",
-        help="Explicit oracle contract. Current runtime scores by immutable survivor-corpus lookup.",
+        help="Explicit oracle contract. Use live_signal_grid to score proposal coordinates against the signal grid.",
+    )
+    parser.add_argument(
+        "--live-scoring",
+        action="store_true",
+        default=False,
+        help="Shortcut for --oracle-mode live_signal_grid.",
     )
     parser.add_argument("--lock-directional-bias-alpha", type=float, default=2.0)
     parser.add_argument("--lock-reaching-synthon-boost", type=float, default=2.0)
@@ -935,6 +942,8 @@ def load_action_space(paths: TrainingPaths, embedding_dim: int, *, base_feature_
     for column in ("rotamers_evaluated", "best_rotamer_rank", "n_surviving_rotamers"):
         if column in survivor_source.columns:
             aggregations.append(pl.col(column).first().alias(column))
+    if "population_consensus_atoms_scored" in survivor_source.columns:
+        aggregations.append(pl.col("population_consensus_atoms_scored").first().alias("population_consensus_atoms_scored"))
     for column in (
         "consensus_complement_bonus",
         "population_consensus_bonus",
@@ -1571,11 +1580,24 @@ def proposals_for_actions(action_space: ActionSpace, actions: Sequence[int]) -> 
         row = table_rows[int(action_idx)]
         survivor_smiles = row.get("survivor_smiles")
         canonical_smiles = survivor_smiles if isinstance(survivor_smiles, str) else row["canonical_smiles"]
+        coordinates = str(row.get("coordinates_json") or "")
+        score_atom_offset = 0
+        try:
+            total_atoms = len(json.loads(coordinates)) if coordinates else 0
+        except (TypeError, ValueError, json.JSONDecodeError):
+            total_atoms = 0
+        atoms_scored = numeric_value(row.get("n_heavy_atoms"), 0.0)
+        if atoms_scored <= 0.0:
+            atoms_scored = numeric_value(row.get("population_consensus_atoms_scored"), 0.0)
+        if total_atoms > 0 and atoms_scored > 0.0:
+            score_atom_offset = max(0, total_atoms - int(atoms_scored))
         proposals.append(
             OracleProposal(
                 anchor_id=str(row["anchor_id"]),
                 canonical_smiles=str(canonical_smiles),
                 trajectory_id=f"tb-{batch_idx:06d}",
+                coordinates_json=coordinates,
+                score_atom_offset=score_atom_offset,
             )
         )
     return proposals
@@ -1797,6 +1819,8 @@ def save_training_checkpoint(
 
 async def train() -> None:
     args = parse_args()
+    if bool(args.live_scoring):
+        args.oracle_mode = "live_signal_grid"
     telemetry_handle = None
     original_stdout = sys.stdout
     original_stderr = sys.stderr
@@ -1879,7 +1903,7 @@ async def train() -> None:
         fiber_lookup=fiber_lookup,
         enabled=not bool(args.disable_exit_ray_masks),
     )
-    if str(args.oracle_mode) != "survivor_lookup":
+    if str(args.oracle_mode) not in {"survivor_lookup", "live_signal_grid"}:
         raise RuntimeError(f"unsupported oracle_mode={args.oracle_mode}")
     model: torch.nn.Module
     if bool(args.dual_channel):
@@ -1928,11 +1952,22 @@ async def train() -> None:
     lock_mask = resolve_track_a_path(cast(Path | None, args.lock_mask), TRACK_A_DIR / "lock_region_mask.json")
     if lock_mask.is_file():
         oracle_args.extend(["--lock-mask", str(lock_mask)])
-    oracle = SurvivorCorpusOracle(
-        survivor_corpus=paths.survivors,
-        max_batch_size=int(args.batch_size),
-        extra_args=tuple(oracle_args),
-    )
+    oracle: LiveSignalGridOracle | SurvivorCorpusOracle
+    if str(args.oracle_mode) == "live_signal_grid":
+        oracle = LiveSignalGridOracle(
+            survivor_corpus=paths.survivors,
+            max_batch_size=int(args.batch_size),
+            signal_grid=resolve_track_a_path(cast(Path | None, args.signal_grid), DEFAULT_POPULATION_CONSENSUS_GRID),
+            grid_config=resolve_track_a_path(Path(args.grid_coordinate_mapping), DEFAULT_GRID_MAPPING),
+            shear_stress=resolve_track_a_path(cast(Path | None, args.shear_stress), N80_DIR / "shear_stress_field.parquet"),
+            lock_mask=lock_mask if lock_mask.is_file() else None,
+        )
+    else:
+        oracle = SurvivorCorpusOracle(
+            survivor_corpus=paths.survivors,
+            max_batch_size=int(args.batch_size),
+            extra_args=tuple(oracle_args),
+        )
 
     config = {
         "architecture": architecture_name,

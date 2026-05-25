@@ -6,6 +6,7 @@ pub mod nhs_types;
 pub mod core;
 pub mod ffi;
 pub mod reactions;
+pub mod scoring;
 
 pub use nhs_types::{HitCount, ResidueIdx, VoxelIdx};
 
