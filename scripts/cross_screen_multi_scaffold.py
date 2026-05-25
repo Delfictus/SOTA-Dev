@@ -73,14 +73,17 @@ def cross_screen_row(row: dict[str, Any]) -> dict[str, Any]:
     origin = str(row.get("scaffold_origin", row.get("router_scaffold_assignment", "UNKNOWN"))).upper()
     reward = float_value(row.get("reward", 0.0))
     lock = float_value(row.get("lock_geometry_score", 0.0))
-    output = {
+    output = dict(row)
+    if "lock_geometry_score" not in output and "pi_clash_lock" in output:
+        output["lock_geometry_score"] = row.get("pi_clash_lock")
+    output.update({
         "candidate_id": str(row.get("candidate_id", "")),
         "canonical_smiles": str(row.get("canonical_smiles", "")),
         "scaffold_origin": origin,
         "cross_scaffold_evidence": "PROJECTED_PROXY_NO_REDOCK",
         "cross_scaffold_score": reward,
         "n_scaffolds_positive": 1 if reward > 0.0 else 0,
-    }
+    })
     for scaffold in SCAFFOLDS:
         is_origin = origin.startswith(scaffold) if origin != "UNKNOWN" else scaffold == "ALENI"
         output[f"reward_{scaffold.lower()}"] = reward if is_origin else None

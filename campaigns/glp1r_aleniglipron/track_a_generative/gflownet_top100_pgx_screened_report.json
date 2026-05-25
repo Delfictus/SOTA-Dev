@@ -1,0 +1,42 @@
+{
+  "schema_version": "PRISM.pgx_resilience_cross_screen.v2",
+  "epistemic_class": "PROJECTED",
+  "diagnostic_status": "WT_PROJECTION_COLLAPSE",
+  "scoring_method": "coordinate_field_projection_v1",
+  "variant_grid_source": "observed_embedded_n80_materialized",
+  "generated_at_utc": "2026-05-25T05:21:55.224675+00:00",
+  "candidate_count": 100,
+  "wt_condition": "glp1r_6XOX_WT",
+  "variants": {
+    "A316T": {
+      "condition_id": "glp1r_6XOX_A316T",
+      "classification_counts": {
+        "INDETERMINATE": 100
+      },
+      "lock_preserved_count": 0
+    },
+    "T149M": {
+      "condition_id": "glp1r_6XOX_T149M",
+      "classification_counts": {
+        "INDETERMINATE": 100
+      },
+      "lock_preserved_count": 0
+    }
+  },
+  "worst_case_mean": NaN,
+  "worst_case_min": NaN,
+  "immune_or_tolerant_worst_case": 0,
+  "wt_projection_nonzero": 0,
+  "wt_atoms_scored_mean": 127.64,
+  "output": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_screened.parquet",
+  "wt_grid": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+  "variant_grids": {
+    "A316T": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_A316T.parquet",
+    "T149M": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_T149M.parquet"
+  },
+  "notes": [
+    "Variant grid conditions exist, but the current coordinate-field projection collapses WT rewards to <=0.01 for every sampled candidate.",
+    "This is a scoring-path calibration mismatch, not a missing-file condition.",
+    "Candidate coordinates are reused from the O3A/Z-matrix survivor corpus."
+  ]
+}

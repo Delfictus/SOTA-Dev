@@ -13,6 +13,8 @@ Manifest root: `/mnt/storage/prism-rescue-manifests/Prism4D-bio-20260524T2004PDT
 - Priority artifact verification: 4 OK, 0 FAIL
 - Secondary runtime artifact upload: 31 `.scratch` files, 707,332,154 bytes
 - Secondary runtime verification: 28 stable files matched by R2 download check; 3 unstable files verified by remote SHA-256
+- Late-freeze runtime delta: 9 additional `.scratch` files uploaded and verified after repeated training restarts were stopped
+- Late PGx screen artifacts: 3 files uploaded and verified after a PGx screening job was stopped
 - Cleanup performed: none
 
 ## Priority Artifacts Verified
@@ -56,6 +58,22 @@ The authoritative unstable-file verification file is:
 - `/mnt/storage/prism-rescue-manifests/Prism4D-bio-20260524T2004PDT/secondary_unstable_remote_verify.tsv`
 
 The restarted GFlowNet trainer and oracle scorer were stopped with SIGTERM, and the follow-up producer scan showed no active `gflownet`, `oracle_scorer`, `vspace`, `ingest`, `am1bcc`, package, or cargo producer.
+
+Additional restart attempts from `pts/15` and a non-tty `bash -lc` wrapper were also stopped by process group. After no `.scratch` writers remained, the final late-freeze runtime delta was uploaded and verified under:
+
+```text
+r2:prism-deep-archive-20260516/storage-rescue/Prism4D-bio-20260524T2004PDT/late-freeze-runtime-delta-final2
+```
+
+Verification result for that final delta: 9 matching files, 0 differences, 0 missing on destination.
+
+A late PGx screening job was also stopped after it produced a small parquet/report set. Those files were uploaded and verified under:
+
+```text
+r2:prism-deep-archive-20260516/storage-rescue/Prism4D-bio-20260524T2004PDT/late-pgx-screen-artifacts
+```
+
+Verification result for the late PGx set: 3 matching files, 0 differences, 0 missing on destination.
 
 ## Cleanup Gate
 
