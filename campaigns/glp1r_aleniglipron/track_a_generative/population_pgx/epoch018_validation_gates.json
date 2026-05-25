@@ -1,0 +1,31 @@
+{
+  "schema_version": "PRISM.epoch018.validation_gates.v1",
+  "generated_at_utc": "2026-05-25T07:25:31.458549+00:00",
+  "quality_gates": {
+    "mypy_strict_epoch018": "PASS",
+    "pytest_multi_scaffold_entropy_router": "PASS_6",
+    "worker_typecheck": "PASS",
+    "cargo_clippy_prism_forge_D_warnings": "PASS",
+    "cargo_build_release_oracle_scorer_vspace_pruner": "PASS",
+    "cargo_test_topology_roundtrip_release": "PASS"
+  },
+  "execution_gates": {
+    "ontology_ingestion": "PASS_6_HASHED_FILES",
+    "variant_grids": "PASS_22_VARIANTS_7_TIER1_2_TIER2_13_TIER3",
+    "population_consensus_grid": "PASS_1378_ACTIVATED_WITH_FALLBACK_PROVENANCE",
+    "training_200_epochs": "WARN_REVIEW_COMPLETED_WITH_EXIT_120_CLEANUP_AFTER_MODEL_WRITE",
+    "sampling": "PASS_10000_TRAJECTORIES_7561_UNIQUE",
+    "full_landscape_pgx": "PASS_TIER1_WORST_MEAN_1_0_PROJECTED",
+    "medchem_audit": "PASS_7_WARN_2_FAIL_0",
+    "cross_scaffold": "FAIL_0_CANDIDATES_POSITIVE_ON_2PLUS_SCAFFOLDS",
+    "cloudflare_sync": "PASS_D1_VECTORIZE_R2_VERIFIED"
+  },
+  "release_build": {
+    "oracle_scorer": "target/release/oracle_scorer",
+    "vspace_pruner": "target/release/vspace_pruner",
+    "note": "Release binaries built on NVMe-backed target symlink; target is intentionally not committed."
+  },
+  "cloud_sync_report": "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/cloud_sync_epoch018.json",
+  "execution_report": "campaigns/glp1r_aleniglipron/track_a_generative/epoch018_execution_report.json",
+  "m3_dossier": "campaigns/glp1r_aleniglipron/M3_Lead_Optimization_Dossier.md"
+}

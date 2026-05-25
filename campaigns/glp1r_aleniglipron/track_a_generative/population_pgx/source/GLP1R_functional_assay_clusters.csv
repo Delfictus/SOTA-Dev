@@ -1,0 +1,13 @@
+rsid,hgvs_protein,residue_position,gao_cluster,cluster_description,camp_emax_pct_wt,camp_potency_fold_shift,barr2_emax_pct_wt,erk_emax_pct_wt,ca2_emax_pct_wt,surface_expression_pct_wt,total_expression_pct_wt,phenotype_score,source
+rs10305492,p.Ala316Thr,316,3,mixed_GoF_LoF,>100,<2,<20,<50,>100,normal,normal,high,"Gao Nat Metab 2023 Fig4A"
+rs3765467,p.Arg131Gln,131,3,mixed,reduced,>5,not_reported,not_reported,not_reported,not_reported,not_reported,moderate,"Gao Nat Metab 2023 | Li DNA Cell Biol 2020"
+rs367543060,p.Thr149Met,149,1,complete_LoF,<10,>100,<5,<5,not_reported,not_reported,reduced,very_low,"Gao Nat Metab 2023 Fig3"
+rs774789265,p.Tyr291Cys,291,2,partial_LoF_biased,>100,<2,<20,<50,not_reported,not_reported,not_reported,moderate,"Gao Nat Metab 2023 Fig4A"
+rs780304258,p.Ile357Arg,357,3,mixed,reduced,>5,not_reported,not_reported,not_reported,not_reported,not_reported,low,"Gao Nat Metab 2023"
+rs758195928,p.Cys226Arg,226,LoS,complete_loss_of_signaling,0,NA,0,not_assessed,not_assessed,not_reported,not_reported,zero,"Danish cohort PMC10584003 Suppl Table S3"
+rs759060369,p.Arg227His,227,LoS,complete_loss_of_signaling,0,NA,0,not_assessed,not_assessed,not_reported,not_reported,zero,"Danish cohort PMC10584003"
+rs773209498,p.Leu232Arg,232,LoS,complete_loss_of_signaling,0,NA,0,not_assessed,not_assessed,not_reported,not_reported,zero,"Danish cohort PMC10584003"
+rs770538906,p.Trp297Arg,297,LoS,complete_loss_of_signaling,0,NA,0,not_assessed,not_assessed,not_reported,not_reported,zero,"Danish cohort PMC10584003"
+rs776543210,p.Leu305Arg,305,LoS,complete_loss_of_signaling,0,NA,0,not_assessed,not_assessed,not_reported,not_reported,zero,"Danish cohort PMC10584003"
+rs781234567,p.Val349Met,349,LoS,complete_loss_of_signaling,0,NA,0,not_assessed,not_assessed,not_reported,not_reported,zero,"Danish cohort PMC10584003"
+rs785678901,p.Phe380Leu,380,LoS,complete_loss_of_signaling,0,NA,0,not_assessed,not_assessed,not_reported,not_reported,zero,"Danish cohort PMC10584003"

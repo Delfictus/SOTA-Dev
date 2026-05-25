@@ -2,7 +2,7 @@
 
 Campaign: `glp1r_aleniglipron`
 
-Generated: `2026-05-25T05:47:56Z`
+Generated: `2026-05-25T07:24:13Z`
 
 Epistemic scope: this dossier reports PROJECTED candidate prioritization from the PRISM Track A policy and Rust oracle. Candidates remain subject to synthesis, purification, receptor signaling, internalization, and washout falsification gates.
 
@@ -10,9 +10,9 @@ Epistemic scope: this dossier reports PROJECTED candidate prioritization from th
 
 The Track A GFlowNet policy generated and ranked candidates against the PRISM-FORGE O3A/Z-matrix reward oracle. The final audit reports:
 
-- biased agonism candidates confirmed: `6/100`
+- biased agonism candidates confirmed: `36/100`
 - PAINS pass: `100/100`
-- BRENK pass: `88/100`
+- BRENK pass: `89/100`
 - oral descriptor pass: `100/100`
 - top-100 unique SMILES: `100`
 
@@ -22,11 +22,11 @@ The Epoch 016 production training command path is implemented and passed a one-e
 
 | execution metric | value |
 |---|---:|
-| training status | `PARTIAL_EXECUTION_BLOCKED_BY_TERMINAL_HARNESS` |
-| observed completed epochs | 9/500 |
-| failure mode | `external_process_termination_without_python_traceback` |
+| training status | `unknown` |
+| observed completed epochs | 0/500 |
+| failure mode | `none` |
 
-Execution report: `campaigns/glp1r_aleniglipron/track_a_generative/epoch016_execution_report.json`
+Execution report: `campaigns/glp1r_aleniglipron/track_a_generative/epoch018_execution_report.json`
 
 ## 3. V-Space Navigation
 
@@ -56,7 +56,7 @@ The legacy Z-proxy was invalidated in Epoch 014 because it labeled pocket-floor 
 | tripartite metric | value |
 |---|---:|
 | profiled candidates | 50 |
-| corrected lock-positive candidates | 3 |
+| corrected lock-positive candidates | 34 |
 | L1 projected-only | 50 |
 | L2 observed geometry present | 0 |
 | L3 geometry + persistence proxy | 0 |
@@ -83,24 +83,24 @@ Lineage:
 
 | rank | SMILES | reward | lock geometry | bias projection | confidence | pocket clash | complement | synthetic route |
 |---:|---|---:|---:|---:|---|---:|---:|---|
-| 15 | `COc1cccc2cc(-c3cc(N)c[nH]3)[nH]c12` | 15.021 | 2.691 | 0.986 | L1 | 2.670 | 5.000 | SMARTS/Z-matrix projected route |
-| 24 | `C[C@@H]1C[C@H](CC(N)=O)c2cc3c(cc21)OCCO3` | 11.252 | 0.000 | 0.537 | L1 | 2.748 | 6.000 | SMARTS/Z-matrix projected route |
-| 6 | `Cc1ccn2c(CCN)c(C(C)(C)C)nc2c1` | 10.252 | 0.000 | 0.537 | L1 | 2.748 | 5.000 | SMARTS/Z-matrix projected route |
-| 9 | `Cc1nn(C)c2c1[C@@H](N)C[C@H](C)C2` | 10.105 | 0.000 | 0.537 | L1 | 2.895 | 5.000 | SMARTS/Z-matrix projected route |
-| 19 | `CCCc1ccc(-c2cc(C)nc(N)n2)cc1` | 9.923 | 0.000 | 0.537 | L1 | 2.077 | 4.000 | SMARTS/Z-matrix projected route |
-| 7 | `Cc1cc(C(=O)CN2CCCC2)ccc1F` | 9.656 | 0.000 | 0.537 | L1 | 3.344 | 5.000 | SMARTS/Z-matrix projected route |
-| 20 | `CC(C)C[C@H]1CNCCN1C(=O)N(C)C` | 9.637 | 0.000 | 0.537 | L1 | 3.363 | 5.000 | SMARTS/Z-matrix projected route |
-| 41 | `NCC[C@H]1CN(c2ccccc2)C(=O)CO1` | 9.220 | 0.000 | 0.537 | L1 | 2.780 | 6.000 | SMARTS/Z-matrix projected route |
-| 30 | `Cc1cc(C)c2c(c1)O[C@@]1(CCNC1)C[C@H]2O` | 9.165 | 0.000 | 0.537 | L1 | 2.835 | 4.000 | SMARTS/Z-matrix projected route |
-| 29 | `Cc1cnc(C(=O)N(C)[C@H]2CCC[C@H](C)C2)cn1` | 9.156 | 0.000 | 0.537 | L1 | 2.844 | 4.000 | SMARTS/Z-matrix projected route |
+| 1 | `Cc1nc(CN)[nH]c1-c1ccc2c(c1)CCCO2` | 46.212 | 37.834 | 1.000 | L1 | 2.621 | 5.000 | SMARTS/Z-matrix projected route |
+| 2 | `CC(C)c1nc2cc(-c3cc(N)n[nH]3)ccc2[nH]1` | 35.005 | 26.706 | 1.000 | L1 | 1.701 | 4.000 | SMARTS/Z-matrix projected route |
+| 3 | `NC[C@H]1CCN(c2ccc(C(N)=O)cc2)C1` | 28.239 | 22.927 | 1.000 | L1 | 2.688 | 4.000 | SMARTS/Z-matrix projected route |
+| 4 | `CC(C)c1ccc(-c2cc(C#N)nc(=O)[nH]2)cc1` | 20.978 | 13.357 | 0.999 | L1 | 1.379 | 3.000 | SMARTS/Z-matrix projected route |
+| 5 | `NC(=O)Nc1ccc2nc(C3CC3)[nH]c2c1` | 20.707 | 16.291 | 0.999 | L1 | 2.584 | 3.000 | SMARTS/Z-matrix projected route |
+| 6 | `CC(C)n1cnc2cc(/C=C/CN)ccc21` | 20.360 | 14.064 | 0.999 | L1 | 2.704 | 3.000 | SMARTS/Z-matrix projected route |
+| 7 | `CCc1nc2cc(-c3cc(N)[nH]n3)ccc2[nH]1` | 20.287 | 13.573 | 0.999 | L1 | 3.285 | 4.000 | SMARTS/Z-matrix projected route |
+| 8 | `N[C@H]1CC[C@@H](c2ccc3c(c2)NC(=O)CCO3)C1` | 20.012 | 10.576 | 0.999 | L1 | 2.564 | 4.000 | SMARTS/Z-matrix projected route |
+| 9 | `COc1ccc2cc([C@H]3C[C@@H]3CN)ccc2c1` | 19.754 | 15.581 | 0.999 | L1 | 1.828 | 2.000 | SMARTS/Z-matrix projected route |
+| 10 | `CC(C)Oc1ccc2[nH]c(=O)c(CN)cc2c1` | 18.402 | 14.116 | 0.999 | L1 | 2.714 | 3.000 | SMARTS/Z-matrix projected route |
 
 ## 7. PGx Resilience Status
 
-PGx status: `PGX_PARITY_CALIBRATED`
-Epistemic class: `DERIVED_L3_PARITY_CALIBRATED`
-Scoring method: `native_wt_reward_plus_relative_field_liability_delta_v1`
-WT parity status: `CALIBRATED_PARITY_CONFIRMED`
-Report: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_parity_validated_report.json`
+PGx status: `WT_PROJECTION_COLLAPSE`
+Epistemic class: `PROJECTED`
+Scoring method: `coordinate_field_projection_v1`
+WT parity status: `unreported`
+Report: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_pgx_screened_report.json`
 
 WT projection parity repair:
 
@@ -111,14 +111,60 @@ WT projection parity repair:
 | repair method | `native_wt_reward_plus_relative_field_liability_delta_v1` |
 | projection/native ratio mean | `1.4159388232784845e-09` |
 | calibrated WT self-parity ratio | `1.0` |
-| report | `campaigns/glp1r_aleniglipron/track_a_generative/wt_projection_parity_report.json` |
+| report | `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/wt_projection_parity_report.json` |
 
 | variant | condition | lock preserved | class counts |
 |---|---|---:|---|
-| A316T | `glp1r_6XOX_A316T` | 0 | `{'VULNERABLE': 100}` |
-| T149M | `glp1r_6XOX_T149M` | 0 | `{'VULNERABLE': 100}` |
+| A316T | `glp1r_6XOX_A316T` | 0 | `{'INDETERMINATE': 100}` |
+| T149M | `glp1r_6XOX_T149M` | 0 | `{'INDETERMINATE': 100}` |
 
-## 8. Autonomous Infrastructure Status
+## 8. Population Pharmacogenomic Intelligence
+
+Epoch 018 extends PGx assessment from the two-variant screen to the supplied GLP-1R population variant landscape. The population grid is a projected thermodynamic consensus over WT plus Tier 1/2 variants, with every non-MD perturbation labeled as projected evidence rather than wet-lab efficacy.
+
+| population PGx field | value |
+|---|---:|
+| status | `PASS` |
+| variants mapped | 22 |
+| Tier 1 variants | 7 |
+| Tier 2 variants | 2 |
+| Tier 3 documented variants | 13 |
+| consensus thermally activated voxels | 1378 |
+| Tier 1 worst-case mean | `1.0` |
+| candidates with Tier 1 worst-case >= 0.85 | 100 |
+| mean population coverage at >=0.85 | `100.0` |
+
+Lineage:
+
+- variant perturbation manifest: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/variant_perturbation_manifest.json`
+- consensus grid report: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/population_consensus_grid_report.json`
+- full-landscape PGx report: `campaigns/glp1r_aleniglipron/pgx_full_landscape_report.json`
+
+Tier 1 source landscape:
+
+| variant | global MAF | domain | provenance | confidence |
+|---|---:|---|---|---|
+| G168S | 0.3030 | TM1 | PERTURBATION_PROJECTED | L2 |
+| P7L | 0.2450 | Signal_Peptide | PERTURBATION_PROJECTED | L3 |
+| R131Q | 0.0440 | N_Terminal_ECD | PERTURBATION_PROJECTED | L2 |
+| D344E | 0.0120 | TM6 | PERTURBATION_PROJECTED | L2 |
+| F260L | 0.0210 | TM4 | PERTURBATION_PROJECTED | L3 |
+| L141P | 0.3300 | N_Terminal_ECD | PERTURBATION_PROJECTED | L3 |
+| S333C | 0.0150 | ICL3 | PERTURBATION_PROJECTED | L2 |
+
+Ancestry-stratified projected resilience:
+
+| ancestry | mean resilience | candidates >=0.85 |
+|---|---:|---:|
+| EUR | `0.9773625137859314` | 100 |
+| AFR | `0.9859730300577294` | 100 |
+| EAS | `0.9967633338849091` | 100 |
+| SAS | `0.9840096043499424` | 100 |
+| AMR | `0.9817733336235719` | 100 |
+
+Interpretation boundary: A316T and T149M use materialized MD-derived grids. The remaining variant grids are perturbation-projected from gnomAD frequency, domain, conservation, and functional-assay annotations and must be treated as Phase 3 stratification intelligence, not clinical proof.
+
+## 9. Autonomous Infrastructure Status
 
 Cloudflare and autonomous thermodynamic AI infrastructure were checked without redeploying the Worker.
 
@@ -131,35 +177,35 @@ Cloudflare and autonomous thermodynamic AI infrastructure were checked without r
 | R2 tensor bucket | `OK` |
 | Queue | `OK` |
 
-Infrastructure report: `campaigns/glp1r_aleniglipron/track_a_generative/autonomous_infra_status_epoch017.json`
+Infrastructure report: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/autonomous_infra_status_epoch018.json`
 
-## 9. GPU Dispatch Readiness
+## 10. GPU Dispatch Readiness
 
-GPU dispatch status: `PASS`
+GPU dispatch status: `complete`
 
 | dispatch metric | value |
 |---|---:|
-| scripts generated | 3 |
-| dispatch-ready scripts | 3 |
-| corrected engine scripts | 3 |
+| scripts generated | 36 |
+| dispatch-ready scripts | 36 |
+| corrected engine scripts | 0 |
 | high-priority BALD jobs | 0 |
 
-Dispatch audit: `campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch_audit_report.json`
+Dispatch audit: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gpu_dispatch_population_manifest.json`
 
 These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
 
-## 10. Falsification Gates
+## 11. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 11. Lineage
+## 12. Lineage
 
 - policy checkpoint: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_policy_v1.pt`
-- top-100 candidates: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_parity_validated.parquet`
-- tripartite profiles: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_50_tripartite_profiles_epoch016.parquet`
-- medchem audit: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_medchem_audit_epoch016.parquet`
-- candidate audit: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_audit_epoch016.json`
+- top-100 candidates: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_top100_full_pgx.parquet`
+- tripartite profiles: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_top_50_population_tripartite_profiles.parquet`
+- medchem audit: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_medchem_population_audit.parquet`
+- candidate audit: `campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_audit_population_consensus.json`
 - CBOM: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/PRISM_CBOM_v1.0.json`

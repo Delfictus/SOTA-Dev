@@ -1,0 +1,29 @@
+{
+  "schema_version": "PRISM.epoch018.cloud_sync.v1",
+  "generated_at_utc": "2026-05-25T07:23:26.299647+00:00",
+  "d1": {
+    "database": "prism_metadata",
+    "table": "gflownet_candidates",
+    "rows": 100,
+    "avg_pgx_tier1_worst_case": 1.0,
+    "status": "OK"
+  },
+  "vectorize": {
+    "index": "dkl_latent_space",
+    "dimensions": 768,
+    "vector_count_after_upsert": 200,
+    "upserted_vectors": 100,
+    "status": "OK"
+  },
+  "r2": {
+    "bucket": "prism-tensors",
+    "key": "gflownet_top100_full_pgx_epoch018.parquet",
+    "verify": "exact_match_after_download",
+    "status": "OK"
+  },
+  "payloads": {
+    "sql": "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/cloud_payloads/gflownet_population_top100.sql",
+    "vector_ndjson": "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/cloud_payloads/gflownet_population_top100_vectors.ndjson"
+  },
+  "note": "Cloudflare Worker was not redeployed; only D1 data, Vectorize vectors, and R2 object were updated."
+}

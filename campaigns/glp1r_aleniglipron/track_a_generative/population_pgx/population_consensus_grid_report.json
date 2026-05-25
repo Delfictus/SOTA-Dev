@@ -1,0 +1,148 @@
+{
+  "schema_version": "PRISM.population_consensus_grid.v1",
+  "generated_at_utc": "2026-05-25T07:04:15.414095+00:00",
+  "status": "PASS",
+  "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_population_consensus.parquet",
+  "manifest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/variant_perturbation_manifest.json",
+  "global": {
+    "ancestry": "GLOBAL",
+    "source_count": 10,
+    "total_weight": 3.3201400926984825,
+    "mean_consensus_strength": 0.9971773000298906,
+    "weak_consensus_voxels": 0,
+    "thermally_activated_voxels": 1378,
+    "activation_fallback_voxels": 1378,
+    "stable_occupied_voxels": 0,
+    "weights": {
+      "WT": 1.0,
+      "A316T": 0.06974238309665078,
+      "G168S": 0.5504543577809153,
+      "P7L": 0.4949747468305833,
+      "R131Q": 0.20976176963403032,
+      "D344E": 0.10954451150103323,
+      "F260L": 0.14491376746189438,
+      "L141P": 0.5744562646538028,
+      "S333C": 0.1224744871391589,
+      "R380C": 0.04381780460041329
+    }
+  },
+  "ancestry": {
+    "EUR": {
+      "ancestry": "EUR",
+      "source_count": 10,
+      "total_weight": 3.338958717835468,
+      "mean_consensus_strength": 0.9966249540169477,
+      "weak_consensus_voxels": 0,
+      "thermally_activated_voxels": 1378,
+      "activation_fallback_voxels": 1378,
+      "stable_occupied_voxels": 0,
+      "weights": {
+        "WT": 1.0,
+        "A316T": 0.08390470785361213,
+        "G168S": 0.5830951894845301,
+        "P7L": 0.5291502622129182,
+        "R131Q": 0.07745966692414834,
+        "D344E": 0.1224744871391589,
+        "F260L": 0.15811388300841897,
+        "L141P": 0.6,
+        "S333C": 0.1341640786499874,
+        "R380C": 0.05059644256269407
+      },
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/consensus_grids/signal_grid_consensus_EUR.parquet"
+    },
+    "AFR": {
+      "ancestry": "AFR",
+      "source_count": 10,
+      "total_weight": 2.5238276837602514,
+      "mean_consensus_strength": 0.9981924682819433,
+      "weak_consensus_voxels": 0,
+      "thermally_activated_voxels": 1378,
+      "activation_fallback_voxels": 1378,
+      "stable_occupied_voxels": 0,
+      "weights": {
+        "WT": 1.0,
+        "A316T": 0.033941125496954286,
+        "G168S": 0.282842712474619,
+        "P7L": 0.34641016151377546,
+        "R131Q": 0.1224744871391589,
+        "D344E": 0.07071067811865475,
+        "F260L": 0.08944271909999159,
+        "L141P": 0.469041575982343,
+        "S333C": 0.08366600265340755,
+        "R380C": 0.025298221281347035
+      },
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/consensus_grids/signal_grid_consensus_AFR.parquet"
+    },
+    "EAS": {
+      "ancestry": "EAS",
+      "source_count": 10,
+      "total_weight": 3.640075586898031,
+      "mean_consensus_strength": 0.9994837984290276,
+      "weak_consensus_voxels": 0,
+      "thermally_activated_voxels": 1378,
+      "activation_fallback_voxels": 1378,
+      "stable_occupied_voxels": 0,
+      "weights": {
+        "WT": 1.0,
+        "A316T": 0.013856406460551019,
+        "G168S": 0.648074069840786,
+        "P7L": 0.5567764362830022,
+        "R131Q": 0.4242640687119285,
+        "D344E": 0.08944271909999159,
+        "F260L": 0.13784048752090222,
+        "L141P": 0.6244997998398398,
+        "S333C": 0.10954451150103323,
+        "R380C": 0.03577708763999664
+      },
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/consensus_grids/signal_grid_consensus_EAS.parquet"
+    },
+    "SAS": {
+      "ancestry": "SAS",
+      "source_count": 10,
+      "total_weight": 3.227274099674738,
+      "mean_consensus_strength": 0.9976438081961371,
+      "weak_consensus_voxels": 0,
+      "thermally_activated_voxels": 1378,
+      "activation_fallback_voxels": 1378,
+      "stable_occupied_voxels": 0,
+      "weights": {
+        "WT": 1.0,
+        "A316T": 0.0565685424949238,
+        "G168S": 0.5291502622129182,
+        "P7L": 0.469041575982343,
+        "R131Q": 0.22360679774997896,
+        "D344E": 0.10488088481701516,
+        "F260L": 0.1341640786499874,
+        "L141P": 0.5477225575051661,
+        "S333C": 0.11832159566199232,
+        "R380C": 0.04381780460041329
+      },
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/consensus_grids/signal_grid_consensus_SAS.parquet"
+    },
+    "AMR": {
+      "ancestry": "AMR",
+      "source_count": 10,
+      "total_weight": 3.3145211663049836,
+      "mean_consensus_strength": 0.9972865445519169,
+      "weak_consensus_voxels": 0,
+      "thermally_activated_voxels": 1378,
+      "activation_fallback_voxels": 1378,
+      "stable_occupied_voxels": 0,
+      "weights": {
+        "WT": 1.0,
+        "A316T": 0.06693280212272605,
+        "G168S": 0.5567764362830022,
+        "P7L": 0.5099019513592785,
+        "R131Q": 0.17320508075688773,
+        "D344E": 0.11401754250991379,
+        "F260L": 0.14832396974191325,
+        "L141P": 0.5830951894845301,
+        "S333C": 0.12649110640673517,
+        "R380C": 0.03577708763999664
+      },
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/consensus_grids/signal_grid_consensus_AMR.parquet"
+    }
+  },
+  "tier_scope": "WT plus Tier 1 and Tier 2 variants",
+  "weighting": "consensus_weight * sqrt(MAF)"
+}

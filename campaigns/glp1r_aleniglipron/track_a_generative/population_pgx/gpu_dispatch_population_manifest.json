@@ -1,0 +1,336 @@
+{
+  "bald_ranking": true,
+  "dispatch_count": 36,
+  "dispatches": [
+    {
+      "bald_information_value": 0.05931619283174275,
+      "candidate_id": "cand_32_13147684",
+      "canonical_smiles": "CC(C)=Cc1nc2ccc(CN)cc2o1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_32_13147684.sh",
+      "lock_geometry_score": 2.3491608349723796,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_32_13147684.sdf"
+    },
+    {
+      "bald_information_value": 0.058872501276883385,
+      "candidate_id": "cand_79_87542714",
+      "canonical_smiles": "Cc1cccc([C@@H]2CNCCN2C)c1C",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_79_87542714.sh",
+      "lock_geometry_score": 2.395599050054925,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_79_87542714.sdf"
+    },
+    {
+      "bald_information_value": 0.05845302512958428,
+      "candidate_id": "cand_39_17140534",
+      "canonical_smiles": "C[C@@H](CC#N)N1CCO[C@H](c2ccccc2)C1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_39_17140534.sh",
+      "lock_geometry_score": 2.4397111231518833,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_39_17140534.sdf"
+    },
+    {
+      "bald_information_value": 0.054394953785497455,
+      "candidate_id": "cand_31_60602341",
+      "canonical_smiles": "Cn1c(C(C)(C)C)nc2c1CC[C@@H](CN)C2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_31_60602341.sh",
+      "lock_geometry_score": 2.8824274163064767,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_31_60602341.sdf"
+    },
+    {
+      "bald_information_value": 0.0515150568777403,
+      "candidate_id": "cand_30_18744881",
+      "canonical_smiles": "Cc1nc(=O)[nH]c(-c2ccc(CCN)cc2)c1C",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_30_18744881.sh",
+      "lock_geometry_score": 3.2220900286810723,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_30_18744881.sdf"
+    },
+    {
+      "bald_information_value": 0.05030088247673363,
+      "candidate_id": "cand_29_13920650",
+      "canonical_smiles": "N#CCCCn1ccc2ccc(Cl)cc2c1=O",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_29_13920650.sh",
+      "lock_geometry_score": 3.3736976571702675,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_29_13920650.sdf"
+    },
+    {
+      "bald_information_value": 0.047632528826341135,
+      "candidate_id": "cand_41_54605923",
+      "canonical_smiles": "Cc1cc(C(C)(C)C)nc(CCCN)n1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_41_54605923.sh",
+      "lock_geometry_score": 3.728113825971466,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_41_54605923.sdf"
+    },
+    {
+      "bald_information_value": 0.04589138689486235,
+      "candidate_id": "cand_38_12057019",
+      "canonical_smiles": "NC(=O)Cc1ccccc1NC(=O)N1CCCC1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_38_12057019.sh",
+      "lock_geometry_score": 3.9776302750962804,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_38_12057019.sdf"
+    },
+    {
+      "bald_information_value": 0.04131980455340856,
+      "candidate_id": "cand_24_11302227",
+      "canonical_smiles": "C[C@H]1CCCC[C@H]1Oc1cccc(CN)n1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_24_11302227.sh",
+      "lock_geometry_score": 4.719241545248505,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_24_11302227.sdf"
+    },
+    {
+      "bald_information_value": 0.03647551801104769,
+      "candidate_id": "cand_20_11260289",
+      "canonical_smiles": "Cc1nc(-c2ccc(C(=N)N)cc2)sc1C",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_20_11260289.sh",
+      "lock_geometry_score": 5.688193704662703,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_20_11260289.sdf"
+    },
+    {
+      "bald_information_value": 0.03639386952256563,
+      "candidate_id": "cand_53_10434346",
+      "canonical_smiles": "NC(=O)N1CCC(NC[C@H]2CCOC2)CC1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_53_10434346.sh",
+      "lock_geometry_score": 5.706587562562911,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_53_10434346.sdf"
+    },
+    {
+      "bald_information_value": 0.033145318033427004,
+      "candidate_id": "cand_12_36372037",
+      "canonical_smiles": "Nc1ccc2nc(-c3cccc4[nH]ncc34)[nH]c2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_12_36372037.sh",
+      "lock_geometry_score": 6.508104722130394,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_12_36372037.sdf"
+    },
+    {
+      "bald_information_value": 0.03122140932766546,
+      "candidate_id": "cand_42_45313364",
+      "canonical_smiles": "N#CC1(NC(=O)c2ccc3c(c2)CCO3)CCC1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_42_45313364.sh",
+      "lock_geometry_score": 7.057942442569011,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_42_45313364.sdf"
+    },
+    {
+      "bald_information_value": 0.030601326906983257,
+      "candidate_id": "cand_18_19216662",
+      "canonical_smiles": "COc1cc(C)c2c(c1)cc(C)n2CCN",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_18_19216662.sh",
+      "lock_geometry_score": 7.249367984819237,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_18_19216662.sdf"
+    },
+    {
+      "bald_information_value": 0.030435328733355447,
+      "candidate_id": "cand_40_93009483",
+      "canonical_smiles": "Cc1cn(C)c2ccc(C(=O)CN)cc12",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_40_93009483.sh",
+      "lock_geometry_score": 7.301894950704007,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_40_93009483.sdf"
+    },
+    {
+      "bald_information_value": 0.030240184280045816,
+      "candidate_id": "cand_21_18158909",
+      "canonical_smiles": "NCC1(c2ccc3nccn3c2)CC1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_21_18158909.sh",
+      "lock_geometry_score": 7.364359676744614,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_21_18158909.sdf"
+    },
+    {
+      "bald_information_value": 0.029777658056820644,
+      "candidate_id": "cand_15_74385827",
+      "canonical_smiles": "COc1ccc(Cl)cc1-c1ccc(N)cn1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_15_74385827.sh",
+      "lock_geometry_score": 7.515584330054663,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_15_74385827.sdf"
+    },
+    {
+      "bald_information_value": 0.028507855102580075,
+      "candidate_id": "cand_37_17223583",
+      "canonical_smiles": "NCCc1cccc([C@@H]2CCC(=O)NC2)c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_37_17223583.sh",
+      "lock_geometry_score": 7.955260550192561,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_37_17223583.sdf"
+    },
+    {
+      "bald_information_value": 0.028322522042905633,
+      "candidate_id": "cand_14_45618077",
+      "canonical_smiles": "Cc1cc(C)c2cc([C@H]3CNCCO3)[nH]c2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_14_45618077.sh",
+      "lock_geometry_score": 8.022643513934886,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_14_45618077.sdf"
+    },
+    {
+      "bald_information_value": 0.02790278917206524,
+      "candidate_id": "cand_17_15653712",
+      "canonical_smiles": "COc1ccc(C(=O)c2cccc(N)c2)cc1F",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_17_15653712.sh",
+      "lock_geometry_score": 8.178477282454281,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_17_15653712.sdf"
+    },
+    {
+      "bald_information_value": 0.027591175863290116,
+      "candidate_id": "cand_35_93685569",
+      "canonical_smiles": "Cc1cc(N)ccc1C(=O)N(C)C[C@@H](C)O",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_35_93685569.sh",
+      "lock_geometry_score": 8.297163557153613,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_35_93685569.sdf"
+    },
+    {
+      "bald_information_value": 0.026993519164423403,
+      "candidate_id": "cand_19_12467641",
+      "canonical_smiles": "NCCc1cc(-c2cc(Cl)ccc2F)[nH]n1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_19_12467641.sh",
+      "lock_geometry_score": 8.532290556994054,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_19_12467641.sdf"
+    },
+    {
+      "bald_information_value": 0.024742850053837827,
+      "candidate_id": "cand_23_10910864",
+      "canonical_smiles": "CCc1ccc(-c2ccc(CN)nn2)cc1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_23_10910864.sh",
+      "lock_geometry_score": 9.517503668500835,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_23_10910864.sdf"
+    },
+    {
+      "bald_information_value": 0.024423010162760692,
+      "candidate_id": "cand_22_17351980",
+      "canonical_smiles": "NCCC(=O)Nc1ccc(Cl)cc1Cl",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_22_17351980.sh",
+      "lock_geometry_score": 9.671975660980133,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_22_17351980.sdf"
+    },
+    {
+      "bald_information_value": 0.02315188709424372,
+      "candidate_id": "cand_13_18205607",
+      "canonical_smiles": "Nc1cccc(OCC(=O)N2C[C@H]3CC[C@@H]2C3)c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_13_18205607.sh",
+      "lock_geometry_score": 10.327398318696702,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_13_18205607.sdf"
+    },
+    {
+      "bald_information_value": 0.022703545936875135,
+      "candidate_id": "cand_8_16446986",
+      "canonical_smiles": "N[C@H]1CC[C@@H](c2ccc3c(c2)NC(=O)CCO3)C1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_8_16446986.sh",
+      "lock_geometry_score": 10.575825943787608,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_8_16446986.sdf"
+    },
+    {
+      "bald_information_value": 0.02013453286793408,
+      "candidate_id": "cand_11_17347887",
+      "canonical_smiles": "CCc1cc([C@@H]2CCNCCN2C)cs1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_11_17347887.sh",
+      "lock_geometry_score": 12.209871673592723,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_11_17347887.sdf"
+    },
+    {
+      "bald_information_value": 0.018650032665488536,
+      "candidate_id": "cand_4_16850102",
+      "canonical_smiles": "CC(C)c1ccc(-c2cc(C#N)nc(=O)[nH]2)cc1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_4_16850102.sh",
+      "lock_geometry_score": 13.35710163965162,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_4_16850102.sdf"
+    },
+    {
+      "bald_information_value": 0.018395181670502234,
+      "candidate_id": "cand_7_13992084",
+      "canonical_smiles": "CCc1nc2cc(-c3cc(N)[nH]n3)ccc2[nH]1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_7_13992084.sh",
+      "lock_geometry_score": 13.572515233899866,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_7_13992084.sdf"
+    },
+    {
+      "bald_information_value": 0.017839279103056684,
+      "candidate_id": "cand_6_13392579",
+      "canonical_smiles": "CC(C)n1cnc2cc(/C=C/CN)ccc21",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_6_13392579.sh",
+      "lock_geometry_score": 14.063585196878659,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_6_13392579.sdf"
+    },
+    {
+      "bald_information_value": 0.017782034201232165,
+      "candidate_id": "cand_10_11366071",
+      "canonical_smiles": "CC(C)Oc1ccc2[nH]c(=O)c(CN)cc2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_10_11366071.sh",
+      "lock_geometry_score": 14.115884885138023,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_10_11366071.sdf"
+    },
+    {
+      "bald_information_value": 0.01631418900393626,
+      "candidate_id": "cand_9_14015466",
+      "canonical_smiles": "COc1ccc2cc([C@H]3C[C@@H]3CN)ccc2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_9_14015466.sh",
+      "lock_geometry_score": 15.581428870472703,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_9_14015466.sdf"
+    },
+    {
+      "bald_information_value": 0.01568674181921272,
+      "candidate_id": "cand_5_42324396",
+      "canonical_smiles": "NC(=O)Nc1ccc2nc(C3CC3)[nH]c2c1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_5_42324396.sh",
+      "lock_geometry_score": 16.29105336525963,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_5_42324396.sdf"
+    },
+    {
+      "bald_information_value": 0.011532538209634454,
+      "candidate_id": "cand_3_15047058",
+      "canonical_smiles": "NC[C@H]1CCN(c2ccc(C(N)=O)cc2)C1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_3_15047058.sh",
+      "lock_geometry_score": 22.927318823181896,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_3_15047058.sdf"
+    },
+    {
+      "bald_information_value": 0.010019941894527736,
+      "candidate_id": "cand_2_15749227",
+      "canonical_smiles": "CC(C)c1nc2cc(-c3cc(N)n[nH]3)ccc2[nH]1",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_2_15749227.sh",
+      "lock_geometry_score": 26.705516199082652,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_2_15749227.sdf"
+    },
+    {
+      "bald_information_value": 0.007226190952102196,
+      "candidate_id": "cand_1_10221130",
+      "canonical_smiles": "Cc1nc(CN)[nH]c1-c1ccc2c(c1)CCCO2",
+      "epistemic_confidence": "L1",
+      "launch_script": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/launch/launch-n10-validate-cand_1_10221130.sh",
+      "lock_geometry_score": 37.83387455418648,
+      "sdf": "campaigns/glp1r_aleniglipron/gpu_dispatch_population/sdf/cand_1_10221130.sdf"
+    }
+  ],
+  "generated_at_utc": "2026-05-25T07:20:12.024192+00:00",
+  "lock_positive_only": true,
+  "profiles": "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_top100_full_pgx.parquet",
+  "protocol": "ccns_5phase",
+  "replicas": 10,
+  "schema_version": "PRISM.gpu_dispatch.tripartite.v1"
+}

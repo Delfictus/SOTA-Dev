@@ -1,0 +1,16 @@
+{
+  "schema_version": "PRISM.population_variant_grid_generation_report.v1",
+  "generated_at_utc": "2026-05-25T07:03:08.065753+00:00",
+  "variant_count": 22,
+  "tier_counts": {
+    "1": 7,
+    "2": 2,
+    "3": 13
+  },
+  "md_simulated_count": 2,
+  "projected_count": 20,
+  "no_structural_effect_count": 1,
+  "manifest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/variant_perturbation_manifest.json",
+  "grid_dir": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/variant_grids",
+  "status": "PASS"
+}

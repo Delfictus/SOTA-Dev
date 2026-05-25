@@ -1,0 +1,26 @@
+{
+  "schema_version": "PRISM.epoch018.execution_report.v1",
+  "generated_at_utc": "2026-05-25T07:23:26.299647+00:00",
+  "training_command_completed_line": "gflownet_training_complete epoch1_tb_loss=386.332764 epoch200_tb_loss=99.285980 reward_mean=4.202512->2.862081 top_reward_seen=46.212383 unique_smiles=11479 dot_smiles_count=0 top_anchor_share=0.000781 validation_status=WARN_REVIEW model=/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_policy_v3_population_consensus.pt",
+  "training_process_exit_code_observed": 120,
+  "training_exit_note": "Training emitted gflownet_training_complete and wrote model/checkpoint, then process exited 120 from ignored unraisable-hook cleanup; metrics retained with WARN_REVIEW status.",
+  "completed_epochs": 200,
+  "validation_status": "WARN_REVIEW",
+  "unique_smiles": 11479,
+  "dot_smiles_count": 0,
+  "top_reward_seen": 46.212383,
+  "last_lock_positive_rate": "lock_positive_rate epoch=200 lock_geo_positive=0/64 lock_proj_gt_05=64/64",
+  "policy_path": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_policy_v3_population_consensus.pt",
+  "checkpoint_0200": ".scratch/checkpoints/epoch018_population/gflownet_epoch_0200.pt",
+  "sampling": {
+    "top500": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_500_population_consensus.parquet",
+    "top100": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_population_consensus.parquet",
+    "summary": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_raw_policy_samples_summary.json"
+  },
+  "pgx_full_landscape_report": "campaigns/glp1r_aleniglipron/pgx_full_landscape_report.json",
+  "cross_scaffold_report": "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/cross_scaffold_population_report.json",
+  "known_gate_failures": [
+    "Training validation_status=WARN_REVIEW because reward_mean decreased and lock-positive training batches stayed low.",
+    "Cross-scaffold gate failed: n_scaffolds_positive_ge_2=0 in population cross-screen report."
+  ]
+}

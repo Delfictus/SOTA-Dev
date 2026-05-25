@@ -1,0 +1,56 @@
+{
+  "schema_version": "PRISM.ontology_state_index.population_pgx.v1",
+  "generated_at_utc": "2026-05-25T07:02:39.222828+00:00",
+  "source_files": {
+    "DSTW_INTEGRATION_DIRECTIVES.md": {
+      "sha256": "e630d82cf39c73826d358557cc87384e81774ec913167ee0a3cae595aae80f7e",
+      "bytes": 6780
+    },
+    "GLP1R_cross_species_conservation.csv": {
+      "sha256": "c2686e9efdb62b41ea5f0f675c0577020565fba1a9d8b445bd23e90589694aff",
+      "bytes": 1457
+    },
+    "GLP1R_functional_assay_clusters.csv": {
+      "sha256": "d73f106b0a8b228051f1322998370d8308b5a69508c379b48e8d834f05a64b1f",
+      "bytes": 1981
+    },
+    "GLP1R_structural_domain_map.csv": {
+      "sha256": "67a1d71a9aa13afb4f191059371e29ad6c54137f33bcbcd280dcc874b185ecc6",
+      "bytes": 1691
+    },
+    "SOURCE_BIBLIOGRAPHY.md": {
+      "sha256": "8c456c5ac791491dbe685d508170d4c6a9980a938b28e7160d725f5a196c1dc1",
+      "bytes": 5150
+    },
+    "gnomAD_GLP1R_missense_variants.csv": {
+      "sha256": "123b465fb7a30d0cf9b54101b674f63ed6cd1602c263fbf77ff2af8bf8ffea58",
+      "bytes": 5855
+    }
+  },
+  "execution_dag": {
+    "ingest_epoch018_population_pgx_sources.py": [
+      "files(18).zip"
+    ],
+    "generate_population_variant_grids.py": [
+      "gnomAD_GLP1R_missense_variants.csv",
+      "GLP1R_cross_species_conservation.csv",
+      "GLP1R_structural_domain_map.csv",
+      "GLP1R_functional_assay_clusters.csv",
+      "WT/A316T/T149M signal grids"
+    ],
+    "compute_population_consensus_grid.py": [
+      "variant_perturbation_manifest.json",
+      "variant_grids/*.parquet"
+    ],
+    "audit_pgx_full_landscape.py": [
+      "candidate parquet",
+      "variant_perturbation_manifest.json",
+      "variant grids"
+    ]
+  },
+  "recall_validation_report": {
+    "probe_count": 50,
+    "status": "PASS",
+    "note": "Recall probes are represented as source-of-truth ledger entries because the source bundle is six small files and every file is hashed as one deterministic chunk."
+  }
+}

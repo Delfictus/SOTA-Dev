@@ -1,43 +1,43 @@
 {
   "package": "PRISM_TRACK_A_GFLOWNET_V1_INFERENCE",
   "phase": "2_multi_temperature_sampling",
-  "generated_at_utc": "2026-05-25T01:48:43Z",
+  "generated_at_utc": "2026-05-25T07:18:44Z",
   "total_trajectories": 10000,
   "valid_generation_rate": 1.0,
-  "unique_smiles": 7480,
+  "unique_smiles": 7561,
   "action_space_size": 76493,
-  "top_anchor_share": 0.0397,
+  "top_anchor_share": 0.1826,
   "regime_breakdown": [
     {
-      "name": "exploitation",
+      "name": "T0p1",
       "temperature": 0.1,
       "samples": 2000
     },
     {
-      "name": "focused",
+      "name": "T0p5",
       "temperature": 0.5,
       "samples": 2000
     },
     {
-      "name": "balanced",
+      "name": "T1",
       "temperature": 1.0,
       "samples": 2000
     },
     {
-      "name": "exploration",
+      "name": "T2",
       "temperature": 2.0,
       "samples": 2000
     },
     {
-      "name": "near_random",
+      "name": "T5",
       "temperature": 5.0,
       "samples": 2000
     }
   ],
-  "wall_seconds": 24.8,
-  "oracle_ranked_unique_smiles": 7480,
-  "biased_pool_count": 7480,
+  "wall_seconds": 383.9,
+  "oracle_ranked_unique_smiles": 7561,
+  "biased_pool_count": 126,
   "biased_lock_threshold": 0.5,
-  "top500_min_reward": 36.54200490115956,
-  "top500_max_reward": 67.10585941048511
+  "top500_min_reward": 7.06455489088182,
+  "top500_max_reward": 46.212384714260466
 }

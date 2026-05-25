@@ -1,0 +1,234 @@
+{
+  "schema_version": "PRISM.ontology_ingestion.population_pgx.v1",
+  "generated_at_utc": "2026-05-25T07:02:39.222828+00:00",
+  "source_zip": "/home/diddy/Downloads/files(18).zip",
+  "source_zip_sha256": "e72f7146c4b947cddd6176029b035220b78c0a4e79a4fd29169bc4c62e99b0a9",
+  "source_dir": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source",
+  "ingestion_status": "ONTOLOGY_INGESTION_COMPLETE",
+  "ingestion_coverage_report": {
+    "total_chunks": 6,
+    "verified_hashes": 6,
+    "missing_chunks": 0,
+    "duplicate_chunks": 0
+  },
+  "chunks": [
+    {
+      "chunk_id": "EPOCH018_SOURCE_001_DSTW_INTEGRATION_DIRECTIVES.md",
+      "start_offset": 0,
+      "end_offset": 6780,
+      "token_estimate": 1688,
+      "sha256": "e630d82cf39c73826d358557cc87384e81774ec913167ee0a3cae595aae80f7e",
+      "byte_length": 6780,
+      "files": [
+        "DSTW_INTEGRATION_DIRECTIVES.md"
+      ],
+      "entities": [],
+      "claims": [],
+      "directives": [],
+      "runtime_outputs": [],
+      "errors": [],
+      "telemetry": [],
+      "open_questions": [],
+      "contradictions": []
+    },
+    {
+      "chunk_id": "EPOCH018_SOURCE_002_GLP1R_cross_species_conservation.csv",
+      "start_offset": 0,
+      "end_offset": 1457,
+      "token_estimate": 364,
+      "sha256": "c2686e9efdb62b41ea5f0f675c0577020565fba1a9d8b445bd23e90589694aff",
+      "byte_length": 1457,
+      "files": [
+        "GLP1R_cross_species_conservation.csv"
+      ],
+      "entities": [
+        "residue_position",
+        "human_aa",
+        "nhp_aa",
+        "rat_aa",
+        "mouse_aa",
+        "dog_aa",
+        "conservation_score",
+        "pocket_contact",
+        "allosteric_relevance",
+        "note"
+      ],
+      "claims": [],
+      "directives": [],
+      "runtime_outputs": [],
+      "errors": [],
+      "telemetry": [
+        {
+          "row_count": 23
+        }
+      ],
+      "open_questions": [],
+      "contradictions": []
+    },
+    {
+      "chunk_id": "EPOCH018_SOURCE_003_GLP1R_functional_assay_clusters.csv",
+      "start_offset": 0,
+      "end_offset": 1981,
+      "token_estimate": 495,
+      "sha256": "d73f106b0a8b228051f1322998370d8308b5a69508c379b48e8d834f05a64b1f",
+      "byte_length": 1981,
+      "files": [
+        "GLP1R_functional_assay_clusters.csv"
+      ],
+      "entities": [
+        "rsid",
+        "hgvs_protein",
+        "residue_position",
+        "gao_cluster",
+        "cluster_description",
+        "camp_emax_pct_wt",
+        "camp_potency_fold_shift",
+        "barr2_emax_pct_wt",
+        "erk_emax_pct_wt",
+        "ca2_emax_pct_wt",
+        "surface_expression_pct_wt",
+        "total_expression_pct_wt",
+        "phenotype_score",
+        "source"
+      ],
+      "claims": [],
+      "directives": [],
+      "runtime_outputs": [],
+      "errors": [],
+      "telemetry": [
+        {
+          "row_count": 12
+        }
+      ],
+      "open_questions": [],
+      "contradictions": []
+    },
+    {
+      "chunk_id": "EPOCH018_SOURCE_004_GLP1R_structural_domain_map.csv",
+      "start_offset": 0,
+      "end_offset": 1691,
+      "token_estimate": 422,
+      "sha256": "67a1d71a9aa13afb4f191059371e29ad6c54137f33bcbcd280dcc874b185ecc6",
+      "byte_length": 1691,
+      "files": [
+        "GLP1R_structural_domain_map.csv"
+      ],
+      "entities": [
+        "domain_name",
+        "domain_type",
+        "residue_start",
+        "residue_end",
+        "ballesteros_weinstein_start",
+        "structural_role",
+        "pdb_6xox_resolved",
+        "notes"
+      ],
+      "claims": [],
+      "directives": [],
+      "runtime_outputs": [],
+      "errors": [],
+      "telemetry": [
+        {
+          "row_count": 17
+        }
+      ],
+      "open_questions": [],
+      "contradictions": []
+    },
+    {
+      "chunk_id": "EPOCH018_SOURCE_005_SOURCE_BIBLIOGRAPHY.md",
+      "start_offset": 0,
+      "end_offset": 5150,
+      "token_estimate": 1280,
+      "sha256": "8c456c5ac791491dbe685d508170d4c6a9980a938b28e7160d725f5a196c1dc1",
+      "byte_length": 5150,
+      "files": [
+        "SOURCE_BIBLIOGRAPHY.md"
+      ],
+      "entities": [],
+      "claims": [],
+      "directives": [],
+      "runtime_outputs": [],
+      "errors": [],
+      "telemetry": [],
+      "open_questions": [],
+      "contradictions": []
+    },
+    {
+      "chunk_id": "EPOCH018_SOURCE_006_gnomAD_GLP1R_missense_variants.csv",
+      "start_offset": 0,
+      "end_offset": 5855,
+      "token_estimate": 1463,
+      "sha256": "123b465fb7a30d0cf9b54101b674f63ed6cd1602c263fbf77ff2af8bf8ffea58",
+      "byte_length": 5855,
+      "files": [
+        "gnomAD_GLP1R_missense_variants.csv"
+      ],
+      "entities": [
+        "rsid",
+        "hgvs_protein",
+        "residue_position",
+        "wt_residue",
+        "mut_residue",
+        "maf_global",
+        "maf_european",
+        "maf_african",
+        "maf_east_asian",
+        "maf_south_asian",
+        "maf_latino",
+        "gnomad_version",
+        "functional_camp",
+        "functional_barr2",
+        "functional_erk",
+        "functional_ca2",
+        "functional_binding",
+        "functional_surface_expression",
+        "functional_source",
+        "clinical_association",
+        "pdb_chain_residue_6xox"
+      ],
+      "claims": [],
+      "directives": [],
+      "runtime_outputs": [],
+      "errors": [],
+      "telemetry": [
+        {
+          "row_count": 22
+        }
+      ],
+      "open_questions": [],
+      "contradictions": []
+    }
+  ],
+  "temporal_epoch_graph": {
+    "EPOCH_017": "two-variant PGx parity-calibrated screen active",
+    "EPOCH_018_V3": "population PGx source bundle ingested and supersedes two-variant-only scope"
+  },
+  "contradiction_graph": [
+    {
+      "claim_a": "Directive table lists A316T as Tier 2 example and prose states 1.5% carrier frequency.",
+      "claim_b": "CSV source has A316T maf_global=0.0076, which makes it Tier 2 by rule and not Tier 1.",
+      "conflict_type": "source_value_vs_directive_example",
+      "resolution_status": "resolved_to_csv_and_tier_rule",
+      "superseding_claim": "Tiering is computed from supplied CSV MAF fields.",
+      "evidence": [
+        "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/gnomAD_GLP1R_missense_variants.csv"
+      ]
+    }
+  ],
+  "source_of_truth_ledger": {
+    "variant_tiering": {
+      "current_source_of_truth": "gnomAD_GLP1R_missense_variants.csv maf_global with directive thresholds",
+      "confidence": "L5"
+    },
+    "functional_annotations": {
+      "current_source_of_truth": "supplied functional assay and bibliography CSV/MD files",
+      "confidence": "L5_artifact_ingested"
+    }
+  },
+  "tier_counts_from_csv": {
+    "tier1": 7,
+    "tier2": 2,
+    "tier3": 13
+  }
+}

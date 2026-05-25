@@ -66,7 +66,7 @@
   "valid_action_count": 76493,
   "batch_size": 64,
   "warm_start_epochs": 32,
-  "tb_epochs": 500,
+  "tb_epochs": 200,
   "learning_rate": 0.001,
   "log_z_learning_rate": 0.01,
   "learning_rate_floor": 1e-05,
@@ -77,13 +77,14 @@
   "policy_aux_weight": 0.0,
   "diversity_beta": 0.5,
   "max_trajectory_steps": 5,
-  "reward_version": "v2_tripartite",
+  "reward_version": "v3_population_consensus",
   "lock_directional_bias_alpha": 2.0,
   "lock_reaching_synthon_boost": 2.0,
   "lock_geo_intrinsic_bonus": 0.0,
+  "consensus_bonus_weight": 2.0,
   "lock_mask": "campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json",
-  "signal_grid": "signal_grid_variance_channel.parquet",
-  "shear_stress": "shear_stress_field.parquet",
+  "signal_grid": "campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_population_consensus.parquet",
+  "shear_stress": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.parquet",
   "rust_oracle_reward_authority": true,
   "uses_pyg_batch": true,
   "dense_adjacency": false,
@@ -100,9 +101,9 @@
       "campaigns/glp1r_aleniglipron/track_a_generative/conformers/benchmark_ORFORGLIPRON_LY3502970.sdf": "87e4402de20453d0321e6f06803fffde6710f6bdc0001a5da3b5ddd72406cd74"
     },
     "anchors": "042742f9e1847e5b70bb191b5fa6fa2684ba2e470362ba814ddc16f908951874",
-    "survivors": "80834c84283594a817ba8c782eefd55e3edd52105a264d2be1fa1f8a084207de",
+    "survivors": "9ea2f24902a09015a537d0768d77007b567b917cba3b030b100d8a2f4c6bb07b",
     "residue_phase": "0b4c2dfb367b66b917b82527c3b55e87c00d598c15c7ae7eeb3e9b7e2aa0498f",
     "interferometric": "03d7d1fd0bfc144a3db8d3e3c3731e12aad4a8f1e085f8dd2169d06672b93e54"
   },
-  "generated_at_utc": "2026-05-25T05:20:30.597488+00:00"
+  "generated_at_utc": "2026-05-25T07:04:55.623982+00:00"
 }

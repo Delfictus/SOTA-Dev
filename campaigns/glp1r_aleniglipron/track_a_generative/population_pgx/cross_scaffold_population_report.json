@@ -1,0 +1,15 @@
+{
+  "candidate_count": 100,
+  "evidence_class": "PROJECTED_PROXY_NO_REDOCK",
+  "generated_at_utc": "2026-05-25T07:20:01.380999+00:00",
+  "input": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_500_population_consensus.parquet",
+  "lock_mask": "campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json",
+  "n_scaffolds_positive_ge_2": 0,
+  "note": "This file preserves execution plumbing. L5 cross-scaffold evidence still requires candidate placement in each scaffold context before promotion.",
+  "output": "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_top100_cross_scaffold_population.parquet",
+  "scaffold_pool": [
+    "campaigns/glp1r_aleniglipron/track_a_generative/conformers"
+  ],
+  "schema_version": "PRISM.cross_scaffold_screen.v1",
+  "signal_grid": "campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_population_consensus.parquet"
+}
