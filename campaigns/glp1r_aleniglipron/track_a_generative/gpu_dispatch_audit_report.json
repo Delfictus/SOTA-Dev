@@ -1,0 +1,48 @@
+{
+  "corrected_script_count": 3,
+  "dispatch_count": 3,
+  "dispatch_dir": "campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch",
+  "dispatch_ready_count": 3,
+  "dispatches": [
+    {
+      "bald_information_value": 0.056108499749957894,
+      "candidate_id": "cand_015_bccda098",
+      "corrected_script": "campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch_corrected/launch-n10-validate-cand_015_bccda098.sh",
+      "dispatch_ready": true,
+      "engine_ok": true,
+      "original_script": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch/launch-n10-validate-cand_015_bccda098.sh",
+      "priority_class": "STANDARD",
+      "sdf_exists": true,
+      "syntax_ok": true
+    },
+    {
+      "bald_information_value": 0.052687778785976525,
+      "candidate_id": "cand_040_331e0d6e",
+      "corrected_script": "campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch_corrected/launch-n10-validate-cand_040_331e0d6e.sh",
+      "dispatch_ready": true,
+      "engine_ok": true,
+      "original_script": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch/launch-n10-validate-cand_040_331e0d6e.sh",
+      "priority_class": "STANDARD",
+      "sdf_exists": true,
+      "syntax_ok": true
+    },
+    {
+      "bald_information_value": 0.04663737559200675,
+      "candidate_id": "cand_021_cd2c6bd2",
+      "corrected_script": "campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch_corrected/launch-n10-validate-cand_021_cd2c6bd2.sh",
+      "dispatch_ready": true,
+      "engine_ok": true,
+      "original_script": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/launch/launch-n10-validate-cand_021_cd2c6bd2.sh",
+      "priority_class": "STANDARD",
+      "sdf_exists": true,
+      "syntax_ok": true
+    }
+  ],
+  "engine": "demo/nhs_rt_full",
+  "generated_at_utc": "2026-05-25T05:22:06.018961+00:00",
+  "high_priority_count": 0,
+  "manifest": "campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch_manifest_epoch016.json",
+  "note": "HIGH priority uses BALD information value >= 0.50; lower values are reported honestly as STANDARD.",
+  "schema_version": "PRISM.gpu_dispatch_audit.v1",
+  "status": "PASS"
+}

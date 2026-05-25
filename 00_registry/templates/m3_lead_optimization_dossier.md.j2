@@ -16,7 +16,19 @@ The Track A GFlowNet policy generated and ranked candidates against the PRISM-FO
 - oral descriptor pass: `{{ oral_pass }}/{{ audited_candidates }}`
 - top-100 unique SMILES: `{{ top100_unique_smiles }}`
 
-## 2. V-Space Navigation
+## 2. Epoch 016 Execution Status
+
+The Epoch 016 production training command path is implemented and passed a one-epoch functional smoke test, but the local terminal harness terminated longer CPU-bound training processes before the 500-epoch target could complete.
+
+| execution metric | value |
+|---|---:|
+| training status | `{{ epoch016_training_status }}` |
+| observed completed epochs | {{ epoch016_completed_epochs }}/{{ epoch016_target_epochs }} |
+| failure mode | `{{ epoch016_failure_mode }}` |
+
+Execution report: `{{ epoch016_report_path }}`
+
+## 3. V-Space Navigation
 
 The nominal Enamine REAL design space was treated as a dendritic combinatorial search problem. SMARTS reaction grammar reduced the executable search to the rule-compatible subset before Z-matrix torsional scoring.
 
@@ -28,7 +40,7 @@ The nominal Enamine REAL design space was treated as a dendritic combinatorial s
 | shard count | {{ shard_count }} |
 | completed local shards | {{ completed_shards }} |
 
-## 3. Tripartite Bias Scoring
+## 4. Tripartite Bias Scoring
 
 The Rust oracle now reports the corrected residue-mask lock fields needed for tripartite biased-agonism scoring:
 
@@ -51,7 +63,7 @@ The legacy Z-proxy was invalidated in Epoch 014 because it labeled pocket-floor 
 
 This remains a PROJECTED mechanical hypothesis unless GPU MD preserves lock occupancy across the CCNS protocol and receptor assays preserve the WT-normalized biased-signaling signature under matched receptor occupancy.
 
-## 4. Competitor Cross-Scaffold Recombination
+## 5. Competitor Cross-Scaffold Recombination
 
 PRISM-4D is no longer limited to the Aleniglipron core. The Track A GFlowNet initialization now supports a multi-scaffold pool:
 {% for name in scaffold_pool_names %}
@@ -67,7 +79,7 @@ Lineage:
 - scaffold O3A manifest: `{{ scaffold_manifest_path }}`
 - Phase 2D PGx manifest: `{{ phase2d_manifest_path }}`
 
-## 5. Top 10 Lead Candidates
+## 6. Top 10 Lead Candidates
 
 | rank | SMILES | reward | lock geometry | bias projection | confidence | pocket clash | complement | synthetic route |
 |---:|---|---:|---:|---:|---|---:|---:|---|
@@ -75,7 +87,7 @@ Lineage:
 | {{ row.rank }} | `{{ row.canonical_smiles }}` | {{ "%.3f"|format(row.reward) }} | {{ "%.3f"|format(row.lock_geometry_score) }} | {{ "%.3f"|format(row.bias_projection_score) }} | {{ row.epistemic_confidence }} | {{ "%.3f"|format(row.pi_clash_pocket) }} | {{ "%.3f"|format(row.pi_complement) }} | {{ row.synthetic_route }} |
 {% endfor %}
 
-## 6. PGx Resilience Status
+## 7. PGx Resilience Status
 
 PGx status: `{{ pgx_status }}`
 Epistemic class: `{{ pgx_epistemic_class }}`
@@ -91,7 +103,7 @@ Report: `{{ pgx_report_path }}`
 PGx cross-screening remains deferred until validated variant grids and a non-collapsing coordinate scoring path are available.
 {% endif %}
 
-## 7. GPU Dispatch Readiness
+## 8. GPU Dispatch Readiness
 
 GPU dispatch status: `{{ gpu_dispatch_status }}`
 
@@ -106,14 +118,14 @@ Dispatch audit: `{{ gpu_dispatch_report_path }}`
 
 These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
 
-## 8. Falsification Gates
+## 9. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 9. Lineage
+## 10. Lineage
 
 - policy checkpoint: `{{ policy_path }}`
 - top-100 candidates: `{{ top100_path }}`

@@ -1,6 +1,6 @@
 # BALD Thermodynamic AI Specification
 
-Generated: `2026-05-25T04:49:34.680728+00:00`
+Generated: `2026-05-25T05:22:08.926344+00:00`
 
 ## System Architecture
 

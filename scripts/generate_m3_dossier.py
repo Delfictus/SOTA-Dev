@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tripartite-profiles", type=Path, default=TRACK_A / "gflownet_top_50_tripartite_profiles.parquet")
     parser.add_argument("--medchem-audit", type=Path, default=TRACK_A / "gflownet_medchem_audit.parquet")
     parser.add_argument("--candidate-audit", type=Path, default=TRACK_A / "gflownet_candidate_audit.json")
+    parser.add_argument("--training-report", type=Path, default=TRACK_A / "epoch016_execution_report.json")
     parser.add_argument("--pgx-report", type=Path, default=TRACK_A / "gflownet_top_100_pgx_screened_report.json")
     parser.add_argument("--gpu-dispatch-report", type=Path, default=TRACK_A / "gpu_dispatch_audit_report.json")
     parser.add_argument("--plan", type=Path, default=TRACK_A / "vspace_38b_dendritic_plan.json")
@@ -253,6 +254,25 @@ def gpu_dispatch_context(path: Path) -> dict[str, object]:
     }
 
 
+def training_context(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {
+            "epoch016_training_status": "not_run",
+            "epoch016_completed_epochs": 0,
+            "epoch016_target_epochs": 500,
+            "epoch016_failure_mode": "unreported",
+            "epoch016_report_path": path.as_posix(),
+        }
+    report = load_json(path)
+    return {
+        "epoch016_training_status": str(report.get("status", "unknown")),
+        "epoch016_completed_epochs": integer(report.get("completed_epochs_observed")),
+        "epoch016_target_epochs": integer(report.get("target_epochs"), 500),
+        "epoch016_failure_mode": str(report.get("failure_mode", "none")),
+        "epoch016_report_path": path.as_posix(),
+    }
+
+
 def render(args: argparse.Namespace) -> str:
     if args.candidates is not None:
         args.top100 = args.candidates
@@ -289,6 +309,7 @@ def render(args: argparse.Namespace) -> str:
     context.update(scaffold_context(args.competitor_scaffold_manifest))
     context.update(variant_grid_context(args.phase2d_manifest))
     context.update(tripartite_context(args.tripartite_profiles))
+    context.update(training_context(args.training_report))
     context.update(pgx_context(args.pgx_report))
     context.update(gpu_dispatch_context(args.gpu_dispatch_report))
     env = Environment(

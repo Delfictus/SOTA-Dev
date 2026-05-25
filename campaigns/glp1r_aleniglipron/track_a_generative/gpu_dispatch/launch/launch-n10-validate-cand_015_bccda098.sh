@@ -8,9 +8,9 @@
 set -euo pipefail
 
 CANDIDATE_ID="cand_015_bccda098"
-SDF_PATH="/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/sdf/cand_015_bccda098.sdf"
+SDF_PATH="campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/sdf/cand_015_bccda098.sdf"
 REPLICAS="10"
-PROTOCOL="ccns_5phase_validation"
+PROTOCOL="ccns_5phase"
 
 echo "gpu_validation_start candidate=${CANDIDATE_ID} replicas=${REPLICAS} sdf=${SDF_PATH} protocol=${PROTOCOL}"
 python3 scripts/run_ccns_validation_md.py \

@@ -1,0 +1,23 @@
+{
+  "completed_epochs_observed": 9,
+  "dot_smiles_max_observed": 0,
+  "failure_mode": "external_process_termination_without_python_traceback",
+  "generated_at_utc": "2026-05-25T05:22:52.925406+00:00",
+  "gpu_dispatch_status": "PASS",
+  "intervention_status": "not_reached_epoch_200_due_external_termination",
+  "lock_geo_positive_last_observed": "0/64",
+  "lock_geo_positive_max_observed_per_batch": 3,
+  "notes": [
+    "No sealing or packaging was performed.",
+    "The one-epoch training smoke completed and wrote a policy checkpoint.",
+    "Longer CPU-bound training processes were repeatedly killed externally; no Python traceback or topology regression was emitted.",
+    "Downstream screening was executed against the current corrected-lock candidate set rather than fabricated Epoch 016 production outputs."
+  ],
+  "pgx_status": "WT_PROJECTION_COLLAPSE",
+  "schema_version": "PRISM.epoch016_execution_report.v1",
+  "smoke_policy_path": ".scratch/gflownet_policy_epoch016_smoke.pt",
+  "status": "PARTIAL_EXECUTION_BLOCKED_BY_TERMINAL_HARNESS",
+  "target_epochs": 500,
+  "training_command_path_validated": true,
+  "variant_grid_status": "PASS"
+}
