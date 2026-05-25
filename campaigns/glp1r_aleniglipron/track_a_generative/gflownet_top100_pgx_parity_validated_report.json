@@ -1,0 +1,54 @@
+{
+  "schema_version": "PRISM.pgx_resilience_cross_screen.v3",
+  "epistemic_class": "DERIVED_L3_PARITY_CALIBRATED",
+  "diagnostic_status": "PGX_PARITY_CALIBRATED",
+  "wt_parity_status": "CALIBRATED_PARITY_CONFIRMED",
+  "scoring_method": "native_wt_reward_plus_relative_field_liability_delta_v1",
+  "raw_projection_method": "coordinate_field_projection_v1",
+  "variant_grid_source": "observed_embedded_n80_materialized",
+  "generated_at_utc": "2026-05-25T05:46:39.407141+00:00",
+  "candidate_count": 100,
+  "wt_condition": "glp1r_6XOX_WT",
+  "variants": {
+    "A316T": {
+      "condition_id": "glp1r_6XOX_A316T",
+      "classification_counts": {
+        "VULNERABLE": 100
+      },
+      "lock_preserved_count": 0,
+      "mean_resilience": 0.370731638324727,
+      "mean_delta_liability": 62.87,
+      "mean_raw_projection_reward": 1e-08
+    },
+    "T149M": {
+      "condition_id": "glp1r_6XOX_T149M",
+      "classification_counts": {
+        "VULNERABLE": 100
+      },
+      "lock_preserved_count": 0,
+      "mean_resilience": 0.37066635214324267,
+      "mean_delta_liability": 62.88,
+      "mean_raw_projection_reward": 1e-08
+    }
+  },
+  "worst_case_mean": 0.3698752900664866,
+  "worst_case_min": 0.3306997483836347,
+  "immune_or_tolerant_worst_case": 0,
+  "wt_projection_nonzero": 0,
+  "wt_atoms_scored_mean": 127.64,
+  "native_reward_mean": 6.734581157136858,
+  "wt_projection_reward_mean": 1e-08,
+  "wt_liability_mean": 63.26,
+  "liability_scale": 63.26,
+  "output": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_parity_validated.parquet",
+  "wt_grid": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+  "variant_grids": {
+    "A316T": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_A316T.parquet",
+    "T149M": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel_T149M.parquet"
+  },
+  "notes": [
+    "Epoch 016 absolute coordinate-field projection collapsed WT reward and remains preserved as negative evidence.",
+    "This repaired screen uses native Rust/stored WT reward as the denominator and only uses N80 fields for variant-vs-WT liability deltas.",
+    "The resulting PGx ratios are derived resilience estimates, not new receptor-candidate MD observations."
+  ]
+}

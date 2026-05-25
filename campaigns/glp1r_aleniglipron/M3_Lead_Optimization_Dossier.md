@@ -2,7 +2,7 @@
 
 Campaign: `glp1r_aleniglipron`
 
-Generated: `2026-05-25T05:23:39Z`
+Generated: `2026-05-25T05:47:56Z`
 
 Epistemic scope: this dossier reports PROJECTED candidate prioritization from the PRISM Track A policy and Rust oracle. Candidates remain subject to synthesis, purification, receptor signaling, internalization, and washout falsification gates.
 
@@ -96,16 +96,44 @@ Lineage:
 
 ## 7. PGx Resilience Status
 
-PGx status: `WT_PROJECTION_COLLAPSE`
-Epistemic class: `PROJECTED`
-Report: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_screened_report.json`
+PGx status: `PGX_PARITY_CALIBRATED`
+Epistemic class: `DERIVED_L3_PARITY_CALIBRATED`
+Scoring method: `native_wt_reward_plus_relative_field_liability_delta_v1`
+WT parity status: `CALIBRATED_PARITY_CONFIRMED`
+Report: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_parity_validated_report.json`
+
+WT projection parity repair:
+
+| parity field | value |
+|---|---|
+| parity status | `CALIBRATED_PARITY_CONFIRMED` |
+| raw projection status | `WT_PROJECTION_COLLAPSE` |
+| repair method | `native_wt_reward_plus_relative_field_liability_delta_v1` |
+| projection/native ratio mean | `1.4159388232784845e-09` |
+| calibrated WT self-parity ratio | `1.0` |
+| report | `campaigns/glp1r_aleniglipron/track_a_generative/wt_projection_parity_report.json` |
 
 | variant | condition | lock preserved | class counts |
 |---|---|---:|---|
-| A316T | `glp1r_6XOX_A316T` | 0 | `{'INDETERMINATE': 100}` |
-| T149M | `glp1r_6XOX_T149M` | 0 | `{'INDETERMINATE': 100}` |
+| A316T | `glp1r_6XOX_A316T` | 0 | `{'VULNERABLE': 100}` |
+| T149M | `glp1r_6XOX_T149M` | 0 | `{'VULNERABLE': 100}` |
 
-## 8. GPU Dispatch Readiness
+## 8. Autonomous Infrastructure Status
+
+Cloudflare and autonomous thermodynamic AI infrastructure were checked without redeploying the Worker.
+
+| infrastructure component | status |
+|---|---|
+| overall | `OK` |
+| Worker HTTP | `ACCESS_PROTECTED` |
+| D1 candidate table | `OK` |
+| Vectorize index | `OK` |
+| R2 tensor bucket | `OK` |
+| Queue | `OK` |
+
+Infrastructure report: `campaigns/glp1r_aleniglipron/track_a_generative/autonomous_infra_status_epoch017.json`
+
+## 9. GPU Dispatch Readiness
 
 GPU dispatch status: `PASS`
 
@@ -120,17 +148,17 @@ Dispatch audit: `campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch_au
 
 These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
 
-## 9. Falsification Gates
+## 10. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 10. Lineage
+## 11. Lineage
 
 - policy checkpoint: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_policy_v1.pt`
-- top-100 candidates: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_screened.parquet`
+- top-100 candidates: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_pgx_parity_validated.parquet`
 - tripartite profiles: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_50_tripartite_profiles_epoch016.parquet`
 - medchem audit: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_medchem_audit_epoch016.parquet`
 - candidate audit: `campaigns/glp1r_aleniglipron/track_a_generative/gflownet_audit_epoch016.json`

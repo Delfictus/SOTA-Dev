@@ -35,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-audit", type=Path, default=TRACK_A / "gflownet_candidate_audit.json")
     parser.add_argument("--training-report", type=Path, default=TRACK_A / "epoch016_execution_report.json")
     parser.add_argument("--pgx-report", type=Path, default=TRACK_A / "gflownet_top_100_pgx_screened_report.json")
+    parser.add_argument("--parity-report", type=Path, default=TRACK_A / "wt_projection_parity_report.json")
+    parser.add_argument("--infra-report", type=Path, default=TRACK_A / "autonomous_infra_status_epoch017.json")
     parser.add_argument("--gpu-dispatch-report", type=Path, default=TRACK_A / "gpu_dispatch_audit_report.json")
     parser.add_argument("--plan", type=Path, default=TRACK_A / "vspace_38b_dendritic_plan.json")
     parser.add_argument("--competitor-scaffold-manifest", type=Path, default=TRACK_A / "competitor_scaffold_o3a_manifest.json")
@@ -208,6 +210,8 @@ def pgx_context(path: Path) -> dict[str, object]:
             "pgx_worst_case_mean": None,
             "pgx_immune_or_tolerant": 0,
             "pgx_epistemic_class": "UNAVAILABLE",
+            "pgx_scoring_method": "unavailable",
+            "pgx_wt_parity_status": "unavailable",
         }
     report = load_json(path)
     variants = []
@@ -230,6 +234,63 @@ def pgx_context(path: Path) -> dict[str, object]:
         "pgx_worst_case_mean": report.get("worst_case_mean"),
         "pgx_immune_or_tolerant": integer(report.get("immune_or_tolerant_worst_case")),
         "pgx_epistemic_class": str(report.get("epistemic_class", "PROJECTED")),
+        "pgx_scoring_method": str(report.get("scoring_method", "unknown")),
+        "pgx_wt_parity_status": str(report.get("wt_parity_status", "unreported")),
+    }
+
+
+def parity_context(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {
+            "parity_status": "unavailable",
+            "parity_report_path": path.as_posix(),
+            "parity_repair_method": "unavailable",
+            "parity_raw_projection_status": "unavailable",
+            "parity_projection_native_ratio_mean": None,
+            "parity_calibrated_ratio_mean": None,
+        }
+    report = load_json(path)
+    return {
+        "parity_status": str(report.get("wt_parity_status", "unknown")),
+        "parity_report_path": path.as_posix(),
+        "parity_repair_method": str(report.get("repair_method", "unknown")),
+        "parity_raw_projection_status": str(report.get("raw_projection_status", "unknown")),
+        "parity_projection_native_ratio_mean": report.get("projection_vs_native_ratio_mean"),
+        "parity_calibrated_ratio_mean": report.get("calibrated_wt_self_parity_ratio_mean"),
+    }
+
+
+def infra_context(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {
+            "infra_status": "unavailable",
+            "infra_report_path": path.as_posix(),
+            "infra_worker_status": "unavailable",
+            "infra_d1_status": "unavailable",
+            "infra_vectorize_status": "unavailable",
+            "infra_r2_status": "unavailable",
+            "infra_queue_status": "unavailable",
+        }
+    report = load_json(path)
+    raw_checks = report.get("checks", [])
+    checks = cast(list[JsonObject], raw_checks if isinstance(raw_checks, list) else [])
+
+    def check_status(name: str) -> str:
+        for item in checks:
+            if item.get("name") == name:
+                return str(item.get("status", "UNKNOWN"))
+        return "unreported"
+
+    return {
+        "infra_status": str(report.get("overall_status", "unknown")),
+        "infra_report_path": path.as_posix(),
+        "infra_worker_status": check_status("worker_http"),
+        "infra_d1_status": check_status("d1_candidate_count"),
+        "infra_vectorize_status": check_status("vectorize_info"),
+        "infra_r2_status": check_status("r2_bucket_list")
+        if check_status("r2_bucket_list") != "unreported"
+        else check_status("r2_object_list"),
+        "infra_queue_status": check_status("queue_list"),
     }
 
 
@@ -311,6 +372,8 @@ def render(args: argparse.Namespace) -> str:
     context.update(tripartite_context(args.tripartite_profiles))
     context.update(training_context(args.training_report))
     context.update(pgx_context(args.pgx_report))
+    context.update(parity_context(args.parity_report))
+    context.update(infra_context(args.infra_report))
     context.update(gpu_dispatch_context(args.gpu_dispatch_report))
     env = Environment(
         loader=FileSystemLoader(str(args.template.parent)),

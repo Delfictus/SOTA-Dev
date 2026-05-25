@@ -1,0 +1,127 @@
+{
+  "schema_version": "PRISM.wt_projection_parity.v1",
+  "generated_at_utc": "2026-05-25T05:48:24.834574+00:00",
+  "wt_parity_status": "CALIBRATED_PARITY_CONFIRMED",
+  "native_authority": "rust_survivor_lookup_oracle",
+  "raw_projection_status": "WT_PROJECTION_COLLAPSE",
+  "repair_method": "native_wt_reward_plus_relative_field_liability_delta_v1",
+  "candidate_count": 10,
+  "candidate_source": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_cross_scaffold.parquet",
+  "survivor_corpus": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_full_scale.parquet",
+  "signal_grid": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+  "grid_mapping": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_0_manual_emulation/grid_coordinate_mapping.json",
+  "lock_mask": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json",
+  "oracle_binary": "target/release/oracle_scorer",
+  "stored_vs_rust_ratio_mean": 1.0,
+  "projection_vs_native_ratio_mean": 1.4159388232784845e-09,
+  "calibrated_wt_self_parity_ratio_mean": 1.0,
+  "projection_nonzero_count": 0,
+  "projection_liability_mean": 64.75,
+  "comparisons": [
+    {
+      "idx": 0,
+      "canonical_smiles": "Cc1ccc2[nH]cc(CC[C@@H]3CNCC3=O)c2c1",
+      "stored_reward": 8.784273456152063,
+      "rust_reward": 8.784273456152063,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 1.1383980758245298e-09,
+      "projection_liability": 66.0
+    },
+    {
+      "idx": 1,
+      "canonical_smiles": "CCCc1ncc2c(n1)CCC[C@@H]2N",
+      "stored_reward": 7.660768840237998,
+      "rust_reward": 7.660768840237998,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 1.3053520095104879e-09,
+      "projection_liability": 63.5
+    },
+    {
+      "idx": 2,
+      "canonical_smiles": "Cc1nn(Cc2ccccc2)c(Cl)c1C(N)=O",
+      "stored_reward": 8.028311448774655,
+      "rust_reward": 8.028311448774655,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 1.2455919359638545e-09,
+      "projection_liability": 60.0
+    },
+    {
+      "idx": 3,
+      "canonical_smiles": "C[C@H]1C[C@H](CC2CCC(N)CC2)CC[C@@H]1N",
+      "stored_reward": 7.905940592259599,
+      "rust_reward": 7.905940592259599,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 1.2648716346022907e-09,
+      "projection_liability": 70.0
+    },
+    {
+      "idx": 4,
+      "canonical_smiles": "CC(C)(C)CCOc1ccc(F)cc1C#CCN",
+      "stored_reward": 5.777909971318928,
+      "rust_reward": 5.777909971318928,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 1.730729632278658e-09,
+      "projection_liability": 67.0
+    },
+    {
+      "idx": 5,
+      "canonical_smiles": "Cc1ccn2c(CCN)c(C(C)(C)C)nc2c1",
+      "stored_reward": 10.251926113374154,
+      "rust_reward": 10.251926113374154,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 9.754264602974944e-10,
+      "projection_liability": 65.5
+    },
+    {
+      "idx": 6,
+      "canonical_smiles": "Cc1cc(C(=O)CN2CCCC2)ccc1F",
+      "stored_reward": 9.656368665834625,
+      "rust_reward": 9.656368665834625,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 1.0355859791663904e-09,
+      "projection_liability": 64.0
+    },
+    {
+      "idx": 7,
+      "canonical_smiles": "Nc1cc(C(=O)NCC2CC2)ccc1Cl",
+      "stored_reward": 5.614132335083774,
+      "rust_reward": 5.614132335083774,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 1.7812191453892369e-09,
+      "projection_liability": 62.0
+    },
+    {
+      "idx": 8,
+      "canonical_smiles": "Cc1nn(C)c2c1[C@@H](N)C[C@H](C)C2",
+      "stored_reward": 10.104866468111052,
+      "rust_reward": 10.104866468111052,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 9.896221817040344e-10,
+      "projection_liability": 63.0
+    },
+    {
+      "idx": 9,
+      "canonical_smiles": "CC(C)[C@H]1CNc2cccc3c2N1CCN3C",
+      "stored_reward": 3.7138946608485917,
+      "rust_reward": 3.7138946608485917,
+      "projection_reward": 1e-08,
+      "stored_rust_ratio": 1.0,
+      "projection_native_ratio": 2.692591178047869e-09,
+      "projection_liability": 66.5
+    }
+  ],
+  "notes": [
+    "The Rust oracle CLI uses --batch/--rewards/--survivors and does not consume signal-grid parquet directly.",
+    "Raw coordinate projection remains useful only as a relative variant field-liability comparator.",
+    "WT self-parity is repaired by construction because native WT reward is retained as the denominator."
+  ]
+}

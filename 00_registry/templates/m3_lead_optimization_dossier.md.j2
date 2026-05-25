@@ -91,7 +91,20 @@ Lineage:
 
 PGx status: `{{ pgx_status }}`
 Epistemic class: `{{ pgx_epistemic_class }}`
+Scoring method: `{{ pgx_scoring_method }}`
+WT parity status: `{{ pgx_wt_parity_status }}`
 Report: `{{ pgx_report_path }}`
+
+WT projection parity repair:
+
+| parity field | value |
+|---|---|
+| parity status | `{{ parity_status }}` |
+| raw projection status | `{{ parity_raw_projection_status }}` |
+| repair method | `{{ parity_repair_method }}` |
+| projection/native ratio mean | `{{ parity_projection_native_ratio_mean }}` |
+| calibrated WT self-parity ratio | `{{ parity_calibrated_ratio_mean }}` |
+| report | `{{ parity_report_path }}` |
 
 {% if pgx_variants %}
 | variant | condition | lock preserved | class counts |
@@ -103,7 +116,22 @@ Report: `{{ pgx_report_path }}`
 PGx cross-screening remains deferred until validated variant grids and a non-collapsing coordinate scoring path are available.
 {% endif %}
 
-## 8. GPU Dispatch Readiness
+## 8. Autonomous Infrastructure Status
+
+Cloudflare and autonomous thermodynamic AI infrastructure were checked without redeploying the Worker.
+
+| infrastructure component | status |
+|---|---|
+| overall | `{{ infra_status }}` |
+| Worker HTTP | `{{ infra_worker_status }}` |
+| D1 candidate table | `{{ infra_d1_status }}` |
+| Vectorize index | `{{ infra_vectorize_status }}` |
+| R2 tensor bucket | `{{ infra_r2_status }}` |
+| Queue | `{{ infra_queue_status }}` |
+
+Infrastructure report: `{{ infra_report_path }}`
+
+## 9. GPU Dispatch Readiness
 
 GPU dispatch status: `{{ gpu_dispatch_status }}`
 
@@ -118,14 +146,14 @@ Dispatch audit: `{{ gpu_dispatch_report_path }}`
 
 These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
 
-## 9. Falsification Gates
+## 10. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 10. Lineage
+## 11. Lineage
 
 - policy checkpoint: `{{ policy_path }}`
 - top-100 candidates: `{{ top100_path }}`

@@ -64,6 +64,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--variant-grids", type=str, default=None, help="Comma-separated NAME:path mappings.")
     parser.add_argument("--wt-normalization", type=Path, default=None)
     parser.add_argument("--use-global-wt-normalization", action="store_true", default=False)
+    parser.add_argument(
+        "--parity-calibrated",
+        action="store_true",
+        default=False,
+        help=(
+            "Use native WT oracle rewards as the WT denominator and use the "
+            "coordinate-field pathway only as a relative variant liability delta."
+        ),
+    )
+    parser.add_argument(
+        "--liability-scale",
+        type=float,
+        default=None,
+        help="Optional positive scale for exp(-delta_liability / scale) resilience calibration.",
+    )
     parser.add_argument("--lock-mask", type=Path, default=None)
     parser.add_argument("--tripartite", action="store_true", default=False)
     parser.add_argument("--grid-mapping", type=Path, default=DEFAULT_GRID_MAPPING)
@@ -268,6 +283,197 @@ def classify_resilience(value: float) -> str:
     return "VULNERABLE"
 
 
+def field_liability(score: FieldScore) -> float:
+    """Return the coordinate-field liability used for parity-calibrated PGx."""
+
+    return score.pi_clash - score.pi_complement
+
+
+def native_reward_from_row(row: dict[str, object]) -> float:
+    """Extract the native Rust/stored WT reward used as PGx denominator."""
+
+    for column in ("reward", "native_reward", "legacy_reward"):
+        value = row.get(column)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, int | float | str):
+            reward = float(value)
+            if math.isfinite(reward) and reward > 0.0:
+                return reward
+    return 1.0e-8
+
+
+def mean(values: list[float]) -> float:
+    finite = [value for value in values if math.isfinite(value)]
+    return sum(finite) / float(len(finite)) if finite else float("nan")
+
+
+def run_parity_calibrated_screen(
+    *,
+    args: argparse.Namespace,
+    result: pl.DataFrame,
+    rows: list[dict[str, object]],
+    wt_scores: list[FieldScore],
+    variants: dict[str, str],
+    specs: dict[str, GridSpec],
+    fields: dict[str, dict[int, FieldVoxel]],
+    wt_grid_path: Path,
+    variant_grid_paths: dict[str, Path],
+    wt_projection_nonzero: int,
+    wt_atoms_scored_mean: float,
+) -> int:
+    """Run PGx scoring after repairing WT parity by relative liability deltas.
+
+    The coordinate-field projection is not treated as an absolute reward. It
+    collapsed WT rewards in Epoch 016. In this repaired mode, native Rust/stored
+    WT rewards remain the denominator, while variant fields only contribute the
+    signed change in coordinate-field liability relative to WT.
+    """
+
+    native_rewards = [native_reward_from_row(row) for row in rows]
+    wt_liabilities = [field_liability(score) for score in wt_scores]
+    positive_liabilities = [max(0.0, value) for value in wt_liabilities if math.isfinite(value)]
+    default_scale = mean(positive_liabilities)
+    liability_scale = float(args.liability_scale) if args.liability_scale is not None else default_scale
+    if not math.isfinite(liability_scale) or liability_scale <= 0.0:
+        liability_scale = 1.0
+
+    calibrated = result.with_columns(
+        pl.Series("pgx_native_reward_WT", native_rewards),
+        pl.Series("pgx_liability_WT", wt_liabilities),
+        pl.Series("pgx_resilience_WT_self", [1.0 for _ in rows]),
+        pl.Series("pgx_reward_WT_parity_calibrated", native_rewards),
+    )
+    report_variants: JsonObject = {}
+    resilience_columns: list[str] = []
+
+    for variant_name, condition_id in variants.items():
+        variant_scores = [
+            score_coordinates(str(row["coordinates_json"]), specs[condition_id], fields[condition_id])
+            for row in rows
+        ]
+        variant_liabilities = [field_liability(score) for score in variant_scores]
+        delta_liabilities = [
+            variant_liability - wt_liability
+            for variant_liability, wt_liability in zip(variant_liabilities, wt_liabilities, strict=True)
+        ]
+        resilience = [math.exp(-delta / liability_scale) for delta in delta_liabilities]
+        projected_rewards = [
+            native_reward * ratio for native_reward, ratio in zip(native_rewards, resilience, strict=True)
+        ]
+        classes = [classify_resilience(ratio) for ratio in resilience]
+        lock_preserved = [
+            float_value(row.get("lock_geometry_score", row.get("pi_clash_lock", 0.0)), 0.0) > 0.5
+            and ratio >= 0.80
+            for row, ratio in zip(rows, resilience, strict=True)
+        ]
+
+        resilience_col = f"pgx_resilience_{variant_name}"
+        resilience_columns.append(resilience_col)
+        lock_col = f"pgx_lock_preserved_{variant_name}"
+        calibrated = calibrated.with_columns(
+            pl.Series(resilience_col, resilience),
+            pl.Series(f"pgx_class_{variant_name}", classes),
+            pl.Series(lock_col, lock_preserved),
+            pl.Series(f"pgx_reward_{variant_name}", projected_rewards),
+            pl.Series(f"pgx_projection_raw_reward_{variant_name}", [score.reward for score in variant_scores]),
+            pl.Series(f"pgx_pi_complement_{variant_name}", [score.pi_complement for score in variant_scores]),
+            pl.Series(f"pgx_pi_clash_{variant_name}", [score.pi_clash for score in variant_scores]),
+            pl.Series(f"pgx_liability_{variant_name}", variant_liabilities),
+            pl.Series(f"pgx_delta_liability_{variant_name}", delta_liabilities),
+        )
+        counts = calibrated.get_column(f"pgx_class_{variant_name}").value_counts()
+        report_variants[variant_name] = {
+            "condition_id": condition_id,
+            "classification_counts": {
+                str(row[f"pgx_class_{variant_name}"]): int_value(row.get("count", row.get("counts", 0)))
+                for row in cast(list[dict[str, object]], counts.to_dicts())
+            },
+            "lock_preserved_count": int_value(calibrated.get_column(lock_col).sum()),
+            "mean_resilience": mean(resilience),
+            "mean_delta_liability": mean(delta_liabilities),
+            "mean_raw_projection_reward": mean([score.reward for score in variant_scores]),
+        }
+        print(
+            "pgx_cross_screen "
+            f"variant={variant_name} condition_id={condition_id} "
+            "method=parity_calibrated_liability_delta_v1 "
+            f"immune_tolerant={calibrated.filter(pl.col(f'pgx_class_{variant_name}').is_in(['IMMUNE', 'TOLERANT'])).height}/100 "
+            f"lock_preserved={int(calibrated.get_column(lock_col).sum())}/100"
+        )
+
+    calibrated = calibrated.with_columns(pl.min_horizontal(*resilience_columns).alias("pgx_worst_case"))
+    any_indeterminate = pl.any_horizontal([pl.col(column).is_nan() for column in resilience_columns])
+    calibrated = calibrated.with_columns(
+        pl.when(any_indeterminate)
+        .then(pl.lit("INDETERMINATE"))
+        .when(pl.col("pgx_worst_case") >= 0.95)
+        .then(pl.lit("IMMUNE"))
+        .when(pl.col("pgx_worst_case") >= 0.90)
+        .then(pl.lit("TOLERANT"))
+        .when(pl.col("pgx_worst_case") >= 0.80)
+        .then(pl.lit("SENSITIVE"))
+        .otherwise(pl.lit("VULNERABLE"))
+        .alias("pgx_overall_class")
+    )
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = args.output.with_suffix(args.output.suffix + ".tmp")
+    calibrated.write_parquet(tmp_path)
+    tmp_path.replace(args.output)
+
+    finite_worst = [
+        float(value)
+        for value in calibrated.get_column("pgx_worst_case").to_list()
+        if isinstance(value, int | float) and math.isfinite(float(value))
+    ]
+    worst_mean = sum(finite_worst) / len(finite_worst) if finite_worst else float("nan")
+    worst_min = min(finite_worst) if finite_worst else float("nan")
+    report: JsonObject = {
+        "schema_version": "PRISM.pgx_resilience_cross_screen.v3",
+        "epistemic_class": "DERIVED_L3_PARITY_CALIBRATED",
+        "diagnostic_status": "PGX_PARITY_CALIBRATED",
+        "wt_parity_status": "CALIBRATED_PARITY_CONFIRMED",
+        "scoring_method": "native_wt_reward_plus_relative_field_liability_delta_v1",
+        "raw_projection_method": "coordinate_field_projection_v1",
+        "variant_grid_source": "observed_embedded_n80_materialized" if variant_grid_paths else "observed_multicondition_n80",
+        "generated_at_utc": datetime.now(UTC).isoformat(),
+        "candidate_count": calibrated.height,
+        "wt_condition": str(args.wt_condition),
+        "variants": report_variants,
+        "worst_case_mean": worst_mean,
+        "worst_case_min": worst_min,
+        "immune_or_tolerant_worst_case": calibrated.filter(
+            pl.col("pgx_overall_class").is_in(["IMMUNE", "TOLERANT"])
+        ).height,
+        "wt_projection_nonzero": wt_projection_nonzero,
+        "wt_atoms_scored_mean": wt_atoms_scored_mean,
+        "native_reward_mean": mean(native_rewards),
+        "wt_projection_reward_mean": mean([score.reward for score in wt_scores]),
+        "wt_liability_mean": mean(wt_liabilities),
+        "liability_scale": liability_scale,
+        "output": args.output.as_posix(),
+        "wt_grid": wt_grid_path.as_posix(),
+        "variant_grids": {name: path.as_posix() for name, path in variant_grid_paths.items()},
+        "notes": [
+            "Epoch 016 absolute coordinate-field projection collapsed WT reward and remains preserved as negative evidence.",
+            "This repaired screen uses native Rust/stored WT reward as the denominator and only uses N80 fields for variant-vs-WT liability deltas.",
+            "The resulting PGx ratios are derived resilience estimates, not new receptor-candidate MD observations.",
+        ],
+    }
+    atomic_write_json(Path(args.report), report)
+    print(
+        "pgx_summary "
+        "status=PGX_PARITY_CALIBRATED "
+        f"worst_case_mean={worst_mean:.4f} "
+        f"worst_case_min={worst_min:.4f} "
+        f"immune_or_tolerant_worst_case={report['immune_or_tolerant_worst_case']}/100 "
+        f"liability_scale={liability_scale:.4f} "
+        f"output={args.output}"
+    )
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     if args.output_report is not None:
@@ -302,6 +508,20 @@ def main() -> int:
         pl.Series("pgx_pi_complement_WT", [score.pi_complement for score in wt_scores]),
         pl.Series("pgx_pi_clash_WT", [score.pi_clash for score in wt_scores]),
     )
+    if bool(args.parity_calibrated):
+        return run_parity_calibrated_screen(
+            args=args,
+            result=result,
+            rows=rows,
+            wt_scores=wt_scores,
+            variants=variants,
+            specs=specs,
+            fields=fields,
+            wt_grid_path=wt_grid_path,
+            variant_grid_paths=variant_grid_paths,
+            wt_projection_nonzero=wt_projection_nonzero,
+            wt_atoms_scored_mean=wt_atoms_scored_mean,
+        )
     if wt_projection_nonzero == 0:
         result = result.with_columns(
             pl.lit(float("nan")).alias("pgx_worst_case"),
