@@ -22,6 +22,8 @@ const DEFAULT_SURVIVORS: &str =
     "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_full_scale.parquet";
 const DEFAULT_LOCK_MASK: &str =
     "campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json";
+const DEFAULT_TRANSLATION_PATHWAY: &str =
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet";
 const COULOMBIC_INEFFICIENCY: f64 = 0.05;
 const FRAGMENT_CONTEXT_EXCLUSION_A: f64 = 2.32;
 
@@ -35,6 +37,7 @@ struct Config {
     signal_grid: PathBuf,
     grid_config: PathBuf,
     shear_stress: Option<PathBuf>,
+    translation_pathway: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -54,6 +57,7 @@ impl Default for Config {
             shear_stress: Some(PathBuf::from(
                 "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.parquet",
             )),
+            translation_pathway: Some(PathBuf::from(DEFAULT_TRANSLATION_PATHWAY)),
         }
     }
 }
@@ -111,6 +115,8 @@ struct RewardRow {
     lock_steric_volume_angstrom3: f64,
     cryptic_bonus: f64,
     consensus_complement_bonus: f64,
+    pathway_voxels: u64,
+    void_atom_count: u64,
     survival_tier: String,
     selected_dihedral_deg: f64,
     reward_components_json: String,
@@ -129,7 +135,7 @@ fn main() -> Result<()> {
         None => None,
     };
     if config.live_scoring {
-        let grid = LoadedSignalGrid::from_parquet(
+        let mut grid = LoadedSignalGrid::from_parquet(
             &config.signal_grid.display().to_string(),
             &config.grid_config.display().to_string(),
         )
@@ -140,6 +146,12 @@ fn main() -> Result<()> {
                 config.grid_config.display()
             )
         })?;
+        let pathway_voxels = match &config.translation_pathway {
+            Some(path) if path.exists() => grid
+                .add_activation_pathway_from_parquet(path)
+                .with_context(|| format!("load translation pathway {}", path.display()))?,
+            _ => 0,
+        };
         let shear_field = match &config.shear_stress {
             Some(path) => load_shear_field(path, &grid.condition_id)
                 .with_context(|| format!("load shear stress {}", path.display()))?,
@@ -153,17 +165,20 @@ fn main() -> Result<()> {
             .unwrap_or_default();
         let mut reward_rows = Vec::with_capacity(proposals.len());
         for proposal in proposals {
-            let positions = parse_coordinates_json(&proposal.coordinates_json).with_context(|| {
-                format!(
-                    "parse coordinates_json for trajectory={} smiles={}",
-                    proposal.trajectory_id, proposal.canonical_smiles
-                )
-            })?;
-            let score_positions = if proposal.score_atom_offset < positions.len() {
-                live_fragment_positions(&positions, proposal.score_atom_offset)
-            } else {
-                positions.clone()
-            };
+            let positions =
+                parse_coordinates_json(&proposal.coordinates_json).with_context(|| {
+                    format!(
+                        "parse coordinates_json for trajectory={} smiles={}",
+                        proposal.trajectory_id, proposal.canonical_smiles
+                    )
+                })?;
+            let score_positions = live_score_positions(&positions, proposal.score_atom_offset)
+                .with_context(|| {
+                    format!(
+                        "select live score atoms for trajectory={} smiles={}",
+                        proposal.trajectory_id, proposal.canonical_smiles
+                    )
+                })?;
             let score = score_molecule(&score_positions, &grid, &lock_voxels, &shear_field);
             reward_rows.push(reward_row_from_live_score(proposal, score));
         }
@@ -174,12 +189,13 @@ fn main() -> Result<()> {
             reward_rows.iter().map(|row| row.reward).sum::<f64>() / reward_rows.len() as f64
         };
         println!(
-            "oracle_scorer mode=live_signal_grid batch={} valid={} invalid=0 reward_mean={:.6} grid_condition={} field_voxels={} shear_voxels={} elapsed_ms={:.3} rewards={}",
+            "oracle_scorer mode=live_signal_grid batch={} valid={} invalid=0 reward_mean={:.6} grid_condition={} field_voxels={} pathway_voxels={} shear_voxels={} elapsed_ms={:.3} rewards={}",
             reward_rows.len(),
             reward_rows.len(),
             mean_reward,
             grid.condition_id,
             grid.field.len(),
+            pathway_voxels,
             shear_field.len(),
             start.elapsed().as_secs_f64() * 1000.0,
             config.rewards.display()
@@ -224,6 +240,8 @@ fn main() -> Result<()> {
                 lock_steric_volume_angstrom3: 0.0,
                 cryptic_bonus: 0.0,
                 consensus_complement_bonus: 0.0,
+                pathway_voxels: 0,
+                void_atom_count: 0,
                 survival_tier: "invalid_missing_survivor".to_owned(),
                 selected_dihedral_deg: f64::NAN,
                 reward_components_json: json!({
@@ -256,6 +274,8 @@ fn main() -> Result<()> {
             lock_steric_volume_angstrom3: reward.lock_steric_volume_angstrom3,
             cryptic_bonus: reward.cryptic_bonus,
             consensus_complement_bonus: reward.consensus_complement_bonus,
+            pathway_voxels: 0,
+            void_atom_count: 0,
             survival_tier: reward.survival_tier.clone(),
             selected_dihedral_deg: reward.selected_dihedral_deg,
             reward_components_json: json!({
@@ -318,7 +338,9 @@ fn parse_args() -> Result<Config> {
         match arg.as_str() {
             "--live-scoring" => config.live_scoring = true,
             "--batch" | "--input" => config.batch = PathBuf::from(value_after(&mut args, &arg)?),
-            "--rewards" | "--output" => config.rewards = PathBuf::from(value_after(&mut args, &arg)?),
+            "--rewards" | "--output" => {
+                config.rewards = PathBuf::from(value_after(&mut args, &arg)?)
+            }
             "--survivors" => {
                 config.survivors = PathBuf::from(value_after(&mut args, "--survivors")?)
             }
@@ -331,12 +353,27 @@ fn parse_args() -> Result<Config> {
             "--shear-stress" => {
                 config.shear_stress = Some(PathBuf::from(value_after(&mut args, "--shear-stress")?))
             }
+            "--no-shear-stress" => {
+                config.shear_stress = None;
+            }
+            "--translation-pathway" => {
+                config.translation_pathway = Some(PathBuf::from(value_after(
+                    &mut args,
+                    "--translation-pathway",
+                )?))
+            }
+            "--no-translation-pathway" => {
+                config.translation_pathway = None;
+            }
             "--lock-mask" => {
                 config.lock_mask = Some(PathBuf::from(value_after(&mut args, "--lock-mask")?))
             }
+            "--no-lock-mask" => {
+                config.lock_mask = None;
+            }
             "--help" | "-h" => {
                 println!(
-                    "oracle_scorer [--live-scoring --signal-grid <parquet> --grid-config <json> --shear-stress <parquet>] --batch|--input <parquet> --rewards|--output <parquet> [--survivors <parquet>] [--lock-mask <json>]"
+                    "oracle_scorer [--live-scoring --signal-grid <parquet> --grid-config <json> --shear-stress <parquet>|--no-shear-stress --translation-pathway <parquet>|--no-translation-pathway] --batch|--input <parquet> --rewards|--output <parquet> [--survivors <parquet>] [--lock-mask <json>|--no-lock-mask]"
                 );
                 std::process::exit(0);
             }
@@ -373,7 +410,7 @@ fn load_batch(path: &Path) -> Result<Vec<Proposal>> {
         let anchors = string_column(&batch, "anchor_id")?;
         let smiles = string_column(&batch, "canonical_smiles")?;
         let coordinates = optional_string_column(&batch, "coordinates_json");
-        let offsets = optional_u64_column(&batch, "score_atom_offset");
+        let offsets = optional_u64_column(&batch, "score_atom_offset")?;
         for row_idx in 0..batch.num_rows() {
             proposals.push(Proposal {
                 trajectory_id: string_value(trajectory, row_idx)?,
@@ -383,11 +420,10 @@ fn load_batch(path: &Path) -> Result<Vec<Proposal>> {
                     .as_ref()
                     .and_then(|array| string_value(*array, row_idx).ok())
                     .unwrap_or_default(),
-                score_atom_offset: offsets
-                    .as_ref()
-                    .and_then(|array| optional_u64_value(*array, row_idx).ok().flatten())
-                    .and_then(|value| usize::try_from(value).ok())
-                    .unwrap_or(0),
+                score_atom_offset: match offsets {
+                    Some(array) => score_atom_offset_value(array, row_idx)?,
+                    None => 0,
+                },
             });
         }
     }
@@ -419,12 +455,8 @@ fn load_survivors(
                 .as_ref()
                 .and_then(|array| string_value(*array, row_idx).ok())
                 .unwrap_or_default();
-            let lock_proxy = bifurcate_clash(
-                &coordinates_json,
-                adjusted_pi_clash,
-                lock_mask,
-                phase_grid,
-            );
+            let lock_proxy =
+                bifurcate_clash(&coordinates_json, adjusted_pi_clash, lock_mask, phase_grid);
             survivors.push(SurvivorReward {
                 anchor_id: string_value(anchors, row_idx)?,
                 canonical_smiles: string_value(smiles, row_idx)?,
@@ -591,25 +623,31 @@ fn parse_coordinates_json(raw: &str) -> Result<Vec<(f64, f64, f64)>> {
     }
     let value: Value = serde_json::from_str(raw)?;
     if let Some(rows) = value.as_array() {
+        if rows.is_empty() {
+            return Err(anyhow!("coordinates_json contains zero atom coordinates"));
+        }
         if rows.iter().all(|row| row.as_array().is_some()) {
             let mut positions = Vec::with_capacity(rows.len());
             for row in rows {
-                let coords = row.as_array().ok_or_else(|| anyhow!("coordinate row is not an array"))?;
-                if coords.len() < 3 {
-                    return Err(anyhow!("coordinate row has fewer than 3 values"));
+                let coords = row
+                    .as_array()
+                    .ok_or_else(|| anyhow!("coordinate row is not an array"))?;
+                if coords.len() != 3 {
+                    return Err(anyhow!("coordinate row must contain exactly 3 values"));
                 }
-                positions.push((
-                    coords[0].as_f64().ok_or_else(|| anyhow!("x coordinate is not numeric"))?,
-                    coords[1].as_f64().ok_or_else(|| anyhow!("y coordinate is not numeric"))?,
-                    coords[2].as_f64().ok_or_else(|| anyhow!("z coordinate is not numeric"))?,
-                ));
+                let xyz = (
+                    finite_coordinate(&coords[0], "x")?,
+                    finite_coordinate(&coords[1], "y")?,
+                    finite_coordinate(&coords[2], "z")?,
+                );
+                positions.push(xyz);
             }
             return Ok(positions);
         }
         if rows.len() % 3 == 0 {
             let values = rows
                 .iter()
-                .map(|entry| entry.as_f64().ok_or_else(|| anyhow!("flat coordinate is not numeric")))
+                .map(|entry| finite_coordinate(entry, "flat"))
                 .collect::<Result<Vec<_>>>()?;
             let positions = values
                 .chunks_exact(3)
@@ -618,7 +656,46 @@ fn parse_coordinates_json(raw: &str) -> Result<Vec<(f64, f64, f64)>> {
             return Ok(positions);
         }
     }
-    Err(anyhow!("coordinates_json must be [[x,y,z],...] or a flat xyz array"))
+    Err(anyhow!(
+        "coordinates_json must be [[x,y,z],...] or a flat xyz array"
+    ))
+}
+
+fn finite_coordinate(value: &Value, label: &str) -> Result<f64> {
+    let coordinate = value
+        .as_f64()
+        .ok_or_else(|| anyhow!("{label} coordinate is not numeric"))?;
+    if !coordinate.is_finite() {
+        return Err(anyhow!("{label} coordinate is not finite"));
+    }
+    Ok(coordinate)
+}
+
+fn live_score_positions(
+    positions: &[(f64, f64, f64)],
+    score_atom_offset: usize,
+) -> Result<Vec<(f64, f64, f64)>> {
+    if positions.is_empty() {
+        return Err(anyhow!(
+            "live scoring requires at least one atom coordinate"
+        ));
+    }
+    if score_atom_offset == 0 {
+        return Ok(positions.to_vec());
+    }
+    if score_atom_offset >= positions.len() {
+        return Err(anyhow!(
+            "score_atom_offset {score_atom_offset} leaves no atoms to score in {} coordinates",
+            positions.len()
+        ));
+    }
+    let fragment_positions = live_fragment_positions(positions, score_atom_offset);
+    if fragment_positions.is_empty() {
+        return Err(anyhow!(
+            "score_atom_offset {score_atom_offset} produced zero fragment atoms after scaffold-context exclusion"
+        ));
+    }
+    Ok(fragment_positions)
 }
 
 fn live_fragment_positions(
@@ -636,10 +713,7 @@ fn live_fragment_positions(
         .collect()
 }
 
-fn min_distance_to_positions(
-    xyz: (f64, f64, f64),
-    positions: &[(f64, f64, f64)],
-) -> f64 {
+fn min_distance_to_positions(xyz: (f64, f64, f64), positions: &[(f64, f64, f64)]) -> f64 {
     positions
         .iter()
         .map(|other| {
@@ -675,6 +749,8 @@ fn reward_row_from_live_score(proposal: Proposal, score: MoleculeScore) -> Rewar
         lock_steric_volume_angstrom3: lock_volume,
         cryptic_bonus: score.cryptic_bonus,
         consensus_complement_bonus: score.consensus_bonus,
+        pathway_voxels: u64::from(score.pathway_voxels),
+        void_atom_count: u64::from(score.void_atom_count),
         survival_tier: "live_signal_grid".to_owned(),
         selected_dihedral_deg: 0.0,
         reward_components_json: json!({
@@ -791,10 +867,7 @@ fn bifurcate_clash(
                 "PHASE_RESOLVED".to_owned(),
             )
         } else if lock_atom_count > 0 {
-            (
-                [pi_clash_lock; 5],
-                "REPLICATED_AGGREGATE".to_owned(),
-            )
+            ([pi_clash_lock; 5], "REPLICATED_AGGREGATE".to_owned())
         } else {
             ([0.0; 5], "PHASE_RESOLVED".to_owned())
         };
@@ -873,8 +946,10 @@ fn optional_f64_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a Flo
     batch.column(idx).as_any().downcast_ref::<Float64Array>()
 }
 
-fn optional_u64_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a dyn Array> {
-    let idx = batch.schema().index_of(name).ok()?;
+fn optional_u64_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<Option<&'a dyn Array>> {
+    let Ok(idx) = batch.schema().index_of(name) else {
+        return Ok(None);
+    };
     let array = batch.column(idx).as_ref();
     if array.as_any().downcast_ref::<UInt64Array>().is_some()
         || array.as_any().downcast_ref::<UInt32Array>().is_some()
@@ -882,10 +957,12 @@ fn optional_u64_column<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a dyn
         || array.as_any().downcast_ref::<Int32Array>().is_some()
         || array.as_any().downcast_ref::<Float64Array>().is_some()
     {
-        Some(array)
-    } else {
-        None
+        return Ok(Some(array));
     }
+    Err(anyhow!(
+        "column {name} has unsupported u64-compatible type {:?}",
+        array.data_type()
+    ))
 }
 
 fn f64_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float64Array> {
@@ -946,11 +1023,31 @@ fn optional_u64_value(array: &dyn Array, row_idx: usize) -> Result<Option<u64>> 
     }
     if let Some(values) = array.as_any().downcast_ref::<Float64Array>() {
         let value = values.value(row_idx);
-        if value.is_finite() && value >= 0.0 {
-            return Ok(Some(value as u64));
+        if !value.is_finite() {
+            return Err(anyhow!(
+                "non-finite u64-compatible value at row {row_idx}: {value}"
+            ));
         }
+        if value < 0.0 {
+            return Err(anyhow!(
+                "negative u64-compatible value at row {row_idx}: {value}"
+            ));
+        }
+        if value.fract() != 0.0 {
+            return Err(anyhow!(
+                "fractional u64-compatible value at row {row_idx}: {value}"
+            ));
+        }
+        return Ok(Some(value as u64));
     }
     Ok(None)
+}
+
+fn score_atom_offset_value(array: &dyn Array, row_idx: usize) -> Result<usize> {
+    let Some(offset) = optional_u64_value(array, row_idx)? else {
+        return Ok(0);
+    };
+    usize::try_from(offset).map_err(|_| anyhow!("score_atom_offset is too large: {offset}"))
 }
 
 fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
@@ -988,6 +1085,8 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         Field::new("lock_steric_volume_angstrom3", DataType::Float64, false),
         Field::new("cryptic_bonus", DataType::Float64, false),
         Field::new("consensus_complement_bonus", DataType::Float64, false),
+        Field::new("pathway_voxels", DataType::UInt64, false),
+        Field::new("void_atom_count", DataType::UInt64, false),
         Field::new("survival_tier", DataType::Utf8, false),
         Field::new("selected_dihedral_deg", DataType::Float64, false),
         Field::new("reward_components_json", DataType::Utf8, false),
@@ -1115,6 +1214,16 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
                 .map(|row| row.consensus_complement_bonus)
                 .collect::<Vec<_>>(),
         )),
+        Arc::new(UInt64Array::from(
+            rows.iter()
+                .map(|row| row.pathway_voxels)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(UInt64Array::from(
+            rows.iter()
+                .map(|row| row.void_atom_count)
+                .collect::<Vec<_>>(),
+        )),
         Arc::new(StringArray::from(
             rows.iter()
                 .map(|row| row.survival_tier.as_str())
@@ -1148,4 +1257,80 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
     writer.write(&batch)?;
     writer.close()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_coordinates_rejects_empty_arrays() {
+        let error = parse_coordinates_json("[]").unwrap_err().to_string();
+        assert!(error.contains("zero atom coordinates"));
+    }
+
+    #[test]
+    fn parse_coordinates_rejects_short_nested_rows() {
+        let error = parse_coordinates_json("[[1.0, 2.0]]")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("exactly 3 values"));
+    }
+
+    #[test]
+    fn live_score_positions_rejects_offsets_without_score_atoms() {
+        let positions = vec![(0.0, 0.0, 0.0), (5.0, 0.0, 0.0)];
+
+        let equal_error = live_score_positions(&positions, positions.len())
+            .unwrap_err()
+            .to_string();
+        assert!(equal_error.contains("leaves no atoms to score"));
+
+        let greater_error = live_score_positions(&positions, positions.len() + 1)
+            .unwrap_err()
+            .to_string();
+        assert!(greater_error.contains("leaves no atoms to score"));
+    }
+
+    #[test]
+    fn score_atom_offset_rejects_negative_values() {
+        let offsets = Int64Array::from(vec![-1_i64]);
+
+        let error = score_atom_offset_value(&offsets, 0)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("negative u64-compatible value"));
+
+        let float_offsets = Float64Array::from(vec![-1.0_f64]);
+        let float_error = score_atom_offset_value(&float_offsets, 0)
+            .unwrap_err()
+            .to_string();
+        assert!(float_error.contains("negative u64-compatible value"));
+
+        let fractional_offsets = Float64Array::from(vec![1.5_f64]);
+        let fractional_error = score_atom_offset_value(&fractional_offsets, 0)
+            .unwrap_err()
+            .to_string();
+        assert!(fractional_error.contains("fractional u64-compatible value"));
+    }
+
+    #[test]
+    fn optional_u64_column_rejects_unsupported_present_columns() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "score_atom_offset",
+            DataType::Utf8,
+            false,
+        )]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![Arc::new(StringArray::from(vec!["not-an-offset"]))],
+        )
+        .expect("test record batch should be valid");
+
+        let error = optional_u64_column(&batch, "score_atom_offset")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unsupported u64-compatible type"));
+    }
 }

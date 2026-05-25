@@ -60,7 +60,12 @@ fn live_signal_grid_scores_complement_clash_lock_and_shear() {
     let lock_mask = HashSet::from([1_u64]);
     let shear = HashMap::from([(0_u64, 0.25), (1_u64, 0.75)]);
 
-    let score = score_molecule(&[(0.1, 0.1, 0.1), (1.1, 0.1, 0.1)], &grid, &lock_mask, &shear);
+    let score = score_molecule(
+        &[(0.1, 0.1, 0.1), (1.1, 0.1, 0.1)],
+        &grid,
+        &lock_mask,
+        &shear,
+    );
 
     assert_eq!(score.pi_complement, 2.0);
     assert_eq!(score.pi_clash_pocket, 0.0);
@@ -70,4 +75,28 @@ fn live_signal_grid_scores_complement_clash_lock_and_shear() {
     assert_eq!(score.sigma_shear, 1.0);
     assert!(score.reward < W_COMPLEMENT * 2.0 + 1.0 + 0.5);
     assert!(score.reward > -W_CLASH_POCKET);
+}
+
+#[test]
+fn live_signal_grid_marks_pathway_voxels_from_parquet_if_available() {
+    let pathway = std::path::Path::new(
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet",
+    );
+    if !pathway.exists() {
+        return;
+    }
+    let mut grid = LoadedSignalGrid {
+        field: HashMap::new(),
+        origin: [0.0, 0.0, 0.0],
+        spacing: 1.0,
+        dims: [1000, 1000, 1000],
+        condition_id: "glp1r_6XOX_WT".to_owned(),
+    };
+
+    let count = grid
+        .add_activation_pathway_from_parquet(pathway)
+        .expect("pathway parquet should be readable");
+
+    assert!(count > 0);
+    assert!(grid.field.values().any(|field| field.on_activation_pathway));
 }

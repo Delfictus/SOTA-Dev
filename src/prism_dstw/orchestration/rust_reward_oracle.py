@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import os
 import time
@@ -22,6 +23,7 @@ DEFAULT_SURVIVOR_CORPUS = Path(
     "campaigns/glp1r_aleniglipron/track_a_generative/"
     "vspace_survivors_full_scale.parquet"
 )
+FRAGMENT_CONTEXT_EXCLUSION_A = 2.32
 
 
 class RustOracleError(RuntimeError):
@@ -288,6 +290,8 @@ class SurvivorCorpusOracle:
             "lock_steric_volume_angstrom3",
             "cryptic_bonus",
             "consensus_complement_bonus",
+            "pathway_voxels",
+            "void_atom_count",
             "lock_phase_provenance",
             "survival_tier",
             "selected_dihedral_deg",
@@ -357,16 +361,38 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
     shear_stress: Path | None = Path(
         "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.parquet"
     )
+    translation_pathway: Path | None = Path(
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet"
+    )
     lock_mask: Path | None = Path("campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json")
 
     def prepare_batch(self, proposals: Sequence[OracleProposal]) -> pl.DataFrame:
         """Create a live-scoring batch with mandatory atom coordinates."""
 
-        missing = [proposal.trajectory_id for proposal in proposals if not proposal.coordinates_json]
-        if missing:
+        missing_or_invalid: list[str] = []
+        for proposal in proposals:
+            if not proposal.coordinates_json:
+                missing_or_invalid.append(proposal.trajectory_id)
+                continue
+            try:
+                positions = parse_live_coordinates_json(proposal.coordinates_json)
+            except RustOracleError:
+                missing_or_invalid.append(proposal.trajectory_id)
+                continue
+            try:
+                score_atom_offset = strict_score_atom_offset(proposal.score_atom_offset)
+            except RustOracleError:
+                missing_or_invalid.append(proposal.trajectory_id)
+                continue
+            try:
+                live_score_coordinate_count(positions, score_atom_offset)
+            except RustOracleError:
+                missing_or_invalid.append(proposal.trajectory_id)
+        if missing_or_invalid:
             raise RustOracleError(
-                "live signal-grid oracle requires coordinates_json for every proposal; "
-                f"missing={missing[:5]}"
+                "live signal-grid oracle requires non-empty finite coordinates_json and a "
+                "score_atom_offset that leaves at least one atom to score; "
+                f"invalid={missing_or_invalid[:5]}"
             )
         return super().prepare_batch(proposals)
 
@@ -381,6 +407,8 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
             raise RustOracleError(f"grid config not found: {self.grid_config}")
         if self.shear_stress is not None and not self.shear_stress.is_file():
             raise RustOracleError(f"shear stress field not found: {self.shear_stress}")
+        if self.translation_pathway is not None and not self.translation_pathway.is_file():
+            raise RustOracleError(f"translation pathway not found: {self.translation_pathway}")
         if self.lock_mask is not None and not self.lock_mask.is_file():
             raise RustOracleError(f"lock mask not found: {self.lock_mask}")
         if self.reward_path.exists():
@@ -420,14 +448,112 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
             *(
                 ["--shear-stress", str(self.shear_stress)]
                 if self.shear_stress is not None
-                else []
+                else ["--no-shear-stress"]
             ),
-            *(["--lock-mask", str(self.lock_mask)] if self.lock_mask is not None else []),
+            *(
+                ["--translation-pathway", str(self.translation_pathway)]
+                if self.translation_pathway is not None
+                else ["--no-translation-pathway"]
+            ),
+            *(["--lock-mask", str(self.lock_mask)] if self.lock_mask is not None else ["--no-lock-mask"]),
             *self.extra_args,
         ]
 
 
 BatchedRustOracle = SurvivorCorpusOracle
+
+
+def parse_live_coordinates_json(raw: str) -> list[tuple[float, float, float]]:
+    """Validate the coordinate payload accepted by live Rust scoring."""
+
+    try:
+        decoded: object = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RustOracleError(f"invalid coordinates_json: {exc}") from exc
+    if not isinstance(decoded, list) or len(decoded) == 0:
+        raise RustOracleError("coordinates_json must contain at least one coordinate")
+
+    positions: list[tuple[float, float, float]] = []
+    if all(isinstance(row, list) for row in decoded):
+        for row in decoded:
+            if not isinstance(row, list) or len(row) != 3:
+                raise RustOracleError("coordinate rows must contain exactly 3 values")
+            positions.append(
+                (
+                    finite_coordinate_value(row[0]),
+                    finite_coordinate_value(row[1]),
+                    finite_coordinate_value(row[2]),
+                )
+            )
+        return positions
+
+    if len(decoded) % 3 != 0:
+        raise RustOracleError("flat coordinates_json length must be divisible by 3")
+    values = [finite_coordinate_value(value) for value in decoded]
+    for index in range(0, len(values), 3):
+        positions.append((values[index], values[index + 1], values[index + 2]))
+    return positions
+
+
+def finite_coordinate_value(value: object) -> float:
+    """Return a finite float coordinate, rejecting bools and non-numeric values."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RustOracleError("coordinate value is not numeric")
+    coordinate = float(value)
+    if not math.isfinite(coordinate):
+        raise RustOracleError("coordinate value is not finite")
+    return coordinate
+
+
+def live_score_coordinate_count(
+    positions: Sequence[tuple[float, float, float]], score_atom_offset: object
+) -> int:
+    """Return the number of atoms Rust will score after scaffold-context exclusion."""
+
+    offset = strict_score_atom_offset(score_atom_offset)
+    if len(positions) == 0:
+        raise RustOracleError("live scoring requires at least one coordinate")
+    if offset == 0:
+        return len(positions)
+    if offset >= len(positions):
+        raise RustOracleError("score_atom_offset leaves no atoms to score")
+    scaffold = positions[:offset]
+    fragment_count = sum(
+        1
+        for xyz in positions[offset:]
+        if min_distance_to_live_coordinates(xyz, scaffold) > FRAGMENT_CONTEXT_EXCLUSION_A
+    )
+    if fragment_count == 0:
+        raise RustOracleError("score_atom_offset leaves no atoms after scaffold-context exclusion")
+    return fragment_count
+
+
+def min_distance_to_live_coordinates(
+    xyz: tuple[float, float, float], positions: Sequence[tuple[float, float, float]]
+) -> float:
+    """Mirror Rust live-fragment scaffold-context exclusion distance."""
+
+    return min(
+        math.sqrt(
+            (xyz[0] - other[0]) ** 2
+            + (xyz[1] - other[1]) ** 2
+            + (xyz[2] - other[2]) ** 2
+        )
+        for other in positions
+    )
+
+
+def strict_score_atom_offset(value: object) -> int:
+    """Parse score_atom_offset without truncation or bool coercion."""
+
+    if value is None:
+        return 0
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RustOracleError("score_atom_offset must be a non-negative integer")
+    if value < 0:
+        raise RustOracleError("score_atom_offset must be non-negative")
+    return value
 
 
 def proposals_from_rows(rows: pl.DataFrame, indices: Sequence[int]) -> list[OracleProposal]:
@@ -455,7 +581,7 @@ def proposals_from_rows(rows: pl.DataFrame, indices: Sequence[int]) -> list[Orac
                     if isinstance(row.get("coordinates_json"), str)
                     else None
                 ),
-                score_atom_offset=int(row.get("score_atom_offset") or 0),
+                score_atom_offset=strict_score_atom_offset(row.get("score_atom_offset")),
             )
         )
     return proposals

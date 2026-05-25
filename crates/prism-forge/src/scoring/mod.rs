@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Context, Result};
-use arrow_array::{Array, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray, UInt32Array, UInt64Array};
+use arrow_array::{
+    Array, BooleanArray, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray,
+    UInt32Array, UInt64Array,
+};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -43,6 +46,28 @@ pub struct VoxelField {
 }
 
 impl VoxelField {
+    fn pathway_void() -> Self {
+        Self {
+            complement: 0.0,
+            clash: 0.0,
+            raw_clash: 0.0,
+            cryptic_bonus: 0.0,
+            stable_occupied: false,
+            thermally_destabilized: false,
+            thermally_activated: false,
+            thermally_released: false,
+            coherence_score: 1.0,
+            coherence_factor: 1.0,
+            coherence_missing: false,
+            primary_residue_idx: None,
+            cold_mean: 0.0,
+            warm_mean: 0.0,
+            delta: 0.0,
+            consensus_complement_bonus: 0.0,
+            on_activation_pathway: true,
+        }
+    }
+
     pub fn classification(&self) -> VoxelClassification {
         if self.stable_occupied {
             VoxelClassification::StableOccupied
@@ -75,6 +100,7 @@ struct SignalGridRow {
     warm_mean: f64,
     delta: f64,
     consensus_bonus: f64,
+    on_activation_pathway: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -135,16 +161,35 @@ impl LoadedSignalGrid {
                 }
                 let voxel_idx = required_u64_value(&batch, "voxel_idx", row)?;
                 let class_raw = optional_string_value(&batch, "variance_class", row)?
-                    .or(optional_string_value(&batch, "variance_classification", row)?)
-                    .or(optional_string_value(&batch, "consensus_raw_variance_class", row)?)
+                    .or(optional_string_value(
+                        &batch,
+                        "variance_classification",
+                        row,
+                    )?)
+                    .or(optional_string_value(
+                        &batch,
+                        "consensus_raw_variance_class",
+                        row,
+                    )?)
                     .unwrap_or_else(|| "void".to_owned());
-                let cold_mean = optional_f64_value(&batch, "hit_count_cold_mean", row)?.unwrap_or(0.0);
-                let warm_mean = optional_f64_value(&batch, "hit_count_warm_mean", row)?.unwrap_or(0.0);
+                let cold_mean =
+                    optional_f64_value(&batch, "hit_count_cold_mean", row)?.unwrap_or(0.0);
+                let warm_mean =
+                    optional_f64_value(&batch, "hit_count_warm_mean", row)?.unwrap_or(0.0);
                 let delta = optional_f64_value(&batch, "hit_count_delta", row)?
                     .unwrap_or(warm_mean - cold_mean);
                 let consensus_bonus = optional_f64_value(&batch, "scaffold_consensus_bonus", row)?
-                    .or(optional_f64_value(&batch, "consensus_complement_bonus", row)?)
+                    .or(optional_f64_value(
+                        &batch,
+                        "consensus_complement_bonus",
+                        row,
+                    )?)
                     .unwrap_or(0.0);
+                let on_activation_pathway =
+                    optional_bool_value(&batch, "on_activation_pathway", row)?
+                        .or(optional_bool_value(&batch, "activation_pathway", row)?)
+                        .or(optional_bool_value(&batch, "pathway_voxel", row)?)
+                        .unwrap_or(false);
                 raw_rows.push(SignalGridRow {
                     voxel_idx,
                     class_raw,
@@ -152,6 +197,7 @@ impl LoadedSignalGrid {
                     warm_mean,
                     delta,
                     consensus_bonus,
+                    on_activation_pathway,
                 });
             }
         }
@@ -168,7 +214,8 @@ impl LoadedSignalGrid {
             let gain_delta = row.warm_mean - row.cold_mean;
             let release_delta = row.cold_mean - row.warm_mean;
             let complement = match classification {
-                VoxelClassification::ThermallyActivated | VoxelClassification::ThermallyReleased => 1.0,
+                VoxelClassification::ThermallyActivated
+                | VoxelClassification::ThermallyReleased => 1.0,
                 _ => 0.0,
             };
             let raw_clash = match classification {
@@ -193,6 +240,7 @@ impl LoadedSignalGrid {
                 && cryptic_bonus == 0.0
                 && row.cold_mean == 0.0
                 && row.warm_mean == 0.0
+                && !row.on_activation_pathway
             {
                 continue;
             }
@@ -220,7 +268,7 @@ impl LoadedSignalGrid {
                         row.warm_mean - row.cold_mean
                     },
                     consensus_complement_bonus: row.consensus_bonus,
-                    on_activation_pathway: false,
+                    on_activation_pathway: row.on_activation_pathway,
                 },
             );
         }
@@ -249,6 +297,18 @@ impl LoadedSignalGrid {
             return None;
         }
         Some((ix + iy * nx + iz * nx * ny) as u64)
+    }
+
+    pub fn add_activation_pathway_from_parquet(&mut self, path: &Path) -> Result<usize> {
+        let pathway_voxels = load_pathway_voxels(path, &self.condition_id)?;
+        let count = pathway_voxels.len();
+        for voxel_idx in pathway_voxels {
+            self.field
+                .entry(voxel_idx)
+                .and_modify(|field| field.on_activation_pathway = true)
+                .or_insert_with(VoxelField::pathway_void);
+        }
+        Ok(count)
     }
 }
 
@@ -299,9 +359,13 @@ pub fn score_molecule(
     lock_mask: &HashSet<u64>,
     shear_field: &HashMap<u64, f64>,
 ) -> MoleculeScore {
-    score_positions_with_field(atom_positions, &grid.field, |x, y, z| {
-        grid.map_to_voxel(x, y, z)
-    }, lock_mask, shear_field)
+    score_positions_with_field(
+        atom_positions,
+        &grid.field,
+        |x, y, z| grid.map_to_voxel(x, y, z),
+        lock_mask,
+        shear_field,
+    )
 }
 
 pub fn score_positions_with_field<F>(
@@ -373,8 +437,7 @@ where
     }
     result.occupied_lock_voxels = occupied_lock_voxels.into_iter().collect();
     result.occupied_lock_voxels.sort_unstable();
-    result.reward = W_COMPLEMENT * result.pi_complement
-        - W_CLASH_POCKET * result.pi_clash_pocket
+    result.reward = W_COMPLEMENT * result.pi_complement - W_CLASH_POCKET * result.pi_clash_pocket
         + W_LOCK_GEO * result.pi_clash_lock
         - W_SHEAR * (1.0 + result.sigma_shear).ln()
         + W_CONSENSUS * result.consensus_bonus
@@ -410,6 +473,29 @@ pub fn load_shear_field(path: &Path, condition_hint: &str) -> Result<HashMap<u64
         }
     }
     Ok(shear)
+}
+
+pub fn load_pathway_voxels(path: &Path, condition_hint: &str) -> Result<HashSet<u64>> {
+    if !path.exists() {
+        return Ok(HashSet::new());
+    }
+    let mut reader = parquet_reader(path)?;
+    let mut voxels = HashSet::new();
+    for batch in &mut reader {
+        let batch = batch?;
+        for row in 0..batch.num_rows() {
+            if let Some(condition) = optional_string_value(&batch, "condition_id", row)? {
+                if !condition_matches_hint(&condition, condition_hint) {
+                    continue;
+                }
+            }
+            if optional_bool_value(&batch, "voxel_in_bounds", row)?.is_some_and(|value| !value) {
+                continue;
+            }
+            voxels.insert(required_u64_value(&batch, "voxel_idx", row)?);
+        }
+    }
+    Ok(voxels)
 }
 
 fn collect_condition_ids(path: &Path) -> Result<BTreeSet<String>> {
@@ -453,8 +539,8 @@ fn condition_matches_hint(condition: &str, hint: &str) -> bool {
 }
 
 fn load_grid_geometry(path: &Path, condition_id: &str) -> Result<([f64; 3], f64, [usize; 3])> {
-    let payload: Value =
-        serde_json::from_reader(File::open(path)?).with_context(|| format!("parse {}", path.display()))?;
+    let payload: Value = serde_json::from_reader(File::open(path)?)
+        .with_context(|| format!("parse {}", path.display()))?;
     let conditions = payload
         .get("conditions")
         .and_then(Value::as_object)
@@ -482,7 +568,9 @@ fn load_grid_geometry(path: &Path, condition_id: &str) -> Result<([f64; 3], f64,
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("missing origin_xyz_angstrom for {geometry_key}"))?;
     if origin_values.len() != 3 {
-        return Err(anyhow!("origin_xyz_angstrom for {geometry_key} must have 3 values"));
+        return Err(anyhow!(
+            "origin_xyz_angstrom for {geometry_key} must have 3 values"
+        ));
     }
     let origin = [
         json_f64(&origin_values[0], "origin_x")?,
@@ -498,15 +586,26 @@ fn load_grid_geometry(path: &Path, condition_id: &str) -> Result<([f64; 3], f64,
         .and_then(Value::as_u64)
         .unwrap_or(96) as usize;
     let dims = [
-        condition.get("nx").and_then(Value::as_u64).unwrap_or(dim as u64) as usize,
-        condition.get("ny").and_then(Value::as_u64).unwrap_or(dim as u64) as usize,
-        condition.get("nz").and_then(Value::as_u64).unwrap_or(dim as u64) as usize,
+        condition
+            .get("nx")
+            .and_then(Value::as_u64)
+            .unwrap_or(dim as u64) as usize,
+        condition
+            .get("ny")
+            .and_then(Value::as_u64)
+            .unwrap_or(dim as u64) as usize,
+        condition
+            .get("nz")
+            .and_then(Value::as_u64)
+            .unwrap_or(dim as u64) as usize,
     ];
     Ok((origin, spacing, dims))
 }
 
 fn json_f64(value: &Value, name: &str) -> Result<f64> {
-    value.as_f64().ok_or_else(|| anyhow!("{name} must be a number"))
+    value
+        .as_f64()
+        .ok_or_else(|| anyhow!("{name} must be a number"))
 }
 
 fn parse_classification(value: &str) -> VoxelClassification {
@@ -561,7 +660,9 @@ fn quantile_nearest_optional(values: &mut [f64], q: f64) -> Option<f64> {
     finite.get(idx).copied()
 }
 
-fn parquet_reader(path: &Path) -> Result<impl Iterator<Item = std::result::Result<RecordBatch, arrow_schema::ArrowError>>> {
+fn parquet_reader(
+    path: &Path,
+) -> Result<impl Iterator<Item = std::result::Result<RecordBatch, arrow_schema::ArrowError>>> {
     let file = File::open(path)?;
     Ok(ParquetRecordBatchReaderBuilder::try_new(file)?.build()?)
 }
@@ -577,7 +678,10 @@ fn optional_string_value(batch: &RecordBatch, name: &str, row: usize) -> Result<
     if let Some(values) = array.as_any().downcast_ref::<StringArray>() {
         return Ok(Some(values.value(row).to_owned()));
     }
-    if let Some(values) = array.as_any().downcast_ref::<arrow_array::LargeStringArray>() {
+    if let Some(values) = array
+        .as_any()
+        .downcast_ref::<arrow_array::LargeStringArray>()
+    {
         return Ok(Some(values.value(row).to_owned()));
     }
     Ok(None)
@@ -593,6 +697,36 @@ fn optional_f64_value(batch: &RecordBatch, name: &str, row: usize) -> Result<Opt
     }
     if let Some(values) = array.as_any().downcast_ref::<Float64Array>() {
         return Ok(Some(values.value(row)));
+    }
+    Ok(None)
+}
+
+fn optional_bool_value(batch: &RecordBatch, name: &str, row: usize) -> Result<Option<bool>> {
+    let Ok(idx) = batch.schema().index_of(name) else {
+        return Ok(None);
+    };
+    let array = batch.column(idx);
+    if array.is_null(row) {
+        return Ok(None);
+    }
+    if let Some(values) = array.as_any().downcast_ref::<BooleanArray>() {
+        return Ok(Some(values.value(row)));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Float64Array>() {
+        let value = values.value(row);
+        return Ok(Some(value.is_finite() && value != 0.0));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<UInt64Array>() {
+        return Ok(Some(values.value(row) != 0));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<UInt32Array>() {
+        return Ok(Some(values.value(row) != 0));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Int64Array>() {
+        return Ok(Some(values.value(row) != 0));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Int32Array>() {
+        return Ok(Some(values.value(row) != 0));
     }
     Ok(None)
 }
