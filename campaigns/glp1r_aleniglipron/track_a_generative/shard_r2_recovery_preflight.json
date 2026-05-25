@@ -1,0 +1,32 @@
+{
+  "schema_version": "PRISM.shard_r2_recovery_preflight.v1",
+  "generated_at_utc": "2026-05-25T02:59:01.271013+00:00",
+  "shard_dir": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/fullscale_shards",
+  "shards": [
+    {
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/fullscale_shards/shard_0000.parquet",
+      "size_bytes": 17616990004,
+      "size_gb": 16.407
+    },
+    {
+      "path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/fullscale_shards/shard_0001.parquet",
+      "size_bytes": 19533387302,
+      "size_gb": 18.192
+    }
+  ],
+  "total_size_gb": 34.599,
+  "required_env": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_ENDPOINT_URL",
+    "AWS_REGION"
+  ],
+  "missing_env": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_ENDPOINT_URL",
+    "AWS_REGION"
+  ],
+  "r2_ready": false,
+  "destructive_actions_permitted": false
+}

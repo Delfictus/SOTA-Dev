@@ -1,0 +1,21 @@
+{
+  "schema_version": "PRISM.daemon_smoke_preflight.v1",
+  "generated_at_utc": "2026-05-25T02:59:18.878754+00:00",
+  "required_env": [
+    "CLOUDFLARE_API_URL",
+    "CF_ACCESS_CLIENT_ID",
+    "CF_ACCESS_CLIENT_SECRET"
+  ],
+  "missing_env": [
+    "CLOUDFLARE_API_URL",
+    "CF_ACCESS_CLIENT_ID",
+    "CF_ACCESS_CLIENT_SECRET"
+  ],
+  "required_files": [
+    "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_policy_v1.pt",
+    "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates.parquet"
+  ],
+  "missing_files": [],
+  "daemon_smoke_ready": false,
+  "bounded_mode_required": true
+}

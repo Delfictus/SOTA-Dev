@@ -1,0 +1,32 @@
+{
+  "schema_version": "PRISM.pgx_resilience_cross_screen.v1",
+  "epistemic_class": "PROJECTED",
+  "scoring_method": "coordinate_field_projection_v1",
+  "generated_at_utc": "2026-05-25T02:57:54.801636+00:00",
+  "candidate_count": 100,
+  "wt_condition": "glp1r_6XOX_WT",
+  "variants": {
+    "A316T": {
+      "condition_id": "glp1r_6XOX_A316T",
+      "classification_counts": {
+        "INDETERMINATE": 100
+      },
+      "lock_preserved_count": 0
+    },
+    "T149M": {
+      "condition_id": "glp1r_6XOX_T149M",
+      "classification_counts": {
+        "INDETERMINATE": 100
+      },
+      "lock_preserved_count": 0
+    }
+  },
+  "worst_case_mean": NaN,
+  "worst_case_min": NaN,
+  "immune_or_tolerant_worst_case": 0,
+  "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_pgx_screened.parquet",
+  "notes": [
+    "Scores are coordinate-field projections against the protocol-aware signal grid, not new PRISM-4D MD observations.",
+    "Candidate coordinates are reused from the O3A/Z-matrix survivor corpus."
+  ]
+}
