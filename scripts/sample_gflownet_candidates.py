@@ -126,7 +126,7 @@ def sample_once(
     entropy = -(sampling * sampling.clamp_min(1.0e-12).log()).sum(dim=1)
     row_idx = torch.arange(batch_size)
     policy_logprob = output.forward_log_probs[row_idx, actions_tensor]
-    backward_logprob = output.backward_log_probs[:, 0] if hasattr(output, "backward_log_probs") else None
+    backward_logprob = torch.full((batch_size,), float("nan"))
     proposals: list[dict[str, object]] = []
     for action_idx in actions_tensor.tolist():
         row = action_rows[int(action_idx)]
@@ -159,7 +159,7 @@ def sample_once(
         "actions":  actions_tensor.tolist(),
         "proposals": proposals,
         "logprob":  policy_logprob.tolist(),
-        "blogprob": backward_logprob.tolist() if backward_logprob is not None else [float("nan")] * batch_size,
+        "blogprob": backward_logprob.tolist(),
         "entropy":  entropy.tolist(),
     }
 
@@ -357,6 +357,7 @@ def main() -> int:
                     "u_pose_source":         str(proposal["u_pose_source"]),
                     "policy_logprob":       float(payload["logprob"][i]),
                     "backward_logprob":     float(payload["blogprob"][i]),
+                    "backward_logprob_status": "not_evaluated_one_step_sampler",
                     "trajectory_entropy":   float(payload["entropy"][i]),
                     "validity_status":      "valid",
                     "invalid_reason":       "",

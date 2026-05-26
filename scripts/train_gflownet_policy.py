@@ -2411,6 +2411,8 @@ def forward_policy(
     selected_graphs: Sequence[ScaffoldGraph] | None = None,
     state_graphs: Sequence[AssembledState] | None = None,
     forward_action_mask: Tensor | None = None,
+    backward_action_mask: Tensor | None = None,
+    backward_attachment_embeddings: Tensor | None = None,
 ) -> tuple[Any, Batch, Tensor]:
     if state_graphs is None:
         batch, exit_indices = clone_graph_batch(graph, batch_size, selected_graphs)
@@ -2448,7 +2450,16 @@ def forward_policy(
         if bool(dead_rows.any().item()):
             row_mask[dead_rows] = forward_mask[dead_rows]
         forward_mask = row_mask
-    backward_mask = torch.ones((batch_size, 1), dtype=torch.bool)
+    if backward_action_mask is None:
+        backward_mask = torch.ones((batch_size, 1), dtype=torch.bool)
+    else:
+        if backward_action_mask.ndim != 2 or int(backward_action_mask.shape[0]) != batch_size:
+            raise ValueError("backward_action_mask must have shape [batch_size, num_backward_actions]")
+        if backward_action_mask.dtype != torch.bool:
+            raise TypeError("backward_action_mask must have dtype torch.bool")
+        if not bool(backward_action_mask.any(dim=1).all().item()):
+            raise ValueError("backward_action_mask must leave at least one parent option per row")
+        backward_mask = backward_action_mask
     policy_kwargs: dict[str, Tensor] = {
         "x_base": cast(Tensor, batch.x_base),
         "x_phase": cast(Tensor, batch.x_phase),
@@ -2460,6 +2471,12 @@ def forward_policy(
         "forward_action_mask": forward_mask,
         "backward_action_mask": backward_mask,
     }
+    if backward_attachment_embeddings is not None:
+        if backward_attachment_embeddings.ndim != 3:
+            raise ValueError("backward_attachment_embeddings must have shape [batch, actions, embedding_dim]")
+        if backward_attachment_embeddings.shape[:2] != backward_mask.shape:
+            raise ValueError("backward_attachment_embeddings must match backward_action_mask batch/action dimensions")
+        policy_kwargs["backward_attachment_embeddings"] = backward_attachment_embeddings
     if isinstance(model, FieldConditionedDualChannelGFlowNetPolicy) and action_space.action_phase_features is not None:
         policy_kwargs["action_phase_features"] = action_space.action_phase_features
     if isinstance(model, FieldConditionedDualChannelGFlowNetPolicy) and action_space.action_base_features is not None:
@@ -2550,6 +2567,115 @@ def condition_states_for_step(
     return conditioned_states, call_count, tuple(shape_events)
 
 
+def model_max_backward_actions(model: torch.nn.Module) -> int:
+    """Read a policy's configured backward action capacity."""
+
+    value = getattr(model, "max_backward_actions", 8)
+    if isinstance(value, bool):
+        return 1
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 8
+    return max(1, parsed)
+
+
+def backward_policy_inputs_for_states(
+    states: Sequence[AssembledState],
+    action_space: ActionSpace,
+    *,
+    max_backward_actions: int,
+    anchor_embeddings: Tensor | None = None,
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Build attachment-conditioned backward candidates from actual product histories."""
+
+    if len(states) < 1:
+        raise ValueError("states must contain at least one product state")
+    if max_backward_actions < 1:
+        raise ValueError("max_backward_actions must be positive")
+    source_anchor_embeddings = action_space.anchor_embeddings if anchor_embeddings is None else anchor_embeddings
+    if source_anchor_embeddings.ndim != 2:
+        raise ValueError("anchor_embeddings must have shape [actions, embedding_dim]")
+    action_count = min(int(action_space.anchor_embeddings.shape[0]), int(source_anchor_embeddings.shape[0]))
+    if action_count < 1:
+        raise ValueError("action space must contain at least one action embedding")
+    embedding_dim = int(source_anchor_embeddings.shape[1])
+    candidate_width = min(max_backward_actions, max(1, min(action_count, max(2, max_backward_actions))))
+    device = source_anchor_embeddings.device
+    mask = torch.zeros((len(states), candidate_width), dtype=torch.bool, device=device)
+    target_indices = torch.zeros((len(states),), dtype=torch.long, device=device)
+    anchor_table = source_anchor_embeddings.to(dtype=torch.float32)
+    attachment_rows: list[Tensor] = []
+
+    for row_idx, state in enumerate(states):
+        history_actions = [
+            int(step.action_idx)
+            for step in reversed(state.history)
+            if 0 <= int(step.action_idx) < action_count
+        ]
+        target_action = state.last_growth_action_idx
+        if target_action is None or int(target_action) < 0 or int(target_action) >= action_count:
+            target_action = history_actions[0] if history_actions else 0
+        candidates: list[int] = [int(target_action)]
+        for action_idx in history_actions:
+            if action_idx not in candidates:
+                candidates.append(action_idx)
+            if len(candidates) >= candidate_width:
+                break
+        offset = 1
+        while len(candidates) < candidate_width:
+            candidate = (int(target_action) + offset) % action_count
+            offset += 1
+            if candidate in candidates:
+                if offset > action_count + candidate_width:
+                    break
+                continue
+            candidates.append(candidate)
+        if not candidates:
+            candidates.append(0)
+        selected = candidates[:candidate_width]
+        for col_idx, _action_idx in enumerate(selected):
+            mask[row_idx, col_idx] = True
+        candidate_tensor = torch.tensor(selected, dtype=torch.long, device=device)
+        attachment_rows.append(anchor_table.index_select(0, candidate_tensor))
+        target_indices[row_idx] = 0
+    attachment_embeddings = torch.stack(attachment_rows, dim=0)
+    return mask, attachment_embeddings, target_indices
+
+
+def current_policy_anchor_embeddings(model: torch.nn.Module, action_space: ActionSpace) -> Tensor:
+    """Return the policy's current learnable anchor basis when available."""
+
+    raw = getattr(model, "anchor_embeddings", None)
+    if isinstance(raw, Tensor) and raw.ndim == 2 and int(raw.shape[0]) == int(action_space.anchor_embeddings.shape[0]):
+        return raw
+    return action_space.anchor_embeddings
+
+
+def inactive_forward_mask_for_backward_eval(action_space: ActionSpace, batch_size: int) -> Tensor:
+    """Create a valid STOP-only forward mask for a backward-only policy call."""
+
+    action_count = int(action_space.valid_mask.shape[0])
+    mask = torch.zeros((batch_size, action_count + 1), dtype=torch.bool)
+    mask[:, action_count] = True
+    return mask
+
+
+def selected_backward_log_probs_for_growth(
+    backward_log_probs: Tensor,
+    target_indices: Tensor,
+    growth_rows: Tensor,
+) -> Tensor:
+    """Select P_B only for real growth transitions; STOP has deterministic reverse mass."""
+
+    if growth_rows.ndim != 1 or growth_rows.dtype != torch.bool:
+        raise ValueError("growth_rows must be a 1D bool tensor")
+    if int(growth_rows.shape[0]) != int(backward_log_probs.shape[0]):
+        raise ValueError("growth_rows length must match backward_log_probs batch size")
+    selected = selected_forward_log_probs(backward_log_probs, target_indices.to(device=backward_log_probs.device))
+    return torch.where(growth_rows.to(device=selected.device), selected, torch.zeros_like(selected))
+
+
 def sample_multistep_rollout(
     *,
     model: torch.nn.Module,
@@ -2629,11 +2755,10 @@ def sample_multistep_rollout(
         )
         history_actions[:, step] = actions_step
         forward_selected = selected_forward_log_probs(output.forward_log_probs, actions_step)
-        backward_selected = output.backward_log_probs[:, 0]
         forward_steps.append(torch.where(step_active, forward_selected, torch.zeros_like(forward_selected)))
-        backward_steps.append(torch.where(step_active, backward_selected, torch.zeros_like(backward_selected)))
         mask_steps.append(step_active)
         forward_outputs.append(output)
+        growth_rows = step_active & (actions_step != stop_action_idx)
 
         next_states = list(states)
         for row_idx, action_idx_value in enumerate(actions_step.tolist()):
@@ -2656,6 +2781,30 @@ def sample_multistep_rollout(
             node_count_events.append((row_idx, step, before_count, after_count))
             next_states[row_idx] = grown_state
         states = next_states
+        backward_mask, backward_attachments, backward_target_indices = backward_policy_inputs_for_states(
+            states,
+            action_space,
+            max_backward_actions=model_max_backward_actions(model),
+            anchor_embeddings=current_policy_anchor_embeddings(model, action_space),
+        )
+        backward_output, _, _ = forward_policy(
+            model,
+            scaffold_pool,
+            action_space,
+            batch_size,
+            selected_graphs=selected_graphs,
+            state_graphs=states,
+            forward_action_mask=inactive_forward_mask_for_backward_eval(action_space, batch_size),
+            backward_action_mask=backward_mask,
+            backward_attachment_embeddings=backward_attachments,
+        )
+        backward_steps.append(
+            selected_backward_log_probs_for_growth(
+                backward_output.backward_log_probs,
+                backward_target_indices,
+                growth_rows,
+            )
+        )
 
     still_active = trajectory_lengths == 0
     if bool(still_active.any().item()):
@@ -3392,6 +3541,13 @@ async def train() -> None:
         trajectory_length_mean = float(rollout.trajectory_lengths.float().mean().item())
         trajectory_length_max = int(rollout.trajectory_lengths.max().item())
         trajectories_ge2 = int((rollout.trajectory_lengths >= 2).sum().item())
+        active_backward = rollout.backward_log_probs[rollout.trajectory_mask]
+        if int(active_backward.numel()) > 0:
+            backward_log_prob_mean = float(active_backward.mean().item())
+            backward_log_prob_std = float(active_backward.std(unbiased=False).item())
+        else:
+            backward_log_prob_mean = 0.0
+            backward_log_prob_std = 0.0
         loss_rows.append(
             {
                 "epoch": epoch,
@@ -3399,6 +3555,8 @@ async def train() -> None:
                 "gradient_norm": gradient_norm,
                 "gradient_norm_policy": gradient_norm_policy,
                 "gradient_norm_logZ": gradient_norm_log_z,
+                "backward_log_prob_mean": backward_log_prob_mean,
+                "backward_log_prob_std": backward_log_prob_std,
             }
         )
         reward_rows.append(
@@ -3432,6 +3590,8 @@ async def train() -> None:
                 "trajectory_length_max": trajectory_length_max,
                 "trajectories_ge2": trajectories_ge2,
                 "assembled_state_node_count_mean": rollout.assembled_state_node_count_mean,
+                "backward_log_prob_mean": backward_log_prob_mean,
+                "backward_log_prob_std": backward_log_prob_std,
             }
         )
         entropy_rows.append({"epoch": epoch, "trajectory_entropy": entropy})
@@ -3481,6 +3641,8 @@ async def train() -> None:
             "trajectory_length_max": trajectory_length_max,
             "trajectories_ge2": f"{trajectories_ge2}/{int(args.batch_size)}",
             "assembled_state_node_count_mean": f"{rollout.assembled_state_node_count_mean:.2f}",
+            "backward_log_prob_mean": f"{backward_log_prob_mean:.6f}",
+            "backward_log_prob_std": f"{backward_log_prob_std:.6f}",
         }
         print("tb_epoch_complete " + " ".join(f"{key}={value}" for key, value in telemetry.items()), flush=True)
         for row_idx, step_idx, before_count, after_count in rollout.node_count_events:
@@ -3590,7 +3752,15 @@ async def train() -> None:
     write_csv(
         paths.output_dir / "epoch_loss.csv",
         loss_rows,
-        ["epoch", "tb_loss", "gradient_norm", "gradient_norm_policy", "gradient_norm_logZ"],
+        [
+            "epoch",
+            "tb_loss",
+            "gradient_norm",
+            "gradient_norm_policy",
+            "gradient_norm_logZ",
+            "backward_log_prob_mean",
+            "backward_log_prob_std",
+        ],
     )
     write_csv(
         paths.output_dir / "reward_progression.csv",
@@ -3625,6 +3795,8 @@ async def train() -> None:
             "trajectory_length_max",
             "trajectories_ge2",
             "assembled_state_node_count_mean",
+            "backward_log_prob_mean",
+            "backward_log_prob_std",
         ],
     )
     write_csv(paths.output_dir / "trajectory_entropy.csv", entropy_rows, ["epoch", "trajectory_entropy"])

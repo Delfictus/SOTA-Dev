@@ -127,6 +127,61 @@ def masked_log_softmax(logits: Tensor, mask: Tensor) -> Tensor:
     return torch.log_softmax(logits.masked_fill(~mask, floor), dim=-1)
 
 
+class BackwardPolicyHead(nn.Module):
+    """Attachment-conditioned backward policy over possible parent removals."""
+
+    def __init__(self, *, embedding_dim: int, hidden_dim: int, max_backward_actions: int) -> None:
+        super().__init__()
+        if embedding_dim < 1:
+            raise ValueError("embedding_dim must be positive")
+        if max_backward_actions < 1:
+            raise ValueError("max_backward_actions must be positive")
+        self.embedding_dim = int(embedding_dim)
+        self.max_backward_actions = int(max_backward_actions)
+        self.fallback_attachment_embeddings = nn.Parameter(
+            torch.randn(self.max_backward_actions, self.embedding_dim) * 0.02
+        )
+        self.scorer = nn.Sequential(
+            nn.Linear(self.embedding_dim * 2, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(
+        self,
+        graph_embeddings: Tensor,
+        backward_action_mask: Tensor,
+        attachment_embeddings: Tensor | None = None,
+    ) -> Tensor:
+        if graph_embeddings.ndim != 2 or int(graph_embeddings.shape[1]) != self.embedding_dim:
+            raise ValueError("graph_embeddings must have shape [batch, embedding_dim]")
+        if backward_action_mask.ndim != 2 or int(backward_action_mask.shape[0]) != int(graph_embeddings.shape[0]):
+            raise ValueError("backward_action_mask must have shape [batch, actions]")
+        if backward_action_mask.dtype != torch.bool:
+            raise TypeError("backward_action_mask must have dtype bool")
+        action_count = int(backward_action_mask.shape[1])
+        if action_count < 1 or action_count > self.max_backward_actions:
+            raise ValueError("backward_action_mask action width exceeds max_backward_actions")
+        if attachment_embeddings is None:
+            attachment_embeddings = self.fallback_attachment_embeddings[:action_count].unsqueeze(0).expand(
+                int(graph_embeddings.shape[0]),
+                -1,
+                -1,
+            )
+        else:
+            if attachment_embeddings.ndim != 3:
+                raise ValueError("attachment_embeddings must have shape [batch, actions, embedding_dim]")
+            if attachment_embeddings.shape[:2] != backward_action_mask.shape:
+                raise ValueError("attachment_embeddings must match backward_action_mask batch/action dimensions")
+            if int(attachment_embeddings.shape[2]) != self.embedding_dim:
+                raise ValueError("attachment_embeddings width must match embedding_dim")
+            attachment_embeddings = attachment_embeddings.to(dtype=graph_embeddings.dtype, device=graph_embeddings.device)
+        graph_context = graph_embeddings.unsqueeze(1).expand(-1, action_count, -1)
+        logits = self.scorer(torch.cat([graph_context, attachment_embeddings], dim=-1)).squeeze(-1)
+        _validate_mask("backward_action_mask", backward_action_mask, logits.shape)
+        return cast(Tensor, logits)
+
+
 def _scatter_mean(values: Tensor, batch_index: Tensor, batch_size: int) -> Tensor:
     if batch_index.ndim != 1 or batch_index.shape[0] != values.shape[0]:
         raise ValueError("batch_index must have shape [num_nodes]")
@@ -211,10 +266,10 @@ class AnchorAttentionGFlowNetPolicy(nn.Module):
             nn.SiLU(),
         )
         self.state_projection = nn.Linear(hidden_dim, embedding_dim)
-        self.backward_head = nn.Sequential(
-            nn.Linear(embedding_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, max_backward_actions),
+        self.backward_head = BackwardPolicyHead(
+            embedding_dim=embedding_dim,
+            hidden_dim=hidden_dim,
+            max_backward_actions=max_backward_actions,
         )
         self.log_z = nn.Parameter(torch.zeros(()))
         prepared_embeddings = anchor_embeddings.detach().clone().to(dtype=torch.float32)
@@ -245,17 +300,18 @@ class AnchorAttentionGFlowNetPolicy(nn.Module):
         node_mask: Tensor,
         forward_action_mask: Tensor,
         backward_action_mask: Tensor,
+        backward_attachment_embeddings: Tensor | None = None,
     ) -> PolicyOutput:
         state_embedding = self.embed_state(node_features, node_mask)
         forward_logits = state_embedding.matmul(self.anchor_embeddings.transpose(0, 1)) / math.sqrt(
             float(self.anchor_embedding_dim)
         )
         _validate_mask("forward_action_mask", forward_action_mask, forward_logits.shape)
-        if int(backward_action_mask.shape[1]) > self.max_backward_actions:
-            raise ValueError("backward_action_mask exceeds max_backward_actions")
-        raw_backward_logits = self.backward_head(state_embedding)
-        backward_logits = raw_backward_logits[:, : int(backward_action_mask.shape[1])]
-        _validate_mask("backward_action_mask", backward_action_mask, backward_logits.shape)
+        backward_logits = self.backward_head(
+            state_embedding,
+            backward_action_mask,
+            backward_attachment_embeddings,
+        )
         forward_log_probs = masked_log_softmax(forward_logits, forward_action_mask)
         backward_log_probs = masked_log_softmax(backward_logits, backward_action_mask)
         return PolicyOutput(
@@ -524,10 +580,10 @@ class FiberBundleGFlowNetPolicy(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, embedding_dim),
         )
-        self.backward_head = nn.Sequential(
-            nn.Linear(embedding_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, max_backward_actions),
+        self.backward_head = BackwardPolicyHead(
+            embedding_dim=embedding_dim,
+            hidden_dim=hidden_dim,
+            max_backward_actions=max_backward_actions,
         )
         self.stop_mlp = nn.Sequential(
             nn.Linear(embedding_dim, hidden_dim),
@@ -553,6 +609,7 @@ class FiberBundleGFlowNetPolicy(nn.Module):
         exit_node_indices: Tensor,
         forward_action_mask: Tensor,
         backward_action_mask: Tensor,
+        backward_attachment_embeddings: Tensor | None = None,
     ) -> FiberBundlePolicyOutput:
         if batch_index.ndim != 1 or batch_index.shape[0] != x_base.shape[0]:
             raise ValueError("batch_index must have shape [num_atoms]")
@@ -585,10 +642,11 @@ class FiberBundleGFlowNetPolicy(nn.Module):
         else:
             forward_logits = anchor_logits
         _validate_mask("forward_action_mask", forward_action_mask, forward_logits.shape)
-        if int(backward_action_mask.shape[1]) > self.max_backward_actions:
-            raise ValueError("backward_action_mask exceeds max_backward_actions")
-        backward_logits = self.backward_head(query_embeddings)[:, : int(backward_action_mask.shape[1])]
-        _validate_mask("backward_action_mask", backward_action_mask, backward_logits.shape)
+        backward_logits = self.backward_head(
+            query_embeddings,
+            backward_action_mask,
+            backward_attachment_embeddings,
+        )
         forward_log_probs = masked_log_softmax(forward_logits, forward_action_mask)
         backward_log_probs = masked_log_softmax(backward_logits, backward_action_mask)
         return FiberBundlePolicyOutput(
@@ -712,10 +770,10 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, resolved_embedding_dim),
         )
-        self.backward_head = nn.Sequential(
-            nn.Linear(resolved_embedding_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, max_backward_actions),
+        self.backward_head = BackwardPolicyHead(
+            embedding_dim=resolved_embedding_dim,
+            hidden_dim=hidden_dim,
+            max_backward_actions=max_backward_actions,
         )
         self.stop_mlp = nn.Sequential(
             nn.Linear(resolved_embedding_dim, hidden_dim),
@@ -842,6 +900,7 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         action_base_features: Tensor | None = None,
         action_atom_features: Tensor | None = None,
         action_atom_mask: Tensor | None = None,
+        backward_attachment_embeddings: Tensor | None = None,
     ) -> DualChannelPolicyOutput:
         if node_features is None:
             if x_base is None:
@@ -940,11 +999,11 @@ class FieldConditionedDualChannelGFlowNetPolicy(nn.Module):
         else:
             forward_logits = anchor_logits
         _validate_mask("forward_action_mask", forward_action_mask, forward_logits.shape)
-        if int(backward_action_mask.shape[1]) > self.max_backward_actions:
-            raise ValueError("backward_action_mask exceeds max_backward_actions")
-        raw_backward_logits = self.backward_head(action_context_embeddings)
-        backward_logits = raw_backward_logits[:, : int(backward_action_mask.shape[1])]
-        _validate_mask("backward_action_mask", backward_action_mask, backward_logits.shape)
+        backward_logits = self.backward_head(
+            action_context_embeddings,
+            backward_action_mask,
+            backward_attachment_embeddings,
+        )
         forward_log_probs = masked_log_softmax(forward_logits, forward_action_mask)
         backward_log_probs = masked_log_softmax(backward_logits, backward_action_mask)
         return DualChannelPolicyOutput(
@@ -1007,10 +1066,10 @@ class TrilinearAttentionGFlowNetPolicy(nn.Module):
             nn.Linear(hidden_dim, resolved_embedding_dim),
         )
         self.rule_embeddings = nn.Embedding(num_reaction_rules, resolved_embedding_dim)
-        self.backward_head = nn.Sequential(
-            nn.Linear(resolved_embedding_dim, hidden_dim),
-            nn.SiLU(),
-            nn.Linear(hidden_dim, max_backward_actions),
+        self.backward_head = BackwardPolicyHead(
+            embedding_dim=resolved_embedding_dim,
+            hidden_dim=hidden_dim,
+            max_backward_actions=max_backward_actions,
         )
         self.log_z = nn.Parameter(torch.zeros(()))
         self.register_buffer("synthon_embeddings", synthon_embeddings.detach().clone().to(dtype=torch.float32))
@@ -1032,6 +1091,7 @@ class TrilinearAttentionGFlowNetPolicy(nn.Module):
         batch_index: Tensor,
         forward_action_mask: Tensor,
         backward_action_mask: Tensor,
+        backward_attachment_embeddings: Tensor | None = None,
     ) -> TrilinearPolicyOutput:
         node_embeddings = self.embed_nodes(node_features, edge_index)
         batch_size = int(batch_index.max().item()) + 1 if batch_index.numel() else 0
@@ -1045,11 +1105,11 @@ class TrilinearAttentionGFlowNetPolicy(nn.Module):
         )
         forward_log_probs = _masked_graph_log_softmax(forward_logits, forward_action_mask, batch_index, batch_size)
 
-        if int(backward_action_mask.shape[1]) > self.max_backward_actions:
-            raise ValueError("backward_action_mask exceeds max_backward_actions")
-        raw_backward_logits = self.backward_head(graph_embeddings)
-        backward_logits = raw_backward_logits[:, : int(backward_action_mask.shape[1])]
-        _validate_mask("backward_action_mask", backward_action_mask, backward_logits.shape)
+        backward_logits = self.backward_head(
+            graph_embeddings,
+            backward_action_mask,
+            backward_attachment_embeddings,
+        )
         backward_log_probs = masked_log_softmax(backward_logits, backward_action_mask)
         return TrilinearPolicyOutput(
             node_embeddings=node_embeddings,
@@ -1066,6 +1126,7 @@ class TrilinearAttentionGFlowNetPolicy(nn.Module):
 
 __all__ = [
     "AnchorAttentionGFlowNetPolicy",
+    "BackwardPolicyHead",
     "DualChannelPolicyOutput",
     "FieldConditionedDualChannelGFlowNetPolicy",
     "FiberBundleGFlowNetPolicy",
