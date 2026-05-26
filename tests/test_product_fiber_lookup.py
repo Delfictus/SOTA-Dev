@@ -48,6 +48,35 @@ def test_synthon_outside_grid_gets_void(tmp_path: Path) -> None:
     assert float(fiber[:, 6].sum()) == 5.0
 
 
+def test_signal_grid_product_lookup_rejects_nonfinite_coordinates(tmp_path: Path) -> None:
+    lookup = _lookup(tmp_path)
+    scaffold_phase = torch.zeros((0, 5, 8), dtype=torch.float32)
+    product_xyz = np.array([[np.nan, 0.0, 0.0]], dtype=np.float32)
+
+    try:
+        lookup.lookup_product_fiber(scaffold_phase, product_xyz, n_scaffold=0)
+    except ValueError as exc:
+        assert "non-finite" in str(exc)
+    else:
+        raise AssertionError("SignalGridFiberLookup accepted non-finite product coordinates")
+
+
+def test_signal_grid_voxel_and_stats_reject_nonfinite_coordinates(tmp_path: Path) -> None:
+    lookup = _lookup(tmp_path)
+    bad_xyz = np.array([[np.nan, 0.0, 0.0]], dtype=np.float32)
+
+    for call in (
+        lambda: lookup.xyz_to_voxel(bad_xyz[0]),
+        lambda: lookup.field_stats_for_coordinates(bad_xyz, n_scaffold=0),
+    ):
+        try:
+            call()
+        except ValueError as exc:
+            assert "non-finite" in str(exc)
+        else:
+            raise AssertionError("SignalGridFiberLookup accepted non-finite coordinates")
+
+
 def _field_stack(tmp_path: Path) -> ThermodynamicFieldStack:
     signal = tmp_path / "signal_grid.parquet"
     shear = tmp_path / "shear.parquet"
@@ -124,3 +153,32 @@ def test_full_field_product_preserves_scaffold_and_adds_synthon(tmp_path: Path) 
     stats = lookup.field_stats_for_coordinates(product_xyz, n_scaffold=2)
     assert stats["sigma_shear_mean"] > 0.0
     assert stats["pathway_voxels_occupied"] == 1.0
+
+
+def test_full_field_product_lookup_rejects_nonfinite_coordinates(tmp_path: Path) -> None:
+    lookup = _field_stack(tmp_path)
+    scaffold_phase = torch.zeros((0, 5, 12), dtype=torch.float32)
+    product_xyz = np.array([[np.inf, 0.0, 0.0]], dtype=np.float32)
+
+    try:
+        lookup.lookup_product_fiber(scaffold_phase, product_xyz, n_scaffold=0)
+    except ValueError as exc:
+        assert "non-finite" in str(exc)
+    else:
+        raise AssertionError("ThermodynamicFieldStack accepted non-finite product coordinates")
+
+
+def test_full_field_voxel_and_stats_reject_nonfinite_coordinates(tmp_path: Path) -> None:
+    lookup = _field_stack(tmp_path)
+    bad_xyz = np.array([[np.nan, 0.0, 0.0]], dtype=np.float32)
+
+    for call in (
+        lambda: lookup.xyz_to_voxel(bad_xyz[0]),
+        lambda: lookup.field_stats_for_coordinates(bad_xyz, n_scaffold=0),
+    ):
+        try:
+            call()
+        except ValueError as exc:
+            assert "non-finite" in str(exc)
+        else:
+            raise AssertionError("ThermodynamicFieldStack accepted non-finite coordinates")

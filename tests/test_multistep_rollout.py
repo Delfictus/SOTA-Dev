@@ -9,13 +9,16 @@ import pytest
 from scripts.train_gflownet_policy import (
     ActionSpace,
     ScaffoldGraph,
+    condition_states_for_step,
     sample_actions_per_row,
     grow_state_with_action,
     initial_assembled_state,
     proposals_for_terminal_states,
     rust_zmatrix_attach_fragment,
     rollout_forward_action_mask,
+    state_with_conditioned_phase,
 )
+from prism_dstw.orchestration.field_conditioner import FieldConditioner
 
 
 def _graph() -> ScaffoldGraph:
@@ -115,6 +118,98 @@ def test_growth_does_not_admit_nonfinite_action_coordinates() -> None:
 
     assert torch.isfinite(state.data.xyz).all()
     assert torch.isfinite(state.data.edge_attr).all()
+
+
+class SpyFieldConditioner(FieldConditioner):
+    def __init__(self, scaffold_phase: torch.Tensor, scaffold_xyz: torch.Tensor) -> None:
+        super().__init__(scaffold_phase, scaffold_xyz)
+        self.calls: list[tuple[int, torch.Tensor | None]] = []
+
+    def condition_at_step(
+        self,
+        step: int,
+        current_product_xyz: torch.Tensor | None = None,
+        n_scaffold: int | None = None,
+    ) -> torch.Tensor:
+        self.calls.append((step, None if current_product_xyz is None else current_product_xyz.detach().clone()))
+        return super().condition_at_step(step, current_product_xyz, n_scaffold)
+
+
+def test_step_conditioning_receives_actual_product_coordinates() -> None:
+    graph = _graph()
+    state0 = initial_assembled_state(graph)
+    state1 = grow_state_with_action(state0, action_space=_action_space(), action_idx=0, step=0)
+    conditioner = SpyFieldConditioner(graph.data.x_phase, graph.data.xyz)
+
+    conditioned0, count0, events0 = condition_states_for_step([state0], [conditioner], step=0)
+    conditioned1, count1, events1 = condition_states_for_step([state1], [conditioner], step=1)
+
+    assert count0 == 1
+    assert count1 == 1
+    assert events0 == ((0, 0, int(state0.data.x_base.shape[0]), int(state0.data.x_phase.shape[2])),)
+    assert events1 == ((0, 1, int(state1.data.x_base.shape[0]), int(state1.data.x_phase.shape[2])),)
+    assert conditioned0[0].data.x_phase.shape[0] == state0.data.x_base.shape[0]
+    assert conditioned1[0].data.x_phase.shape[0] == state1.data.x_base.shape[0]
+    assert conditioner.calls[0][0] == 0
+    assert conditioner.calls[0][1] is None
+    assert conditioner.calls[1][0] == 1
+    assert conditioner.calls[1][1] is not None
+    assert torch.allclose(conditioner.calls[1][1], state1.data.xyz)
+    assert int(conditioned1[0].data.x_phase.shape[0]) > int(conditioned0[0].data.x_phase.shape[0])
+
+
+def test_step_conditioning_skips_inactive_rows() -> None:
+    graph = _graph()
+    state0 = initial_assembled_state(graph)
+    state1 = grow_state_with_action(state0, action_space=_action_space(), action_idx=0, step=0)
+    active_conditioner = SpyFieldConditioner(graph.data.x_phase, graph.data.xyz)
+    inactive_conditioner = SpyFieldConditioner(graph.data.x_phase, graph.data.xyz)
+
+    conditioned, call_count, events = condition_states_for_step(
+        [state1, state0],
+        [active_conditioner, inactive_conditioner],
+        step=1,
+        active_rows=torch.tensor([True, False]),
+    )
+
+    assert call_count == 1
+    assert events == ((0, 1, int(state1.data.x_base.shape[0]), int(state1.data.x_phase.shape[2])),)
+    assert len(active_conditioner.calls) == 1
+    assert len(inactive_conditioner.calls) == 0
+    assert torch.allclose(conditioned[0].data.x_phase[:2], graph.data.x_phase)
+    assert conditioned[1] is state0
+
+
+def test_step_conditioning_requires_1d_bool_active_mask() -> None:
+    graph = _graph()
+    state = initial_assembled_state(graph)
+    conditioner = SpyFieldConditioner(graph.data.x_phase, graph.data.xyz)
+
+    for bad_mask in (torch.tensor([1]), torch.tensor([1.0]), torch.tensor([[True]])):
+        with pytest.raises(ValueError, match="1D bool"):
+            condition_states_for_step([state], [conditioner], step=0, active_rows=bad_mask)
+
+
+def test_step_conditioning_rejects_negative_step() -> None:
+    graph = _graph()
+    state = initial_assembled_state(graph)
+    conditioner = SpyFieldConditioner(graph.data.x_phase, graph.data.xyz)
+
+    with pytest.raises(ValueError, match="non-negative"):
+        condition_states_for_step([state], [conditioner], step=-1)
+
+
+def test_state_conditioning_rejects_phase_feature_dim_mismatch() -> None:
+    graph = _graph()
+    state = initial_assembled_state(graph)
+    bad_phase = torch.zeros((int(state.data.x_base.shape[0]), 5, 7), dtype=torch.float32)
+
+    try:
+        state_with_conditioned_phase(state, bad_phase)
+    except ValueError as exc:
+        assert "feature dimension" in str(exc)
+    else:
+        raise AssertionError("state_with_conditioned_phase accepted a wrong phase feature dimension")
 
 
 def test_terminal_live_proposal_uses_product_identity_and_full_growth_offset() -> None:

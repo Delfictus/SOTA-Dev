@@ -40,6 +40,7 @@ from prism_dstw.orchestration.multi_scaffold_entropy_router import (
     lock_phase_maps_from_rows,
     phase_occupancy_from_fiber_bundle,
 )
+from prism_dstw.orchestration.field_conditioner import FieldConditioner
 from prism_dstw.orchestration.rust_reward_oracle import (
     LiveSignalGridOracle,
     OracleProposal,
@@ -206,6 +207,8 @@ class MultiStepRollout:
     assembly_histories: tuple[tuple[AssemblyHistoryStep, ...], ...]
     assembled_state_node_count_mean: float
     node_count_events: tuple[tuple[int, int, int, int], ...]
+    field_conditioner_call_counts: tuple[int, ...]
+    field_conditioner_shape_events: tuple[tuple[int, int, int, int], ...]
 
 
 def parse_args() -> argparse.Namespace:
@@ -2477,6 +2480,67 @@ def forward_policy(
     return output, batch, exit_indices
 
 
+def state_with_conditioned_phase(state: AssembledState, conditioned_phase: Tensor) -> AssembledState:
+    """Return a product state whose phase tensor was produced by step conditioning."""
+
+    phase = conditioned_phase.detach().to(dtype=torch.float32)
+    node_count = int(cast(Tensor, state.data.x_base).shape[0])
+    expected_dim = int(cast(Tensor, state.data.x_phase).shape[2])
+    if phase.ndim != 3 or int(phase.shape[0]) != node_count or int(phase.shape[1]) != 5:
+        raise ValueError(
+            "conditioned phase tensor must have shape [N_state_atoms, 5, D]; "
+            f"got {list(phase.shape)} for N_state_atoms={node_count}"
+        )
+    if int(phase.shape[2]) != expected_dim:
+        raise ValueError(
+            "conditioned phase feature dimension does not match current state; "
+            f"got {int(phase.shape[2])}, expected {expected_dim}"
+        )
+    data = state.data.clone()
+    data.x_phase = phase
+    data.num_nodes = node_count
+    return replace(state, data=data)
+
+
+def condition_states_for_step(
+    states: Sequence[AssembledState],
+    conditioners: Sequence[FieldConditioner],
+    *,
+    step: int,
+    active_rows: Tensor | None = None,
+) -> tuple[list[AssembledState], int, tuple[tuple[int, int, int, int], ...]]:
+    """Apply step-aware field conditioning to each current product state."""
+
+    if len(states) != len(conditioners):
+        raise ValueError("states and conditioners must have matching length")
+    if step < 0:
+        raise ValueError("step must be non-negative")
+    if active_rows is not None:
+        if active_rows.ndim != 1 or active_rows.dtype != torch.bool:
+            raise ValueError("active_rows must be a 1D bool tensor")
+        if int(active_rows.shape[0]) != len(states):
+            raise ValueError("active_rows length must match states")
+    conditioned_states: list[AssembledState] = []
+    shape_events: list[tuple[int, int, int, int]] = []
+    call_count = 0
+    for row_idx, (state, conditioner) in enumerate(zip(states, conditioners, strict=True)):
+        if active_rows is not None and not bool(active_rows[row_idx].item()):
+            conditioned_states.append(state)
+            continue
+        if step <= 0:
+            conditioned = conditioner.condition_at_step(0)
+        else:
+            conditioned = conditioner.condition_at_step(
+                int(step),
+                current_product_xyz=cast(Tensor, state.data.xyz),
+                n_scaffold=state.scaffold.retained_atom_count,
+            )
+        conditioned_states.append(state_with_conditioned_phase(state, conditioned))
+        shape_events.append((row_idx, int(step), int(conditioned.shape[0]), int(conditioned.shape[2])))
+        call_count += 1
+    return conditioned_states, call_count, tuple(shape_events)
+
+
 def sample_multistep_rollout(
     *,
     model: torch.nn.Module,
@@ -2486,6 +2550,7 @@ def sample_multistep_rollout(
     batch_size: int,
     max_steps: int,
     sampling_temperature: float,
+    fiber_lookup: FieldLookup | None = None,
 ) -> MultiStepRollout:
     """Sample a variable-length trajectory where each step consumes the prior product graph."""
 
@@ -2496,6 +2561,14 @@ def sample_multistep_rollout(
     step_count = max(1, int(max_steps))
     stop_action_idx = int(action_space.valid_mask.shape[0])
     states = [initial_assembled_state(graph) for graph in selected_graphs]
+    conditioners = [
+        FieldConditioner(
+            cast(Tensor, graph.data.x_phase),
+            cast(Tensor, graph.data.xyz),
+            fiber_lookup=fiber_lookup,
+        )
+        for graph in selected_graphs
+    ]
     active = torch.ones((batch_size,), dtype=torch.bool)
     trajectory_lengths = torch.zeros((batch_size,), dtype=torch.long)
     history_actions = torch.full((batch_size, step_count), stop_action_idx, dtype=torch.long)
@@ -2504,8 +2577,18 @@ def sample_multistep_rollout(
     backward_steps: list[Tensor] = []
     mask_steps: list[Tensor] = []
     node_count_events: list[tuple[int, int, int, int]] = []
+    conditioner_call_counts = [0 for _ in range(step_count)]
+    conditioner_shape_events: list[tuple[int, int, int, int]] = []
 
     for step in range(step_count):
+        states, call_count, shape_events = condition_states_for_step(
+            states,
+            conditioners,
+            step=step,
+            active_rows=active,
+        )
+        conditioner_call_counts[step] += call_count
+        conditioner_shape_events.extend(shape_events)
         step_active = active.clone()
         forward_mask = rollout_forward_action_mask(
             action_space,
@@ -2589,6 +2672,8 @@ def sample_multistep_rollout(
         assembly_histories=tuple(state.history for state in states),
         assembled_state_node_count_mean=float(sum(node_counts) / len(node_counts)) if node_counts else 0.0,
         node_count_events=tuple(node_count_events),
+        field_conditioner_call_counts=tuple(conditioner_call_counts),
+        field_conditioner_shape_events=tuple(conditioner_shape_events),
     )
 
 
@@ -3187,6 +3272,7 @@ async def train() -> None:
             batch_size=int(args.batch_size),
             max_steps=int(args.max_trajectory_steps),
             sampling_temperature=sampling_temperature,
+            fiber_lookup=fiber_lookup,
         )
         output = rollout.forward_outputs[-1]
         actions_tensor = rollout.terminal_actions
@@ -3392,6 +3478,23 @@ async def train() -> None:
             print(
                 "assembled_state_node_count "
                 f"epoch={epoch} row={row_idx} step={step_idx} before={before_count} count={after_count}",
+                flush=True,
+            )
+        call_parts = [
+            f"field_conditioner_calls_step{step_idx}={call_count}"
+            for step_idx, call_count in enumerate(rollout.field_conditioner_call_counts)
+        ]
+        print(
+            "field_conditioner_calls "
+            f"epoch={epoch} "
+            + " ".join(call_parts),
+            flush=True,
+        )
+        for row_idx, step_idx, atoms, phase_dim in rollout.field_conditioner_shape_events:
+            print(
+                "field_conditioner_product_fiber_shape "
+                f"epoch={epoch} row={row_idx} step={step_idx} shape=[{atoms},5,{phase_dim}] "
+                f"atoms={atoms} phases=5 dim={phase_dim}",
                 flush=True,
             )
         print(

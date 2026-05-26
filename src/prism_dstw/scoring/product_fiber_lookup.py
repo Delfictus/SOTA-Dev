@@ -138,6 +138,8 @@ class SignalGridFiberLookup:
     def xyz_to_voxel(self, xyz: np.ndarray) -> int | None:
         """Map Cartesian coordinates to a signal-grid voxel index."""
 
+        if not bool(np.isfinite(xyz).all()):
+            raise ValueError("xyz contains non-finite coordinates")
         ijk = np.floor((xyz.astype(np.float32) - self.spec.origin) / self.spec.spacing).astype(int)
         nx, ny, nz = self.spec.dims
         if not (0 <= ijk[0] < nx and 0 <= ijk[1] < ny and 0 <= ijk[2] < nz):
@@ -179,6 +181,8 @@ class SignalGridFiberLookup:
             raise ValueError("scaffold_phase feature dimension must be 8")
         if product_xyz.ndim != 2 or int(product_xyz.shape[1]) != 3:
             raise ValueError("product_xyz must have shape [N_product, 3]")
+        if not bool(np.isfinite(product_xyz).all()):
+            raise ValueError("product_xyz contains non-finite coordinates")
         if n_scaffold < 0 or n_scaffold > int(product_xyz.shape[0]):
             raise ValueError("n_scaffold must be within product atom count")
         if int(scaffold_phase.shape[0]) < n_scaffold:
@@ -195,6 +199,8 @@ class SignalGridFiberLookup:
 
         if product_xyz.ndim != 2 or int(product_xyz.shape[1]) != 3:
             return _empty_field_stats()
+        if not bool(np.isfinite(product_xyz).all()):
+            raise ValueError("product_xyz contains non-finite coordinates")
         fibers = [
             self.lookup_atom_fiber(product_xyz[index])
             for index in range(max(0, n_scaffold), int(product_xyz.shape[0]))
@@ -379,6 +385,8 @@ class ThermodynamicFieldStack:
                 self.species_conservation[residue_idx] = row
 
     def xyz_to_voxel(self, xyz: np.ndarray) -> int | None:
+        if not bool(np.isfinite(xyz).all()):
+            raise ValueError("xyz contains non-finite coordinates")
         ijk = np.floor((xyz.astype(np.float32) - self.spec.origin) / self.spec.spacing).astype(int)
         nx, ny, nz = self.spec.dims
         if not (0 <= ijk[0] < nx and 0 <= ijk[1] < ny and 0 <= ijk[2] < nz):
@@ -484,8 +492,12 @@ class ThermodynamicFieldStack:
             raise ValueError("field-stack v2 scaffold_phase feature dimension must be 12")
         if product_xyz.ndim != 2 or int(product_xyz.shape[1]) != 3:
             raise ValueError("product_xyz must have shape [N_product, 3]")
+        if not bool(np.isfinite(product_xyz).all()):
+            raise ValueError("product_xyz contains non-finite coordinates")
         if n_scaffold < 0 or n_scaffold > int(product_xyz.shape[0]):
             raise ValueError("n_scaffold must be within product atom count")
+        if int(scaffold_phase.shape[0]) < n_scaffold:
+            raise ValueError("scaffold_phase does not contain n_scaffold rows")
         product_fiber = torch.zeros((int(product_xyz.shape[0]), 5, 12), dtype=torch.float32)
         product_fiber[:n_scaffold] = scaffold_phase[:n_scaffold].detach().to(dtype=torch.float32)
         for atom_index in range(n_scaffold, int(product_xyz.shape[0])):
@@ -495,6 +507,8 @@ class ThermodynamicFieldStack:
     def field_stats_for_coordinates(self, product_xyz: np.ndarray, *, n_scaffold: int) -> dict[str, float]:
         if product_xyz.ndim != 2 or int(product_xyz.shape[1]) != 3:
             return _empty_field_stats()
+        if not bool(np.isfinite(product_xyz).all()):
+            raise ValueError("product_xyz contains non-finite coordinates")
         profiles = [
             self.lookup_atom_profile(product_xyz[index])
             for index in range(max(0, n_scaffold), int(product_xyz.shape[0]))
