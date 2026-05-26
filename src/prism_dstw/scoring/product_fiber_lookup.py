@@ -58,6 +58,8 @@ class VoxelThermodynamicProfile:
     consensus_bonus: float = 0.0
     shear_stress: float = 0.0
     shear_stress_max: float = 0.0
+    shear_principal_direction: tuple[float, float, float] | None = None
+    shear_direction_provenance: str = "UNAVAILABLE"
     hysteresis_score: float = 0.0
     reversibility: float = 1.0
     on_activation_pathway: bool = False
@@ -261,6 +263,10 @@ class ThermodynamicFieldStack:
                 "classification": profile.classification,
                 "consensus_bonus": profile.consensus_bonus,
                 "shear_stress": profile.shear_stress,
+                "principal_x": profile.shear_principal_direction[0] if profile.shear_principal_direction is not None else 0.0,
+                "principal_y": profile.shear_principal_direction[1] if profile.shear_principal_direction is not None else 0.0,
+                "principal_z": profile.shear_principal_direction[2] if profile.shear_principal_direction is not None else 0.0,
+                "shear_direction_provenance": profile.shear_direction_provenance,
             }
             for voxel_idx, profile in self.field.items()
         }
@@ -294,6 +300,14 @@ class ThermodynamicFieldStack:
                 continue
             profile.shear_stress = _float(_first_present(row, ("shear_stress", "frobenius_norm"), 0.0))
             profile.shear_stress_max = _float(row.get("shear_stress_max"), profile.shear_stress)
+            principal = (
+                _float(row.get("principal_x")),
+                _float(row.get("principal_y")),
+                _float(row.get("principal_z")),
+            )
+            if any(abs(value) > 0.0 for value in principal):
+                profile.shear_principal_direction = principal
+                profile.shear_direction_provenance = str(row.get("shear_direction_provenance") or "L5_WARP_MATRIX")
 
     def _load_residue_hysteresis(self, hysteresis_df: pl.DataFrame) -> None:
         if "condition_id" in hysteresis_df.columns:
