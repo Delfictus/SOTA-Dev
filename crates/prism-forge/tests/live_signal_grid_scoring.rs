@@ -71,10 +71,78 @@ fn live_signal_grid_scores_complement_clash_lock_and_shear() {
     assert_eq!(score.pi_clash_pocket, 0.0);
     assert_eq!(score.pi_clash_lock, 1.0);
     assert_eq!(score.lock_atom_count, 1);
+    assert_eq!(score.lock_occupancy_per_phase, [1.0, 0.5, 0.0, 0.5, 1.05]);
     assert_eq!(score.consensus_bonus, 0.5);
     assert_eq!(score.sigma_shear, 1.0);
     assert!(score.reward < W_COMPLEMENT * 2.0 + 1.0 + 0.5);
     assert!(score.reward > -W_CLASH_POCKET);
+}
+
+#[test]
+fn live_signal_grid_accumulates_phase_resolved_lock_occupancy() {
+    let mut field = HashMap::new();
+    field.insert(1, voxel(0.0, 1.0, true, false, 0.0));
+    field.insert(2, voxel(0.0, 2.0, true, false, 0.0));
+    let grid = LoadedSignalGrid {
+        field,
+        origin: [0.0, 0.0, 0.0],
+        spacing: 1.0,
+        dims: [10, 10, 10],
+        condition_id: "test".to_owned(),
+    };
+    let lock_mask = HashSet::from([1_u64, 2_u64]);
+
+    let score = score_molecule(
+        &[(1.1, 0.1, 0.1), (2.1, 0.1, 0.1)],
+        &grid,
+        &lock_mask,
+        &HashMap::new(),
+    );
+
+    assert_eq!(score.lock_atom_count, 2);
+    assert_eq!(score.lock_cold, 3.0);
+    assert_eq!(score.lock_warm, 0.0);
+    assert_eq!(score.lock_delta, -3.0);
+    assert_eq!(
+        score.lock_occupancy_per_phase,
+        [3.0, 1.5, 0.0, 1.5, 3.1500000000000004]
+    );
+    assert_eq!(
+        score
+            .lock_occupancy_per_phase
+            .iter()
+            .map(|value| (value * 1.0e12).round() as i128)
+            .collect::<HashSet<_>>()
+            .len(),
+        4
+    );
+}
+
+#[test]
+fn live_signal_grid_counts_all_nonvoid_lock_region_atoms() {
+    let mut field = HashMap::new();
+    field.insert(0, voxel(2.0, 0.0, false, true, 0.5));
+    field.insert(1, voxel(0.0, 1.0, true, false, 0.0));
+    let grid = LoadedSignalGrid {
+        field,
+        origin: [0.0, 0.0, 0.0],
+        spacing: 1.0,
+        dims: [10, 10, 10],
+        condition_id: "test".to_owned(),
+    };
+    let lock_mask = HashSet::from([0_u64, 1_u64]);
+
+    let score = score_molecule(
+        &[(0.1, 0.1, 0.1), (1.1, 0.1, 0.1)],
+        &grid,
+        &lock_mask,
+        &HashMap::new(),
+    );
+
+    assert_eq!(score.lock_atom_count, 2);
+    assert_eq!(score.pi_clash_lock, 1.0);
+    assert_eq!(score.pi_complement, 2.0);
+    assert_eq!(score.occupied_lock_voxels, vec![0, 1]);
 }
 
 #[test]

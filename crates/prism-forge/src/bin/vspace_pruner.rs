@@ -3381,8 +3381,9 @@ fn load_signal_field(
                     warm_mean: warm,
                     delta: dynamic_class.gain_delta,
                     consensus_complement_bonus: 0.0,
-                    on_activation_pathway: residue_idx
-                        .is_some_and(|value| pathway_context.kinetic_burst_residues.contains(&value)),
+                    on_activation_pathway: residue_idx.is_some_and(|value| {
+                        pathway_context.kinetic_burst_residues.contains(&value)
+                    }),
                 },
             );
         }
@@ -5237,9 +5238,7 @@ mod streaming_writer_guard_tests {
 
     #[test]
     fn guard_mpsc_streaming_writer_flushes_and_atomic_renames() -> Result<()> {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_nanos();
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let path = std::env::temp_dir().join(format!("vspace_streaming_guard_{nonce}.parquet"));
         let tmp_path = path.with_extension("parquet.tmp");
         let (tx, rx) = mpsc::channel();

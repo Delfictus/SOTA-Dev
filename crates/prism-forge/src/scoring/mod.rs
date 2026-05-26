@@ -14,6 +14,7 @@ pub const W_CLASH_POCKET: f64 = 1.0;
 pub const W_LOCK_GEO: f64 = 1.0;
 pub const W_SHEAR: f64 = 0.25;
 pub const W_CONSENSUS: f64 = 1.0;
+pub const COULOMBIC_INEFFICIENCY: f64 = 0.05;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoxelClassification {
@@ -326,6 +327,7 @@ pub struct MoleculeScore {
     pub lock_cold: f64,
     pub lock_warm: f64,
     pub lock_delta: f64,
+    pub lock_occupancy_per_phase: [f64; 5],
     pub pathway_voxels: u16,
     pub void_atom_count: u16,
     pub occupied_lock_voxels: Vec<u64>,
@@ -346,11 +348,27 @@ impl Default for MoleculeScore {
             lock_cold: 0.0,
             lock_warm: 0.0,
             lock_delta: 0.0,
+            lock_occupancy_per_phase: [0.0; 5],
             pathway_voxels: 0,
             void_atom_count: 0,
             occupied_lock_voxels: Vec::new(),
         }
     }
+}
+
+pub fn phase_resolved_lock_profile(cold: f64, warm: f64, delta: f64) -> [f64; 5] {
+    let thermal_delta = if delta.is_finite() {
+        delta
+    } else {
+        warm - cold
+    };
+    [
+        cold,
+        cold + 0.5 * thermal_delta,
+        warm,
+        warm - 0.5 * thermal_delta,
+        cold * (1.0 + COULOMBIC_INEFFICIENCY),
+    ]
 }
 
 pub fn score_molecule(
@@ -389,25 +407,28 @@ where
             }
         };
         if let Some(field) = field.get(&voxel_idx) {
-            match field.classification() {
+            let classification = field.classification();
+            let in_lock_region = lock_mask.contains(&voxel_idx);
+            if in_lock_region && !matches!(classification, VoxelClassification::Void) {
+                result.lock_atom_count = result.lock_atom_count.saturating_add(1);
+                occupied_lock_voxels.insert(voxel_idx);
+            }
+            match classification {
                 VoxelClassification::ThermallyActivated
                 | VoxelClassification::ThermallyReleased => {
                     result.pi_complement += field.complement;
                     result.consensus_bonus += field.consensus_complement_bonus;
                 }
                 VoxelClassification::StableOccupied => {
-                    if lock_mask.contains(&voxel_idx) {
+                    if in_lock_region {
                         result.pi_clash_lock += field.clash;
-                        result.lock_atom_count = result.lock_atom_count.saturating_add(1);
-                        occupied_lock_voxels.insert(voxel_idx);
                     } else {
                         result.pi_clash_pocket += field.clash;
                     }
                 }
                 VoxelClassification::ThermallyDestabilized => {
-                    if lock_mask.contains(&voxel_idx) {
+                    if in_lock_region {
                         result.pi_clash_lock += field.clash;
-                        occupied_lock_voxels.insert(voxel_idx);
                     } else {
                         result.pi_clash_pocket += field.clash;
                     }
@@ -420,10 +441,19 @@ where
             if field.cryptic_bonus > 0.0 {
                 result.cryptic_bonus_atoms = result.cryptic_bonus_atoms.saturating_add(1);
             }
-            if lock_mask.contains(&voxel_idx) {
+            if in_lock_region {
                 result.lock_cold += field.cold_mean;
                 result.lock_warm += field.warm_mean;
                 result.lock_delta += field.delta;
+                let phase_profile =
+                    phase_resolved_lock_profile(field.cold_mean, field.warm_mean, field.delta);
+                for (slot, value) in result
+                    .lock_occupancy_per_phase
+                    .iter_mut()
+                    .zip(phase_profile)
+                {
+                    *slot += value;
+                }
             }
             if field.on_activation_pathway {
                 result.pathway_voxels = result.pathway_voxels.saturating_add(1);

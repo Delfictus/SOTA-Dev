@@ -7,7 +7,9 @@ use arrow_schema::{DataType, Field, Schema};
 use parquet::arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter};
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
-use prism_forge::scoring::{load_shear_field, score_molecule, LoadedSignalGrid, MoleculeScore};
+use prism_forge::scoring::{
+    load_shear_field, phase_resolved_lock_profile, score_molecule, LoadedSignalGrid, MoleculeScore,
+};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -24,7 +26,6 @@ const DEFAULT_LOCK_MASK: &str =
     "campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json";
 const DEFAULT_TRANSLATION_PATHWAY: &str =
     "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet";
-const COULOMBIC_INEFFICIENCY: f64 = 0.05;
 const FRAGMENT_CONTEXT_EXCLUSION_A: f64 = 2.32;
 
 #[derive(Debug, Clone)]
@@ -726,7 +727,7 @@ fn min_distance_to_positions(xyz: (f64, f64, f64), positions: &[(f64, f64, f64)]
 }
 
 fn reward_row_from_live_score(proposal: Proposal, score: MoleculeScore) -> RewardRow {
-    let lock_phase = phase_profile(score.lock_cold, score.lock_warm, score.lock_delta);
+    let lock_phase = score.lock_occupancy_per_phase;
     let lock_voxel_indices_json = json!(score.occupied_lock_voxels).to_string();
     let lock_volume = f64::from(score.lock_atom_count) * 20.0;
     let phase_provenance = lock_phase_provenance(&lock_phase);
@@ -771,21 +772,6 @@ fn reward_row_from_live_score(proposal: Proposal, score: MoleculeScore) -> Rewar
         lock_phase_provenance: phase_provenance,
         oracle_valid: true,
     }
-}
-
-fn phase_profile(cold: f64, warm: f64, delta: f64) -> [f64; 5] {
-    let thermal_delta = if delta.is_finite() {
-        delta
-    } else {
-        warm - cold
-    };
-    [
-        cold,
-        cold + 0.5 * thermal_delta,
-        warm,
-        warm - 0.5 * thermal_delta,
-        cold * (1.0 + COULOMBIC_INEFFICIENCY),
-    ]
 }
 
 fn lock_phase_provenance(phases: &[f64; 5]) -> String {
@@ -862,10 +848,8 @@ fn bifurcate_clash(
         };
         let steric_volume = lock_atom_count as f64 * 20.0;
         let (lock_occupancy_per_phase, lock_phase_provenance) = if lock_phase_samples > 0 {
-            (
-                phase_profile(lock_cold, lock_warm, lock_delta),
-                "PHASE_RESOLVED".to_owned(),
-            )
+            let phase_profile = phase_resolved_lock_profile(lock_cold, lock_warm, lock_delta);
+            (phase_profile, lock_phase_provenance(&phase_profile))
         } else if lock_atom_count > 0 {
             ([pi_clash_lock; 5], "REPLICATED_AGGREGATE".to_owned())
         } else {
@@ -1332,5 +1316,31 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("unsupported u64-compatible type"));
+    }
+
+    #[test]
+    fn live_reward_row_preserves_phase_resolved_lock_occupancy() {
+        let proposal = Proposal {
+            trajectory_id: "t0".to_owned(),
+            anchor_id: "a0".to_owned(),
+            canonical_smiles: "CC".to_owned(),
+            coordinates_json: "[[0.0,0.0,0.0]]".to_owned(),
+            score_atom_offset: 0,
+        };
+        let mut score = MoleculeScore::default();
+        score.reward = 1.0;
+        score.pi_clash_lock = 3.0;
+        score.lock_atom_count = 2;
+        score.lock_occupancy_per_phase = [3.0, 1.5, 0.0, 1.5, 3.1500000000000004];
+        score.occupied_lock_voxels = vec![1, 2];
+
+        let row = reward_row_from_live_score(proposal, score);
+
+        assert_eq!(
+            row.lock_occupancy_per_phase,
+            [3.0, 1.5, 0.0, 1.5, 3.1500000000000004]
+        );
+        assert_eq!(row.pi_clash_lock_per_phase, row.lock_occupancy_per_phase);
+        assert_eq!(row.lock_phase_provenance, "PHASE_RESOLVED");
     }
 }
