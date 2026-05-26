@@ -296,6 +296,29 @@ def test_live_signal_grid_oracle_validates_duplicate_rewards_by_trajectory_id() 
     assert telemetry.duplicate_smiles_count == 1
 
 
+def test_survivor_oracle_rejects_reordered_reward_rows() -> None:
+    oracle = SurvivorCorpusOracle(max_batch_size=2)
+    proposals = [
+        OracleProposal(anchor_id="a0", canonical_smiles="CC", trajectory_id="t0"),
+        OracleProposal(anchor_id="a1", canonical_smiles="CN", trajectory_id="t1"),
+    ]
+    rewards = _live_reward_frame(trajectory_ids=["t0", "t1"], smiles=["CN", "CC"])
+
+    try:
+        oracle.validate_rewards(
+            proposals=proposals,
+            rewards_df=rewards,
+            oracle_latency_ms=1.0,
+            rust_scoring_time_ms=1.0,
+            parquet_write_ms=1.0,
+            parquet_read_ms=1.0,
+        )
+    except RustOracleError as exc:
+        assert "canonical_smiles" in str(exc)
+    else:
+        raise AssertionError("survivor oracle accepted reordered reward rows")
+
+
 def test_live_signal_grid_oracle_command_includes_survivor_reference() -> None:
     oracle = LiveSignalGridOracle(max_batch_size=2)
 

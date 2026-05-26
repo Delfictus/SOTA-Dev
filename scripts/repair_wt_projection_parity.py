@@ -17,7 +17,7 @@ import math
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeAlias, cast
+from typing import Any, Mapping, TypeAlias, cast
 
 import polars as pl
 
@@ -46,6 +46,8 @@ DEFAULT_REPORT = TRACK_A / "wt_projection_parity_report.json"
 DEFAULT_MARKDOWN = TRACK_A / "wt_projection_parity_report.md"
 
 JsonObject: TypeAlias = dict[str, Any]
+PARITY_MIN = 0.95
+PARITY_MAX = 1.05
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,6 +74,57 @@ def numeric(value: object, default: float = 0.0) -> float:
     return default
 
 
+def path_matches(left: Path, right: Path) -> bool:
+    """Return true when two paths denote the same configured corpus."""
+
+    if left == right:
+        return True
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return left.as_posix() == right.as_posix()
+
+
+def normalize_repo_path(path: Path) -> Path:
+    """Resolve repo-relative artifact references without requiring existence."""
+
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def resolve_survivor_corpus_for_candidates(candidates: Path, requested_survivors: Path) -> tuple[Path, str]:
+    """Prefer the candidate file's recorded survivor corpus when CLI uses the stale default."""
+
+    if not path_matches(requested_survivors, DEFAULT_SURVIVORS):
+        return requested_survivors, "cli_argument"
+
+    schema = pl.scan_parquet(candidates).collect_schema()
+    if "training_survivor_corpus" not in schema.names():
+        return requested_survivors, "default"
+
+    values = (
+        pl.scan_parquet(candidates)
+        .select(pl.col("training_survivor_corpus").drop_nulls().unique())
+        .collect()
+        .get_column("training_survivor_corpus")
+        .to_list()
+    )
+    candidate_paths = [normalize_repo_path(Path(str(value))) for value in values if str(value)]
+    if len(candidate_paths) > 1:
+        rendered = ", ".join(path.as_posix() for path in candidate_paths)
+        raise RuntimeError(
+            "candidate parquet records multiple training_survivor_corpus values; "
+            f"use --survivors explicitly to select one: {rendered}"
+        )
+    if len(candidate_paths) == 1:
+        path = candidate_paths[0]
+        if not path.is_file():
+            raise RuntimeError(f"candidate-recorded survivor corpus does not exist: {path}")
+        return path, "candidate_training_survivor_corpus"
+    return requested_survivors, "default"
+
+
 def atomic_write_json(path: Path, payload: JsonObject) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -80,6 +133,8 @@ def atomic_write_json(path: Path, payload: JsonObject) -> None:
 
 
 def load_candidate_frame(path: Path, n: int) -> pl.DataFrame:
+    if n < 1:
+        raise RuntimeError("n must be positive")
     frame = pl.read_parquet(path).head(n)
     required = {"canonical_smiles", "anchor_id", "reward"}
     missing = required.difference(frame.columns)
@@ -90,6 +145,47 @@ def load_candidate_frame(path: Path, n: int) -> pl.DataFrame:
             pl.concat_str([pl.lit("parity_"), pl.col("trajectory_id").cast(pl.Utf8)]).alias("trajectory_id")
         )
     return frame
+
+
+def has_complete_candidate_coordinates(frame: pl.DataFrame) -> bool:
+    if "coordinates_json" not in frame.columns:
+        return False
+    for value in frame.get_column("coordinates_json").to_list():
+        if not isinstance(value, str) or not value.strip():
+            return False
+    return True
+
+
+def join_survivor_coordinates(frame: pl.DataFrame, survivors: Path) -> pl.DataFrame:
+    """Join survivor coordinates only when candidate rows do not already carry them."""
+
+    requested_smiles = [str(value) for value in frame.get_column("canonical_smiles").to_list()]
+    survivor_scan = (
+        pl.scan_parquet(survivors)
+        .filter(pl.col("canonical_smiles").is_in(requested_smiles))
+        .select(["canonical_smiles", "coordinates_json"])
+    )
+    survivor_frame = survivor_scan.collect()
+    duplicate_conflicts = (
+        survivor_frame.group_by("canonical_smiles")
+        .agg(
+            pl.len().alias("row_count"),
+            pl.col("coordinates_json").n_unique().alias("coordinate_count"),
+        )
+        .filter((pl.col("row_count") > 1) & (pl.col("coordinate_count") > 1))
+    )
+    if duplicate_conflicts.height > 0:
+        examples = duplicate_conflicts.get_column("canonical_smiles").head(5).to_list()
+        raise RuntimeError(
+            "survivor corpus has duplicate canonical_smiles with conflicting coordinates; "
+            f"use candidate coordinates or a stable product key. examples={examples}"
+        )
+    survivor_unique = survivor_frame.unique(subset=["canonical_smiles"], keep="first")
+    base = frame.drop("coordinates_json") if "coordinates_json" in frame.columns else frame
+    joined = base.join(survivor_unique, on="canonical_smiles", how="left")
+    if joined.filter(pl.col("coordinates_json").is_null()).height > 0:
+        raise RuntimeError("projection parity candidates are missing survivor coordinates")
+    return joined
 
 
 async def score_native_rust(
@@ -128,15 +224,9 @@ def load_projection_frame(
     wt_condition: str,
     n: int,
 ) -> pl.DataFrame:
-    candidates_scan = pl.scan_parquet(candidates).head(n)
-    survivors_scan = (
-        pl.scan_parquet(survivors)
-        .select(["canonical_smiles", "coordinates_json"])
-        .unique(subset=["canonical_smiles"], keep="first")
-    )
-    joined = candidates_scan.join(survivors_scan, on="canonical_smiles", how="left").collect()
-    if joined.filter(pl.col("coordinates_json").is_null()).height > 0:
-        raise RuntimeError("projection parity candidates are missing survivor coordinates")
+    joined = pl.read_parquet(candidates).head(n)
+    if not has_complete_candidate_coordinates(joined):
+        joined = join_survivor_coordinates(joined, survivors)
 
     specs = load_grid_specs(grid_mapping, [wt_condition])
     field = load_field(signal_grid, wt_condition)
@@ -165,6 +255,116 @@ def ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator
 
 
+def parity_status_for_ratio(value: float) -> str:
+    if PARITY_MIN <= value <= PARITY_MAX:
+        return "WT_NATIVE_RAW_PARITY_CONFIRMED"
+    return "WT_NATIVE_RAW_PARITY_FAILED"
+
+
+def stored_reward_status_for_ratio(value: float) -> str:
+    if PARITY_MIN <= value <= PARITY_MAX:
+        return "STORED_REWARD_PARITY_CONFIRMED"
+    return "STORED_REWARD_INCLUDES_NON_WT_BONUSES"
+
+
+def coordinate_projection_status(projection_nonzero: int) -> str:
+    return "WT_COORDINATE_PROJECTION_COLLAPSE" if projection_nonzero == 0 else "WT_COORDINATE_PROJECTION_NONZERO"
+
+
+def required_finite_number(value: object, field_name: str) -> float | None:
+    """Parse an optional numeric parity field without hiding corrupt values."""
+
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float | str):
+        try:
+            parsed = float(value)
+        except ValueError as exc:
+            raise RuntimeError(f"{field_name} is not numeric: {value!r}") from exc
+        if not math.isfinite(parsed):
+            raise RuntimeError(f"{field_name} is not finite: {value!r}")
+        return parsed
+    raise RuntimeError(f"{field_name} has unsupported type: {type(value).__name__}")
+
+
+def candidate_consensus_bonus(row: Mapping[str, object]) -> float:
+    weight = required_finite_number(row.get("consensus_bonus_weight"), "consensus_bonus_weight")
+    if weight is None or weight == 0.0:
+        return 0.0
+    if weight < 0.0:
+        raise RuntimeError(f"consensus_bonus_weight must be non-negative: {weight}")
+
+    observed: list[tuple[str, float]] = []
+    for column in ("scaffold_consensus_bonus", "consensus_complement_bonus", "population_consensus_bonus"):
+        if column not in row:
+            continue
+        value = required_finite_number(row.get(column), column)
+        if value is None:
+            continue
+        if value < 0.0:
+            raise RuntimeError(f"{column} must be non-negative: {value}")
+        if value > 0.0:
+            observed.append((column, value))
+    if not observed:
+        return 0.0
+
+    values = [value for _, value in observed]
+    if max(values) - min(values) > 1.0e-9:
+        rendered = ", ".join(f"{column}={value}" for column, value in observed)
+        raise RuntimeError(f"ambiguous consensus bonus columns for WT parity: {rendered}")
+    return weight * values[0]
+
+
+def native_wt_reward_from_candidate(row: Mapping[str, object]) -> float:
+    for column in ("pgx_native_reward_WT", "native_reward", "legacy_reward"):
+        value = row.get(column)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, int | float | str):
+            reward = float(value)
+            if math.isfinite(reward) and reward > 0.0:
+                return reward
+    stored = numeric(row.get("reward"), float("nan"))
+    if not math.isfinite(stored):
+        raise RuntimeError("candidate row has no finite reward for WT parity")
+    native = stored - candidate_consensus_bonus(row)
+    if not math.isfinite(native) or native <= 0.0:
+        raise RuntimeError(f"candidate native WT reward is invalid after bonus removal: {native}")
+    return native
+
+
+def build_parity_metrics(
+    stored_rewards: list[float],
+    stored_native_rewards: list[float],
+    rust_rewards: list[float],
+    projection_rewards: list[float],
+) -> JsonObject:
+    stored_vs_rust = finite_mean(
+        [ratio(stored, rust) for stored, rust in zip(stored_rewards, rust_rewards, strict=True)]
+    )
+    stored_native_vs_rust = finite_mean(
+        [ratio(native, rust) for native, rust in zip(stored_native_rewards, rust_rewards, strict=True)]
+    )
+    raw_wt_ratio = finite_mean(
+        [ratio(native_wt, rust) for native_wt, rust in zip(stored_native_rewards, rust_rewards, strict=True)]
+    )
+    projection_vs_native = finite_mean(
+        [ratio(projected, rust) for projected, rust in zip(projection_rewards, rust_rewards, strict=True)]
+    )
+    projection_nonzero = sum(1 for reward in projection_rewards if reward > 0.01)
+    return {
+        "stored_vs_rust_ratio_mean": stored_vs_rust,
+        "stored_reward_status": stored_reward_status_for_ratio(stored_vs_rust),
+        "stored_native_vs_rust_ratio_mean": stored_native_vs_rust,
+        "raw_wt_projection_ratio_mean": raw_wt_ratio,
+        "raw_projection_status": parity_status_for_ratio(raw_wt_ratio),
+        "coordinate_projection_status": coordinate_projection_status(projection_nonzero),
+        "projection_vs_native_ratio_mean": projection_vs_native,
+        "coordinate_projection_vs_native_ratio_mean": projection_vs_native,
+        "projection_nonzero_count": projection_nonzero,
+    }
+
+
 def render_markdown(report: JsonObject) -> str:
     comparisons = cast(list[JsonObject], report["comparisons"])
     lines = [
@@ -178,22 +378,28 @@ def render_markdown(report: JsonObject) -> str:
         "",
         f"- Native authority: `{report['native_authority']}`",
         f"- Raw projection status: `{report['raw_projection_status']}`",
+        f"- Raw WT/native ratio mean: `{float(report['raw_wt_projection_ratio_mean']):.6f}`",
+        f"- Coordinate projection status: `{report['coordinate_projection_status']}`",
         f"- Repaired method: `{report['repair_method']}`",
-        f"- Stored/Rust native ratio mean: `{float(report['stored_vs_rust_ratio_mean']):.6f}`",
-        f"- Projection/native ratio mean: `{float(report['projection_vs_native_ratio_mean']):.6e}`",
+        f"- Stored/Rust diagnostic ratio mean: `{float(report['stored_vs_rust_ratio_mean']):.6f}`",
+        f"- Stored native/Rust ratio mean: `{float(report['stored_native_vs_rust_ratio_mean']):.6f}`",
+        f"- Stored reward status: `{report['stored_reward_status']}`",
+        f"- Coordinate projection/native ratio mean: `{float(report['coordinate_projection_vs_native_ratio_mean']):.6e}`",
         f"- Calibrated WT self-parity ratio: `{float(report['calibrated_wt_self_parity_ratio_mean']):.6f}`",
         "",
         "## Candidate Comparison",
         "",
-        "| idx | stored WT | Rust WT | projected WT | projection/native | WT liability |",
-        "|---:|---:|---:|---:|---:|---:|",
+        "| idx | stored reward | stored native WT | native Rust WT | raw WT/native | coordinate WT | coordinate/native | WT liability |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in comparisons:
         lines.append(
-            "| {idx} | {stored:.4f} | {rust:.4f} | {projection:.4e} | {ratio_value:.4e} | {liability:.4f} |".format(
+            "| {idx} | {stored:.4f} | {stored_native:.4f} | {rust:.4f} | {raw_ratio:.4f} | {projection:.4e} | {ratio_value:.4e} | {liability:.4f} |".format(
                 idx=int(row["idx"]),
                 stored=float(row["stored_reward"]),
+                stored_native=float(row["stored_native_wt_reward"]),
                 rust=float(row["rust_reward"]),
+                raw_ratio=float(row["raw_wt_native_ratio"]),
                 projection=float(row["projection_reward"]),
                 ratio_value=float(row["projection_native_ratio"]),
                 liability=float(row["projection_liability"]),
@@ -204,8 +410,9 @@ def render_markdown(report: JsonObject) -> str:
             "",
             "## Determination",
             "",
-            "Absolute coordinate-field projection is not the native Rust reward path and remains preserved as negative evidence.",
-            "PGx resilience must use native WT reward as denominator and N80 fields as relative variant liability deltas.",
+            "The raw WT PGx path is the native Rust oracle reward invoked with an explicit survivor corpus.",
+            "Coordinate-field projection is not the native Rust reward path and remains preserved as relative liability evidence.",
+            "Candidate stored reward may include downstream consensus bonuses; it is reported as a diagnostic, not the WT denominator.",
             "",
         ]
     )
@@ -214,18 +421,19 @@ def render_markdown(report: JsonObject) -> str:
 
 def main() -> int:
     args = parse_args()
+    survivors, survivor_corpus_source = resolve_survivor_corpus_for_candidates(args.candidates, args.survivors)
     frame = load_candidate_frame(args.candidates, int(args.n))
     rust_rows = asyncio.run(
         score_native_rust(
             frame=frame,
             oracle_binary=args.oracle_binary,
-            survivors=args.survivors,
+            survivors=survivors,
             lock_mask=args.lock_mask,
         )
     )
     projection = load_projection_frame(
         candidates=args.candidates,
-        survivors=args.survivors,
+        survivors=survivors,
         signal_grid=args.signal_grid,
         grid_mapping=args.grid_mapping,
         wt_condition=str(args.wt_condition),
@@ -234,35 +442,41 @@ def main() -> int:
 
     stored_rewards = [numeric(value) for value in frame.get_column("reward").to_list()]
     rust_rewards = [numeric(value) for value in rust_rows.get_column("reward").to_list()]
+    candidate_rows = cast(list[dict[str, object]], frame.to_dicts())
+    stored_native_rewards = [native_wt_reward_from_candidate(row) for row in candidate_rows]
     projection_rewards = [numeric(value) for value in projection.get_column("projection_reward_WT").to_list()]
     projection_liabilities = [numeric(value) for value in projection.get_column("projection_liability_WT").to_list()]
 
     comparisons: list[JsonObject] = []
-    for idx, (stored, rust, projected, liability) in enumerate(
-        zip(stored_rewards, rust_rewards, projection_rewards, projection_liabilities, strict=True)
+    for idx, (stored, stored_native, rust, projected, liability) in enumerate(
+        zip(stored_rewards, stored_native_rewards, rust_rewards, projection_rewards, projection_liabilities, strict=True)
     ):
         comparisons.append(
             {
                 "idx": idx,
                 "canonical_smiles": str(frame.get_column("canonical_smiles")[idx]),
                 "stored_reward": stored,
+                "stored_native_wt_reward": stored_native,
                 "rust_reward": rust,
                 "projection_reward": projected,
                 "stored_rust_ratio": ratio(stored, rust),
+                "raw_wt_native_ratio": ratio(stored_native, rust),
                 "projection_native_ratio": ratio(projected, rust),
                 "projection_liability": liability,
             }
         )
 
-    stored_vs_rust = finite_mean([ratio(stored, rust) for stored, rust in zip(stored_rewards, rust_rewards, strict=True)])
-    projection_vs_native = finite_mean(
-        [ratio(projected, rust) for projected, rust in zip(projection_rewards, rust_rewards, strict=True)]
-    )
-    projection_nonzero = sum(1 for reward in projection_rewards if reward > 0.01)
-    raw_projection_status = "WT_PROJECTION_COLLAPSE" if projection_nonzero == 0 else "WT_PROJECTION_NONZERO"
-    parity_status = "CALIBRATED_PARITY_CONFIRMED"
+    metrics = build_parity_metrics(stored_rewards, stored_native_rewards, rust_rewards, projection_rewards)
+    raw_wt_projection_ratio = float(metrics["raw_wt_projection_ratio_mean"])
+    raw_projection_status = str(metrics["raw_projection_status"])
+    if raw_projection_status != "WT_NATIVE_RAW_PARITY_CONFIRMED":
+        raise RuntimeError(
+            "WT native raw parity failed: "
+            f"raw_wt_projection_ratio_mean={raw_wt_projection_ratio:.6f}"
+        )
+    parity_status = "VERIFIED_RAW_WT_PARITY"
     report: JsonObject = {
-        "schema_version": "PRISM.wt_projection_parity.v1",
+        "schema_version": "PRISM.wt_projection_parity.v2",
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "wt_parity_status": parity_status,
         "native_authority": "rust_survivor_lookup_oracle",
@@ -270,21 +484,28 @@ def main() -> int:
         "repair_method": "native_wt_reward_plus_relative_field_liability_delta_v1",
         "candidate_count": frame.height,
         "candidate_source": args.candidates.as_posix(),
-        "survivor_corpus": args.survivors.as_posix(),
+        "survivor_corpus": survivors.as_posix(),
+        "requested_survivor_corpus": args.survivors.as_posix(),
+        "survivor_corpus_source": survivor_corpus_source,
         "signal_grid": args.signal_grid.as_posix(),
         "grid_mapping": args.grid_mapping.as_posix(),
         "lock_mask": args.lock_mask.as_posix(),
         "oracle_binary": args.oracle_binary.as_posix(),
-        "stored_vs_rust_ratio_mean": stored_vs_rust,
-        "projection_vs_native_ratio_mean": projection_vs_native,
+        "oracle_command_contract": {
+            "requires_survivors_flag": True,
+            "survivor_corpus": survivors.as_posix(),
+            "source": survivor_corpus_source,
+        },
+        **metrics,
         "calibrated_wt_self_parity_ratio_mean": 1.0,
-        "projection_nonzero_count": projection_nonzero,
         "projection_liability_mean": finite_mean(projection_liabilities),
         "comparisons": comparisons,
         "notes": [
-            "The Rust oracle CLI uses --batch/--rewards/--survivors and does not consume signal-grid parquet directly.",
-            "Raw coordinate projection remains useful only as a relative variant field-liability comparator.",
-            "WT self-parity is repaired by construction because native WT reward is retained as the denominator.",
+            "The Rust oracle CLI uses --batch/--rewards/--survivors; this is the raw WT authority path.",
+            "When candidates record training_survivor_corpus, that corpus overrides the stale default survivor corpus.",
+            "The raw WT parity ratio compares stored candidate WT-native reward after known consensus-bonus removal against Rust WT rescore.",
+            "Coordinate-field projection remains useful only as a relative variant field-liability comparator.",
+            "WT self-parity is repaired by retaining native Rust WT reward as the denominator.",
         ],
     }
     atomic_write_json(args.report, report)
@@ -293,9 +514,11 @@ def main() -> int:
     print(
         "wt_parity_CONFIRMED "
         "method=parity_calibrated_liability_delta_v1 "
-        "ratio=1.0000 "
+        f"raw_wt_projection_ratio_mean={raw_wt_projection_ratio:.6f} "
         f"raw_projection_status={raw_projection_status} "
-        f"projection_native_ratio_mean={projection_vs_native:.6e} "
+        f"coordinate_projection_status={metrics['coordinate_projection_status']} "
+        f"coordinate_projection_native_ratio_mean={float(metrics['coordinate_projection_vs_native_ratio_mean']):.6e} "
+        f"survivor_corpus_source={survivor_corpus_source} "
         f"report={args.report}"
     )
     return 0

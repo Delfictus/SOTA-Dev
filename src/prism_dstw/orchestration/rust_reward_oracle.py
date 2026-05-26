@@ -313,6 +313,13 @@ class SurvivorCorpusOracle:
                 f"batch_path={self.batch_path} reward_path={self.reward_path} "
                 f"expected_head={expected} observed_head={observed}"
             )
+        observed_smiles = [str(value) for value in rewards_df.get_column("canonical_smiles").to_list()]
+        expected_smiles = [proposal.canonical_smiles for proposal in proposals]
+        if observed_smiles != expected_smiles:
+            raise RustOracleError(
+                "survivor oracle reward rows are not aligned by canonical_smiles; "
+                f"expected_head={expected_smiles[:8]} observed_head={observed_smiles[:8]}"
+            )
         duplicate_smiles_count = rewards_df.height - rewards_df.select("canonical_smiles").unique().height
         if duplicate_smiles_count > 0:
             raise RustOracleError(f"Rust oracle emitted {duplicate_smiles_count} duplicate SMILES rows")
@@ -431,9 +438,20 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
                 "live oracle reward rows are not aligned by trajectory_id; "
                 f"expected_head={expected_trajectory_ids[:8]} observed_head={observed_trajectory_ids[:8]}"
             )
+        validation_rewards = deduplicate_live_reward_identities(rewards_df)
+        validation_proposals = [
+            OracleProposal(
+                anchor_id=proposal.anchor_id,
+                canonical_smiles=str(validation_rewards.get_column("canonical_smiles")[index]),
+                trajectory_id=proposal.trajectory_id,
+                coordinates_json=proposal.coordinates_json,
+                score_atom_offset=proposal.score_atom_offset,
+            )
+            for index, proposal in enumerate(proposals)
+        ]
         telemetry = super().validate_rewards(
-            proposals=proposals,
-            rewards_df=deduplicate_live_reward_identities(rewards_df),
+            proposals=validation_proposals,
+            rewards_df=validation_rewards,
             oracle_latency_ms=oracle_latency_ms,
             rust_scoring_time_ms=rust_scoring_time_ms,
             parquet_write_ms=parquet_write_ms,
