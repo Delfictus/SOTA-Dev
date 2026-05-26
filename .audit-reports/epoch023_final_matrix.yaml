@@ -1,0 +1,91 @@
+epoch: 023
+branch: debt-resolution-clean
+head_commit: f7d4420685f09c757b63fd04e06ccc3074a6c786
+tag_at_capture: epoch023-zero-debt-verified
+audit_root: /mnt/storage/prism-scratch/epoch023_final_audit
+overall_status: VERIFIED_RUNTIME
+final_bug_hunter:
+  status: PASS
+  result: NO_CRITICAL_HIGH_DEFECTS_FOUND
+  evidence:
+    - .audit-reports/final_bug_hunter.md
+matrix:
+  D01:
+    directive: default_trainer_smoke
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_01_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase1/pytest_q.log
+  D02:
+    directive: root_test_suite
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_02_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase1/pytest_q.log
+  D03:
+    directive: live_rust_oracle
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_03_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase5/oracle_help_flags.txt
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase1/cargo_test_release.log
+  D04:
+    directive: multi_step_trajectory_rollout
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_04_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase3/full_field_smoke_telemetry.txt
+  D05:
+    directive: step_aware_field_conditioning
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_05_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase3/full_field_smoke_telemetry.txt
+  D06:
+    directive: warp_matrix_directions
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_06_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase4/data_schema_summary.txt
+  D07:
+    directive: species_selectivity
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_07_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase9/species_runtime_command.log
+  D08:
+    directive: canonical_rdkit_smiles
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_08_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase9/candidate_artifact_schema_checks.txt
+  D09:
+    directive: gpu_dispatch_4_channel
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_09_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase8/d09_generated_script_audit.txt
+  D10:
+    directive: cross_scaffold_positivity
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_10_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase6/cross_scaffold_gate_metrics.txt
+  D11:
+    directive: pgx_raw_projection_path
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_11_auditor.md
+      - campaigns/glp1r_aleniglipron/track_a_generative/wt_projection_parity_report.json
+  D12:
+    directive: lock_phase_provenance
+    status: PHASE_RESOLVED
+    evidence:
+      - .audit-reports/directive_12_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase9/candidate_artifact_schema_checks.txt
+  D13:
+    directive: backward_policy
+    status: VERIFIED_RUNTIME
+    evidence:
+      - .audit-reports/directive_13_auditor.md
+      - /mnt/storage/prism-scratch/epoch023_final_audit/phase3/full_field_smoke_telemetry.txt
