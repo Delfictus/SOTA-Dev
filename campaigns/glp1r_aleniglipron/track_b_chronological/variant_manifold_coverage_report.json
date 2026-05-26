@@ -1,0 +1,108 @@
+{
+  "coverage_gaps": [],
+  "created_at": "2026-05-26T20:18:27.052190+00:00",
+  "evidence_paths": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/genealogical_variant_panel.json"
+  ],
+  "id": "track_b_variant_manifold_coverage_report",
+  "provenance_class": "L3_DERIVED",
+  "region_summaries": {
+    "BISTATE_RETAINED_RESIDUES": {
+      "covered": true,
+      "perturbations": [
+        "AROMATIC_STACKING_PROBE",
+        "CHARGE_INVERSION_PROBE",
+        "CONSERVATIVE_CONTROL",
+        "FLEXIBILIZING_PROBE",
+        "HYDRATION_WIRE_PROBE",
+        "RIGIDIFYING_PROBE",
+        "SEVERING_PROBE",
+        "VOLUME_EXPANSION_PROBE"
+      ],
+      "variant_count": 16
+    },
+    "ECD_TM1_GATEWAY": {
+      "covered": true,
+      "perturbations": [
+        "AROMATIC_STACKING_PROBE",
+        "CHARGE_INVERSION_PROBE",
+        "CONSERVATIVE_CONTROL",
+        "FLEXIBILIZING_PROBE",
+        "HYDRATION_WIRE_PROBE",
+        "RIGIDIFYING_PROBE",
+        "SEVERING_PROBE",
+        "VOLUME_EXPANSION_PROBE"
+      ],
+      "variant_count": 16
+    },
+    "HYDRATION_CORRIDOR": {
+      "covered": true,
+      "perturbations": [
+        "AROMATIC_STACKING_PROBE",
+        "CHARGE_INVERSION_PROBE",
+        "CONSERVATIVE_CONTROL",
+        "FLEXIBILIZING_PROBE",
+        "HYDRATION_WIRE_PROBE",
+        "RIGIDIFYING_PROBE",
+        "SEVERING_PROBE",
+        "VOLUME_EXPANSION_PROBE"
+      ],
+      "variant_count": 16
+    },
+    "INTRACELLULAR_LOCK_BASIN": {
+      "covered": true,
+      "perturbations": [
+        "AROMATIC_STACKING_PROBE",
+        "CHARGE_INVERSION_PROBE",
+        "CONSERVATIVE_CONTROL",
+        "FLEXIBILIZING_PROBE",
+        "HYDRATION_WIRE_PROBE",
+        "RIGIDIFYING_PROBE",
+        "SEVERING_PROBE",
+        "VOLUME_EXPANSION_PROBE"
+      ],
+      "variant_count": 16
+    },
+    "TE_HUBS": {
+      "covered": true,
+      "perturbations": [
+        "AROMATIC_STACKING_PROBE",
+        "CHARGE_INVERSION_PROBE",
+        "CONSERVATIVE_CONTROL",
+        "FLEXIBILIZING_PROBE",
+        "HYDRATION_WIRE_PROBE",
+        "RIGIDIFYING_PROBE",
+        "SEVERING_PROBE",
+        "VOLUME_EXPANSION_PROBE"
+      ],
+      "variant_count": 16
+    },
+    "TM3_TM5_CORE": {
+      "covered": true,
+      "perturbations": [
+        "AROMATIC_STACKING_PROBE",
+        "CHARGE_INVERSION_PROBE",
+        "CONSERVATIVE_CONTROL",
+        "FLEXIBILIZING_PROBE",
+        "HYDRATION_WIRE_PROBE",
+        "RIGIDIFYING_PROBE",
+        "SEVERING_PROBE",
+        "VOLUME_EXPANSION_PROBE"
+      ],
+      "variant_count": 16
+    }
+  },
+  "regions_evaluated": [
+    "ECD_TM1_GATEWAY",
+    "TM3_TM5_CORE",
+    "INTRACELLULAR_LOCK_BASIN",
+    "HYDRATION_CORRIDOR",
+    "TE_HUBS",
+    "BISTATE_RETAINED_RESIDUES"
+  ],
+  "schema_version": "track_b.variant_manifold_coverage_report.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/genealogical_variant_panel.json"
+  ],
+  "verdict": "COVERED"
+}

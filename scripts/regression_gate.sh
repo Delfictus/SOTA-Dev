@@ -33,7 +33,9 @@ echo "[6/7] Root pytest run..."
 PYTHONPATH=src python3 -m pytest -q --tb=line || { echo "FAIL: pytest"; FAIL=1; }
 
 echo "[7/7] Default trainer smoke..."
-timeout 120 bash -c 'PYTHONPATH=src python3 scripts/train_gflownet_policy.py --epochs 1 --batch-size 4' \
+SMOKE_OUTPUT_DIR="/mnt/storage/prism-scratch/regression_gate/${DIRECTIVE_NAME}/track_a_generative"
+mkdir -p "$SMOKE_OUTPUT_DIR"
+timeout 120 bash -c "PYTHONPATH=src python3 scripts/train_gflownet_policy.py --epochs 1 --batch-size 4 --output-dir '$SMOKE_OUTPUT_DIR' --checkpoint-dir '$SMOKE_OUTPUT_DIR/checkpoints' --output-policy '$SMOKE_OUTPUT_DIR/gflownet_policy_v1.pt' --telemetry-log '$SMOKE_OUTPUT_DIR/telemetry.jsonl'" \
     || { echo "FAIL: default trainer smoke"; FAIL=1; }
 
 if [ "$FAIL" -eq 0 ]; then

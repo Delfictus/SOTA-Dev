@@ -8,7 +8,8 @@ use parquet::arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter}
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use prism_forge::scoring::{
-    load_shear_field, phase_resolved_lock_profile, score_molecule, LoadedSignalGrid, MoleculeScore,
+    load_continuity_maps, load_shear_field, phase_resolved_lock_profile, score_molecule,
+    score_molecule_with_continuity_and_pose, LoadedContinuityMaps, LoadedSignalGrid, MoleculeScore,
 };
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -39,6 +40,10 @@ struct Config {
     grid_config: PathBuf,
     shear_stress: Option<PathBuf>,
     translation_pathway: Option<PathBuf>,
+    nma_continuity_map: Option<PathBuf>,
+    hydration_continuity_map: Option<PathBuf>,
+    thermodynamic_continuity_map: Option<PathBuf>,
+    continuity_admissibility: bool,
 }
 
 impl Default for Config {
@@ -59,6 +64,10 @@ impl Default for Config {
                 "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/shear_stress_field.parquet",
             )),
             translation_pathway: Some(PathBuf::from(DEFAULT_TRANSLATION_PATHWAY)),
+            nma_continuity_map: None,
+            hydration_continuity_map: None,
+            thermodynamic_continuity_map: None,
+            continuity_admissibility: false,
         }
     }
 }
@@ -94,6 +103,7 @@ struct Proposal {
     canonical_smiles: String,
     coordinates_json: String,
     score_atom_offset: usize,
+    u_pose: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +132,14 @@ struct RewardRow {
     selected_dihedral_deg: f64,
     reward_components_json: String,
     lock_phase_provenance: String,
+    nma_disruption_penalty: f64,
+    hydration_blockade_penalty: f64,
+    thermodynamic_trap_penalty: f64,
+    pathway_bonus: f64,
+    u_pose: f64,
+    continuity_admissibility: bool,
+    continuity_reward_v1: f64,
+    continuity_provenance: String,
     oracle_valid: bool,
 }
 
@@ -158,6 +176,11 @@ fn main() -> Result<()> {
                 .with_context(|| format!("load shear stress {}", path.display()))?,
             None => HashMap::new(),
         };
+        let continuity_maps = if config.continuity_admissibility {
+            Some(load_required_continuity_maps(&config)?)
+        } else {
+            None
+        };
         let proposals = load_batch(&config.batch)
             .with_context(|| format!("load batch {}", config.batch.display()))?;
         let lock_voxels = lock_mask
@@ -180,7 +203,17 @@ fn main() -> Result<()> {
                         proposal.trajectory_id, proposal.canonical_smiles
                     )
                 })?;
-            let score = score_molecule(&score_positions, &grid, &lock_voxels, &shear_field);
+            let score = match &continuity_maps {
+                Some(maps) => score_molecule_with_continuity_and_pose(
+                    &score_positions,
+                    &grid,
+                    &lock_voxels,
+                    &shear_field,
+                    maps,
+                    proposal.u_pose,
+                ),
+                None => score_molecule(&score_positions, &grid, &lock_voxels, &shear_field),
+            };
             reward_rows.push(reward_row_from_live_score(proposal, score));
         }
         write_rewards(&config.rewards, &reward_rows)?;
@@ -190,7 +223,7 @@ fn main() -> Result<()> {
             reward_rows.iter().map(|row| row.reward).sum::<f64>() / reward_rows.len() as f64
         };
         println!(
-            "oracle_scorer mode=live_signal_grid batch={} valid={} invalid=0 reward_mean={:.6} grid_condition={} field_voxels={} pathway_voxels={} shear_voxels={} elapsed_ms={:.3} rewards={}",
+            "oracle_scorer mode=live_signal_grid batch={} valid={} invalid=0 reward_mean={:.6} grid_condition={} field_voxels={} pathway_voxels={} shear_voxels={} continuity_admissibility={} elapsed_ms={:.3} rewards={}",
             reward_rows.len(),
             reward_rows.len(),
             mean_reward,
@@ -198,6 +231,7 @@ fn main() -> Result<()> {
             grid.field.len(),
             pathway_voxels,
             shear_field.len(),
+            config.continuity_admissibility,
             start.elapsed().as_secs_f64() * 1000.0,
             config.rewards.display()
         );
@@ -252,6 +286,14 @@ fn main() -> Result<()> {
                 })
                 .to_string(),
                 lock_phase_provenance: "REPLICATED_AGGREGATE".to_owned(),
+                nma_disruption_penalty: 0.0,
+                hydration_blockade_penalty: 0.0,
+                thermodynamic_trap_penalty: 0.0,
+                pathway_bonus: 0.0,
+                u_pose: 0.0,
+                continuity_admissibility: true,
+                continuity_reward_v1: 0.0,
+                continuity_provenance: "NOT_REQUESTED".to_owned(),
                 oracle_valid: false,
             });
             continue;
@@ -310,6 +352,14 @@ fn main() -> Result<()> {
             })
             .to_string(),
             lock_phase_provenance: reward.lock_phase_provenance.clone(),
+            nma_disruption_penalty: 0.0,
+            hydration_blockade_penalty: 0.0,
+            thermodynamic_trap_penalty: 0.0,
+            pathway_bonus: 0.0,
+            u_pose: 0.0,
+            continuity_admissibility: true,
+            continuity_reward_v1: reward.reward.max(1.0e-8),
+            continuity_provenance: "NOT_REQUESTED".to_owned(),
             oracle_valid: true,
         });
     }
@@ -366,6 +416,27 @@ fn parse_args() -> Result<Config> {
             "--no-translation-pathway" => {
                 config.translation_pathway = None;
             }
+            "--nma-continuity-map" => {
+                config.nma_continuity_map = Some(PathBuf::from(value_after(
+                    &mut args,
+                    "--nma-continuity-map",
+                )?))
+            }
+            "--hydration-continuity-map" => {
+                config.hydration_continuity_map = Some(PathBuf::from(value_after(
+                    &mut args,
+                    "--hydration-continuity-map",
+                )?))
+            }
+            "--thermodynamic-continuity-map" => {
+                config.thermodynamic_continuity_map = Some(PathBuf::from(value_after(
+                    &mut args,
+                    "--thermodynamic-continuity-map",
+                )?))
+            }
+            "--continuity-admissibility" => {
+                config.continuity_admissibility = true;
+            }
             "--lock-mask" => {
                 config.lock_mask = Some(PathBuf::from(value_after(&mut args, "--lock-mask")?))
             }
@@ -374,7 +445,7 @@ fn parse_args() -> Result<Config> {
             }
             "--help" | "-h" => {
                 println!(
-                    "oracle_scorer [--live-scoring --signal-grid <parquet> --grid-config <json> --shear-stress <parquet>|--no-shear-stress --translation-pathway <parquet>|--no-translation-pathway] --batch|--input <parquet> --rewards|--output <parquet> [--survivors <parquet>] [--lock-mask <json>|--no-lock-mask]"
+                    "oracle_scorer [--live-scoring --signal-grid <parquet> --grid-config <json> --shear-stress <parquet>|--no-shear-stress --translation-pathway <parquet>|--no-translation-pathway --continuity-admissibility --nma-continuity-map <parquet> --hydration-continuity-map <parquet> --thermodynamic-continuity-map <parquet>] --batch|--input <parquet> --rewards|--output <parquet> [--survivors <parquet>] [--lock-mask <json>|--no-lock-mask]"
                 );
                 std::process::exit(0);
             }
@@ -382,6 +453,24 @@ fn parse_args() -> Result<Config> {
         }
     }
     Ok(config)
+}
+
+fn load_required_continuity_maps(config: &Config) -> Result<LoadedContinuityMaps> {
+    let nma = config
+        .nma_continuity_map
+        .as_ref()
+        .ok_or_else(|| anyhow!("--continuity-admissibility requires --nma-continuity-map"))?;
+    let hydration = config
+        .hydration_continuity_map
+        .as_ref()
+        .ok_or_else(|| anyhow!("--continuity-admissibility requires --hydration-continuity-map"))?;
+    let thermodynamic = config
+        .thermodynamic_continuity_map
+        .as_ref()
+        .ok_or_else(|| {
+            anyhow!("--continuity-admissibility requires --thermodynamic-continuity-map")
+        })?;
+    load_continuity_maps(nma, hydration, thermodynamic)
 }
 
 fn value_after(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<String> {
@@ -412,6 +501,7 @@ fn load_batch(path: &Path) -> Result<Vec<Proposal>> {
         let smiles = string_column(&batch, "canonical_smiles")?;
         let coordinates = optional_string_column(&batch, "coordinates_json");
         let offsets = optional_u64_column(&batch, "score_atom_offset")?;
+        let pose_penalties = optional_f64_column(&batch, "u_pose");
         for row_idx in 0..batch.num_rows() {
             proposals.push(Proposal {
                 trajectory_id: string_value(trajectory, row_idx)?,
@@ -425,6 +515,7 @@ fn load_batch(path: &Path) -> Result<Vec<Proposal>> {
                     Some(array) => score_atom_offset_value(array, row_idx)?,
                     None => 0,
                 },
+                u_pose: optional_f64_value(pose_penalties, row_idx, 0.0),
             });
         }
     }
@@ -762,6 +853,14 @@ fn reward_row_from_live_score(proposal: Proposal, score: MoleculeScore) -> Rewar
             "pi_clash_pocket": score.pi_clash_pocket,
             "pi_clash_lock": score.pi_clash_lock,
             "sigma_shear": score.sigma_shear,
+            "nma_disruption_penalty": score.nma_disruption_penalty,
+            "hydration_blockade_penalty": score.hydration_blockade_penalty,
+            "thermodynamic_trap_penalty": score.thermodynamic_trap_penalty,
+            "pathway_bonus": score.pathway_bonus,
+            "u_pose": score.u_pose,
+            "continuity_admissibility": score.continuity_admissibility,
+            "continuity_reward_v1": score.continuity_reward_v1,
+            "continuity_provenance": score.continuity_provenance,
             "consensus_complement_bonus": score.consensus_bonus,
             "cryptic_bonus": score.cryptic_bonus,
             "lock_phase_provenance": phase_provenance,
@@ -770,6 +869,14 @@ fn reward_row_from_live_score(proposal: Proposal, score: MoleculeScore) -> Rewar
         })
         .to_string(),
         lock_phase_provenance: phase_provenance,
+        nma_disruption_penalty: score.nma_disruption_penalty,
+        hydration_blockade_penalty: score.hydration_blockade_penalty,
+        thermodynamic_trap_penalty: score.thermodynamic_trap_penalty,
+        pathway_bonus: score.pathway_bonus,
+        u_pose: score.u_pose,
+        continuity_admissibility: score.continuity_admissibility,
+        continuity_reward_v1: score.continuity_reward_v1,
+        continuity_provenance: score.continuity_provenance,
         oracle_valid: true,
     }
 }
@@ -1075,6 +1182,14 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
         Field::new("selected_dihedral_deg", DataType::Float64, false),
         Field::new("reward_components_json", DataType::Utf8, false),
         Field::new("lock_phase_provenance", DataType::Utf8, false),
+        Field::new("nma_disruption_penalty", DataType::Float64, false),
+        Field::new("hydration_blockade_penalty", DataType::Float64, false),
+        Field::new("thermodynamic_trap_penalty", DataType::Float64, false),
+        Field::new("pathway_bonus", DataType::Float64, false),
+        Field::new("u_pose", DataType::Float64, false),
+        Field::new("continuity_admissibility", DataType::Boolean, false),
+        Field::new("continuity_reward_v1", DataType::Float64, false),
+        Field::new("continuity_provenance", DataType::Utf8, false),
         Field::new("oracle_valid", DataType::Boolean, false),
     ]));
     let arrays: Vec<ArrayRef> = vec![
@@ -1228,6 +1343,42 @@ fn write_rewards(path: &Path, rows: &[RewardRow]) -> Result<()> {
                 .map(|row| row.lock_phase_provenance.as_str())
                 .collect::<Vec<_>>(),
         )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.nma_disruption_penalty)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.hydration_blockade_penalty)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.thermodynamic_trap_penalty)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter().map(|row| row.pathway_bonus).collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter().map(|row| row.u_pose).collect::<Vec<_>>(),
+        )),
+        Arc::new(BooleanArray::from(
+            rows.iter()
+                .map(|row| row.continuity_admissibility)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Float64Array::from(
+            rows.iter()
+                .map(|row| row.continuity_reward_v1)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            rows.iter()
+                .map(|row| row.continuity_provenance.as_str())
+                .collect::<Vec<_>>(),
+        )),
         Arc::new(BooleanArray::from(
             rows.iter().map(|row| row.oracle_valid).collect::<Vec<_>>(),
         )),
@@ -1326,6 +1477,7 @@ mod tests {
             canonical_smiles: "CC".to_owned(),
             coordinates_json: "[[0.0,0.0,0.0]]".to_owned(),
             score_atom_offset: 0,
+            u_pose: 0.0,
         };
         let mut score = MoleculeScore::default();
         score.reward = 1.0;

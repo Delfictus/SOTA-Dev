@@ -1,0 +1,28 @@
+{
+  "adequacy_verdict": "CALIBRATION_MANIFOLD_ADEQUATE",
+  "candidate_count": 100,
+  "canonical_smiles": true,
+  "chronology_window_specificity": "L3_DERIVED_FROM_TRANSITION_TENSOR",
+  "computational_calibration_only": true,
+  "continuity_admissibility": "runtime_scored_or_training_report_gate",
+  "created_at": "2026-05-26T20:42:03.148061+00:00",
+  "dot_smiles_count": 0,
+  "hydration_continuity": "L0_MISSING_BLOCKED_WITH_HARD_EVIDENCE",
+  "nma_continuity": "L3_DERIVED",
+  "no_biological_efficacy_claim": true,
+  "pgx_resilience": "inherited_from_track_a_when_present",
+  "schema_version": "track_b.chronology_locked_candidate_audit.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/chronology_locked_top_100_candidates.parquet",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/translational_calibration_adequacy_gate.json",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/phase_3_te_hub_variant_manifest.json"
+  ],
+  "species_selectivity": "inherited_or_pending_structural_projection",
+  "te_hub_coverage": {
+    "is_subset_view": true,
+    "te_hub_variant_count": 16
+  },
+  "thermodynamic_reversibility": "L3_DERIVED",
+  "u_pose": "inherited_from_track_a_when_present",
+  "verdict": "TRACK_B_CANDIDATES_AUDITED"
+}

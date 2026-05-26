@@ -1,0 +1,5 @@
+oracle_binary: campaigns/glp1r_aleniglipron/track_b_chronological/runtime/bin/oracle_scorer
+continuity_admissibility: true
+nma_continuity_map: campaigns/glp1r_aleniglipron/track_b_chronological/nma_continuity_map.parquet
+hydration_continuity_map: campaigns/glp1r_aleniglipron/track_b_chronological/hydration_continuity_map.parquet
+thermodynamic_continuity_map: campaigns/glp1r_aleniglipron/track_b_chronological/thermodynamic_continuity_map.parquet

@@ -1,0 +1,4169 @@
+{
+  "created_at": "2026-05-26T20:18:26.955021+00:00",
+  "evidence_paths": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+    "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+  ],
+  "id": "track_b_genealogical_variant_panel",
+  "provenance_class": "L3_DERIVED",
+  "schema_version": "track_b.genealogical_variant_panel.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+    "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+  ],
+  "variant_count": 96,
+  "variants": [
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954545+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-1-GLU262",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "E262G",
+      "projected_mutation": "E262G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "GLU262",
+      "residue_position": 262,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-1-GLU262"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954566+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-2-PHE324",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "F324G",
+      "projected_mutation": "F324G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "PHE324",
+      "residue_position": 324,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-2-PHE324"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954575+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-RIGIDIFYING_PROBE-1-PHE324",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "F324W",
+      "projected_mutation": "F324W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "PHE324",
+      "residue_position": 324,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-RIGIDIFYING_PROBE-1-PHE324"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954583+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-RIGIDIFYING_PROBE-2-LYS346",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "K346W",
+      "projected_mutation": "K346W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "LYS346",
+      "residue_position": 346,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "K",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-RIGIDIFYING_PROBE-2-LYS346"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954588+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-FLEXIBILIZING_PROBE-1-LYS346",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "K346S",
+      "projected_mutation": "K346S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "LYS346",
+      "residue_position": 346,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "K",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-FLEXIBILIZING_PROBE-1-LYS346"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954593+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-FLEXIBILIZING_PROBE-2-TRP264",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "W264S",
+      "projected_mutation": "W264S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "TRP264",
+      "residue_position": 264,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-FLEXIBILIZING_PROBE-2-TRP264"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954598+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-CHARGE_INVERSION_PROBE-1-TRP264",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "W264K",
+      "projected_mutation": "W264K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "TRP264",
+      "residue_position": 264,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-CHARGE_INVERSION_PROBE-1-TRP264"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954602+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-CHARGE_INVERSION_PROBE-2-GLU262",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "E262K",
+      "projected_mutation": "E262K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "GLU262",
+      "residue_position": 262,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-CHARGE_INVERSION_PROBE-2-GLU262"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954608+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-HYDRATION_WIRE_PROBE-1-GLU262",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "E262T",
+      "projected_mutation": "E262T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "GLU262",
+      "residue_position": 262,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-HYDRATION_WIRE_PROBE-1-GLU262"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954613+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-HYDRATION_WIRE_PROBE-2-PHE324",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "F324T",
+      "projected_mutation": "F324T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "PHE324",
+      "residue_position": 324,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-HYDRATION_WIRE_PROBE-2-PHE324"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954618+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-CONSERVATIVE_CONTROL-1-PHE324",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "F324V",
+      "projected_mutation": "F324V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "PHE324",
+      "residue_position": 324,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-CONSERVATIVE_CONTROL-1-PHE324"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954623+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-CONSERVATIVE_CONTROL-2-LYS346",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "K346V",
+      "projected_mutation": "K346V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "LYS346",
+      "residue_position": 346,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "K",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-CONSERVATIVE_CONTROL-2-LYS346"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954627+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-VOLUME_EXPANSION_PROBE-1-LYS346",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "K346F",
+      "projected_mutation": "K346F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "LYS346",
+      "residue_position": 346,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "K",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-VOLUME_EXPANSION_PROBE-1-LYS346"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954632+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-VOLUME_EXPANSION_PROBE-2-TRP264",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "W264F",
+      "projected_mutation": "W264F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "TRP264",
+      "residue_position": 264,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-VOLUME_EXPANSION_PROBE-2-TRP264"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954636+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-AROMATIC_STACKING_PROBE-1-TRP264",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "W264Y",
+      "projected_mutation": "W264Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "TRP264",
+      "residue_position": 264,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-AROMATIC_STACKING_PROBE-1-TRP264"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954641+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-BISTATE_RETAINED_RESIDUES-AROMATIC_STACKING_PROBE-2-GLU262",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity",
+        "transition_chronology"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "E262Y",
+      "projected_mutation": "E262Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 0,
+      "residue_id": "GLU262",
+      "residue_position": 262,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "variant_id": "TB-BISTATE_RETAINED_RESIDUES-AROMATIC_STACKING_PROBE-2-GLU262"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954653+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-SEVERING_PROBE-1-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "F367G",
+      "projected_mutation": "F367G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-SEVERING_PROBE-1-PHE367"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954658+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-SEVERING_PROBE-2-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "N182G",
+      "projected_mutation": "N182G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-SEVERING_PROBE-2-ASN182"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954662+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-RIGIDIFYING_PROBE-1-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "N182W",
+      "projected_mutation": "N182W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-RIGIDIFYING_PROBE-1-ASN182"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954667+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-RIGIDIFYING_PROBE-2-LEU60",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "L60W",
+      "projected_mutation": "L60W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "LEU60",
+      "residue_position": 60,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-RIGIDIFYING_PROBE-2-LEU60"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954672+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-FLEXIBILIZING_PROBE-1-LEU60",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "L60S",
+      "projected_mutation": "L60S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "LEU60",
+      "residue_position": 60,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-FLEXIBILIZING_PROBE-1-LEU60"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954677+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-FLEXIBILIZING_PROBE-2-ALA28",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "A28S",
+      "projected_mutation": "A28S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "ALA28",
+      "residue_position": 28,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "A",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-FLEXIBILIZING_PROBE-2-ALA28"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954681+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-CHARGE_INVERSION_PROBE-1-ALA28",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "A28K",
+      "projected_mutation": "A28K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "ALA28",
+      "residue_position": 28,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "A",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-CHARGE_INVERSION_PROBE-1-ALA28"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954685+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-CHARGE_INVERSION_PROBE-2-GLU76",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "E76K",
+      "projected_mutation": "E76K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "GLU76",
+      "residue_position": 76,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-CHARGE_INVERSION_PROBE-2-GLU76"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954689+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-HYDRATION_WIRE_PROBE-1-GLU76",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "E76T",
+      "projected_mutation": "E76T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "GLU76",
+      "residue_position": 76,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-HYDRATION_WIRE_PROBE-1-GLU76"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954694+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-HYDRATION_WIRE_PROBE-2-TRP39",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "W39T",
+      "projected_mutation": "W39T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "TRP39",
+      "residue_position": 39,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-HYDRATION_WIRE_PROBE-2-TRP39"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954698+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-CONSERVATIVE_CONTROL-1-TRP39",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "W39V",
+      "projected_mutation": "W39V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "TRP39",
+      "residue_position": 39,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-CONSERVATIVE_CONTROL-1-TRP39"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954703+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-CONSERVATIVE_CONTROL-2-PHE143",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "F143V",
+      "projected_mutation": "F143V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "PHE143",
+      "residue_position": 143,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-CONSERVATIVE_CONTROL-2-PHE143"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954708+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-VOLUME_EXPANSION_PROBE-1-PHE143",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "F143W",
+      "projected_mutation": "F143W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "PHE143",
+      "residue_position": 143,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-VOLUME_EXPANSION_PROBE-1-PHE143"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954712+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-VOLUME_EXPANSION_PROBE-2-SER136",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "S136F",
+      "projected_mutation": "S136F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "SER136",
+      "residue_position": 136,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "S",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-VOLUME_EXPANSION_PROBE-2-SER136"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954716+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-AROMATIC_STACKING_PROBE-1-SER136",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "S136Y",
+      "projected_mutation": "S136Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "SER136",
+      "residue_position": 136,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "S",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-AROMATIC_STACKING_PROBE-1-SER136"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954721+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-ECD_TM1_GATEWAY-AROMATIC_STACKING_PROBE-2-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "F367Y",
+      "projected_mutation": "F367Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 1,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "ECD_TM1_GATEWAY",
+      "variant_id": "TB-ECD_TM1_GATEWAY-AROMATIC_STACKING_PROBE-2-PHE367"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954731+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-SEVERING_PROBE-1-PHE260",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "F260G",
+      "projected_mutation": "F260G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "PHE260",
+      "residue_position": 260,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-SEVERING_PROBE-1-PHE260"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954736+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-SEVERING_PROBE-2-LEU251",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "L251G",
+      "projected_mutation": "L251G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "LEU251",
+      "residue_position": 251,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-SEVERING_PROBE-2-LEU251"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954742+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-RIGIDIFYING_PROBE-1-LEU251",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "L251W",
+      "projected_mutation": "L251W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "LEU251",
+      "residue_position": 251,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-RIGIDIFYING_PROBE-1-LEU251"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954746+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-HYDRATION_CORRIDOR-RIGIDIFYING_PROBE-2-ARG227",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "R227W",
+      "projected_mutation": "R227W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "ARG227",
+      "residue_position": 227,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-RIGIDIFYING_PROBE-2-ARG227"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954750+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-HYDRATION_CORRIDOR-FLEXIBILIZING_PROBE-1-ARG227",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "R227S",
+      "projected_mutation": "R227S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "ARG227",
+      "residue_position": 227,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-FLEXIBILIZING_PROBE-1-ARG227"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954755+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-FLEXIBILIZING_PROBE-2-TYR252",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "Y252S",
+      "projected_mutation": "Y252S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "TYR252",
+      "residue_position": 252,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Y",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-FLEXIBILIZING_PROBE-2-TYR252"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954759+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-CHARGE_INVERSION_PROBE-1-TYR252",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "Y252K",
+      "projected_mutation": "Y252K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "TYR252",
+      "residue_position": 252,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Y",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-CHARGE_INVERSION_PROBE-1-TYR252"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954763+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-HYDRATION_CORRIDOR-CHARGE_INVERSION_PROBE-2-LEU224",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "L224K",
+      "projected_mutation": "L224K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "LEU224",
+      "residue_position": 224,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-CHARGE_INVERSION_PROBE-2-LEU224"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954768+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-HYDRATION_CORRIDOR-HYDRATION_WIRE_PROBE-1-LEU224",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "L224T",
+      "projected_mutation": "L224T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "LEU224",
+      "residue_position": 224,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-HYDRATION_WIRE_PROBE-1-LEU224"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954772+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-HYDRATION_CORRIDOR-HYDRATION_WIRE_PROBE-2-GLY248",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "G248T",
+      "projected_mutation": "G248T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "GLY248",
+      "residue_position": 248,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "G",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-HYDRATION_WIRE_PROBE-2-GLY248"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954778+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-HYDRATION_CORRIDOR-CONSERVATIVE_CONTROL-1-GLY248",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "G248V",
+      "projected_mutation": "G248V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "GLY248",
+      "residue_position": 248,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "G",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-CONSERVATIVE_CONTROL-1-GLY248"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954782+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-CONSERVATIVE_CONTROL-2-PHE260",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "F260V",
+      "projected_mutation": "F260V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "PHE260",
+      "residue_position": 260,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-CONSERVATIVE_CONTROL-2-PHE260"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954787+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-VOLUME_EXPANSION_PROBE-1-PHE260",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "F260W",
+      "projected_mutation": "F260W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "PHE260",
+      "residue_position": 260,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-VOLUME_EXPANSION_PROBE-1-PHE260"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954791+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-VOLUME_EXPANSION_PROBE-2-LEU251",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "L251F",
+      "projected_mutation": "L251F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "LEU251",
+      "residue_position": 251,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-VOLUME_EXPANSION_PROBE-2-LEU251"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954796+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-HYDRATION_CORRIDOR-AROMATIC_STACKING_PROBE-1-LEU251",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "L251Y",
+      "projected_mutation": "L251Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "LEU251",
+      "residue_position": 251,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-AROMATIC_STACKING_PROBE-1-LEU251"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954799+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-HYDRATION_CORRIDOR-AROMATIC_STACKING_PROBE-2-ARG227",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "R227Y",
+      "projected_mutation": "R227Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 2,
+      "residue_id": "ARG227",
+      "residue_position": 227,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "solvent_continuity_proxy",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "HYDRATION_CORRIDOR",
+      "variant_id": "TB-HYDRATION_CORRIDOR-AROMATIC_STACKING_PROBE-2-ARG227"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954808+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-SEVERING_PROBE-1-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "N182G",
+      "projected_mutation": "N182G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-SEVERING_PROBE-1-ASN182"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954813+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-SEVERING_PROBE-2-TRP417",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "W417G",
+      "projected_mutation": "W417G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "TRP417",
+      "residue_position": 417,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-SEVERING_PROBE-2-TRP417"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954818+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-RIGIDIFYING_PROBE-1-TRP417",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "W417P",
+      "projected_mutation": "W417P",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "TRP417",
+      "residue_position": 417,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "P",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-RIGIDIFYING_PROBE-1-TRP417"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954822+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-RIGIDIFYING_PROBE-2-ARG419",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "R419W",
+      "projected_mutation": "R419W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "ARG419",
+      "residue_position": 419,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-RIGIDIFYING_PROBE-2-ARG419"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954828+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-FLEXIBILIZING_PROBE-1-ARG419",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "R419S",
+      "projected_mutation": "R419S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "ARG419",
+      "residue_position": 419,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-FLEXIBILIZING_PROBE-1-ARG419"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954833+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-FLEXIBILIZING_PROBE-2-ARG414",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "R414S",
+      "projected_mutation": "R414S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "ARG414",
+      "residue_position": 414,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-FLEXIBILIZING_PROBE-2-ARG414"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954837+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-CHARGE_INVERSION_PROBE-1-ARG414",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "R414D",
+      "projected_mutation": "R414D",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "ARG414",
+      "residue_position": 414,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "D",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-CHARGE_INVERSION_PROBE-1-ARG414"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954843+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-CHARGE_INVERSION_PROBE-2-TRP420",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "W420K",
+      "projected_mutation": "W420K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "TRP420",
+      "residue_position": 420,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-CHARGE_INVERSION_PROBE-2-TRP420"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954847+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-HYDRATION_WIRE_PROBE-1-TRP420",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "W420T",
+      "projected_mutation": "W420T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "TRP420",
+      "residue_position": 420,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "W",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-HYDRATION_WIRE_PROBE-1-TRP420"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954852+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-HYDRATION_WIRE_PROBE-2-GLN410",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "Q410T",
+      "projected_mutation": "Q410T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "GLN410",
+      "residue_position": 410,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Q",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-HYDRATION_WIRE_PROBE-2-GLN410"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954856+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-CONSERVATIVE_CONTROL-1-GLN410",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "Q410V",
+      "projected_mutation": "Q410V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "GLN410",
+      "residue_position": 410,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Q",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-CONSERVATIVE_CONTROL-1-GLN410"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954861+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-CONSERVATIVE_CONTROL-2-PHE369",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "F369V",
+      "projected_mutation": "F369V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "PHE369",
+      "residue_position": 369,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-CONSERVATIVE_CONTROL-2-PHE369"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954866+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-VOLUME_EXPANSION_PROBE-1-PHE369",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "F369W",
+      "projected_mutation": "F369W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "PHE369",
+      "residue_position": 369,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-VOLUME_EXPANSION_PROBE-1-PHE369"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954870+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-VOLUME_EXPANSION_PROBE-2-GLU418",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "E418F",
+      "projected_mutation": "E418F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "GLU418",
+      "residue_position": 418,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-VOLUME_EXPANSION_PROBE-2-GLU418"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954874+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-AROMATIC_STACKING_PROBE-1-GLU418",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "E418Y",
+      "projected_mutation": "E418Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "GLU418",
+      "residue_position": 418,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "E",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-AROMATIC_STACKING_PROBE-1-GLU418"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954878+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-INTRACELLULAR_LOCK_BASIN-AROMATIC_STACKING_PROBE-2-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "thermodynamic_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "N182Y",
+      "projected_mutation": "N182Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 3,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "lock_basin_persistence",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "variant_id": "TB-INTRACELLULAR_LOCK_BASIN-AROMATIC_STACKING_PROBE-2-ASN182"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954885+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-SEVERING_PROBE-1-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "F367G",
+      "projected_mutation": "F367G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-SEVERING_PROBE-1-PHE367"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954889+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-SEVERING_PROBE-2-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "N182G",
+      "projected_mutation": "N182G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-SEVERING_PROBE-2-ASN182"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954892+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-RIGIDIFYING_PROBE-1-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "N182W",
+      "projected_mutation": "N182W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-RIGIDIFYING_PROBE-1-ASN182"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954897+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-RIGIDIFYING_PROBE-2-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "F367W",
+      "projected_mutation": "F367W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-RIGIDIFYING_PROBE-2-PHE367"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954901+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-FLEXIBILIZING_PROBE-1-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "F367S",
+      "projected_mutation": "F367S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-FLEXIBILIZING_PROBE-1-PHE367"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954904+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-FLEXIBILIZING_PROBE-2-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "N182S",
+      "projected_mutation": "N182S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-FLEXIBILIZING_PROBE-2-ASN182"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954908+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-CHARGE_INVERSION_PROBE-1-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "N182K",
+      "projected_mutation": "N182K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-CHARGE_INVERSION_PROBE-1-ASN182"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954912+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-CHARGE_INVERSION_PROBE-2-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "F367K",
+      "projected_mutation": "F367K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-CHARGE_INVERSION_PROBE-2-PHE367"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954917+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-HYDRATION_WIRE_PROBE-1-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "F367T",
+      "projected_mutation": "F367T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-HYDRATION_WIRE_PROBE-1-PHE367"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954920+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-HYDRATION_WIRE_PROBE-2-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "N182T",
+      "projected_mutation": "N182T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-HYDRATION_WIRE_PROBE-2-ASN182"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954925+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-CONSERVATIVE_CONTROL-1-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "N182V",
+      "projected_mutation": "N182V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-CONSERVATIVE_CONTROL-1-ASN182"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954929+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-CONSERVATIVE_CONTROL-2-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "F367V",
+      "projected_mutation": "F367V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-CONSERVATIVE_CONTROL-2-PHE367"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954934+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-VOLUME_EXPANSION_PROBE-1-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "F367W",
+      "projected_mutation": "F367W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-VOLUME_EXPANSION_PROBE-1-PHE367"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954939+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-VOLUME_EXPANSION_PROBE-2-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "N182F",
+      "projected_mutation": "N182F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-VOLUME_EXPANSION_PROBE-2-ASN182"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954942+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-AROMATIC_STACKING_PROBE-1-ASN182",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "N182Y",
+      "projected_mutation": "N182Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "ASN182",
+      "residue_position": 182,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 6,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "N",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-AROMATIC_STACKING_PROBE-1-ASN182"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954946+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TE_HUBS-AROMATIC_STACKING_PROBE-2-PHE367",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "translation_pathway",
+        "transition_chronology"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "F367Y",
+      "projected_mutation": "F367Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 4,
+      "residue_id": "PHE367",
+      "residue_position": 367,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "signaling_divergence_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "TE_HUBS",
+      "variant_id": "TB-TE_HUBS-AROMATIC_STACKING_PROBE-2-PHE367"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954956+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-SEVERING_PROBE-1-ARG170",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "R170G",
+      "projected_mutation": "R170G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "ARG170",
+      "residue_position": 170,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-SEVERING_PROBE-1-ARG170"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954960+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-SEVERING_PROBE-2-HID171",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "perturbation_type": "H171G",
+      "projected_mutation": "H171G",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "HID171",
+      "residue_position": 171,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "H",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "G",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-SEVERING_PROBE-2-HID171"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954964+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-RIGIDIFYING_PROBE-1-HID171",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "H171W",
+      "projected_mutation": "H171W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "HID171",
+      "residue_position": 171,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "H",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-RIGIDIFYING_PROBE-1-HID171"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954969+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-RIGIDIFYING_PROBE-2-LEU118",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "perturbation_type": "L118W",
+      "projected_mutation": "L118W",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "LEU118",
+      "residue_position": 118,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "W",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-RIGIDIFYING_PROBE-2-LEU118"
+    },
+    {
+      "conservation_match_type": "none",
+      "conservation_used": false,
+      "created_at": "2026-05-26T20:18:26.954974+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-FLEXIBILIZING_PROBE-1-LEU118",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "L118S",
+      "projected_mutation": "L118S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "LEU118",
+      "residue_position": 118,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 4,
+      "selection_features": [
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-FLEXIBILIZING_PROBE-1-LEU118"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954978+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-TM3_TM5_CORE-FLEXIBILIZING_PROBE-2-PHE257",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "perturbation_type": "F257S",
+      "projected_mutation": "F257S",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "PHE257",
+      "residue_position": 257,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "S",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-FLEXIBILIZING_PROBE-2-PHE257"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954981+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "species_divergent_residues",
+      "id": "TB-TM3_TM5_CORE-CHARGE_INVERSION_PROBE-1-PHE257",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "F257K",
+      "projected_mutation": "F257K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "PHE257",
+      "residue_position": 257,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "F",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-CHARGE_INVERSION_PROBE-1-PHE257"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954985+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-CHARGE_INVERSION_PROBE-2-TYR145",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "perturbation_type": "Y145K",
+      "projected_mutation": "Y145K",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "TYR145",
+      "residue_position": 145,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Y",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "K",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-CHARGE_INVERSION_PROBE-2-TYR145"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954990+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-HYDRATION_WIRE_PROBE-1-TYR145",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "Y145T",
+      "projected_mutation": "Y145T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "TYR145",
+      "residue_position": 145,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Y",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-HYDRATION_WIRE_PROBE-1-TYR145"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954993+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-HYDRATION_WIRE_PROBE-2-LEU141",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "perturbation_type": "L141T",
+      "projected_mutation": "L141T",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "LEU141",
+      "residue_position": 141,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "T",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-HYDRATION_WIRE_PROBE-2-LEU141"
+    },
+    {
+      "conservation_match_type": "exact",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.954996+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-CONSERVATIVE_CONTROL-1-LEU141",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "L141V",
+      "projected_mutation": "L141V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "LEU141",
+      "residue_position": 141,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-CONSERVATIVE_CONTROL-1-LEU141"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.955000+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-CONSERVATIVE_CONTROL-2-GLN140",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "perturbation_type": "Q140V",
+      "projected_mutation": "Q140V",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "GLN140",
+      "residue_position": 140,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Q",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "V",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-CONSERVATIVE_CONTROL-2-GLN140"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.955005+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-VOLUME_EXPANSION_PROBE-1-GLN140",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "Q140F",
+      "projected_mutation": "Q140F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "GLN140",
+      "residue_position": 140,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "Q",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-VOLUME_EXPANSION_PROBE-1-GLN140"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.955009+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-VOLUME_EXPANSION_PROBE-2-LEU166",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "perturbation_type": "L166F",
+      "projected_mutation": "L166F",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "LEU166",
+      "residue_position": 166,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "F",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-VOLUME_EXPANSION_PROBE-2-LEU166"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.955014+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-AROMATIC_STACKING_PROBE-1-LEU166",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "L166Y",
+      "projected_mutation": "L166Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "LEU166",
+      "residue_position": 166,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "L",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-AROMATIC_STACKING_PROBE-1-LEU166"
+    },
+    {
+      "conservation_match_type": "nearest_within_8",
+      "conservation_used": true,
+      "created_at": "2026-05-26T20:18:26.955020+00:00",
+      "evidence_paths": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "genotype_axis": "conserved_but_dynamically_sensitive_residues",
+      "id": "TB-TM3_TM5_CORE-AROMATIC_STACKING_PROBE-2-ARG170",
+      "observability_channels": [
+        "signal_grid",
+        "shear_stress",
+        "phase_coherence",
+        "species_conservation",
+        "hysteresis",
+        "NMA_continuity"
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "perturbation_type": "R170Y",
+      "projected_mutation": "R170Y",
+      "provenance_class": "L3_DERIVED",
+      "region_priority": 5,
+      "residue_id": "ARG170",
+      "residue_position": 170,
+      "schema_version": "track_b.genealogical_variant_panel.v1",
+      "selection_feature_count": 5,
+      "selection_features": [
+        "evolutionary_conservation",
+        "phase_coherence",
+        "propagation_adjacency",
+        "shear_fracture_risk",
+        "topology_state_sensitivity"
+      ],
+      "source_amino_acid": "R",
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+        "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/GLP1R_cross_species_conservation.csv"
+      ],
+      "target_amino_acid": "Y",
+      "topology_region": "TM3_TM5_CORE",
+      "variant_id": "TB-TM3_TM5_CORE-AROMATIC_STACKING_PROBE-2-ARG170"
+    }
+  ]
+}

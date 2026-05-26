@@ -1,0 +1,38 @@
+{
+  "created_at": "2026-05-26T20:18:27.434296+00:00",
+  "evidence_paths": [
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/transition_chronology_tensor.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_population_consensus.parquet"
+  ],
+  "id": "track_b_continuity_map_manifest",
+  "maps": {
+    "hydration": {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/hydration_continuity_map.parquet",
+      "provenance": "L0_MISSING",
+      "rows": 1,
+      "sha256": "7d525e73e71d14613acc8b6ad64612cb1b2e8a1226b0666590da9b813d00b0f6"
+    },
+    "nma": {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/nma_continuity_map.parquet",
+      "provenance": "L3_DERIVED",
+      "rows": 674,
+      "sha256": "d1041c199f4d56eb992309ab4340476541bdc2126267ae57771a605069d796da"
+    },
+    "thermodynamic": {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/thermodynamic_continuity_map.parquet",
+      "provenance": "L3_DERIVED",
+      "rows": 11852,
+      "sha256": "2b1318c676b42789faddf3a6185d86fbd7045a041343377a202513653fefdb59"
+    }
+  },
+  "provenance_class": "L3_DERIVED",
+  "schema_version": "track_b.continuity_map_manifest.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/transition_chronology_tensor.parquet",
+    "campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_population_consensus.parquet",
+    "campaigns/glp1r_aleniglipron/inputs/topologies/5vex_clean_nma_modes.json",
+    "campaigns/glp1r_aleniglipron/inputs/topologies/6x1a_clean_nma_modes.json"
+  ]
+}

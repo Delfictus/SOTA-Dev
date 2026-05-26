@@ -1,0 +1,29 @@
+{
+  "blocked_rules": [],
+  "created_at": "2026-05-26T20:18:27.149680+00:00",
+  "evidence_paths": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/genealogical_variant_panel.json",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/variant_manifold_coverage_report.json",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json"
+  ],
+  "failed_rules": [],
+  "id": "track_b_calibration_adequacy_gate",
+  "passed_rules": [
+    "at_least_5_of_6_regions_covered",
+    "TE_HUBS_covered",
+    "INTRACELLULAR_LOCK_BASIN_covered",
+    "HYDRATION_CORRIDOR_covered",
+    "every_variant_has_2_observability_channels",
+    "at_least_3_perturbation_families",
+    "conservation_not_only_selection_feature",
+    "every_region_declares_calibration_purpose"
+  ],
+  "provenance_class": "L3_DERIVED",
+  "schema_version": "track_b.translational_calibration_adequacy.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/genealogical_variant_panel.json",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/variant_manifold_coverage_report.json",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json"
+  ],
+  "verdict": "CALIBRATION_MANIFOLD_ADEQUATE"
+}

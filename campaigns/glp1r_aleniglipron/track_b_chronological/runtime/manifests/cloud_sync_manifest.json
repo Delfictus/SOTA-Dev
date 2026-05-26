@@ -1,0 +1,147 @@
+{
+  "artifacts": [
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/TRACK_B_CHRONOLOGICAL_CONTROL_DOSSIER.md",
+      "sha256": "3e8a0ca9b6dd7f59ecafe68520ea6116a0eb6067175238dc51599743b84531f2",
+      "target": "r2://prism-archive/track_b/TRACK_B_CHRONOLOGICAL_CONTROL_DOSSIER.md"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/TRANSLATIONAL_CALIBRATION_MANIFOLD_DOSSIER.md",
+      "sha256": "d779f05997f51565feae672906bcfbc0476c46cd246c2210403540403cab7cb1",
+      "target": "r2://prism-archive/track_b/TRANSLATIONAL_CALIBRATION_MANIFOLD_DOSSIER.md"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/chronology_locked_candidate_audit.json",
+      "sha256": "76dbda2c16d2d28eb9b8f7ac0b4b9f3ede55a90f66c6ab4cef291041d5ebca98",
+      "target": "r2://prism-archive/track_b/chronology_locked_candidate_audit.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/chronology_locked_top_100_candidates.parquet",
+      "sha256": "13c6415e40e3ba7c648c3b1fc41080a11b5516b5e917151fdeb35d4cac57f9a5",
+      "target": "r2://prism-archive/track_b/chronology_locked_top_100_candidates.parquet"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/chronology_locked_training_report.json",
+      "sha256": "ebd83084eec6e997121bb288abc25bbfe5f92ba2c93a3c8a38115c7daa628235",
+      "target": "r2://prism-archive/track_b/chronology_locked_training_report.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/continuity_map_manifest.json",
+      "sha256": "b25b6cf157c531206d0c68e51f46caaa0e340b64f8c685f40067a1bda0c611a6",
+      "target": "r2://prism-archive/track_b/continuity_map_manifest.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/genealogical_variant_panel.json",
+      "sha256": "05a352806bd48f29c2735507e4ad28f7d4d779e822a9dd1a80482e6edc99ffff",
+      "target": "r2://prism-archive/track_b/genealogical_variant_panel.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/hydration_continuity_map.parquet",
+      "sha256": "7d525e73e71d14613acc8b6ad64612cb1b2e8a1226b0666590da9b813d00b0f6",
+      "target": "r2://prism-archive/track_b/hydration_continuity_map.parquet"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/nma_continuity_map.parquet",
+      "sha256": "d1041c199f4d56eb992309ab4340476541bdc2126267ae57771a605069d796da",
+      "target": "r2://prism-archive/track_b/nma_continuity_map.parquet"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/phase_3_te_hub_variant_manifest.json",
+      "sha256": "f94540bcbf22db4bc4a6f074e0493cd10a57762fd290836600e4b52b56e3e9b8",
+      "target": "r2://prism-archive/track_b/phase_3_te_hub_variant_manifest.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/thermodynamic_continuity_map.parquet",
+      "sha256": "2b1318c676b42789faddf3a6185d86fbd7045a041343377a202513653fefdb59",
+      "target": "r2://prism-archive/track_b/thermodynamic_continuity_map.parquet"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+      "sha256": "d83dc837e99461ee62c55f9c96158d7d06af21e234230bb6ba6713f952cbd20c",
+      "target": "r2://prism-archive/track_b/topology_region_registry.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/track_b_artifact_inventory.parquet",
+      "sha256": "f8122034997760b8a0d00146a221c1d228814664af9015607c375d4f8b1f3040",
+      "target": "r2://prism-archive/track_b/track_b_artifact_inventory.parquet"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/track_b_data_admissibility.json",
+      "sha256": "66c8f3e842598c9a1c5f74c54acb2ecda451374b6aa2571bf6b4efd612fb7271",
+      "target": "r2://prism-archive/track_b/track_b_data_admissibility.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/transition_chronology_report.json",
+      "sha256": "3a36a3ba3b63ebfaeea0bf8441adefcbff1f36df582eac3876344ff944af2468",
+      "target": "r2://prism-archive/track_b/transition_chronology_report.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/translational_calibration_adequacy_gate.json",
+      "sha256": "26a62cb3d87af9572880a705619c8fbb8557bf61b346f3429a93a8d8445b55f5",
+      "target": "r2://prism-archive/track_b/translational_calibration_adequacy_gate.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/variant_manifold_coverage_matrix.parquet",
+      "sha256": "a7966f8e58d71a5f1fa2ac95c8e69564ace730aeff4ae6df044cf4704be76be1",
+      "target": "r2://prism-archive/track_b/variant_manifold_coverage_matrix.parquet"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/variant_manifold_coverage_report.json",
+      "sha256": "180843d0ac9f6922b8c1f11054e4e441c4f3cdf22dd7e8478740707291c4666c",
+      "target": "r2://prism-archive/track_b/variant_manifold_coverage_report.json"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/transition_chronology_tensor.parquet",
+      "sha256": "8bf025915a71ce105a3612ec611666c28b6ba943f385952c0486fe3910dd7548",
+      "target": "r2://prism-archive/track_b/transition_chronology_tensor.parquet"
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/runtime/bin/oracle_scorer",
+      "sha256": "e5ab4faf5b1256837ccdc193927350c167eb9dbbff8f0cb834267477a6a63ac6",
+      "target": "r2://prism-archive/track_b/oracle_scorer"
+    },
+    {
+      "path": ".audit-reports/track_b_calibration_manifold_auditor.md",
+      "sha256": "7cfe36d17784de207066fa415e4c82a15841078b28c5603c51e3f3f80d5a54c2",
+      "target": "r2://prism-archive/track_b/track_b_calibration_manifold_auditor.md"
+    },
+    {
+      "path": ".audit-reports/track_b_chronology_observability_auditor.md",
+      "sha256": "00a2f57729cb57b591674baae86ca771ea3ea3c89f796091937155cc20e03928",
+      "target": "r2://prism-archive/track_b/track_b_chronology_observability_auditor.md"
+    },
+    {
+      "path": ".audit-reports/track_b_continuity_oracle_auditor.md",
+      "sha256": "e70560cd9bd887d9ebb1f60c3cbec7481ce8e031562913f60d35e6947f0331d1",
+      "target": "r2://prism-archive/track_b/track_b_continuity_oracle_auditor.md"
+    },
+    {
+      "path": ".audit-reports/track_b_production_bug_hunter.md",
+      "sha256": "bd33ced8676668d4480733e1c0003f7ac492a8854979045aeee5867660a2a10c",
+      "target": "r2://prism-archive/track_b/track_b_production_bug_hunter.md"
+    },
+    {
+      "path": ".audit-reports/track_b_production_preflight.md",
+      "sha256": "d769ea0e2b77ef030c406a0741d8fbc8b2628e1dc243bbfd7407c930d8854a3e",
+      "target": "r2://prism-archive/track_b/track_b_production_preflight.md"
+    },
+    {
+      "path": ".audit-reports/track_b_runtime_deployment_auditor.md",
+      "sha256": "2f089e28d10bf5c29234475a047d18552b0c5d955ab0bf6d06db8f7a5525e15a",
+      "target": "r2://prism-archive/track_b/track_b_runtime_deployment_auditor.md"
+    },
+    {
+      "path": ".audit-reports/track_b_variant_physics_auditor.md",
+      "sha256": "2bc1c82af924c7bc7d31eb0677be4b9c640592bf20d61dc3a75b2a25c5436f6a",
+      "target": "r2://prism-archive/track_b/track_b_variant_physics_auditor.md"
+    },
+    {
+      "path": ".audit-reports/track_b_full_repo_mypy_strict.log",
+      "sha256": "33506bc30c2584bec228a80aa3ac81a4e52eb218b72e496afc5d97a2b0f05456",
+      "target": "r2://prism-archive/track_b/track_b_full_repo_mypy_strict.log"
+    }
+  ],
+  "created_at": "2026-05-26T20:53:46.719901+00:00",
+  "mode": "copy_only",
+  "schema_version": "track_b.cloud_sync_manifest.v1"
+}

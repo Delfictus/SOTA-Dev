@@ -190,6 +190,23 @@ def test_live_signal_grid_oracle_batch_contains_coordinates() -> None:
     assert batch.get_column("coordinates_json").to_list() == ["[[0.0,0.0,0.0]]"]
 
 
+def test_live_signal_grid_oracle_batch_contains_pose_penalty() -> None:
+    oracle = LiveSignalGridOracle(max_batch_size=2)
+    proposals = [
+        OracleProposal(
+            anchor_id="a0",
+            canonical_smiles="CC",
+            trajectory_id="t0",
+            coordinates_json="[[0.0,0.0,0.0]]",
+            u_pose=1.25,
+        ),
+    ]
+
+    batch = oracle.prepare_batch(proposals)
+
+    assert batch.get_column("u_pose").to_list() == [1.25]
+
+
 def test_live_signal_grid_oracle_allows_duplicate_live_identities() -> None:
     oracle = LiveSignalGridOracle(max_batch_size=2)
     proposals = [
@@ -248,6 +265,14 @@ def _live_reward_frame(*, trajectory_ids: list[str], smiles: list[str] | None = 
             "survival_tier": ["live_signal_grid" for _ in range(count)],
             "selected_dihedral_deg": [0.0 for _ in range(count)],
             "reward_components_json": ["{}" for _ in range(count)],
+            "nma_disruption_penalty": [0.0 for _ in range(count)],
+            "hydration_blockade_penalty": [0.0 for _ in range(count)],
+            "thermodynamic_trap_penalty": [0.0 for _ in range(count)],
+            "pathway_bonus": [0.0 for _ in range(count)],
+            "u_pose": [0.0 for _ in range(count)],
+            "continuity_admissibility": [True for _ in range(count)],
+            "continuity_reward_v1": [1.0 for _ in range(count)],
+            "continuity_provenance": ["test" for _ in range(count)],
             "oracle_valid": [True for _ in range(count)],
         }
     )
@@ -296,6 +321,28 @@ def test_live_signal_grid_oracle_validates_duplicate_rewards_by_trajectory_id() 
     assert telemetry.duplicate_smiles_count == 1
 
 
+def test_live_continuity_validation_requires_continuity_columns() -> None:
+    oracle = LiveSignalGridOracle(max_batch_size=2, continuity_admissibility=True)
+    proposals = [
+        OracleProposal(anchor_id="a0", canonical_smiles="CC", trajectory_id="t0", coordinates_json="[[0,0,0]]"),
+    ]
+    rewards = _live_reward_frame(trajectory_ids=["t0"]).drop("continuity_reward_v1")
+
+    try:
+        oracle.validate_rewards(
+            proposals=proposals,
+            rewards_df=rewards,
+            oracle_latency_ms=1.0,
+            rust_scoring_time_ms=1.0,
+            parquet_write_ms=1.0,
+            parquet_read_ms=1.0,
+        )
+    except RustOracleError as exc:
+        assert "continuity_reward_v1" in str(exc)
+    else:
+        raise AssertionError("live continuity oracle accepted rewards missing continuity columns")
+
+
 def test_survivor_oracle_rejects_reordered_reward_rows() -> None:
     oracle = SurvivorCorpusOracle(max_batch_size=2)
     proposals = [
@@ -319,14 +366,13 @@ def test_survivor_oracle_rejects_reordered_reward_rows() -> None:
         raise AssertionError("survivor oracle accepted reordered reward rows")
 
 
-def test_live_signal_grid_oracle_command_includes_survivor_reference() -> None:
+def test_live_signal_grid_oracle_command_excludes_survivor_lookup_reference() -> None:
     oracle = LiveSignalGridOracle(max_batch_size=2)
 
     command = oracle.build_command()
 
     assert "--live-scoring" in command
-    assert "--survivors" in command
-    assert command[command.index("--survivors") + 1] == str(oracle.survivor_corpus)
+    assert "--survivors" not in command
     assert "--translation-pathway" in command
     assert command[command.index("--translation-pathway") + 1] == str(oracle.translation_pathway)
 

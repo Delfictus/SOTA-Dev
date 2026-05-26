@@ -14,6 +14,10 @@ pub const W_CLASH_POCKET: f64 = 1.0;
 pub const W_LOCK_GEO: f64 = 1.0;
 pub const W_SHEAR: f64 = 0.25;
 pub const W_CONSENSUS: f64 = 1.0;
+pub const W_NMA: f64 = 0.35;
+pub const W_HYDRATION: f64 = 0.35;
+pub const W_CONTINUITY: f64 = 0.50;
+pub const W_PATHWAY: f64 = 0.25;
 pub const COULOMBIC_INEFFICIENCY: f64 = 0.05;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +95,22 @@ pub struct LoadedSignalGrid {
     pub spacing: f64,
     pub dims: [usize; 3],
     pub condition_id: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ContinuityVoxelProfile {
+    pub nma_disruption_penalty: f64,
+    pub hydration_blockade_penalty: f64,
+    pub thermodynamic_trap_penalty: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LoadedContinuityMaps {
+    pub by_voxel: HashMap<u64, ContinuityVoxelProfile>,
+    pub global_nma_penalty: f64,
+    pub global_hydration_penalty: f64,
+    pub global_thermodynamic_penalty: f64,
+    pub provenance: String,
 }
 
 #[derive(Debug, Clone)]
@@ -207,10 +227,13 @@ impl LoadedSignalGrid {
         let use_dynamic = thresholds.nonvoid_count > 0;
         let mut field = HashMap::new();
         for row in raw_rows {
-            let classification = if use_dynamic {
+            let explicit_classification = parse_classification(&row.class_raw);
+            let classification = if explicit_classification != VoxelClassification::Void {
+                explicit_classification
+            } else if use_dynamic {
                 classify_dynamic(row.cold_mean, row.warm_mean, thresholds)
             } else {
-                parse_classification(&row.class_raw)
+                explicit_classification
             };
             let gain_delta = row.warm_mean - row.cold_mean;
             let release_delta = row.cold_mean - row.warm_mean;
@@ -331,6 +354,14 @@ pub struct MoleculeScore {
     pub pathway_voxels: u16,
     pub void_atom_count: u16,
     pub occupied_lock_voxels: Vec<u64>,
+    pub nma_disruption_penalty: f64,
+    pub hydration_blockade_penalty: f64,
+    pub thermodynamic_trap_penalty: f64,
+    pub pathway_bonus: f64,
+    pub u_pose: f64,
+    pub continuity_admissibility: bool,
+    pub continuity_reward_v1: f64,
+    pub continuity_provenance: String,
 }
 
 impl Default for MoleculeScore {
@@ -352,6 +383,14 @@ impl Default for MoleculeScore {
             pathway_voxels: 0,
             void_atom_count: 0,
             occupied_lock_voxels: Vec::new(),
+            nma_disruption_penalty: 0.0,
+            hydration_blockade_penalty: 0.0,
+            thermodynamic_trap_penalty: 0.0,
+            pathway_bonus: 0.0,
+            u_pose: 0.0,
+            continuity_admissibility: true,
+            continuity_reward_v1: 0.0,
+            continuity_provenance: "NOT_REQUESTED".to_owned(),
         }
     }
 }
@@ -384,6 +423,74 @@ pub fn score_molecule(
         lock_mask,
         shear_field,
     )
+}
+
+pub fn score_molecule_with_continuity(
+    atom_positions: &[(f64, f64, f64)],
+    grid: &LoadedSignalGrid,
+    lock_mask: &HashSet<u64>,
+    shear_field: &HashMap<u64, f64>,
+    continuity_maps: &LoadedContinuityMaps,
+) -> MoleculeScore {
+    score_molecule_with_continuity_and_pose(
+        atom_positions,
+        grid,
+        lock_mask,
+        shear_field,
+        continuity_maps,
+        0.0,
+    )
+}
+
+pub fn score_molecule_with_continuity_and_pose(
+    atom_positions: &[(f64, f64, f64)],
+    grid: &LoadedSignalGrid,
+    lock_mask: &HashSet<u64>,
+    shear_field: &HashMap<u64, f64>,
+    continuity_maps: &LoadedContinuityMaps,
+    u_pose: f64,
+) -> MoleculeScore {
+    let mut result = score_molecule(atom_positions, grid, lock_mask, shear_field);
+    result.u_pose = if u_pose.is_finite() {
+        u_pose.max(0.0)
+    } else {
+        0.0
+    };
+    let mut hits = 0_u64;
+    for &(x, y, z) in atom_positions {
+        let Some(voxel_idx) = grid.map_to_voxel(x, y, z) else {
+            continue;
+        };
+        if let Some(profile) = continuity_maps.by_voxel.get(&voxel_idx) {
+            result.nma_disruption_penalty += profile.nma_disruption_penalty;
+            result.hydration_blockade_penalty += profile.hydration_blockade_penalty;
+            result.thermodynamic_trap_penalty += profile.thermodynamic_trap_penalty;
+            hits = hits.saturating_add(1);
+        }
+    }
+    if hits == 0 {
+        result.nma_disruption_penalty = continuity_maps.global_nma_penalty;
+        result.hydration_blockade_penalty = continuity_maps.global_hydration_penalty;
+        result.thermodynamic_trap_penalty = continuity_maps.global_thermodynamic_penalty;
+    } else {
+        let denom = hits as f64;
+        result.nma_disruption_penalty /= denom;
+        result.hydration_blockade_penalty /= denom;
+        result.thermodynamic_trap_penalty /= denom;
+    }
+    let total_penalty = W_NMA * result.nma_disruption_penalty
+        + W_HYDRATION * result.hydration_blockade_penalty
+        + W_CONTINUITY * result.thermodynamic_trap_penalty
+        + result.u_pose;
+    result.pathway_bonus = W_PATHWAY * f64::from(result.pathway_voxels);
+    result.continuity_reward_v1 =
+        (result.reward - total_penalty + result.pathway_bonus).max(1.0e-8);
+    result.continuity_admissibility = result.thermodynamic_trap_penalty < 0.85
+        && result.hydration_blockade_penalty < 0.85
+        && result.nma_disruption_penalty < 10.0;
+    result.continuity_provenance = continuity_maps.provenance.clone();
+    result.reward = result.continuity_reward_v1;
+    result
 }
 
 pub fn score_positions_with_field<F>(
@@ -526,6 +633,93 @@ pub fn load_pathway_voxels(path: &Path, condition_hint: &str) -> Result<HashSet<
         }
     }
     Ok(voxels)
+}
+
+pub fn load_continuity_maps(
+    nma_path: &Path,
+    hydration_path: &Path,
+    thermodynamic_path: &Path,
+) -> Result<LoadedContinuityMaps> {
+    let mut maps = LoadedContinuityMaps {
+        provenance: "L3_DERIVED".to_owned(),
+        ..LoadedContinuityMaps::default()
+    };
+    maps.global_nma_penalty = load_continuity_penalty(
+        nma_path,
+        "voxel_idx",
+        "hinge_disruption_risk",
+        ContinuityKind::Nma,
+        &mut maps.by_voxel,
+    )
+    .with_context(|| format!("load NMA continuity map {}", nma_path.display()))?;
+    maps.global_hydration_penalty = load_continuity_penalty(
+        hydration_path,
+        "voxel_idx",
+        "occlusion_risk",
+        ContinuityKind::Hydration,
+        &mut maps.by_voxel,
+    )
+    .with_context(|| format!("load hydration continuity map {}", hydration_path.display()))?;
+    maps.global_thermodynamic_penalty = load_continuity_penalty(
+        thermodynamic_path,
+        "voxel_idx",
+        "trap_risk",
+        ContinuityKind::Thermodynamic,
+        &mut maps.by_voxel,
+    )
+    .with_context(|| {
+        format!(
+            "load thermodynamic continuity map {}",
+            thermodynamic_path.display()
+        )
+    })?;
+    if maps.global_hydration_penalty == 0.0 {
+        maps.provenance = "L3_DERIVED_WITH_L0_HYDRATION_BLOCKER".to_owned();
+    }
+    Ok(maps)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ContinuityKind {
+    Nma,
+    Hydration,
+    Thermodynamic,
+}
+
+fn load_continuity_penalty(
+    path: &Path,
+    voxel_column: &str,
+    value_column: &str,
+    kind: ContinuityKind,
+    by_voxel: &mut HashMap<u64, ContinuityVoxelProfile>,
+) -> Result<f64> {
+    let mut reader = parquet_reader(path)?;
+    let mut total = 0.0_f64;
+    let mut count = 0_u64;
+    for batch in &mut reader {
+        let batch = batch?;
+        for row in 0..batch.num_rows() {
+            let value = optional_f64_value(&batch, value_column, row)?.unwrap_or(0.0);
+            if !value.is_finite() || value < 0.0 {
+                continue;
+            }
+            total += value;
+            count = count.saturating_add(1);
+            if let Some(voxel_idx) = optional_u64_value(&batch, voxel_column, row)? {
+                let entry = by_voxel.entry(voxel_idx).or_default();
+                match kind {
+                    ContinuityKind::Nma => entry.nma_disruption_penalty = value,
+                    ContinuityKind::Hydration => entry.hydration_blockade_penalty = value,
+                    ContinuityKind::Thermodynamic => entry.thermodynamic_trap_penalty = value,
+                }
+            }
+        }
+    }
+    if count == 0 {
+        Ok(0.0)
+    } else {
+        Ok(total / count as f64)
+    }
 }
 
 fn collect_condition_ids(path: &Path) -> Result<BTreeSet<String>> {
@@ -727,6 +921,35 @@ fn optional_f64_value(batch: &RecordBatch, name: &str, row: usize) -> Result<Opt
     }
     if let Some(values) = array.as_any().downcast_ref::<Float64Array>() {
         return Ok(Some(values.value(row)));
+    }
+    Ok(None)
+}
+
+fn optional_u64_value(batch: &RecordBatch, name: &str, row: usize) -> Result<Option<u64>> {
+    let Ok(idx) = batch.schema().index_of(name) else {
+        return Ok(None);
+    };
+    let array = batch.column(idx);
+    if array.is_null(row) {
+        return Ok(None);
+    }
+    if let Some(values) = array.as_any().downcast_ref::<UInt64Array>() {
+        return Ok(Some(values.value(row)));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<UInt32Array>() {
+        return Ok(Some(u64::from(values.value(row))));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Int64Array>() {
+        let value = values.value(row);
+        return Ok(Some(
+            u64::try_from(value).map_err(|_| anyhow!("negative {name} at row {row}: {value}"))?,
+        ));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<Int32Array>() {
+        let value = values.value(row);
+        return Ok(Some(
+            u64::try_from(value).map_err(|_| anyhow!("negative {name} at row {row}: {value}"))?,
+        ));
     }
     Ok(None)
 }

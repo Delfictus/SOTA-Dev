@@ -39,6 +39,7 @@ class OracleProposal:
     trajectory_id: str
     coordinates_json: str | None = None
     score_atom_offset: int = 0
+    u_pose: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -181,6 +182,7 @@ class SurvivorCorpusOracle:
                 "canonical_smiles": [proposal.canonical_smiles for proposal in proposals],
                 "coordinates_json": [proposal.coordinates_json or "" for proposal in proposals],
                 "score_atom_offset": [int(proposal.score_atom_offset) for proposal in proposals],
+                "u_pose": [strict_nonnegative_finite_float(proposal.u_pose, "u_pose") for proposal in proposals],
             }
         )
 
@@ -371,6 +373,10 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
     translation_pathway: Path | None = Path(
         "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/translation_pathway_nodes.parquet"
     )
+    nma_continuity_map: Path | None = None
+    hydration_continuity_map: Path | None = None
+    thermodynamic_continuity_map: Path | None = None
+    continuity_admissibility: bool = False
     lock_mask: Path | None = Path("campaigns/glp1r_aleniglipron/track_a_generative/lock_region_mask.json")
 
     def prepare_batch(self, proposals: Sequence[OracleProposal]) -> pl.DataFrame:
@@ -414,6 +420,7 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
                 "canonical_smiles": [proposal.canonical_smiles for proposal in proposals],
                 "coordinates_json": [proposal.coordinates_json or "" for proposal in proposals],
                 "score_atom_offset": [int(proposal.score_atom_offset) for proposal in proposals],
+                "u_pose": [strict_nonnegative_finite_float(proposal.u_pose, "u_pose") for proposal in proposals],
             }
         )
 
@@ -446,6 +453,7 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
                 trajectory_id=proposal.trajectory_id,
                 coordinates_json=proposal.coordinates_json,
                 score_atom_offset=proposal.score_atom_offset,
+                u_pose=proposal.u_pose,
             )
             for index, proposal in enumerate(proposals)
         ]
@@ -457,6 +465,22 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
             parquet_write_ms=parquet_write_ms,
             parquet_read_ms=parquet_read_ms,
         )
+        if self.continuity_admissibility:
+            required_continuity = {
+                "nma_disruption_penalty",
+                "hydration_blockade_penalty",
+                "thermodynamic_trap_penalty",
+                "pathway_bonus",
+                "u_pose",
+                "continuity_admissibility",
+                "continuity_reward_v1",
+                "continuity_provenance",
+            }
+            missing_continuity = required_continuity.difference(rewards_df.columns)
+            if missing_continuity:
+                raise RustOracleError(
+                    f"live continuity rewards missing columns: {sorted(missing_continuity)}"
+                )
         duplicate_count = rewards_df.height - rewards_df.select("canonical_smiles").unique().height
         return OracleTelemetry(
             oracle_batch_size=telemetry.oracle_batch_size,
@@ -483,6 +507,17 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
             raise RustOracleError(f"shear stress field not found: {self.shear_stress}")
         if self.translation_pathway is not None and not self.translation_pathway.is_file():
             raise RustOracleError(f"translation pathway not found: {self.translation_pathway}")
+        if self.continuity_admissibility:
+            required_maps = {
+                "nma_continuity_map": self.nma_continuity_map,
+                "hydration_continuity_map": self.hydration_continuity_map,
+                "thermodynamic_continuity_map": self.thermodynamic_continuity_map,
+            }
+            for name, path in required_maps.items():
+                if path is None:
+                    raise RustOracleError(f"continuity admissibility requires {name}")
+                if not path.is_file():
+                    raise RustOracleError(f"{name} not found: {path}")
         if self.lock_mask is not None and not self.lock_mask.is_file():
             raise RustOracleError(f"lock mask not found: {self.lock_mask}")
         if self.reward_path.exists():
@@ -513,8 +548,6 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
             str(self.batch_path),
             "--output",
             str(self.reward_path),
-            "--survivors",
-            str(self.survivor_corpus),
             "--signal-grid",
             str(self.signal_grid),
             "--grid-config",
@@ -528,6 +561,19 @@ class LiveSignalGridOracle(SurvivorCorpusOracle):
                 ["--translation-pathway", str(self.translation_pathway)]
                 if self.translation_pathway is not None
                 else ["--no-translation-pathway"]
+            ),
+            *(
+                [
+                    "--continuity-admissibility",
+                    "--nma-continuity-map",
+                    str(self.nma_continuity_map),
+                    "--hydration-continuity-map",
+                    str(self.hydration_continuity_map),
+                    "--thermodynamic-continuity-map",
+                    str(self.thermodynamic_continuity_map),
+                ]
+                if self.continuity_admissibility
+                else []
             ),
             *(["--lock-mask", str(self.lock_mask)] if self.lock_mask is not None else ["--no-lock-mask"]),
             *self.extra_args,
@@ -645,11 +691,22 @@ def strict_score_atom_offset(value: object) -> int:
     return value
 
 
+def strict_nonnegative_finite_float(value: object, name: str) -> float:
+    """Parse non-negative finite float inputs without bool coercion."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RustOracleError(f"{name} must be a non-negative finite number")
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0.0:
+        raise RustOracleError(f"{name} must be a non-negative finite number")
+    return parsed
+
+
 def proposals_from_rows(rows: pl.DataFrame, indices: Sequence[int]) -> list[OracleProposal]:
     """Build proposal objects from an anchor/action dataframe."""
 
     selected_columns = ["anchor_id", "canonical_smiles"]
-    for optional_column in ("coordinates_json", "score_atom_offset"):
+    for optional_column in ("coordinates_json", "score_atom_offset", "u_pose"):
         if optional_column in rows.columns:
             selected_columns.append(optional_column)
     selected = rows.select(selected_columns).to_dicts()
@@ -671,6 +728,7 @@ def proposals_from_rows(rows: pl.DataFrame, indices: Sequence[int]) -> list[Orac
                     else None
                 ),
                 score_atom_offset=strict_score_atom_offset(row.get("score_atom_offset")),
+                u_pose=strict_nonnegative_finite_float(row.get("u_pose", 0.0), "u_pose"),
             )
         )
     return proposals
