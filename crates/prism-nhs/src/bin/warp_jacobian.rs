@@ -11,8 +11,8 @@ use arrow_array::RecordBatch;
 use arrow_schema::{DataType, Field, Schema};
 use clap::Parser;
 use prism_nhs::io::provenance::{
-    f64s, filter_streams, i32s, read_f32_file, record_batch, strings, u32s, u64s,
-    ProvenanceOptions, ProvenanceParquetWriter, StreamPath, VoxelIdx, CAMPAIGN_ID,
+    f64s, filter_streams, i32s, load_protocol_phase_map, read_f32_file, record_batch, strings,
+    u32s, u64s, ProvenanceOptions, ProvenanceParquetWriter, StreamPath, VoxelIdx, CAMPAIGN_ID,
     DEFAULT_OUTPUT_DIR, DEFAULT_RAW_ROOT,
 };
 use rayon::prelude::*;
@@ -20,6 +20,8 @@ use serde_json::{json, Value};
 
 const DEFAULT_TOPOLOGY_ROOT: &str =
     "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES";
+const DEFAULT_PROTOCOL_STATE_SUMMARY: &str =
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/protocol_state_summary.parquet";
 const WARP_ENTRY_BYTES: usize = 136;
 const VOXEL_INDEX_OFFSET: usize = 0;
 const ATOM_INDEX_OFFSET: usize = 4;
@@ -36,12 +38,18 @@ struct Args {
     out_dir: PathBuf,
     #[arg(long, default_value = DEFAULT_TOPOLOGY_ROOT)]
     topology_root: PathBuf,
+    #[arg(long, default_value = DEFAULT_PROTOCOL_STATE_SUMMARY)]
+    protocol_state_summary: PathBuf,
     #[arg(long)]
     condition_id: Option<String>,
     #[arg(long)]
     replica_id: Option<u16>,
     #[arg(long)]
     max_streams: Option<usize>,
+    #[arg(long)]
+    frames: Option<String>,
+    #[arg(long)]
+    bifurcate: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -261,6 +269,62 @@ fn selected_conditions(selected: &[StreamPath]) -> HashSet<String> {
         .iter()
         .map(|stream| stream.condition_id.clone())
         .collect()
+}
+
+fn parse_frame_filter(frames: Option<&str>) -> Result<Vec<i32>> {
+    let Some(raw) = frames.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    raw.split(',')
+        .map(|item| {
+            let frame = item
+                .trim()
+                .parse::<i32>()
+                .with_context(|| format!("parse frame filter value {item:?}"))?;
+            if frame < 0 {
+                bail!("frame filter values must be non-negative, got {frame}");
+            }
+            Ok(frame)
+        })
+        .collect()
+}
+
+fn filter_warps_by_frames(
+    selected: Vec<StreamPath>,
+    protocol_state_summary: &Path,
+    frames: &[i32],
+) -> Result<Vec<StreamPath>> {
+    if frames.is_empty() {
+        return Ok(selected);
+    }
+    let phase_map = load_protocol_phase_map(protocol_state_summary)?;
+    let tolerance = 2_500_i32;
+    let filtered = selected
+        .into_iter()
+        .filter(|stream| {
+            phase_map
+                .get(&(
+                    stream.condition_id.clone(),
+                    stream.replica_id.0,
+                    stream.stream_id.0,
+                ))
+                .map(|phase| {
+                    frames
+                        .iter()
+                        .any(|frame| (phase.current_step - *frame).abs() <= tolerance)
+                })
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        bail!(
+            "frames {:?} selected no warp streams using {} with tolerance {}",
+            frames,
+            protocol_state_summary.display(),
+            tolerance
+        );
+    }
+    Ok(filtered)
 }
 
 fn select_vector_source(
@@ -844,6 +908,7 @@ fn write_output_batches(
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let frame_filter = parse_frame_filter(args.frames.as_deref())?;
     let all_warps =
         prism_nhs::io::provenance::discover_stream_files(&args.raw_root, "warp_matrix.bin")?;
     let selected_warps = filter_streams(
@@ -852,6 +917,8 @@ fn main() -> Result<()> {
         args.replica_id,
         args.max_streams,
     );
+    let selected_warps =
+        filter_warps_by_frames(selected_warps, &args.protocol_state_summary, &frame_filter)?;
     if selected_warps.is_empty() {
         bail!("no warp_matrix.bin inputs selected");
     }
@@ -883,11 +950,13 @@ fn main() -> Result<()> {
         .try_reduce(HashMap::new, merge_maps)?;
 
     let summaries = condition_summaries(&accumulators);
-    let out = args.out_dir.join(if selection.metric_column == "shear_stress" {
-        "shear_stress_field.parquet"
-    } else {
-        "warp_gradient_field.parquet"
-    });
+    let out = args
+        .out_dir
+        .join(if selection.metric_column == "shear_stress" {
+            "shear_stress_field.parquet"
+        } else {
+            "warp_gradient_field.parquet"
+        });
     let schema_ref = output_schema(selection.metric_column);
     let module = if selection.metric_column == "shear_stress" {
         "phase4_shear_stress_field"
@@ -907,7 +976,7 @@ fn main() -> Result<()> {
             schema_version: schema_version.to_string(),
             producer: "crates/prism-nhs/src/bin/warp_jacobian.rs".to_string(),
             input_paths: stream_input_paths(&inputs),
-            source_parquets: Vec::new(),
+            source_parquets: vec![args.protocol_state_summary],
             partition_keys: vec!["condition_id".to_string(), "voxel_idx".to_string()],
             parameters: json!({
                 "vector_source_option": selection.option_number,
@@ -926,7 +995,10 @@ fn main() -> Result<()> {
                 "magnitude": "Frobenius norm of the 3x3 Jacobian tensor",
                 "selected_input_count": inputs.len(),
                 "voxel_output_row_group_size": ROW_GROUP_SIZE,
-                "max_streams": args.max_streams
+                "max_streams": args.max_streams,
+                "frames": args.frames,
+                "frame_filter_selected_stream_count": inputs.len(),
+                "bifurcate": args.bifurcate
             }),
         },
     )?;

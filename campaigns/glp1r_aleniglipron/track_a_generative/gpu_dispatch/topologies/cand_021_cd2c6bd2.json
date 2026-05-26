@@ -3,8 +3,8 @@
   "candidate_id": "cand_021_cd2c6bd2",
   "canonical_smiles": "COc1ccc2nc([C@H]3CCNC3)ccc2c1",
   "epistemic_confidence": "L1",
-  "ligand_sdf": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/sdf/cand_021_cd2c6bd2.sdf",
+  "ligand_sdf": "campaigns/glp1r_aleniglipron/track_a_generative/gpu_dispatch/sdf/cand_021_cd2c6bd2.sdf",
   "lock_geometry_score": 3.868790264392053,
-  "provenance": "generated_for_ccns_validation_dispatch",
-  "schema_version": "PRISM.gpu_dispatch_topology.v1"
+  "provenance": "generated_for_four_channel_gpu_dispatch",
+  "schema_version": "PRISM.gpu_dispatch_topology.v2"
 }

@@ -124,6 +124,8 @@ pub struct ProtocolPhase {
     pub thermal_phase: String,
     /// Coarse cold/warm class.
     pub thermal_class: String,
+    /// Protocol step represented by this stream.
+    pub current_step: i32,
     /// Current temperature in Kelvin.
     pub current_temperature_k: f64,
 }
@@ -465,6 +467,7 @@ pub fn load_protocol_phase_map(path: &Path) -> Result<HashMap<(String, u16, u8),
         let stream = u8_col(&batch, "stream_id")?;
         let thermal_phase = string_values(&batch, "thermal_phase")?;
         let thermal_class = string_values(&batch, "thermal_class")?;
+        let current_step = i32_col(&batch, "current_step")?;
         let temp = f64_col(&batch, "current_temperature_K")?;
         for row in 0..batch.num_rows() {
             out.insert(
@@ -476,6 +479,7 @@ pub fn load_protocol_phase_map(path: &Path) -> Result<HashMap<(String, u16, u8),
                 ProtocolPhase {
                     thermal_phase: thermal_phase[row].clone(),
                     thermal_class: thermal_class[row].clone(),
+                    current_step: current_step.value(row),
                     current_temperature_k: temp.value(row),
                 },
             );
@@ -623,6 +627,15 @@ fn u8_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a UInt8Array> {
         .as_any()
         .downcast_ref::<UInt8Array>()
         .with_context(|| format!("column {} is not UInt8", name))
+}
+
+fn i32_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Int32Array> {
+    let idx = batch.schema().index_of(name)?;
+    batch
+        .column(idx)
+        .as_any()
+        .downcast_ref::<Int32Array>()
+        .with_context(|| format!("column {} is not Int32", name))
 }
 
 fn f64_col<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float64Array> {

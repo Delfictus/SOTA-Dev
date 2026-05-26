@@ -30,6 +30,10 @@ struct Args {
     replica_id: Option<u16>,
     #[arg(long)]
     max_streams: Option<usize>,
+    #[arg(long)]
+    frame_scope: Option<String>,
+    #[arg(long)]
+    bifurcate: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +116,31 @@ fn merge_maps(
     left
 }
 
+fn frame_scope_accepts_phase(
+    frame_scope: Option<&str>,
+    phase: &str,
+    thermal_class: &str,
+) -> Result<bool> {
+    let Some(scope) = frame_scope.map(str::trim).filter(|scope| !scope.is_empty()) else {
+        return Ok(true);
+    };
+    let phase_lower = phase.to_ascii_lowercase();
+    match scope {
+        "all" => Ok(true),
+        "equilibrated" => Ok(
+            phase_lower.contains("hold")
+                || phase_lower.contains("return")
+                || phase_lower.contains("equilibrated"),
+        ),
+        "ramp" | "ramp_phase" => Ok(phase_lower.contains("ramp")),
+        "cold" | "cold_phase" => Ok(thermal_class != "Warm_Phase"),
+        "warm" | "warm_phase" => Ok(thermal_class == "Warm_Phase"),
+        other => anyhow::bail!(
+            "unsupported signal grid frame_scope {other}; expected all, equilibrated, ramp, cold, or warm"
+        ),
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     let all = prism_nhs::io::provenance::discover_stream_files(&args.raw_root, "signal_grid.bin")?;
@@ -136,6 +165,13 @@ fn main() -> Result<()> {
                     .with_context(|| {
                         format!("missing protocol phase for {}", item.path.display())
                     })?;
+                if !frame_scope_accepts_phase(
+                    args.frame_scope.as_deref(),
+                    &phase.thermal_phase,
+                    &phase.thermal_class,
+                )? {
+                    return Ok(local);
+                }
                 let (condition, acc) = process_file(item, &phase.thermal_class)?;
                 if let Some(existing) = local.get_mut(&condition) {
                     existing.merge(acc)?;
@@ -151,6 +187,12 @@ fn main() -> Result<()> {
                 Ok(merge_maps(left, right))
             },
         )?;
+    if accumulators.is_empty() {
+        anyhow::bail!(
+            "frame_scope {:?} selected no signal-grid streams",
+            args.frame_scope
+        );
+    }
     let threshold = HitMean(args.hit_threshold);
     let out = args.out_dir.join("signal_grid_variance_channel.parquet");
     let schema_ref = schema(vec![
@@ -186,7 +228,9 @@ fn main() -> Result<()> {
                 "classification": "cold/warm mean hit count thresholded into stable_occupied, thermally_destabilized, thermally_activated, void",
                 "selected_input_count": selected.len(),
                 "voxel_output_row_group_size": 65536,
-                "max_streams": args.max_streams
+                "max_streams": args.max_streams,
+                "frame_scope": args.frame_scope,
+                "bifurcate": args.bifurcate
             }),
         },
     )?;
