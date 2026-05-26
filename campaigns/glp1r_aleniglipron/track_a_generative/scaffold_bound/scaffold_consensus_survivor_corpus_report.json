@@ -1,0 +1,13 @@
+{
+  "bonus_weight": 2.0,
+  "consensus_grid": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_scaffold_consensus.parquet",
+  "generated_at_utc": "2026-05-26T12:54:56.792339+00:00",
+  "max_scaffold_consensus_bonus": 3.0,
+  "mean_atoms_scored": 126.39623537703687,
+  "mean_scaffold_consensus_bonus": 2.426572997985153,
+  "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_scaffold_consensus_action_corpus.parquet",
+  "row_count": 130531,
+  "rust_oracle_compatible": true,
+  "schema_version": "PRISM.scaffold_consensus_survivor_corpus.v1",
+  "source_survivors": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_full_scale.parquet"
+}

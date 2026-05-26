@@ -1,0 +1,60 @@
+{
+  "generated_at_utc": "2026-05-26T12:54:31.653825+00:00",
+  "manifest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_bound_grid_manifest.json",
+  "scaffold_count": 3,
+  "scaffolds": {
+    "ALENI": {
+      "atom_count_scored": 66,
+      "class_diff_count": 3979,
+      "condition_id": "glp1r_6XOX_SCAFFOLD_ALENI",
+      "heavy_atom_count": 66,
+      "hydrogen_count": 55,
+      "influence_voxel_count": 3979,
+      "o3a_score": 0.0,
+      "occupied_voxel_count": 65,
+      "projection_model": "scaffold_stable_occupied_plus_3_to_6A_response_shell_v1",
+      "provenance": "L2_PROJECTED",
+      "proximal_voxel_count": 1236,
+      "response_shell_voxel_count": 2743,
+      "stable_occupied_voxels": 1236,
+      "thermally_activated_voxels": 2743,
+      "voxel_diff_fraction": 0.004497386791087963
+    },
+    "DANU": {
+      "atom_count_scored": 27,
+      "class_diff_count": 2271,
+      "condition_id": "glp1r_6XOX_SCAFFOLD_DANU",
+      "heavy_atom_count": 27,
+      "hydrogen_count": 20,
+      "influence_voxel_count": 2271,
+      "o3a_score": 39.467547268222575,
+      "occupied_voxel_count": 27,
+      "projection_model": "scaffold_stable_occupied_plus_3_to_6A_response_shell_v1",
+      "provenance": "L2_PROJECTED",
+      "proximal_voxel_count": 570,
+      "response_shell_voxel_count": 1701,
+      "stable_occupied_voxels": 570,
+      "thermally_activated_voxels": 1701,
+      "voxel_diff_fraction": 0.002566867404513889
+    },
+    "ORFOR": {
+      "atom_count_scored": 45,
+      "class_diff_count": 3154,
+      "condition_id": "glp1r_6XOX_SCAFFOLD_ORFOR",
+      "heavy_atom_count": 45,
+      "hydrogen_count": 27,
+      "influence_voxel_count": 3154,
+      "o3a_score": 58.096522122233964,
+      "occupied_voxel_count": 45,
+      "projection_model": "scaffold_stable_occupied_plus_3_to_6A_response_shell_v1",
+      "provenance": "L2_PROJECTED",
+      "proximal_voxel_count": 903,
+      "response_shell_voxel_count": 2251,
+      "stable_occupied_voxels": 903,
+      "thermally_activated_voxels": 2251,
+      "voxel_diff_fraction": 0.0035649052372685184
+    }
+  },
+  "schema_version": "PRISM.scaffold_bound_grid_generation_report.v1",
+  "status": "PASS"
+}

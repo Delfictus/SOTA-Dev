@@ -66,6 +66,7 @@ DEFAULT_SCAFFOLD_POOL = (DEFAULT_LIGAND_SDF, DEFAULT_ORFOR_SDF, DEFAULT_DANU_SDF
 DEFAULT_ANCHORS = TRACK_A_DIR / "enamine_115k_synthons_3d.parquet"
 DEFAULT_SURVIVORS = TRACK_A_DIR / "vspace_survivors_full_scale.parquet"
 DEFAULT_POPULATION_CONSENSUS_SURVIVORS = TRACK_A_DIR / "vspace_survivors_population_consensus_action_corpus.parquet"
+DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS = TRACK_A_DIR / "vspace_survivors_scaffold_consensus_action_corpus.parquet"
 DEFAULT_RESIDUE_PHASE = N80_DIR / "residue_phase_tensor.parquet"
 DEFAULT_INTERFEROMETRIC = N80_DIR / "interferometric_differential.parquet"
 DEFAULT_TOPOLOGY = REPO_ROOT / "04_TOPOLOGIES/glp1r_6XOX_HOLO_ALENI.topology.json"
@@ -107,6 +108,11 @@ def resolve_survivor_corpus_for_reward(
         requested == DEFAULT_SURVIVORS
         or requested.name == DEFAULT_SURVIVORS.name
     )
+    scaffold_consensus_reward = version in {"v3_scaffold_consensus", "v3_cross_scaffold_consensus"} or (
+        "scaffold_consensus" in signal_grid_name
+    )
+    if default_like and scaffold_consensus_reward and DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS.exists():
+        return DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS
     consensus_reward = (
         version.startswith("v3")
         or version.startswith("v4")
@@ -473,7 +479,10 @@ def compute_effective_reward_tensor(
         pathway_score = numeric_value(row.get("pathway_score_mean"), 0.0)
         u_pose = numeric_value(row.get("u_pose"), 0.0)
         consensus_bonus = numeric_value(
-            row.get("consensus_complement_bonus", row.get("population_consensus_bonus")),
+            row.get(
+                "scaffold_consensus_bonus",
+                row.get("consensus_complement_bonus", row.get("population_consensus_bonus")),
+            ),
             0.0,
         )
         charge_feature = numeric_value(row.get("charge_feature_mean", row.get("am1bcc_charge")), 0.0)
@@ -495,7 +504,7 @@ def compute_effective_reward_tensor(
         elif version == "v2_tripartite":
             base_reward = compute_reward_v2(row, tripartite_scores[index])
             effective = base_reward
-        elif version in {"v3_consensus", "v3_consensus_grid", "v3_population_consensus"}:
+        elif version in {"v3_consensus", "v3_consensus_grid", "v3_population_consensus", "v3_scaffold_consensus", "v3_cross_scaffold_consensus"}:
             base_reward = (
                 pi_complement
                 - pi_clash_pocket

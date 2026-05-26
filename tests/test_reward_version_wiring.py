@@ -5,6 +5,7 @@ import torch
 from prism_dstw.scoring.tripartite_bias_scorer import compute_tripartite_bias
 from scripts.train_gflownet_policy import (
     DEFAULT_POPULATION_CONSENSUS_SURVIVORS,
+    DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS,
     DEFAULT_SURVIVORS,
     action_base_features_from_table,
     action_atom_features_from_table,
@@ -49,6 +50,26 @@ def test_v3_consensus_uses_consensus_bonus() -> None:
     assert abs(difference - 10.0) < 0.01
     assert metrics_w0["consensus_bonus_mean"] == 5.0
     assert metrics_w2["consensus_bonus_mean"] == 5.0
+
+
+def test_v3_scaffold_consensus_uses_scaffold_bonus() -> None:
+    mock_row = {
+        "pi_complement": 4.0,
+        "pi_clash_pocket": 1.0,
+        "lock_geometry_score": 0.0,
+        "consensus_complement_bonus": 0.5,
+        "scaffold_consensus_bonus": 3.0,
+    }
+    reward, metrics = compute_effective_reward_tensor(
+        reward_version="v3_scaffold_consensus",
+        oracle_rows=[mock_row],
+        raw_rewards=torch.tensor([1.0], dtype=torch.float32),
+        tripartite_scores=[compute_tripartite_bias(mock_row)],
+        consensus_bonus_weight=2.0,
+    )
+
+    assert abs(float(reward.item()) - 9.0) < 0.01
+    assert metrics["consensus_bonus_mean"] == 3.0
 
 
 def test_v1_base_uses_raw_oracle_reward() -> None:
@@ -171,6 +192,16 @@ def test_consensus_reward_auto_selects_population_survivor_corpus() -> None:
     )
 
     assert selected == DEFAULT_POPULATION_CONSENSUS_SURVIVORS
+
+
+def test_scaffold_consensus_reward_auto_selects_scaffold_survivor_corpus() -> None:
+    selected = resolve_survivor_corpus_for_reward(
+        requested_survivors=DEFAULT_SURVIVORS,
+        reward_version="v3_scaffold_consensus",
+        signal_grid=DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS.with_name("signal_grid_scaffold_consensus.parquet"),
+    )
+
+    assert selected == DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS
 
 
 def test_u_pose_uses_surviving_rotamers_when_present() -> None:

@@ -1,0 +1,42 @@
+{
+  "bonus_policy": {
+    "SCAFFOLD_DISPUTED": 0.0,
+    "SCAFFOLD_INVARIANT thermally_activated": 3.0,
+    "SCAFFOLD_MAJORITY thermally_activated": 1.5
+  },
+  "generated_at_utc": "2026-05-26T12:54:39.668701+00:00",
+  "manifest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_bound_grid_manifest.json",
+  "metrics": {
+    "bonus_positive_voxels": 1714,
+    "consensus_class_counts": {
+      "scaffold_disputed": 383,
+      "stable_occupied": 729,
+      "thermally_activated": 1714,
+      "thermally_destabilized": 114780,
+      "void": 767130
+    },
+    "consensus_type_counts": {
+      "SCAFFOLD_DISPUTED": 383,
+      "SCAFFOLD_INVARIANT": 880247,
+      "SCAFFOLD_MAJORITY": 4106
+    },
+    "mean_consensus_strength": 0.9981644241898148,
+    "row_count": 884736,
+    "scaffold_count": 3,
+    "scaffold_invariant_activated_voxels": 350,
+    "scaffold_majority_activated_voxels": 1364,
+    "scaffolds": [
+      "ALENI",
+      "DANU",
+      "ORFOR"
+    ]
+  },
+  "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_scaffold_consensus.parquet",
+  "scaffold_grids": {
+    "ALENI": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_ALENI.parquet",
+    "DANU": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_DANU.parquet",
+    "ORFOR": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_ORFOR.parquet"
+  },
+  "schema_version": "PRISM.scaffold_consensus_grid.v1",
+  "status": "PASS"
+}

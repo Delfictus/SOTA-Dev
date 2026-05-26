@@ -1,0 +1,186 @@
+{
+  "artifacts": {
+    "consensus_report": {
+      "bytes": 1707,
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_consensus_grid_report.json",
+      "sha256": "aef0bd06a7eaf7f9da4606af6b4feb9d92988d0a2ccae259bddf4b3050a9bde0"
+    },
+    "corpus_report": {
+      "bytes": 780,
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_consensus_survivor_corpus_report.json",
+      "sha256": "4fbbcd64390b705d0b0959d693e38613b96ac6eb9a65c4554d801f2544571246"
+    },
+    "cross_output": {
+      "bytes": 97902,
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_scaffold_consensus_trained_cross_scaffold.parquet",
+      "sha256": "822360c3215b80b4cf1a6b7f92693d12409f8418cc96a774210e9263a191227a"
+    },
+    "cross_report": {
+      "bytes": 1414,
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/cross_scaffold_scaffold_consensus_report.json",
+      "sha256": "011b93073ecf96a1c5a43ec138384f49ffca5d847343e05892eb7c0ae10d87af"
+    },
+    "grid_report": {
+      "bytes": 2220,
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_bound_grid_generation_report.json",
+      "sha256": "b7f38769b913df2debb80261b1681e4da0c24d2ae2a029215f69c9109be92edb"
+    },
+    "manifest": {
+      "bytes": 4594,
+      "path": "campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_bound_grid_manifest.json",
+      "sha256": "61b6563cb16fddc0807179f5c22955bb08007f5e8cf3e20453808ee6e9ec3b6a"
+    },
+    "training_log": {
+      "bytes": 5416,
+      "path": "/mnt/storage/prism-scratch/d10_scaffold_training_smoke/training_telemetry_scaffold_consensus.log",
+      "sha256": "02d1e53c9ae4c3c37da30d8f16a7fd4c062bd43892d6e4de8c7d56fcab26c23d"
+    }
+  },
+  "cross_screen_validation": {
+    "candidate_count": 100,
+    "condition_ids": {
+      "ALENI": "glp1r_6XOX_SCAFFOLD_ALENI",
+      "DANU": "glp1r_6XOX_SCAFFOLD_DANU",
+      "ORFOR": "glp1r_6XOX_SCAFFOLD_ORFOR"
+    },
+    "evidence_class": "L2_PROJECTED_THERMODYNAMIC_GRID",
+    "gate_status": "PASS",
+    "generated_at_utc": "2026-05-26T12:56:57.061501+00:00",
+    "input": "campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/training_gate/gflownet_top100_scaffold_consensus_trained_candidates.parquet",
+    "lock_mask": null,
+    "n_scaffolds_positive_ge_2": 25,
+    "note": "Candidates are scored against scaffold-bound receptor signal grids; no geometric scaffold-origin proxy is used.",
+    "output": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top100_scaffold_consensus_trained_cross_scaffold.parquet",
+    "positive_threshold": 1.0,
+    "scaffold_grids": {
+      "ALENI": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_ALENI.parquet",
+      "DANU": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_DANU.parquet",
+      "ORFOR": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_ORFOR.parquet"
+    },
+    "scaffold_pool": [],
+    "schema_version": "PRISM.cross_scaffold_screen.v2",
+    "score_atom_offset": 0,
+    "signal_grid": null
+  },
+  "directive": "D10_CROSS_SCAFFOLD_VIA_THERMODYNAMIC_CONSENSUS",
+  "gate_status": "PASS",
+  "scaffold_bound_grids": {
+    "generated_at_utc": "2026-05-26T12:54:31.653825+00:00",
+    "manifest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_bound_grid_manifest.json",
+    "scaffold_count": 3,
+    "scaffolds": {
+      "ALENI": {
+        "atom_count_scored": 66,
+        "class_diff_count": 3979,
+        "condition_id": "glp1r_6XOX_SCAFFOLD_ALENI",
+        "heavy_atom_count": 66,
+        "hydrogen_count": 55,
+        "influence_voxel_count": 3979,
+        "o3a_score": 0.0,
+        "occupied_voxel_count": 65,
+        "projection_model": "scaffold_stable_occupied_plus_3_to_6A_response_shell_v1",
+        "provenance": "L2_PROJECTED",
+        "proximal_voxel_count": 1236,
+        "response_shell_voxel_count": 2743,
+        "stable_occupied_voxels": 1236,
+        "thermally_activated_voxels": 2743,
+        "voxel_diff_fraction": 0.004497386791087963
+      },
+      "DANU": {
+        "atom_count_scored": 27,
+        "class_diff_count": 2271,
+        "condition_id": "glp1r_6XOX_SCAFFOLD_DANU",
+        "heavy_atom_count": 27,
+        "hydrogen_count": 20,
+        "influence_voxel_count": 2271,
+        "o3a_score": 39.467547268222575,
+        "occupied_voxel_count": 27,
+        "projection_model": "scaffold_stable_occupied_plus_3_to_6A_response_shell_v1",
+        "provenance": "L2_PROJECTED",
+        "proximal_voxel_count": 570,
+        "response_shell_voxel_count": 1701,
+        "stable_occupied_voxels": 570,
+        "thermally_activated_voxels": 1701,
+        "voxel_diff_fraction": 0.002566867404513889
+      },
+      "ORFOR": {
+        "atom_count_scored": 45,
+        "class_diff_count": 3154,
+        "condition_id": "glp1r_6XOX_SCAFFOLD_ORFOR",
+        "heavy_atom_count": 45,
+        "hydrogen_count": 27,
+        "influence_voxel_count": 3154,
+        "o3a_score": 58.096522122233964,
+        "occupied_voxel_count": 45,
+        "projection_model": "scaffold_stable_occupied_plus_3_to_6A_response_shell_v1",
+        "provenance": "L2_PROJECTED",
+        "proximal_voxel_count": 903,
+        "response_shell_voxel_count": 2251,
+        "stable_occupied_voxels": 903,
+        "thermally_activated_voxels": 2251,
+        "voxel_diff_fraction": 0.0035649052372685184
+      }
+    },
+    "schema_version": "PRISM.scaffold_bound_grid_generation_report.v1",
+    "status": "PASS"
+  },
+  "scaffold_consensus_grid": {
+    "bonus_policy": {
+      "SCAFFOLD_DISPUTED": 0.0,
+      "SCAFFOLD_INVARIANT thermally_activated": 3.0,
+      "SCAFFOLD_MAJORITY thermally_activated": 1.5
+    },
+    "generated_at_utc": "2026-05-26T12:54:39.668701+00:00",
+    "manifest": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/scaffold_bound_grid_manifest.json",
+    "metrics": {
+      "bonus_positive_voxels": 1714,
+      "consensus_class_counts": {
+        "scaffold_disputed": 383,
+        "stable_occupied": 729,
+        "thermally_activated": 1714,
+        "thermally_destabilized": 114780,
+        "void": 767130
+      },
+      "consensus_type_counts": {
+        "SCAFFOLD_DISPUTED": 383,
+        "SCAFFOLD_INVARIANT": 880247,
+        "SCAFFOLD_MAJORITY": 4106
+      },
+      "mean_consensus_strength": 0.9981644241898148,
+      "row_count": 884736,
+      "scaffold_count": 3,
+      "scaffold_invariant_activated_voxels": 350,
+      "scaffold_majority_activated_voxels": 1364,
+      "scaffolds": [
+        "ALENI",
+        "DANU",
+        "ORFOR"
+      ]
+    },
+    "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_scaffold_consensus.parquet",
+    "scaffold_grids": {
+      "ALENI": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_ALENI.parquet",
+      "DANU": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_DANU.parquet",
+      "ORFOR": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/grids/signal_grid_scaffold_ORFOR.parquet"
+    },
+    "schema_version": "PRISM.scaffold_consensus_grid.v1",
+    "status": "PASS"
+  },
+  "schema_version": "PRISM.directive10_scaffold_consensus_runtime_gate.v1",
+  "training_with_scaffold_consensus_bonus": {
+    "consensus_bonus_weight": 2.0,
+    "epoch_telemetry": "tb_epoch_complete epoch=1 tb_loss=192.747711 reward_mean=3.429869 reward_std=1.113303 reward_max=5.051968 scaled_reward_mean=51.798691 effective_reward_mean=5.179869 effective_reward_std=1.319781 consensus_bonus_mean=2.250000 shear_mean=0.000000 hysteresis_mean=0.000000 pathway_voxels_occupied=0.000000 pathway_neighborhood_contacts=0.000000 pathway_score_mean=0.000000 charge_feature_mean=0.195146 u_pose_mean=1.170533 temperature=20.000000 lr_policy=0.00005950 lr_logZ=0.00109000 unique_smiles_cumulative=8 unique_smiles_this_epoch=8 diversity_bonus_mean=0.500000 dot_smiles_count=0 logZ=0.001090 top1_smiles=Cc1cn(C)c(=O)c(C#N)c1-c1ccc(F)cc1 top1_reward=5.051968 gradient_norm_policy=177.060808 gradient_norm_logZ=27.478786 oracle_latency_ms=3531.531 lock_geo_positive=0/8 lock_proj_gt_05=8/8 product_fiber_method=direct_signal_grid_lookup product_fiber_synthon_atoms=224 product_fiber_shear_mean=0.000000 product_fiber_hysteresis_mean=0.000000 product_fiber_pathway_voxels=0.000000 product_fiber_pathway_neighborhood_contacts=0.000000 trajectory_length_mean=1.00 trajectory_length_max=1 trajectories_ge2=0/8 assembled_state_node_count_mean=93.62",
+    "reward_version": "v3_scaffold_consensus",
+    "signal_grid": "campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_scaffold_consensus.parquet",
+    "survivors": "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_scaffold_consensus_action_corpus.parquet",
+    "telemetry_log": "/mnt/storage/prism-scratch/d10_scaffold_training_smoke/training_telemetry_scaffold_consensus.log"
+  },
+  "validation_commands": [
+    "PYTHONPATH=src python3 scripts/generate_scaffold_bound_grids.py",
+    "PYTHONPATH=src python3 scripts/compute_scaffold_consensus_grid.py",
+    "PYTHONPATH=src python3 scripts/build_scaffold_consensus_survivor_corpus.py",
+    "PYTHONPATH=src python3 scripts/train_gflownet_policy.py --epochs 1 --batch-size 8 --reward-version v3_scaffold_consensus --consensus-bonus-weight 2.0 --signal-grid campaigns/glp1r_aleniglipron/track_a_generative/signal_grid_scaffold_consensus.parquet --survivors campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_scaffold_consensus_action_corpus.parquet --oracle-mode survivor_lookup --output-dir /mnt/storage/prism-scratch/d10_scaffold_training_smoke",
+    "PYTHONPATH=src python3 scripts/cross_screen_multi_scaffold.py --input campaigns/glp1r_aleniglipron/track_a_generative/scaffold_bound/training_gate/gflownet_top100_scaffold_consensus_trained_candidates.parquet --top-n 100 --positive-threshold 1.0",
+    "PYTHONPATH=src python3 -m pytest tests/test_scaffold_consensus_grid.py tests/test_reward_version_wiring.py -q"
+  ]
+}
