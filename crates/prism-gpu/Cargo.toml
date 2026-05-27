@@ -67,7 +67,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.10"
 
 # Physics module for explicit solvent tests
-prism-physics = { path = "../prism-physics" }
+prism-physics = { path = "../../.archive/crates/prism-physics" }
 
 [[bench]]
 name = "kernels"

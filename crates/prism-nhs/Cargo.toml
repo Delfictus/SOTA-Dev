@@ -49,7 +49,7 @@ force_gear_override_supervisor_shim = []
 
 [dependencies]
 # PRISM-Therm: SDST thermodynamic analysis pipeline
-sdst = { path = "../sdst" }
+sdst = { path = "../../.archive/crates/sdst" }
 
 # Core
 anyhow = "1.0"
@@ -84,7 +84,7 @@ cudarc = { version = "0.18.2", features = ["std", "cuda-12050", "driver", "nvrtc
 half = "2"
 
 # PRISM-TWIN advanced CUDA: device-side compaction, conditional graphs, exhaust pipeline
-prism-cuda-ext = { path = "../prism-cuda-ext" }
+prism-cuda-ext = { path = "../../.archive/crates/prism-cuda-ext" }
 
 # File pattern matching for trajectory discovery
 glob = "0.3"
@@ -119,11 +119,11 @@ env_logger = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Internal crates
-prism-io = { path = "../prism-io" }
-prism-learning = { path = "../prism-learning" }
+prism-io = { path = "../../.archive/crates/prism-io" }
+prism-learning = { path = "../../.archive/crates/prism-learning" }
 prism-gpu = { path = "../prism-gpu" }
-prism-optix = { path = "../prism-optix" }
-optix-sys = { path = "../optix-sys" }
+prism-optix = { path = "../../.archive/crates/prism-optix" }
+optix-sys = { path = "../../.archive/crates/optix-sys" }
 
 [[bin]]
 name = "nhs-detect"

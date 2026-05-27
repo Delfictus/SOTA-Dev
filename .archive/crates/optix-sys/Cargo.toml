@@ -1,10 +1,10 @@
 [package]
 name = "optix-sys"
 version = "9.1.0"  # Match OptiX SDK version
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+edition = "2021"
+authors = ["PRISM-AI Research Team"]
+license = "MIT"
+repository = "https://github.com/prism-ai/prism"
 description = "Low-level FFI bindings to NVIDIA OptiX 9.1.0 ray tracing API"
 
 # This is a low-level unsafe FFI crate

@@ -1,10 +1,10 @@
 [package]
 name = "prism-optix"
 version = "0.1.0"
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+edition = "2021"
+authors = ["PRISM-AI Research Team"]
+license = "MIT"
+repository = "https://github.com/prism-ai/prism"
 description = "Safe Rust wrapper for NVIDIA OptiX 9.1.0 ray tracing API"
 
 # Safe, ergonomic wrapper over optix-sys
