@@ -2,7 +2,7 @@
 
 Campaign: `glp1r_aleniglipron`
 
-Generated: `2026-05-27T04:33:31Z`
+Generated: `2026-05-27T23:14:02Z`
 
 Epistemic scope: this dossier reports PROJECTED candidate prioritization from the PRISM Track A policy and Rust oracle. Candidates remain subject to synthesis, purification, receptor signaling, internalization, and washout falsification gates.
 
@@ -156,11 +156,11 @@ Ancestry-stratified projected resilience:
 
 | ancestry | mean resilience | candidates >=0.85 |
 |---|---:|---:|
-| EUR | `0.9773625137859314` | 100 |
-| AFR | `0.9859730300577294` | 100 |
-| EAS | `0.9967633338849091` | 100 |
-| SAS | `0.9840096043499424` | 100 |
-| AMR | `0.9817733336235719` | 100 |
+| EUR | `0.9779373797470131` | 100 |
+| AFR | `0.9864453246939888` | 100 |
+| EAS | `0.997342278629517` | 100 |
+| SAS | `0.9845893803313698` | 100 |
+| AMR | `0.9823471202169805` | 100 |
 
 Interpretation boundary: A316T and T149M use materialized MD-derived grids. The remaining variant grids are perturbation-projected from gnomAD frequency, domain, conservation, and functional-assay annotations and must be treated as Phase 3 stratification intelligence, not clinical proof.
 
@@ -234,21 +234,21 @@ These jobs are queued for ground-truth CCNS validation only. They do not constit
 ## 13. Thermodynamic Motif Intelligence
 
 Motif registry status: `complete`
-Registry: `campaigns/glp1r_aleniglipron/track_b_chronological/motif_intelligence/thermodynamic_motif_registry.parquet`
+Registry: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/motif_intelligence/thermodynamic_motif_registry.parquet`
 
 Four orthogonal motif discovery methods are reported when available: Thermodynamic Functional Group Decomposition with k-hop neutral-bridge expansion, Causal Attribution Motif Extraction via integrated gradients, Phase-Resolved MCS with Butina/Tanimoto pruning, and Synthon-Ancestry Decomposition with Fisher exact enrichment.
 
 | motif intelligence metric | value |
 |---|---:|
-| total motifs | 184 |
+| total motifs | 328 |
 | TFGD motifs | 52 |
-| CAME motifs | 29 |
-| PR-MCS motifs | 3 |
-| SAD motifs | 100 |
-| lock-wedge motifs | 45 |
-| phase-conditional motifs | 55 |
-| evolutionary-invariant motifs | 3 |
-| mean completeness score | `0.6304347826086959` |
+| CAME motifs | 50 |
+| PR-MCS motifs | 26 |
+| SAD motifs | 200 |
+| lock-wedge motifs | 66 |
+| phase-conditional motifs | 78 |
+| evolutionary-invariant motifs | 26 |
+| mean completeness score | `0.607538802660754` |
 
 Key lock-wedge / thermodynamic motifs:
 
@@ -300,5 +300,5 @@ Interpretation boundary: motif intelligence is receptor-specific computational d
 - tripartite profiles: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_50_tripartite_profiles.parquet`
 - medchem audit: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_medchem_audit.parquet`
 - candidate audit: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_candidate_audit.json`
-- thermodynamic motif registry: `campaigns/glp1r_aleniglipron/track_b_chronological/motif_intelligence/thermodynamic_motif_registry.parquet`
+- thermodynamic motif registry: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/motif_intelligence/thermodynamic_motif_registry.parquet`
 - CBOM: `/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/PRISM_CBOM_v1.0.json`

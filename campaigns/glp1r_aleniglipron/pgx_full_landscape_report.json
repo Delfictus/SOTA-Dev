@@ -1,33 +1,33 @@
 {
   "schema_version": "PRISM.pgx_full_landscape.v1",
-  "generated_at_utc": "2026-05-25T07:19:36.025719+00:00",
+  "generated_at_utc": "2026-05-27T23:14:01.833689+00:00",
   "status": "PASS",
   "candidate_count": 100,
   "variant_count": 22,
   "tier1_variant_count": 7,
-  "liability_scale": 63.89,
+  "liability_scale": 63.26,
   "pgx_tier1_worst_case_mean": 1.0,
   "pgx_tier1_worst_case_ge_085_count": 100,
   "population_coverage_pct_mean": 100.0,
   "ancestry": {
     "EUR": {
-      "mean_resilience": 0.9773625137859314,
+      "mean_resilience": 0.9779373797470131,
       "coverage_ge_085": 100
     },
     "AFR": {
-      "mean_resilience": 0.9859730300577294,
+      "mean_resilience": 0.9864453246939888,
       "coverage_ge_085": 100
     },
     "EAS": {
-      "mean_resilience": 0.9967633338849091,
+      "mean_resilience": 0.997342278629517,
       "coverage_ge_085": 100
     },
     "SAS": {
-      "mean_resilience": 0.9840096043499424,
+      "mean_resilience": 0.9845893803313698,
       "coverage_ge_085": 100
     },
     "AMR": {
-      "mean_resilience": 0.9817733336235719,
+      "mean_resilience": 0.9823471202169805,
       "coverage_ge_085": 100
     }
   },
@@ -36,7 +36,7 @@
       "tier": 2,
       "provenance": "MD_SIMULATED",
       "epistemic_confidence": "L5",
-      "mean_resilience": 0.3684170226064025,
+      "mean_resilience": 0.370731638324727,
       "classification_counts": {
         "VULNERABLE": 100
       }
@@ -45,7 +45,7 @@
       "tier": 1,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.0016112716619567,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -63,7 +63,7 @@
       "tier": 1,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0004732510290157,
+      "mean_resilience": 1.0012746705045361,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -72,7 +72,7 @@
       "tier": 3,
       "provenance": "MD_SIMULATED",
       "epistemic_confidence": "L5",
-      "mean_resilience": 0.36870170923477985,
+      "mean_resilience": 0.37066635214324267,
       "classification_counts": {
         "VULNERABLE": 100
       }
@@ -81,7 +81,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.0006373352522682,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -90,7 +90,7 @@
       "tier": 1,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.0007992077917338,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -117,7 +117,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.000159333813067,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -126,7 +126,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L1",
-      "mean_resilience": 1.0001577503430052,
+      "mean_resilience": 1.000318667626134,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -135,7 +135,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.000318667626134,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -144,7 +144,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 0.9990682162986291,
+      "mean_resilience": 0.9985935629358319,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -153,7 +153,7 @@
       "tier": 1,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.000318667626134,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -162,7 +162,7 @@
       "tier": 2,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L1",
-      "mean_resilience": 1.0001577503430052,
+      "mean_resilience": 1.000318667626134,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -171,7 +171,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0003186016612757,
+      "mean_resilience": 1.0007985481760608,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -180,7 +180,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 0.9999220459217234,
+      "mean_resilience": 1.001282327134228,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -189,7 +189,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0001577503430052,
+      "mean_resilience": 1.0017577493965346,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -198,7 +198,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.001755210670136,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -207,7 +207,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.0,
+      "mean_resilience": 1.000318667626134,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -216,7 +216,7 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 0.9982082715673026,
+      "mean_resilience": 0.9990558915855339,
       "classification_counts": {
         "IMMUNE": 100
       }
@@ -225,12 +225,12 @@
       "tier": 3,
       "provenance": "PERTURBATION_PROJECTED",
       "epistemic_confidence": "L2",
-      "mean_resilience": 1.000001842186452,
+      "mean_resilience": 1.0001618327233748,
       "classification_counts": {
         "IMMUNE": 100
       }
     }
   },
-  "output": "campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_top100_full_pgx.parquet",
+  "output": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/gflownet_top100_full_pgx.parquet",
   "epistemic_note": "Resilience values are L2/L3 projected variant-field deltas except A316T/T149M L5 grid inputs; they are not wet-lab efficacy."
 }

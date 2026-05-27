@@ -1,6 +1,6 @@
 {
-  "avg_gpu_solve_ms": 0.43486443194792646,
-  "avg_tile_exec_ms": 0.016185375085721414,
+  "avg_gpu_solve_ms": 0.4318919754497907,
+  "avg_tile_exec_ms": 0.01602930777395765,
   "bsr_operator_device": "cuda",
   "bsr_operator_dtype": "float64",
   "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
@@ -14,12 +14,12 @@
   "cuda_graph_count": 12,
   "cuda_graph_replay_count": 1500,
   "final_epoch": {
-    "bsr_update_ms": 0.016185375085721414,
+    "bsr_update_ms": 0.01602930777395765,
     "c6_solve_count": 522,
     "cache_hits_this_epoch": 3,
     "captured_tile_replay_count": 1500,
     "cpu_solve_count": 0,
-    "cuda_graph_replay_ms": 0.016185375085721414,
+    "cuda_graph_replay_ms": 0.01602930777395765,
     "epoch": 500,
     "gpu_memory_allocated_mb": 8.40625,
     "gpu_memory_reserved_mb": 24.0,
