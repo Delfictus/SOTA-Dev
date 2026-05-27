@@ -1,0 +1,16 @@
+{
+  "blocksize": [
+    1,
+    1
+  ],
+  "capture_bucket_count": 1,
+  "capture_success": true,
+  "captured_tile_count": 12,
+  "cuda_graph_count": 12,
+  "device": "cuda",
+  "dtype": "float64",
+  "schema_version": "prism.log_subtb.tile_capture_manifest.v1",
+  "tile_count": 12,
+  "uncaptured_tile_count": 0,
+  "warmup_iterations": 3
+}

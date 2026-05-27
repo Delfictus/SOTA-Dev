@@ -79,6 +79,19 @@ def main() -> None:
             )
     else:
         missing.append(str(runtime_root))
+    subtb_root = args.track_b_root / "subtb_spectral"
+    if subtb_root.exists():
+        for path in sorted(subtb_root.rglob("*")):
+            if not path.is_file():
+                continue
+            artifacts.append(
+                {
+                    "name": f"subtb_spectral/{path.relative_to(subtb_root)}",
+                    "path": str(path),
+                    "sha256": sha256_file(path),
+                    "size_bytes": path.stat().st_size,
+                }
+            )
     audit_root = Path(".audit-reports")
     if audit_root.exists():
         for path in sorted(audit_root.glob("track_b_*")):

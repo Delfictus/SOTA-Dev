@@ -1,0 +1,13 @@
+{
+  "status": "RUST_TILE_BOUNDARY_VERIFIED",
+  "registry_path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/captured_tile_registry.json",
+  "tile_count": 12,
+  "operator_block_count": 28,
+  "allowed_tile_types_enforced": true,
+  "affected_blocks_validated": true,
+  "topology_delta_present": true,
+  "basin_delta_present": true,
+  "restricted_operator_hash_present": true,
+  "c6_operator_hash_present": true,
+  "captured_graph_tile_hash_present": true
+}

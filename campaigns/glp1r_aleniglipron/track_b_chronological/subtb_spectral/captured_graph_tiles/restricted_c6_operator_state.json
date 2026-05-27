@@ -1,0 +1,178 @@
+{
+  "basin_weights": [
+    0.5,
+    0.6428571428571428,
+    0.7857142857142857,
+    0.9285714285714286,
+    1.0714285714285714,
+    1.2142857142857144,
+    1.3571428571428572,
+    0.5,
+    0.6428571428571428,
+    0.7857142857142857,
+    0.9285714285714286,
+    1.0714285714285714,
+    1.2142857142857144,
+    1.3571428571428572
+  ],
+  "blocksize": [
+    1,
+    1
+  ],
+  "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+  "c6_operator_id": "restricted_dirichlet_c6_v1",
+  "c6_reward_solver": "restricted_dirichlet_gpu_v1",
+  "dtype": "float64",
+  "id": "track_b_full_restricted_c6_operator",
+  "operator_generation_owner": "prism-forge/log_subtb_tile_guard",
+  "operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+  "provenance_class": "L3_DERIVED",
+  "restricted_operator_target": "W_without_arr(Pi)",
+  "rows": [
+    [
+      {
+        "col": 0,
+        "value": 0.58
+      },
+      {
+        "col": 1,
+        "value": 0.42000000000000004
+      }
+    ],
+    [
+      {
+        "col": 1,
+        "value": 0.6057142857142856
+      },
+      {
+        "col": 2,
+        "value": 0.39428571428571435
+      }
+    ],
+    [
+      {
+        "col": 2,
+        "value": 0.6314285714285713
+      },
+      {
+        "col": 3,
+        "value": 0.36857142857142866
+      }
+    ],
+    [
+      {
+        "col": 3,
+        "value": 0.6571428571428571
+      },
+      {
+        "col": 4,
+        "value": 0.34285714285714286
+      }
+    ],
+    [
+      {
+        "col": 4,
+        "value": 0.6828571428571428
+      },
+      {
+        "col": 5,
+        "value": 0.31714285714285717
+      }
+    ],
+    [
+      {
+        "col": 5,
+        "value": 0.7085714285714285
+      },
+      {
+        "col": 6,
+        "value": 0.2914285714285715
+      }
+    ],
+    [
+      {
+        "col": 6,
+        "value": 0.7342857142857142
+      },
+      {
+        "col": 7,
+        "value": 0.2657142857142858
+      }
+    ],
+    [
+      {
+        "col": 7,
+        "value": 0.58
+      },
+      {
+        "col": 8,
+        "value": 0.42000000000000004
+      }
+    ],
+    [
+      {
+        "col": 8,
+        "value": 0.6057142857142856
+      },
+      {
+        "col": 9,
+        "value": 0.39428571428571435
+      }
+    ],
+    [
+      {
+        "col": 9,
+        "value": 0.6314285714285713
+      },
+      {
+        "col": 10,
+        "value": 0.36857142857142866
+      }
+    ],
+    [
+      {
+        "col": 10,
+        "value": 0.6571428571428571
+      },
+      {
+        "col": 11,
+        "value": 0.34285714285714286
+      }
+    ],
+    [
+      {
+        "col": 11,
+        "value": 0.6828571428571428
+      },
+      {
+        "col": 12,
+        "value": 0.31714285714285717
+      }
+    ],
+    [
+      {
+        "col": 12,
+        "value": 0.7085714285714285
+      },
+      {
+        "col": 13,
+        "value": 0.2914285714285715
+      }
+    ],
+    [
+      {
+        "col": 13,
+        "value": 0.7342857142857142
+      },
+      {
+        "col": 0,
+        "value": 0.2657142857142858
+      }
+    ]
+  ],
+  "schema_version": "prism.log_subtb.restricted_operator.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/genealogical_variant_panel.json"
+  ],
+  "state_count": 14
+}

@@ -1,0 +1,473 @@
+{
+  "schema_version": "prism.log_subtb.captured_tile_registry.v1",
+  "tiles": [
+    {
+      "affected_bsr_blocks": [
+        0,
+        1
+      ],
+      "affected_state_ids": [
+        0,
+        1
+      ],
+      "affected_voxel_ids": [
+        262
+      ],
+      "basin_delta": "efd3282d36280a1347842055",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "6c126ac58a9159b95ae49c2d7b9af301d5401ac2a4b08bc8c38068ad965964f3",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0000_bd7edf6a69",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "provenance_hash": "bcc5dc4c99a93cfc71bd2e29626f80ffe45d4a43749db7aa562bb7220d89ebb9",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "f4d2504f0f13716f6679c13d0a792a97dd5a6fe93475d72a63091180b78bc9b8",
+      "tile_id": "tile_0000_bd7edf6a69",
+      "tile_type": "lock_interface_destabilization",
+      "topology_delta": "c22c702474c76bcababd902e",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        2,
+        3
+      ],
+      "affected_state_ids": [
+        1,
+        2
+      ],
+      "affected_voxel_ids": [
+        262
+      ],
+      "basin_delta": "676fe03b279c837b297ed573",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "efce0ac5c2bb3fae10481dc5ea41a1700bfdc44ebf497017e0cccb9720d331da",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0001_1fd5761586",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "provenance_hash": "1188d17b3ec8f8bfc25624040ba243b3c1b41662e9901576ed9b7cbee648eacc",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "9414197e2ccb9799bd1092f875bce62e20fe260134691d76e966b3ce3f276da1",
+      "tile_id": "tile_0001_1fd5761586",
+      "tile_type": "hydration_channel_preservation",
+      "topology_delta": "38525bb5f64babb01c31a36a",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        4,
+        5
+      ],
+      "affected_state_ids": [
+        2,
+        3
+      ],
+      "affected_voxel_ids": [
+        262
+      ],
+      "basin_delta": "de2b35b9062fcc61fb832687",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "6f9013921d2fdfc2dda159c7dcd484c6ba256f0652e72a9d1ee388aa4638fb7e",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0002_86f7bf4306",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "provenance_hash": "c94db16fcdf5e2d6088e3ac4c630e95163360772fb00e3a5e72e99feebf3b759",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "12f8b3e7e480901a666d79db14e00112dc8be8e8a482bae2e17698c3273782df",
+      "tile_id": "tile_0002_86f7bf4306",
+      "tile_type": "nma_hinge_preservation",
+      "topology_delta": "f19f5951f749deeefb28a8ea",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        6,
+        7
+      ],
+      "affected_state_ids": [
+        3,
+        4
+      ],
+      "affected_voxel_ids": [
+        262
+      ],
+      "basin_delta": "d2d1830cff3ca98108a616e3",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "9061c4d99b057757da7c493d344a2db0b7e5bef6ba40df54b6763ca8202a6dda",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0003_b77d054363",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "provenance_hash": "cb7e1bf0fd4833a5fd0f87e1f7e3bc1b52f0d4b5b58451cc8e6d1a6f26596fb8",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "f0f1d8c6583331f8fc8126d9a2caea0a35a1d5d57f69a9311bde1cc327f7a8a0",
+      "tile_id": "tile_0003_b77d054363",
+      "tile_type": "arrestin_boundary_avoidance",
+      "topology_delta": "f66f99d4af36dcf19f62d93c",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        8,
+        9
+      ],
+      "affected_state_ids": [
+        4,
+        5
+      ],
+      "affected_voxel_ids": [
+        264
+      ],
+      "basin_delta": "86c29d4cb98294e1562fc790",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "6184cdc5890e7a3a780feb4506b54c04fd30521988862496cacda33840241dea",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0004_e8bdad08ef",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "AROMATIC_STACKING_PROBE",
+      "provenance_hash": "d1ef10b4a7cf3665bb2b9ce3ed4d6966519cae01aa7c4bd611d5a3d2b0c5e6fd",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "4bc32fbd461f3b9944a19529a39c729fe5484aa8b3993914b7dd35e9270734f7",
+      "tile_id": "tile_0004_e8bdad08ef",
+      "tile_type": "holo_tile_fusion",
+      "topology_delta": "2e0a3825767a37bb66921ad0",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        10,
+        11
+      ],
+      "affected_state_ids": [
+        5,
+        6
+      ],
+      "affected_voxel_ids": [
+        264
+      ],
+      "basin_delta": "f0046a6ad49e55854729e11e",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "32bf25066faac9c11bdd59e079d13d64358c92da9117286d5fa67497d73c3166",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0005_f9897a00ca",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "CHARGE_INVERSION_PROBE",
+      "provenance_hash": "f7ea3fa4a5c601fbdb63f3e420f368c67a20e1802842312e7f69864986f5b71e",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "7ee00c214ac054feadd02e168f76020b6803cf9929c14ae74700ef63f564b3ef",
+      "tile_id": "tile_0005_f9897a00ca",
+      "tile_type": "lock_interface_destabilization",
+      "topology_delta": "f8fb7faa393026596d742d72",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        12,
+        13
+      ],
+      "affected_state_ids": [
+        6,
+        7
+      ],
+      "affected_voxel_ids": [
+        264
+      ],
+      "basin_delta": "290a101641ecbd70c74e4698",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "23bbeb16354843420d3ef76ea652c612633abd81c5bcbc74c499a7758ebfb646",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0006_f91c3197f1",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "FLEXIBILIZING_PROBE",
+      "provenance_hash": "73c817263b8392f7baf0cc66b21612b905ddca576143e907c71479bbb6a3ef70",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "f2aa98e2f208b8ee4071c834300e8d2d58a43411d2de1d3050f4cb1f142dfeee",
+      "tile_id": "tile_0006_f91c3197f1",
+      "tile_type": "hydration_channel_preservation",
+      "topology_delta": "0a1bacc8e8dad392673bb066",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        14,
+        15
+      ],
+      "affected_state_ids": [
+        7,
+        8
+      ],
+      "affected_voxel_ids": [
+        264
+      ],
+      "basin_delta": "8c806820c3d728eb6ea0a5c3",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "ba481da94489864ab4e5ab975301f26c521b92c7d76b5973fbc92e991eaf8df8",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0007_9d883e142c",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "VOLUME_EXPANSION_PROBE",
+      "provenance_hash": "527e18a87a9e4885b8b99dcdd444b88b0877ae9bd7f3ce6749ef43ff69414847",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "4f48d94376acf4bc91e1f38a24a3c3c557c41c81d8d5ffb3dde0f6efe687d5ba",
+      "tile_id": "tile_0007_9d883e142c",
+      "tile_type": "nma_hinge_preservation",
+      "topology_delta": "c780c9c74207b63a32c5f0ba",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        16,
+        17
+      ],
+      "affected_state_ids": [
+        8,
+        9
+      ],
+      "affected_voxel_ids": [
+        324
+      ],
+      "basin_delta": "2b9ee38d8b2de5ff3ab116ef",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "24061bf3383012781655ebcd0d68585ba9885edc4a02d7e921511966fc0fe295",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0008_246e4f338f",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "CONSERVATIVE_CONTROL",
+      "provenance_hash": "b3ff668a09590979826f7b7a738f368ac4373908c90817aee91e70a264b73b4a",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "f2adc0e72dfecd634401e8f20b2d036b99a5c782977233354cdd01e585c4e9e0",
+      "tile_id": "tile_0008_246e4f338f",
+      "tile_type": "lock_interface_destabilization",
+      "topology_delta": "c09bede4580ad51944eb2a5d",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        18,
+        19
+      ],
+      "affected_state_ids": [
+        9,
+        10
+      ],
+      "affected_voxel_ids": [
+        324
+      ],
+      "basin_delta": "7cd7e40b84d13068fcfd38e0",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "5b03e9a42bd4aee72b723a1942d2bae4d47518ff497425d626bb8aac865fd657",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0009_e9fabd2e1f",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "HYDRATION_WIRE_PROBE",
+      "provenance_hash": "1f94b650abe4c6363a7c9b741e833eb55738be215deb8ac0bc49ab8bc6d80dc0",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "fb2ae07db1a88b264351107db85e8e303c9c41d7b3eb118d3cff09de57a32954",
+      "tile_id": "tile_0009_e9fabd2e1f",
+      "tile_type": "hydration_channel_preservation",
+      "topology_delta": "0e26d535958e08ce4d3dccd1",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        20,
+        21
+      ],
+      "affected_state_ids": [
+        10,
+        11
+      ],
+      "affected_voxel_ids": [
+        324
+      ],
+      "basin_delta": "dd5f0a80bc03492d50729432",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "d9030541285e8f18c65b6b2b873ecd34e5bd92bdf85e3d00207e821c3a2aaeb8",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0010_b3513fae86",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "RIGIDIFYING_PROBE",
+      "provenance_hash": "4bc7d2c0ac511bf24771fb37c04de1d008f31c20480d8906eae495994b54de99",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "ee97bdea36b82c6b411e319f35faaddc2bc41e3cc9cf178e766d815d9e700dd2",
+      "tile_id": "tile_0010_b3513fae86",
+      "tile_type": "nma_hinge_preservation",
+      "topology_delta": "fe538f00cf536b7811d1f2ff",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "affected_bsr_blocks": [
+        22,
+        23
+      ],
+      "affected_state_ids": [
+        11,
+        12
+      ],
+      "affected_voxel_ids": [
+        324
+      ],
+      "basin_delta": "012330489508710ba2a16516",
+      "c6_operator_hash": "dc451df28c2ace1a5f7525fda9134784e435375c59a02f18e75c1d379d1778ab",
+      "capture_shape_bucket": "rows1_blocks2_block1_float64",
+      "captured_graph_tile_hash": "e3cd77ac1ed1862d677bfc809295c1f2795fde4444d1d2f8dbb4a51079f8ebf3",
+      "cuda_graph_id": "cuda_graph::rows1_blocks2_block1_float64::tile_0011_f5387e89df",
+      "delta_values": [
+        [
+          [
+            0.0125
+          ]
+        ],
+        [
+          [
+            -0.004
+          ]
+        ]
+      ],
+      "perturbation_family": "SEVERING_PROBE",
+      "provenance_hash": "a0dddd9167380491ab08eca1b684acc450afe918ca7ff163ade36afa22ceb051",
+      "restricted_operator_hash": "10e27b75d5f4ad77cbacda07873aab4d8eb757762d39327ad523f12f833673f5",
+      "restricted_operator_target": "W_without_arr(Pi)",
+      "tile_delta_hash": "6dfbb5b2a36dbfeebb7425b74fa3894da282bd911b01d608895dd5b725d1bd91",
+      "tile_id": "tile_0011_f5387e89df",
+      "tile_type": "arrestin_boundary_avoidance",
+      "topology_delta": "3c1fd15ef9c09abb5ec3c1d6",
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    }
+  ]
+}
