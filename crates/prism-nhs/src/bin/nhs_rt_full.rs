@@ -221,7 +221,7 @@ struct Args {
     topology: Option<PathBuf>,
 
     /// Batch manifest from Stage 1B (for batch mode)
-    #[arg(long, conflicts_with = "topology")]
+    #[arg(long)]
     manifest: Option<PathBuf>,
 
     /// Output directory
@@ -318,6 +318,15 @@ struct Args {
     /// Passing false is ignored because lossy V2 frames corrupt teacher labels.
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     lossless_v2_trajectory: bool,
+
+    /// Phase 2C targeted reintegration mode. When set, --manifest is
+    /// interpreted as a trigger-window manifest (not a batch manifest).
+    /// The engine runs only at the specified trigger windows, saving
+    /// trajectory frames at every step for Cartesian alignment capture.
+    /// Requires: -t <topology> --manifest <trigger_manifest.json>
+    /// Compatible with: --fast-25k --multi-stream --path-a-max-wall-seconds
+    #[arg(long, default_value = "false")]
+    reintegrate: bool,
 
     /// Enable multi-scale clustering for structure-agnostic detection
     /// Runs clustering at multiple epsilon values and finds persistent sites
@@ -2516,7 +2525,17 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "gpu")]
     {
-        if let Some(manifest_path) = &args.manifest {
+        if args.reintegrate {
+            // Phase 2C targeted reintegration: requires -t AND --manifest (trigger windows)
+            let topology_path = args.topology.as_ref()
+                .ok_or_else(|| anyhow::anyhow!("--reintegrate requires --topology (-t)"))?;
+            let trigger_manifest = args.manifest.as_ref()
+                .ok_or_else(|| anyhow::anyhow!("--reintegrate requires --manifest <trigger_manifest.json>"))?;
+            run_reintegration(&args, topology_path, trigger_manifest)?;
+        } else if let Some(manifest_path) = &args.manifest {
+            if args.topology.is_some() {
+                anyhow::bail!("--manifest (batch mode) conflicts with --topology; use --reintegrate for trigger-window mode");
+            }
             run_from_manifest(&args, manifest_path)?;
         } else if let Some(topology_path) = &args.topology {
             run_single_structure(&args, topology_path)?;
@@ -2531,6 +2550,71 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Phase 2C targeted reintegration mode.
+/// Reads trigger windows from a manifest JSON and runs the multi-stream pipeline
+/// only at those windows, capturing trajectory frames at every step.
+/// The trigger manifest format:
+/// ```json
+/// { "triggers": [{ "condition_id": "...", "replica_id": N, "stream_id": N,
+///     "windows": [{"start_step": N, "end_step": N, "rationale": "..."}] }] }
+/// ```
+#[cfg(feature = "gpu")]
+fn run_reintegration(args: &Args, topology_path: &PathBuf, trigger_manifest: &PathBuf) -> Result<()> {
+    log::info!("╔═══════════════════════════════════════════════════════════════╗");
+    log::info!("║  PHASE 2C TARGETED REINTEGRATION MODE                        ║");
+    log::info!("╚═══════════════════════════════════════════════════════════════╝");
+
+    // Parse trigger manifest
+    let manifest_content = std::fs::read_to_string(trigger_manifest)
+        .with_context(|| format!("Failed to read trigger manifest: {}", trigger_manifest.display()))?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content)
+        .context("Failed to parse trigger manifest JSON")?;
+
+    let triggers = manifest.get("triggers")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow::anyhow!("trigger manifest missing 'triggers' array"))?;
+
+    log::info!("Trigger manifest: {} trigger entries from {}", triggers.len(), trigger_manifest.display());
+
+    // Collect all unique windows across all triggers for this topology
+    let mut all_windows: Vec<(i32, i32, String)> = Vec::new();
+    for trigger in triggers {
+        let empty_vec = Vec::new();
+        let windows = trigger.get("windows")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty_vec);
+        for window in windows {
+            let start = window.get("start_step").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let end = window.get("end_step").and_then(|v| v.as_i64()).unwrap_or(start as i64) as i32;
+            let rationale = window.get("rationale").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            all_windows.push((start, end, rationale));
+        }
+    }
+
+    // Deduplicate and sort windows by start_step
+    all_windows.sort_by_key(|w| w.0);
+    all_windows.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+
+    log::info!("Consolidated {} unique trigger windows:", all_windows.len());
+    for (i, (start, end, rationale)) in all_windows.iter().enumerate() {
+        log::info!("  window[{}]: steps {}..{} — {}", i, start, end, rationale);
+    }
+
+    // Serialize trigger windows to environment for the multi-stream pipeline
+    let windows_json: Vec<serde_json::Value> = all_windows.iter().map(|(s, e, r)| {
+        serde_json::json!({"start_step": s, "end_step": e, "rationale": r})
+    }).collect();
+    let windows_str = serde_json::to_string(&windows_json)?;
+    std::env::set_var("PRISM_REINTEGRATION_WINDOWS", &windows_str);
+
+    log::info!("Reintegration mode active: save_trajectory_interval forced to 1");
+    log::info!("Delegating to multi-stream pipeline with {} trigger windows", all_windows.len());
+
+    // Delegate to the existing multi-stream pipeline
+    let n_streams = args.multi_stream.max(8);
+    run_multi_stream_pipeline(args, topology_path, n_streams)
 }
 
 /// Run from Stage 1B manifest (batch mode)
