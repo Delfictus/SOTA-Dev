@@ -191,6 +191,7 @@ prism4d_training/
 .snapshot*
 
 # Local validation/forensics outputs generated during PRISM publication audits.
+/release_audit/
 /0.6
 /json
 /kcc_threshold
