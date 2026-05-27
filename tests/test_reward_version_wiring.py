@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 import torch
 
 from prism_dstw.scoring.tripartite_bias_scorer import compute_tripartite_bias
+import scripts.train_gflownet_policy as train_policy
 from scripts.train_gflownet_policy import (
-    DEFAULT_POPULATION_CONSENSUS_SURVIVORS,
-    DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS,
-    DEFAULT_SURVIVORS,
     action_base_features_from_table,
     action_atom_features_from_table,
     anchor_embeddings_from_table,
@@ -15,6 +16,20 @@ from scripts.train_gflownet_policy import (
     pose_penalty_source_from_row,
     resolve_survivor_corpus_for_reward,
 )
+
+
+def _patch_survivor_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path, Path]:
+    track_dir = tmp_path / "track_a_generative"
+    track_dir.mkdir()
+    default_survivors = track_dir / "vspace_survivors_full_scale.parquet"
+    population_survivors = track_dir / "vspace_survivors_population_consensus_action_corpus.parquet"
+    scaffold_survivors = track_dir / "vspace_survivors_scaffold_consensus_action_corpus.parquet"
+    for path in (default_survivors, population_survivors, scaffold_survivors):
+        path.touch()
+    monkeypatch.setattr(train_policy, "DEFAULT_SURVIVORS", default_survivors)
+    monkeypatch.setattr(train_policy, "DEFAULT_POPULATION_CONSENSUS_SURVIVORS", population_survivors)
+    monkeypatch.setattr(train_policy, "DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS", scaffold_survivors)
+    return default_survivors, population_survivors, scaffold_survivors
 
 
 def test_v3_consensus_uses_consensus_bonus() -> None:
@@ -182,26 +197,34 @@ def test_reward_accepts_directive_field_name_aliases() -> None:
     assert metrics["charge_feature_mean"] == 0.33
 
 
-def test_consensus_reward_auto_selects_population_survivor_corpus() -> None:
+def test_consensus_reward_auto_selects_population_survivor_corpus(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """v3/v4 runs must not silently use the WT survivor corpus when consensus data exists."""
 
+    default_survivors, population_survivors, _ = _patch_survivor_defaults(monkeypatch, tmp_path)
+
     selected = resolve_survivor_corpus_for_reward(
-        requested_survivors=DEFAULT_SURVIVORS,
+        requested_survivors=default_survivors,
         reward_version="v4_full_field",
-        signal_grid=DEFAULT_POPULATION_CONSENSUS_SURVIVORS.with_name("signal_grid_population_consensus.parquet"),
+        signal_grid=population_survivors.with_name("signal_grid_population_consensus.parquet"),
     )
 
-    assert selected == DEFAULT_POPULATION_CONSENSUS_SURVIVORS
+    assert selected == population_survivors
 
 
-def test_scaffold_consensus_reward_auto_selects_scaffold_survivor_corpus() -> None:
+def test_scaffold_consensus_reward_auto_selects_scaffold_survivor_corpus(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    default_survivors, _, scaffold_survivors = _patch_survivor_defaults(monkeypatch, tmp_path)
+
     selected = resolve_survivor_corpus_for_reward(
-        requested_survivors=DEFAULT_SURVIVORS,
+        requested_survivors=default_survivors,
         reward_version="v3_scaffold_consensus",
-        signal_grid=DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS.with_name("signal_grid_scaffold_consensus.parquet"),
+        signal_grid=scaffold_survivors.with_name("signal_grid_scaffold_consensus.parquet"),
     )
 
-    assert selected == DEFAULT_SCAFFOLD_CONSENSUS_SURVIVORS
+    assert selected == scaffold_survivors
 
 
 def test_u_pose_uses_surviving_rotamers_when_present() -> None:
