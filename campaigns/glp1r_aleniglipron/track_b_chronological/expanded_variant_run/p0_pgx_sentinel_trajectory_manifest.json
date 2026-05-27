@@ -1,0 +1,36 @@
+{
+  "claim_boundary": "Batch manifests queue PRISM work; they are not observed trajectory evidence.",
+  "created_at": "2026-05-27T03:38:30.619237+00:00",
+  "execution_status": "READY_AFTER_VARIANT_TOPOLOGIES_EXIST",
+  "id": "aleniglipron-p0_pgx_sentinel",
+  "provenance_class": "L3_DERIVED",
+  "run_priority": "P0_PGX_SENTINEL",
+  "schema_version": "track_b.aleniglipron_variant_trajectory_batch.v1",
+  "variant_count": 2,
+  "variants": [
+    {
+      "full_trajectory_command_template": "scripts/prism-validate-and-run.sh -t /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/variant_topologies/ALENI-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-A316T.topology.json -o /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/trajectory_outputs/ALENI-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-A316T --fast --hysteresis --prism-therm --multi-stream 20 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v",
+      "mutation": "A316T",
+      "perturbation_family": "SEVERING_PROBE",
+      "pilot_command": "scripts/prism-validate-and-run.sh -t /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/variant_topologies/ALENI-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-A316T.topology.json -o /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/trajectory_outputs/ALENI-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-A316T --fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v",
+      "target_decision": "TARGET_FOR_TRANSITION_CONTINUITY_TEST",
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "trajectory_execution_status": "OBSERVED_GRID_AVAILABLE_QUEUE_TRUE_TRAJECTORY_EXTENSION",
+      "trajectory_output_dir": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/trajectory_outputs/ALENI-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-A316T",
+      "variant_id": "ALENI-PGX-A316T",
+      "variant_topology_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/variant_topologies/ALENI-BISTATE_RETAINED_RESIDUES-SEVERING_PROBE-A316T.topology.json"
+    },
+    {
+      "full_trajectory_command_template": "scripts/prism-validate-and-run.sh -t /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/variant_topologies/ALENI-TM3_TM5_CORE-SEVERING_PROBE-T149M.topology.json -o /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/trajectory_outputs/ALENI-TM3_TM5_CORE-SEVERING_PROBE-T149M --fast --hysteresis --prism-therm --multi-stream 20 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v",
+      "mutation": "T149M",
+      "perturbation_family": "SEVERING_PROBE",
+      "pilot_command": "scripts/prism-validate-and-run.sh -t /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/variant_topologies/ALENI-TM3_TM5_CORE-SEVERING_PROBE-T149M.topology.json -o /home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/trajectory_outputs/ALENI-TM3_TM5_CORE-SEVERING_PROBE-T149M --fast --hysteresis --prism-therm --multi-stream 8 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --use-xgb-ranker --replica-seed 42 -v",
+      "target_decision": "MONITOR_AS_PGX_BACKGROUND",
+      "topology_region": "TM3_TM5_CORE",
+      "trajectory_execution_status": "OBSERVED_GRID_AVAILABLE_QUEUE_TRUE_TRAJECTORY_EXTENSION",
+      "trajectory_output_dir": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/trajectory_outputs/ALENI-TM3_TM5_CORE-SEVERING_PROBE-T149M",
+      "variant_id": "ALENI-PGX-T149M",
+      "variant_topology_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/expanded_variant_run/variant_topologies/ALENI-TM3_TM5_CORE-SEVERING_PROBE-T149M.topology.json"
+    }
+  ]
+}

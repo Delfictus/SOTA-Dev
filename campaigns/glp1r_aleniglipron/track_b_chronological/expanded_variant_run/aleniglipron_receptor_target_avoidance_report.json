@@ -1,0 +1,157 @@
+{
+  "claim_boundary": "Computational target/avoid triage only; no biological efficacy claim.",
+  "created_at": "2026-05-27T03:38:30.527106+00:00",
+  "id": "aleniglipron_receptor_target_avoidance_report",
+  "provenance_class": "L3_DERIVED",
+  "receptor_regions_to_avoid_or_use_as_controls": [
+    {
+      "avoidance_score": 0.6582008575488109,
+      "recommendation": "AVOID_OR_USE_AS_FALSIFICATION_CONTROL",
+      "residue_id": "N182",
+      "topology_region": "ECD_TM1_GATEWAY"
+    },
+    {
+      "avoidance_score": 0.6582008575488109,
+      "recommendation": "AVOID_OR_USE_AS_FALSIFICATION_CONTROL",
+      "residue_id": "N182",
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "avoidance_score": 0.6582008575488109,
+      "recommendation": "AVOID_OR_USE_AS_FALSIFICATION_CONTROL",
+      "residue_id": "N182",
+      "topology_region": "TE_HUBS"
+    }
+  ],
+  "recommendation_counts": {
+    "AVOID_OR_USE_AS_FALSIFICATION_CONTROL": 3,
+    "PRESERVE": 8,
+    "SECONDARY_TARGET": 46,
+    "TARGET": 6
+  },
+  "schema_version": "track_b.aleniglipron_receptor_target_avoidance_report.v1",
+  "target_count": 63,
+  "top_receptor_regions_to_target": [
+    {
+      "recommendation": "TARGET",
+      "residue_id": "F369",
+      "score": 0.5141374977712052,
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "recommendation": "TARGET",
+      "residue_id": "R419",
+      "score": 0.4580615814880814,
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "recommendation": "TARGET",
+      "residue_id": "E418",
+      "score": 0.4509538071781085,
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "recommendation": "TARGET",
+      "residue_id": "R414",
+      "score": 0.4506539547678818,
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "recommendation": "TARGET",
+      "residue_id": "W417",
+      "score": 0.44842427515617383,
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "recommendation": "TARGET",
+      "residue_id": "Q410",
+      "score": 0.43927832082214335,
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "L141",
+      "score": 0.5367597917453119,
+      "topology_region": "TM3_TM5_CORE"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "K346",
+      "score": 0.5319075749061132,
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "L118",
+      "score": 0.5295368704239721,
+      "topology_region": "TM3_TM5_CORE"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "L166",
+      "score": 0.5269730106901176,
+      "topology_region": "TM3_TM5_CORE"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "F257",
+      "score": 0.5217184187097674,
+      "topology_region": "TM3_TM5_CORE"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "H171",
+      "score": 0.5193491034050857,
+      "topology_region": "TM3_TM5_CORE"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "F324",
+      "score": 0.5150800832556508,
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "R170",
+      "score": 0.5144443810621991,
+      "topology_region": "TM3_TM5_CORE"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "Y145",
+      "score": 0.5045138202806035,
+      "topology_region": "TM3_TM5_CORE"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "E262",
+      "score": 0.49066942264996494,
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "W264",
+      "score": 0.4812543089925426,
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "W420",
+      "score": 0.4338594366533346,
+      "topology_region": "INTRACELLULAR_LOCK_BASIN"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "F367",
+      "score": 0.3988581506935263,
+      "topology_region": "TE_HUBS"
+    },
+    {
+      "recommendation": "SECONDARY_TARGET",
+      "residue_id": "S156",
+      "score": 0.3985581041205756,
+      "topology_region": "BISTATE_RETAINED_RESIDUES"
+    }
+  ],
+  "variant_count": 1464
+}

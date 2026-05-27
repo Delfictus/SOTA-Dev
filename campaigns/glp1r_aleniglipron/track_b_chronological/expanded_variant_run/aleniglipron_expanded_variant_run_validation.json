@@ -1,0 +1,55 @@
+{
+  "created_at": "2026-05-27T03:38:30.527695+00:00",
+  "failures": {
+    "missing_axes": [],
+    "projected_claimed_observed": [],
+    "sequence_only": []
+  },
+  "id": "aleniglipron_expanded_variant_run_validation",
+  "missing_axis_count": 0,
+  "perturbation_family_counts": {
+    "AROMATIC_STACKING_PROBE": 172,
+    "CHARGE_INVERSION_PROBE": 191,
+    "CONSERVATIVE_CONTROL": 193,
+    "FLEXIBILIZING_PROBE": 183,
+    "HYDRATION_WIRE_PROBE": 183,
+    "RIGIDIFYING_PROBE": 176,
+    "SEVERING_PROBE": 194,
+    "VOLUME_EXPANSION_PROBE": 172
+  },
+  "projected_claimed_observed_count": 0,
+  "provenance_class": "L3_DERIVED",
+  "run_priority_counts": {
+    "BLOCKED": 23,
+    "P0_AVOID_SENTINEL": 69,
+    "P0_OBSERVED_EXTENSION": 1,
+    "P0_PGX_SENTINEL": 2,
+    "P1_TRUE_TRAJECTORY": 408,
+    "P2_TRUE_TRAJECTORY": 519,
+    "P3_CONTROL_TRAJECTORY": 442
+  },
+  "schema_version": "track_b.aleniglipron_expanded_variant_run_validation.v1",
+  "sequence_only_variant_count": 0,
+  "source_artifacts": [
+    "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/genealogical_variant_panel.json",
+    "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/population_pgx/source/gnomAD_GLP1R_missense_variants.csv",
+    "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/Phase3_PGx_Exclusion_Manifest.json"
+  ],
+  "target_row_count": 63,
+  "topology_region_counts": {
+    "BISTATE_RETAINED_RESIDUES": 277,
+    "ECD_TM1_GATEWAY": 297,
+    "HYDRATION_CORRIDOR": 189,
+    "INTRACELLULAR_LOCK_BASIN": 207,
+    "TE_HUBS": 212,
+    "TM3_TM5_CORE": 282
+  },
+  "trajectory_status_counts": {
+    "BLOCKED_UNMAPPED_SIGNAL_PEPTIDE": 23,
+    "OBSERVED_GRID_AVAILABLE_QUEUE_TRUE_TRAJECTORY_EXTENSION": 3,
+    "PROJECTED_GRID_AVAILABLE_QUEUE_TRUE_TRAJECTORY": 37,
+    "QUEUED_TRUE_PERTURBED_TRAJECTORY": 1401
+  },
+  "variant_count": 1464,
+  "verdict": "PASS"
+}
