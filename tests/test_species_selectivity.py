@@ -8,6 +8,7 @@ import pytest
 
 from scripts.compute_species_selectivity import (
     DEFAULT_CONSERVATION,
+    DEFAULT_RECEPTOR_PDB,
     REGION_WEIGHTS,
     ConservationRecord,
     ReceptorResidue,
@@ -892,6 +893,8 @@ def test_top100_candidate_range_gate(tmp_path: Path) -> None:
     )
     if not candidates.is_file():
         pytest.skip("D07 Top100 candidate artifact is not present")
+    if not DEFAULT_RECEPTOR_PDB.is_file():
+        pytest.skip(f"D07 Top100 coordinate range gate requires external receptor PDB: {DEFAULT_RECEPTOR_PDB}")
 
     df = compute_species_selectivity_v3(
         candidates,
