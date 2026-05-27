@@ -1,15 +1,14 @@
- .../track_a_generative/daemon_smoke_preflight.json |    21 +
- .../gflownet_top_100_pgx_screened.parquet          |   Bin 0 -> 105122 bytes
- .../gflownet_top_100_pgx_screened_report.json      |    32 +
- .../track_a_generative/lock_region_mask.json       | 14893 +++++++++++++++++++
- .../shard_r2_recovery_preflight.json               |    32 +
- crates/prism-forge/src/bin/oracle_scorer.rs        |   602 +
- scripts/audit_pgx_resilience.py                    |   337 +
- scripts/generate_lock_region_mask.py               |   219 +
- scripts/preflight_daemon_smoke.py                  |    60 +
- scripts/preflight_shard_r2_recovery.py             |    72 +
- scripts/train_gflownet_policy.py                   |  1338 ++
- .../orchestration/multi_scaffold_entropy_router.py |   387 +
- src/prism_dstw/orchestration/rust_reward_oracle.py |   323 +
- tests/test_multi_scaffold_entropy_router.py        |    81 +
- 14 files changed, 18397 insertions(+)
+ .../M3_Lead_Optimization_Dossier.md                |   32 +-
+ campaigns/glp1r_aleniglipron/PRISM_CBOM_v1.0.json  | 4666 +++++++++++++++++---
+ .../pgx_full_landscape_report.json                 |   54 +-
+ .../gflownet_raw_policy_samples.parquet            |  Bin 194629 -> 306739 bytes
+ .../gflownet_raw_policy_samples_summary.json       |   24 +-
+ .../gflownet_top_100_candidates.csv                |  202 +-
+ .../gflownet_top_500_candidates.csv                | 1002 ++---
+ .../gflownet_top_500_candidates.md                 |  196 +-
+ .../gflownet_top100_full_pgx.parquet               |  Bin 182395 -> 278651 bytes
+ .../thermodynamic_motif_registry.parquet           |  Bin 25845 -> 33547 bytes
+ .../thermodynamic_motif_registry_report.json       |   28 +-
+ .../subtb_spectral/subtb_run_manifest.json         |    8 +-
+ .../subtb_spectral/subtb_training_metrics.parquet  |  Bin 52415 -> 52443 bytes
+ 13 files changed, 4836 insertions(+), 1376 deletions(-)
