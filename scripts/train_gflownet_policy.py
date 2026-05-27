@@ -35,6 +35,11 @@ from prism_dstw.hierarchical_bayes.gflownet_policy import (
     FieldConditionedDualChannelGFlowNetPolicy,
 )
 from prism_dstw.hierarchical_bayes.trajectory_balance import TrajectoryBalanceLoss
+from prism_dstw.motif.feedback import (
+    compute_motif_bonus,
+    compute_motif_diversity_penalty,
+)
+from prism_dstw.motif.registry import MotifRegistry
 from prism_dstw.orchestration.multi_scaffold_entropy_router import (
     MultiScaffoldEntropyRouter,
     lock_phase_maps_from_rows,
@@ -158,6 +163,8 @@ class ActionSpace:
     action_base_features: Tensor | None = None
     action_atom_features: Tensor | None = None
     action_atom_mask: Tensor | None = None
+    motif_base_action_bias: Tensor | None = None
+    motif_matched_action_count: int = 0
     action_rows: tuple[dict[str, object], ...] = tuple()
 
 
@@ -264,6 +271,10 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         help="Recorded weight for population-consensus survivor-corpus shaping.",
     )
+    parser.add_argument("--motif-registry", type=Path, default=None)
+    parser.add_argument("--motif-bonus-weight", type=float, default=0.0)
+    parser.add_argument("--motif-decay-lambda", type=float, default=0.05)
+    parser.add_argument("--motif-diversity-weight", type=float, default=1.0)
     parser.add_argument("--lock-mask", type=Path, default=TRACK_A_DIR / "lock_region_mask.json")
     parser.add_argument("--synthon-parquet", type=Path, default=None)
     parser.add_argument("--signal-grid", type=Path, default=None)
@@ -1323,8 +1334,141 @@ def attach_exit_ray_adjustments(
         action_base_features=action_space.action_base_features,
         action_atom_features=action_space.action_atom_features,
         action_atom_mask=action_space.action_atom_mask,
+        motif_base_action_bias=action_space.motif_base_action_bias,
+        motif_matched_action_count=action_space.motif_matched_action_count,
         action_rows=tuple(enriched_table.to_dicts()),
     )
+
+
+def attach_motif_action_bias(
+    action_space: ActionSpace,
+    motif_registry: MotifRegistry,
+    *,
+    bias_weight: float,
+    decay_lambda: float,
+) -> ActionSpace:
+    """Precompute topology-dependent motif bias for each action."""
+
+    if bias_weight <= 0.0:
+        return action_space
+    enriched_entries = motif_registry.query_lock_enriched(min_enrichment=1.5)
+    patterns = [
+        (Chem.MolFromSmarts(entry.canonical_smarts), entry)
+        for entry in enriched_entries
+        if entry.canonical_smarts
+    ]
+    if not patterns:
+        return action_space
+    values: list[float] = []
+    matched = 0
+    for row in action_space.action_rows:
+        smiles = action_smiles_from_row(row)
+        mol = Chem.MolFromSmiles(smiles) if smiles else None
+        bias = 0.0
+        if mol is not None:
+            for pattern, entry in patterns:
+                if pattern is None or not mol.HasSubstructMatch(pattern):
+                    continue
+                ev_pref = 0.5
+                if entry.exit_vector_preference is not None and entry.exit_vector_preference:
+                    ev_pref = max(float(value) for value in entry.exit_vector_preference.values())
+                freq_decay = math.exp(decay_lambda * -float(entry.n_occurrences_top100))
+                bias += bias_weight * math.log(max(float(entry.enrichment_ratio or 1.01), 1.01)) * ev_pref * freq_decay
+        if bias > 0.0:
+            matched += 1
+        values.append(bias)
+    bias_tensor = torch.tensor(values, dtype=torch.float32)
+    print(
+        "motif_action_bias_initialized "
+        f"matched_actions={matched}/{len(values)} "
+        f"bias_mean={float(bias_tensor.mean().item()) if bias_tensor.numel() else 0.0:.6f} "
+        f"bias_max={float(bias_tensor.max().item()) if bias_tensor.numel() else 0.0:.6f}",
+        flush=True,
+    )
+    return replace(
+        action_space,
+        motif_base_action_bias=bias_tensor,
+        motif_matched_action_count=matched,
+    )
+
+
+def action_smiles_from_row(row: Mapping[str, object]) -> str:
+    for key in ("survivor_smiles", "canonical_smiles", "motif_smiles"):
+        value = row.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def load_lock_region_centroid(lock_mask_path: Path) -> Tensor | None:
+    """Return xyz centroid of lock-mask voxels if grid metadata is available."""
+
+    if not lock_mask_path.is_file():
+        return None
+    payload = json.loads(lock_mask_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return None
+    grid = payload.get("grid")
+    voxel_indices = payload.get("lock_voxel_indices")
+    if not isinstance(grid, dict) or not isinstance(voxel_indices, list) or not voxel_indices:
+        return None
+    nx = int(numeric_value(grid.get("nx"), 0.0))
+    ny = int(numeric_value(grid.get("ny"), 0.0))
+    nz = int(numeric_value(grid.get("nz"), 0.0))
+    spacing = numeric_value(grid.get("spacing_angstrom"), 1.0)
+    origin_raw = grid.get("origin_xyz_angstrom")
+    if nx <= 0 or ny <= 0 or nz <= 0 or not isinstance(origin_raw, list) or len(origin_raw) != 3:
+        return None
+    origin = torch.tensor([numeric_value(value) for value in origin_raw], dtype=torch.float32)
+    coords: list[Tensor] = []
+    plane = nx * ny
+    for raw_idx in voxel_indices:
+        idx = int(numeric_value(raw_idx, -1.0))
+        if idx < 0:
+            continue
+        z = idx // plane
+        rem = idx % plane
+        y = rem // nx
+        x = rem % nx
+        if x >= nx or y >= ny or z >= nz:
+            continue
+        coords.append(origin + torch.tensor([x + 0.5, y + 0.5, z + 0.5], dtype=torch.float32) * float(spacing))
+    if not coords:
+        return None
+    return torch.stack(coords).mean(dim=0)
+
+
+def motif_action_logit_bias_for_states(
+    action_space: ActionSpace,
+    states: Sequence[AssembledState],
+    lock_region_centroid: Tensor | None,
+) -> Tensor | None:
+    """Return exit-vector-conditioned motif action bias for current states."""
+
+    base_bias = action_space.motif_base_action_bias
+    if base_bias is None or lock_region_centroid is None:
+        return None
+    rows: list[Tensor] = []
+    for state in states:
+        xyz = cast(Tensor, state.data.xyz).to(dtype=torch.float32)
+        if xyz.ndim != 2 or int(xyz.shape[0]) == 0:
+            rows.append(torch.zeros_like(base_bias))
+            continue
+        exit_idx = max(0, min(int(state.exit_node_idx), int(xyz.shape[0]) - 1))
+        product_centroid = xyz.mean(dim=0)
+        exit_xyz = xyz[exit_idx]
+        exit_direction = unit_vector(exit_xyz - product_centroid)
+        lock_direction = unit_vector(lock_region_centroid.to(dtype=torch.float32) - exit_xyz)
+        alignment = float(torch.dot(exit_direction, lock_direction).item())
+        rows.append(base_bias * max(alignment, 0.0))
+    return torch.stack(rows)
+
+
+def unit_vector(vector: Tensor) -> Tensor:
+    norm = vector.norm()
+    if float(norm.item()) <= 1.0e-8:
+        return torch.zeros_like(vector)
+    return cast(Tensor, vector / norm)
 
 
 def _zero_action_field_stats() -> dict[str, float]:
@@ -2411,6 +2555,7 @@ def forward_policy(
     selected_graphs: Sequence[ScaffoldGraph] | None = None,
     state_graphs: Sequence[AssembledState] | None = None,
     forward_action_mask: Tensor | None = None,
+    forward_logit_bias: Tensor | None = None,
     backward_action_mask: Tensor | None = None,
     backward_attachment_embeddings: Tensor | None = None,
 ) -> tuple[Any, Batch, Tensor]:
@@ -2495,6 +2640,28 @@ def forward_policy(
         else:
             adjustments = base_adjustments.expand_as(output.forward_logits)
         adjusted_logits = output.forward_logits + adjustments
+        floor = torch.finfo(adjusted_logits.dtype).min
+        adjusted_log_probs = torch.log_softmax(adjusted_logits.masked_fill(~forward_mask, floor), dim=1)
+        output = replace(
+            output,
+            forward_logits=adjusted_logits,
+            forward_log_probs=adjusted_log_probs,
+            forward_probs=adjusted_log_probs.exp(),
+        )
+    if forward_logit_bias is not None:
+        action_count = int(action_space.valid_mask.shape[0])
+        if forward_logit_bias.ndim != 2 or int(forward_logit_bias.shape[0]) != batch_size:
+            raise ValueError("forward_logit_bias must have shape [batch_size, num_actions]")
+        if int(forward_logit_bias.shape[1]) == action_count and int(output.forward_logits.shape[1]) == action_count + 1:
+            bias = torch.cat(
+                [forward_logit_bias.to(dtype=output.forward_logits.dtype), output.forward_logits.new_zeros((batch_size, 1))],
+                dim=1,
+            )
+        elif tuple(forward_logit_bias.shape) == tuple(output.forward_logits.shape):
+            bias = forward_logit_bias.to(dtype=output.forward_logits.dtype)
+        else:
+            raise ValueError("forward_logit_bias width must match action count or logits width")
+        adjusted_logits = output.forward_logits + bias
         floor = torch.finfo(adjusted_logits.dtype).min
         adjusted_log_probs = torch.log_softmax(adjusted_logits.masked_fill(~forward_mask, floor), dim=1)
         output = replace(
@@ -2686,6 +2853,7 @@ def sample_multistep_rollout(
     max_steps: int,
     sampling_temperature: float,
     fiber_lookup: FieldLookup | None = None,
+    lock_region_centroid: Tensor | None = None,
 ) -> MultiStepRollout:
     """Sample a variable-length trajectory where each step consumes the prior product graph."""
 
@@ -2731,6 +2899,7 @@ def sample_multistep_rollout(
             step=step,
             max_steps=step_count,
         )
+        motif_logit_bias = motif_action_logit_bias_for_states(action_space, states, lock_region_centroid)
         output, _, _ = forward_policy(
             model,
             scaffold_pool,
@@ -2739,6 +2908,7 @@ def sample_multistep_rollout(
             selected_graphs=selected_graphs,
             state_graphs=states,
             forward_action_mask=forward_mask,
+            forward_logit_bias=motif_logit_bias,
         )
         output = apply_stop_horizon_prior(
             output,
@@ -3242,6 +3412,15 @@ async def train() -> None:
     tb_loss = TrajectoryBalanceLoss()
     oracle_args: list[str] = []
     lock_mask = resolve_track_a_path(cast(Path | None, args.lock_mask), TRACK_A_DIR / "lock_region_mask.json")
+    lock_region_centroid = load_lock_region_centroid(lock_mask)
+    if lock_region_centroid is not None:
+        print(
+            "lock_region_centroid_loaded "
+            f"x={float(lock_region_centroid[0].item()):.3f} "
+            f"y={float(lock_region_centroid[1].item()):.3f} "
+            f"z={float(lock_region_centroid[2].item()):.3f}",
+            flush=True,
+        )
     if lock_mask.is_file():
         oracle_args.extend(["--lock-mask", str(lock_mask)])
     oracle: LiveSignalGridOracle | SurvivorCorpusOracle
@@ -3259,6 +3438,32 @@ async def train() -> None:
             survivor_corpus=paths.survivors,
             max_batch_size=int(args.batch_size),
             extra_args=tuple(oracle_args),
+        )
+    motif_registry: MotifRegistry | None = None
+    motif_registry_path = ""
+    motif_registry_entry_count = 0
+    if args.motif_registry is not None:
+        candidate_path = Path(args.motif_registry)
+        motif_registry_file = candidate_path if candidate_path.is_absolute() else REPO_ROOT / candidate_path
+        if not motif_registry_file.is_file():
+            raise FileNotFoundError(f"motif registry not found: {motif_registry_file}")
+        motif_registry = MotifRegistry(motif_registry_file)
+        motif_registry_entry_count = len(motif_registry.all())
+        if motif_registry_entry_count == 0:
+            raise RuntimeError(f"motif registry is empty: {motif_registry_file}")
+        motif_registry_path = motif_registry_file.as_posix()
+        action_space = attach_motif_action_bias(
+            action_space,
+            motif_registry,
+            bias_weight=float(args.motif_bonus_weight),
+            decay_lambda=float(args.motif_decay_lambda),
+        )
+        print(
+            "motif_registry_loaded "
+            f"path={motif_registry_path} entries={motif_registry_entry_count} "
+            f"bonus_weight={float(args.motif_bonus_weight):.6f} "
+            f"decay_lambda={float(args.motif_decay_lambda):.6f}",
+            flush=True,
         )
 
     config = {
@@ -3306,6 +3511,13 @@ async def train() -> None:
         "lock_reaching_synthon_boost": float(args.lock_reaching_synthon_boost),
         "lock_geo_intrinsic_bonus": float(args.lock_geo_intrinsic_bonus),
         "consensus_bonus_weight": float(args.consensus_bonus_weight),
+        "motif_registry": motif_registry_path,
+        "motif_registry_entry_count": motif_registry_entry_count,
+        "motif_bonus_weight": float(args.motif_bonus_weight),
+        "motif_decay_lambda": float(args.motif_decay_lambda),
+        "motif_diversity_weight": float(args.motif_diversity_weight),
+        "motif_action_bias_matched_actions": int(action_space.motif_matched_action_count),
+        "motif_action_bias_exit_vector_conditioned": action_space.motif_base_action_bias is not None,
         "lock_mask": lock_mask.as_posix(),
         "signal_grid": str(args.signal_grid) if args.signal_grid is not None else "",
         "shear_stress": str(args.shear_stress) if args.shear_stress is not None else "",
@@ -3431,6 +3643,7 @@ async def train() -> None:
             max_steps=int(args.max_trajectory_steps),
             sampling_temperature=sampling_temperature,
             fiber_lookup=fiber_lookup,
+            lock_region_centroid=lock_region_centroid,
         )
         output = rollout.forward_outputs[-1]
         actions_tensor = rollout.terminal_actions
@@ -3476,6 +3689,31 @@ async def train() -> None:
             seen_smiles_counts,
             beta=float(args.diversity_beta),
         )
+        motif_bonus = torch.zeros_like(tempered_rewards)
+        motif_diversity_penalty = 0.0
+        motif_matched_count = 0
+        if motif_registry is not None and float(args.motif_bonus_weight) > 0.0:
+            proposal_mols = [Chem.MolFromSmiles(smiles) for smiles in proposal_smiles]
+            valid_mols = [mol for mol in proposal_mols if mol is not None]
+            bonus_values: list[float] = []
+            for mol in proposal_mols:
+                if mol is None:
+                    bonus_values.append(0.0)
+                    continue
+                value = compute_motif_bonus(
+                    mol,
+                    motif_registry,
+                    bonus_weight=float(args.motif_bonus_weight),
+                    decay_lambda=float(args.motif_decay_lambda),
+                )
+                if value > 0.0:
+                    motif_matched_count += 1
+                bonus_values.append(value)
+            motif_bonus = torch.tensor(bonus_values, dtype=tempered_rewards.dtype, device=tempered_rewards.device)
+            motif_diversity_penalty = float(args.motif_diversity_weight) * compute_motif_diversity_penalty(
+                valid_mols,
+                motif_registry,
+            )
         lock_intrinsic = torch.tensor(
             [numeric_value(row.get("lock_geometry_score", row.get("pi_clash_lock", 0.0)), 0.0) for row in oracle_row_dicts],
             dtype=torch.float32,
@@ -3484,6 +3722,8 @@ async def train() -> None:
             tempered_rewards
             + diversity_bonus
             + float(args.lock_geo_intrinsic_bonus) * lock_intrinsic
+            + motif_bonus
+            + motif_diversity_penalty
         ).clamp_min(1.0e-8)
         tb = tb_loss(
             output.log_z,
@@ -3512,8 +3752,20 @@ async def train() -> None:
         reward_p95 = float(torch.quantile(rewards, 0.95).item())
         reward_max = float(rewards.max().item())
         scaled_reward_mean = float(scaled_rewards.mean().item())
-        effective_reward_mean = float(versioned_rewards.mean().item())
-        effective_reward_std = float(versioned_rewards.std(unbiased=False).item())
+        effective_reward_mean = float(effective_rewards.mean().item())
+        effective_reward_std = float(effective_rewards.std(unbiased=False).item())
+        motif_bonus_mean = float(motif_bonus.mean().item()) if int(motif_bonus.numel()) else 0.0
+        motif_bonus_max = float(motif_bonus.max().item()) if int(motif_bonus.numel()) else 0.0
+        motif_action_bias_mean = (
+            float(action_space.motif_base_action_bias.mean().item())
+            if action_space.motif_base_action_bias is not None and int(action_space.motif_base_action_bias.numel())
+            else 0.0
+        )
+        motif_action_bias_max = (
+            float(action_space.motif_base_action_bias.max().item())
+            if action_space.motif_base_action_bias is not None and int(action_space.motif_base_action_bias.numel())
+            else 0.0
+        )
         top_reward_seen = max(top_reward_seen, reward_max)
         previous_unique_count = len(generated_smiles)
         for proposal in proposals:
@@ -3583,6 +3835,13 @@ async def train() -> None:
                 "top_reward_seen": top_reward_seen,
                 "unique_smiles_generated": len(generated_smiles),
                 "diversity_bonus_mean": float(diversity_bonus.mean().item()),
+                "motif_bonus_mean": motif_bonus_mean,
+                "motif_bonus_max": motif_bonus_max,
+                "motif_diversity_penalty": motif_diversity_penalty,
+                "motif_matched_count": motif_matched_count,
+                "motif_action_bias_mean": motif_action_bias_mean,
+                "motif_action_bias_max": motif_action_bias_max,
+                "motif_action_bias_matched_actions": int(action_space.motif_matched_action_count),
                 "temperature": current_temperature,
                 "lock_geo_positive": lock_geo_positive,
                 "lock_proj_gt_05": lock_proj_gt_05,
@@ -3622,6 +3881,13 @@ async def train() -> None:
             "unique_smiles_cumulative": len(generated_smiles),
             "unique_smiles_this_epoch": n_new_unique,
             "diversity_bonus_mean": f"{float(diversity_bonus.mean().item()):.6f}",
+            "motif_bonus_mean": f"{motif_bonus_mean:.6f}",
+            "motif_bonus_max": f"{motif_bonus_max:.6f}",
+            "motif_diversity_penalty": f"{motif_diversity_penalty:.6f}",
+            "motif_matched_count": f"{motif_matched_count}/{int(args.batch_size)}",
+            "motif_action_bias_mean": f"{motif_action_bias_mean:.6f}",
+            "motif_action_bias_max": f"{motif_action_bias_max:.6f}",
+            "motif_action_bias_matched_actions": int(action_space.motif_matched_action_count),
             "dot_smiles_count": dot_count,
             "logZ": f"{float(output.log_z.item()):.6f}",
             "top1_smiles": top1_smiles,
@@ -3788,6 +4054,13 @@ async def train() -> None:
             "top_reward_seen",
             "unique_smiles_generated",
             "diversity_bonus_mean",
+            "motif_bonus_mean",
+            "motif_bonus_max",
+            "motif_diversity_penalty",
+            "motif_matched_count",
+            "motif_action_bias_mean",
+            "motif_action_bias_max",
+            "motif_action_bias_matched_actions",
             "temperature",
             "lock_geo_positive",
             "lock_proj_gt_05",
@@ -3869,6 +4142,13 @@ async def train() -> None:
         "scaffold_pool_ids": [graph.scaffold_id for graph in scaffold_pool],
         "entropy_router_enabled": entropy_router is not None,
         "entropy_router_telemetry": entropy_router.get_telemetry(str(args.active_variant)) if entropy_router else {},
+        "motif_registry": motif_registry_path,
+        "motif_registry_entry_count": motif_registry_entry_count,
+        "motif_feedback_enabled": motif_registry is not None and float(args.motif_bonus_weight) > 0.0,
+        "motif_bonus_mean_final": reward_rows[-1].get("motif_bonus_mean", 0.0),
+        "motif_diversity_penalty_final": reward_rows[-1].get("motif_diversity_penalty", 0.0),
+        "motif_action_bias_matched_actions": int(action_space.motif_matched_action_count),
+        "motif_action_bias_mean_final": reward_rows[-1].get("motif_action_bias_mean", 0.0),
         "model_path": str(model_path),
     }
     (paths.output_dir / "gflownet_learning_validation.json").write_text(json.dumps(validation, indent=2))
@@ -3882,6 +4162,9 @@ async def train() -> None:
         f"- Unique generated SMILES: `{len(generated_smiles)}`\n"
         f"- Dot-disconnected SMILES count: `{dot_smiles_total}`\n"
         f"- Top anchor share: `{top_anchor_share:.4f}`\n"
+        f"- Motif registry entries: `{motif_registry_entry_count}`\n"
+        f"- Motif feedback enabled: `{motif_registry is not None and float(args.motif_bonus_weight) > 0.0}`\n"
+        f"- Motif action-bias matched actions: `{int(action_space.motif_matched_action_count)}`\n"
         "- Reward authority: Rust `oracle_scorer` via `SurvivorCorpusOracle` survivor lookup.\n"
     )
     print(

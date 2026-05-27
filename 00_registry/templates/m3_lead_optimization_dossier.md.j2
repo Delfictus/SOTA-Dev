@@ -226,18 +226,64 @@ Dispatch audit: `{{ gpu_dispatch_report_path }}`
 
 These jobs are queued for ground-truth CCNS validation only. They do not constitute confirmed dynamic biased agonism until GPU MD preserves lock occupancy across the protocol.
 
-## 13. Falsification Gates
+## 13. Thermodynamic Motif Intelligence
+
+Motif registry status: `{{ motif_status }}`
+Registry: `{{ motif_registry_path }}`
+
+Four orthogonal motif discovery methods are reported when available: Thermodynamic Functional Group Decomposition with k-hop neutral-bridge expansion, Causal Attribution Motif Extraction via integrated gradients, Phase-Resolved MCS with Butina/Tanimoto pruning, and Synthon-Ancestry Decomposition with Fisher exact enrichment.
+
+| motif intelligence metric | value |
+|---|---:|
+| total motifs | {{ motif_count }} |
+| TFGD motifs | {{ motif_tfgd_count }} |
+| CAME motifs | {{ motif_came_count }} |
+| PR-MCS motifs | {{ motif_pr_mcs_count }} |
+| SAD motifs | {{ motif_sad_count }} |
+| lock-wedge motifs | {{ motif_lock_wedge_count }} |
+| phase-conditional motifs | {{ motif_phase_conditional_count }} |
+| evolutionary-invariant motifs | {{ motif_evolutionary_invariant_count }} |
+| mean completeness score | `{{ motif_completeness_mean }}` |
+
+Key lock-wedge / thermodynamic motifs:
+
+| motif ID | SMARTS | role | lock contribution | resilience | method | provenance |
+|---|---|---|---:|---:|---|---|
+{% for row in motif_top_lock_rows -%}
+| `{{ row.motif_id }}` | `{{ row.smarts }}` | {{ row.role }} | {{ "%.3f"|format(row.lock) }} | {{ "%.3f"|format(row.resilience) }} | {{ row.method }} | {{ row.provenance }} |
+{% endfor %}
+
+Synthon ordering recommendations:
+
+| Enamine ID | SMARTS | lock enrichment | preferred exit vector | order priority |
+|---|---|---:|---|---|
+{% for row in motif_synthon_rows -%}
+| `{{ row.enamine_id }}` | `{{ row.smarts }}` | {{ "%.3f"|format(row.enrichment) }} | `{{ row.preferred_exit_vector }}` | {{ row.priority }} |
+{% endfor %}
+
+Motif evolution view:
+
+| motif | born | status | parent | lock contribution | lineage |
+|---|---:|---|---|---:|---|
+{% for row in motif_evolution_rows -%}
+| `{{ row.motif_id }}` | {{ row.born }} | {{ row.status }} | `{{ row.parent }}` | {{ "%.3f"|format(row.lock_delta) }} | {{ row.lineage }} |
+{% endfor %}
+
+Interpretation boundary: motif intelligence is receptor-specific computational design intelligence. Causal attribution is computed over model features and remains computational until falsified by synthesis, receptor signaling, internalization, and washout experiments.
+
+## 14. Falsification Gates
 
 1. β-arrestin recruitment: falsified if high-lock-score candidates do not reduce β-arrestin recruitment relative to receptor-occupancy-matched controls.
 2. cAMP signaling: falsified if candidates lose primary GLP-1R agonist signaling at matched exposure.
 3. Washout recovery: falsified if projected lock-wedge candidates do not alter recovery kinetics relative to Aleniglipron under matched receptor occupancy.
 4. Synthetic route: falsified if SMARTS-compatible virtual routes fail vendor availability, reaction selectivity, purification, or stability review.
 
-## 14. Lineage
+## 15. Lineage
 
 - policy checkpoint: `{{ policy_path }}`
 - top-100 candidates: `{{ top100_path }}`
 - tripartite profiles: `{{ tripartite_profile_path }}`
 - medchem audit: `{{ medchem_audit_path }}`
 - candidate audit: `{{ audit_json_path }}`
+- thermodynamic motif registry: `{{ motif_registry_path }}`
 - CBOM: `{{ cbom_path }}`

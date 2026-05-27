@@ -16,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CAMPAIGN_DIR = REPO_ROOT / "campaigns/glp1r_aleniglipron"
 TRACK_A = CAMPAIGN_DIR / "track_a_generative"
+TRACK_B = CAMPAIGN_DIR / "track_b_chronological"
 TEMPLATE = REPO_ROOT / "00_registry/templates/m3_lead_optimization_dossier.md.j2"
 OUTPUT = CAMPAIGN_DIR / "M3_Lead_Optimization_Dossier.md"
 
@@ -42,6 +43,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--consensus-report", type=Path, default=TRACK_A / "population_pgx/population_consensus_grid_report.json")
     parser.add_argument("--gpu-dispatch-report", type=Path, default=TRACK_A / "gpu_dispatch_audit_report.json")
     parser.add_argument("--plan", type=Path, default=TRACK_A / "vspace_38b_dendritic_plan.json")
+    parser.add_argument(
+        "--motif-registry",
+        type=Path,
+        default=TRACK_B / "motif_intelligence/thermodynamic_motif_registry.parquet",
+    )
     parser.add_argument("--competitor-scaffold-manifest", type=Path, default=TRACK_A / "competitor_scaffold_o3a_manifest.json")
     parser.add_argument("--phase2d-manifest", type=Path, default=CAMPAIGN_DIR / "phase_2d_variant_grid_manifest.json")
     parser.add_argument("--cbom", type=Path, default=CAMPAIGN_DIR / "PRISM_CBOM_v1.0.json")
@@ -503,6 +509,128 @@ def gpu_dispatch_context(path: Path) -> dict[str, object]:
     }
 
 
+def motif_context(path: Path) -> dict[str, object]:
+    context: dict[str, object] = {
+        "motif_status": "unavailable",
+        "motif_registry_path": path.as_posix(),
+        "motif_count": 0,
+        "motif_lock_wedge_count": 0,
+        "motif_phase_conditional_count": 0,
+        "motif_evolutionary_invariant_count": 0,
+        "motif_came_count": 0,
+        "motif_tfgd_count": 0,
+        "motif_pr_mcs_count": 0,
+        "motif_sad_count": 0,
+        "motif_completeness_mean": None,
+        "motif_top_lock_rows": [],
+        "motif_synthon_rows": [],
+        "motif_evolution_rows": [],
+    }
+    if not path.is_file():
+        return context
+    frame = pl.read_parquet(path)
+    context["motif_status"] = "complete"
+    context["motif_count"] = frame.height
+    if frame.height == 0:
+        return context
+    if "thermodynamic_role" in frame.columns:
+        context["motif_lock_wedge_count"] = frame.filter(pl.col("thermodynamic_role") == "LOCK_WEDGE").height
+    if "discovery_method" in frame.columns:
+        context["motif_came_count"] = frame.filter(pl.col("discovery_method") == "CAME").height
+        context["motif_tfgd_count"] = frame.filter(pl.col("discovery_method") == "TFGD").height
+        context["motif_pr_mcs_count"] = frame.filter(pl.col("discovery_method") == "PR_MCS").height
+        context["motif_sad_count"] = frame.filter(pl.col("discovery_method") == "SAD").height
+    if "phase_profile" in frame.columns:
+        phase_conditional = 0
+        for raw in frame.get_column("phase_profile").to_list():
+            values = parse_float_list(raw)
+            if len(values) == 5 and max(values) - min(values) > 1.0e-6:
+                phase_conditional += 1
+        context["motif_phase_conditional_count"] = phase_conditional
+    if "is_evolutionary_invariant" in frame.columns:
+        context["motif_evolutionary_invariant_count"] = frame.filter(pl.col("is_evolutionary_invariant") == True).height
+    if "completeness_score" in frame.columns:
+        context["motif_completeness_mean"] = numeric(frame.get_column("completeness_score").mean())
+    lock_frame = frame
+    if "thermodynamic_role" in frame.columns:
+        lock_frame = frame.filter(pl.col("thermodynamic_role") == "LOCK_WEDGE")
+    if "lock_geometry_contribution" in lock_frame.columns:
+        lock_frame = (
+            lock_frame.with_columns(pl.col("lock_geometry_contribution").fill_null(0.0).alias("_lock_sort"))
+            .sort("_lock_sort", descending=True)
+            .drop("_lock_sort")
+        )
+    top_lock_rows = []
+    for row in lock_frame.head(6).to_dicts():
+        top_lock_rows.append(
+            {
+                "motif_id": str(row.get("motif_id", "")),
+                "smarts": str(row.get("canonical_smarts", "")),
+                "role": str(row.get("thermodynamic_role", "")),
+                "lock": numeric(row.get("lock_geometry_contribution")),
+                "resilience": numeric(row.get("consensus_resilience")),
+                "method": str(row.get("discovery_method", "")),
+                "provenance": str(row.get("provenance", "")),
+            }
+        )
+    context["motif_top_lock_rows"] = top_lock_rows
+    synthon_rows = []
+    if "synthon_sources" in frame.columns:
+        sad_frame = frame.filter(pl.col("discovery_method") == "SAD") if "discovery_method" in frame.columns else frame
+        if "enrichment_ratio" in sad_frame.columns:
+            sad_frame = sad_frame.sort("enrichment_ratio", descending=True)
+        for row in sad_frame.head(8).to_dicts():
+            sources = parse_string_list(row.get("synthon_sources"))
+            prefs = parse_json_object(row.get("exit_vector_preference"))
+            synthon_rows.append(
+                {
+                    "enamine_id": sources[0] if sources else "",
+                    "smarts": str(row.get("canonical_smarts", "")),
+                    "enrichment": numeric(row.get("enrichment_ratio"), 1.0),
+                    "preferred_exit_vector": ",".join(sorted(prefs.keys())) if prefs else "unreported",
+                    "priority": "HIGH" if numeric(row.get("enrichment_ratio"), 1.0) >= 1.5 else "MEDIUM",
+                }
+            )
+    context["motif_synthon_rows"] = synthon_rows
+    context["motif_evolution_rows"] = [
+        {
+            "motif_id": str(row.get("motif_id", "")),
+            "born": integer(row.get("first_seen_epoch")),
+            "status": "PERSISTENT",
+            "parent": "",
+            "lock_delta": numeric(row.get("lock_geometry_contribution")),
+            "lineage": "NOVEL",
+        }
+        for row in lock_frame.head(5).to_dicts()
+    ]
+    return context
+
+
+def parse_float_list(value: object) -> list[float]:
+    raw = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(raw, list):
+        return []
+    output: list[float] = []
+    for item in raw:
+        if isinstance(item, bool) or item is None:
+            continue
+        if isinstance(item, int | float | str):
+            output.append(numeric(item))
+    return output
+
+
+def parse_string_list(value: object) -> list[str]:
+    raw = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(raw, list):
+        return []
+    return [str(item) for item in raw]
+
+
+def parse_json_object(value: object) -> dict[str, object]:
+    raw = json.loads(value) if isinstance(value, str) else value
+    return cast(dict[str, object], raw) if isinstance(raw, dict) else {}
+
+
 def training_context(path: Path) -> dict[str, object]:
     if not path.is_file():
         return {
@@ -569,6 +697,7 @@ def render(args: argparse.Namespace) -> str:
     context.update(population_pgx_context(args.population_pgx_report, args.variant_manifest, args.consensus_report))
     context.update(gpu_dispatch_context(args.gpu_dispatch_report))
     context.update(full_field_context(args.top100))
+    context.update(motif_context(args.motif_registry))
     env = Environment(
         loader=FileSystemLoader(str(args.template.parent)),
         undefined=StrictUndefined,

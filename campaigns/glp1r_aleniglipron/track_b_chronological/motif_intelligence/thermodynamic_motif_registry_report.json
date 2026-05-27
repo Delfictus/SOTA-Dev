@@ -1,0 +1,33 @@
+{
+  "came_attention_weights_used": false,
+  "came_integrated_gradients": true,
+  "candidate_count": 100,
+  "candidate_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates.parquet",
+  "claim_boundary": "Motifs are DERIVED from runtime candidate/reward artifacts; no projected field is labeled OBSERVED.",
+  "completeness_mean": 0.6304347826086957,
+  "created_at_utc": "2026-05-27T04:33:28.151205+00:00",
+  "lock_enriched_count": 45,
+  "method_raw_counts": {
+    "CAME": 24,
+    "PR_MCS": 3,
+    "SAD": 100,
+    "TFGD": 108
+  },
+  "method_registry_counts": {
+    "CAME": 29,
+    "PR_MCS": 3,
+    "SAD": 100,
+    "TFGD": 52
+  },
+  "motif_count": 184,
+  "pr_mcs_timeout_seconds": 2,
+  "registry_path": "/home/diddy/Desktop/Prism4D-bio/campaigns/glp1r_aleniglipron/track_b_chronological/motif_intelligence/thermodynamic_motif_registry.parquet",
+  "role_counts": {
+    "COMPLEMENT_ANCHOR": 35,
+    "LOCK_WEDGE": 45,
+    "MIXED": 3,
+    "NEUTRAL": 84,
+    "SHEAR_SENTINEL": 17
+  },
+  "schema_version": "PRISM.thermodynamic_motif_registry_report.v1"
+}
