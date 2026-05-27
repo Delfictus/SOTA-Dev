@@ -1,0 +1,61 @@
+{
+  "artifact_count": 7,
+  "artifact_root": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral",
+  "artifacts": [
+    {
+      "mtime_utc": "2026-05-27T01:41:24.412763+00:00",
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/captured_tile_registry.json",
+      "sha256": "97f86ad983fde7e8fbaf812aca6b08efb562d232b6ffcbd185db2c6a4a84ac37",
+      "size_bytes": 16112
+    },
+    {
+      "mtime_utc": "2026-05-27T01:40:47.706601+00:00",
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/captured_tile_registry_source_12.json",
+      "sha256": "555587b745986d8da9d2a6aab62f6ce481339f6992bbb744200e4d9e93787edc",
+      "size_bytes": 15044
+    },
+    {
+      "mtime_utc": "2026-05-27T01:40:47.706601+00:00",
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/restricted_c6_operator_state.json",
+      "sha256": "1c2d8425e8e8970f962386cc260c45192d9b969bae856b7f4f7f469d1fa0cd4e",
+      "size_bytes": 3237
+    },
+    {
+      "mtime_utc": "2026-05-27T01:41:24.412763+00:00",
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/rust_tile_boundary_report.json",
+      "sha256": "2b8ea3e92f1735f3d55aade9ebffaa7109ace2108a5cb927803a24b6e590dfd4",
+      "size_bytes": 498
+    },
+    {
+      "mtime_utc": "2026-05-27T01:41:24.413951+00:00",
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/tile_capture_manifest.json",
+      "sha256": "25f78a499d563a84f075b77d5c2b14030eb316fc4739c2b7811b0027f9605c7e",
+      "size_bytes": 331
+    },
+    {
+      "mtime_utc": "2026-05-27T01:41:25.870352+00:00",
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_run_manifest.json",
+      "sha256": "f6b6f068c09261818959d685061881c75f2a14a5356f804f45537aae9d569699",
+      "size_bytes": 3590
+    },
+    {
+      "mtime_utc": "2026-05-27T01:41:25.868645+00:00",
+      "path": "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_training_metrics.parquet",
+      "sha256": "1414cfe323c13b6efe68a22103ac95cd58de7bf0667b17671ec4589522f9b0c3",
+      "size_bytes": 52415
+    }
+  ],
+  "claim_boundary": "Manifest and checksums cover existing subtb_spectral runtime artifacts only; no tarball/package was created.",
+  "created_at_utc": "2026-05-27T04:48:47.951230+00:00",
+  "dirty_state_at_manifest_generation": [
+    " M .codex/review/context.txt",
+    " M .codex/review/pre-commit.diff",
+    " M .codex/review/pre-commit.diffstat",
+    "?? campaigns/glp1r_aleniglipron/audits/",
+    "?? scripts/audit_e2e_ontology_pipeline.py"
+  ],
+  "release_tag": "v0.24.2-motif-intelligence",
+  "schema_version": "PRISM.subtb_spectral.release_manifest.v1",
+  "source_commit": "91bd9160119722d0c4e5393663c31ac680dbed3b",
+  "total_size_bytes": 91227
+}
