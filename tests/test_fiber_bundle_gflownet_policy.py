@@ -147,13 +147,24 @@ def test_fiber_policy_backward_logits_are_attachment_conditioned() -> None:
     assert float(output.backward_log_probs[:, 0].abs().sum().item()) > 0.0
 
 
-def test_rust_oracle_scores_32_trajectories_if_built() -> None:
+def test_rust_oracle_scores_32_trajectories_if_built(tmp_path: Path) -> None:
     oracle_bin = Path("target/release/oracle_scorer")
     if not oracle_bin.exists():
         pytest.skip("oracle_scorer binary has not been built")
-    survivors_path = Path(
-        "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_real512_o3a_zmatrix.parquet"
-    )
+    survivors_path = tmp_path / "survivor_fixture.parquet"
+    pl.DataFrame(
+        {
+            "anchor_id": [f"anchor-{idx:03d}" for idx in range(32)],
+            "canonical_smiles": ["C" * (idx + 1) for idx in range(32)],
+            "score": [100.0 - idx for idx in range(32)],
+            "fragment_pi_complement": [10.0 + idx * 0.01 for idx in range(32)],
+            "fragment_pi_clash_adjusted": [0.1 for _ in range(32)],
+            "cryptic_bonus": [0.25 for _ in range(32)],
+            "survival_tier": ["fixture_survivor" for _ in range(32)],
+            "selected_dihedral_deg": [float(idx) for idx in range(32)],
+            "coordinates_json": ["[[0.0,0.0,0.0]]" for _ in range(32)],
+        }
+    ).write_parquet(survivors_path)
     survivors = pl.read_parquet(survivors_path).sort("score", descending=True).head(32)
     proposals = [
         OracleProposal(
@@ -165,7 +176,13 @@ def test_rust_oracle_scores_32_trajectories_if_built() -> None:
     ]
 
     async def score() -> None:
-        oracle = BatchedRustOracle(survivor_corpus=survivors_path, max_batch_size=32)
+        oracle = BatchedRustOracle(
+            survivor_corpus=survivors_path,
+            batch_path=tmp_path / "oracle_batch.parquet",
+            reward_path=tmp_path / "oracle_rewards.parquet",
+            max_batch_size=32,
+            extra_args=("--no-lock-mask",),
+        )
         result = await oracle.score_batch(proposals)
         assert result.rewards.shape == (32,)
         assert bool((result.rewards > 0).all().item())
