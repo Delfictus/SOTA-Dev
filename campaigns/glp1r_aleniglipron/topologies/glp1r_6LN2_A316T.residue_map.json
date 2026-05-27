@@ -1,0 +1,2635 @@
+{
+  "source_pdb": "/tmp/prism_prep_glp1r_6LN2_A316T.mutant_hfakwdk0/glp1r_6LN2_A316T.mutant_sanitized.pdb",
+  "topology": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_A316T.topology.json",
+  "residues": [
+    {
+      "topology_index": 0,
+      "chain": "A",
+      "pdb_resid": 29,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 1,
+      "chain": "A",
+      "pdb_resid": 30,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 2,
+      "chain": "A",
+      "pdb_resid": 31,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 3,
+      "chain": "A",
+      "pdb_resid": 32,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 4,
+      "chain": "A",
+      "pdb_resid": 33,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 5,
+      "chain": "A",
+      "pdb_resid": 34,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 6,
+      "chain": "A",
+      "pdb_resid": 35,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 7,
+      "chain": "A",
+      "pdb_resid": 36,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 8,
+      "chain": "A",
+      "pdb_resid": 37,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 9,
+      "chain": "A",
+      "pdb_resid": 38,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 10,
+      "chain": "A",
+      "pdb_resid": 39,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 11,
+      "chain": "A",
+      "pdb_resid": 40,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 12,
+      "chain": "A",
+      "pdb_resid": 41,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 13,
+      "chain": "A",
+      "pdb_resid": 42,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 14,
+      "chain": "A",
+      "pdb_resid": 43,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 15,
+      "chain": "A",
+      "pdb_resid": 44,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 16,
+      "chain": "A",
+      "pdb_resid": 45,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 17,
+      "chain": "A",
+      "pdb_resid": 46,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 18,
+      "chain": "A",
+      "pdb_resid": 47,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 19,
+      "chain": "A",
+      "pdb_resid": 48,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 20,
+      "chain": "A",
+      "pdb_resid": 49,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 21,
+      "chain": "A",
+      "pdb_resid": 50,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 22,
+      "chain": "A",
+      "pdb_resid": 51,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 23,
+      "chain": "A",
+      "pdb_resid": 52,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 24,
+      "chain": "A",
+      "pdb_resid": 53,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 25,
+      "chain": "A",
+      "pdb_resid": 54,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 26,
+      "chain": "A",
+      "pdb_resid": 55,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 27,
+      "chain": "A",
+      "pdb_resid": 56,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 28,
+      "chain": "A",
+      "pdb_resid": 57,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 29,
+      "chain": "A",
+      "pdb_resid": 58,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 30,
+      "chain": "A",
+      "pdb_resid": 59,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 31,
+      "chain": "A",
+      "pdb_resid": 60,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 32,
+      "chain": "A",
+      "pdb_resid": 61,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 33,
+      "chain": "A",
+      "pdb_resid": 62,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 34,
+      "chain": "A",
+      "pdb_resid": 63,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 35,
+      "chain": "A",
+      "pdb_resid": 64,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 36,
+      "chain": "A",
+      "pdb_resid": 65,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 37,
+      "chain": "A",
+      "pdb_resid": 66,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 38,
+      "chain": "A",
+      "pdb_resid": 67,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 39,
+      "chain": "A",
+      "pdb_resid": 68,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 40,
+      "chain": "A",
+      "pdb_resid": 69,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 41,
+      "chain": "A",
+      "pdb_resid": 70,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 42,
+      "chain": "A",
+      "pdb_resid": 71,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 43,
+      "chain": "A",
+      "pdb_resid": 72,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 44,
+      "chain": "A",
+      "pdb_resid": 73,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 45,
+      "chain": "A",
+      "pdb_resid": 74,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 46,
+      "chain": "A",
+      "pdb_resid": 75,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 47,
+      "chain": "A",
+      "pdb_resid": 76,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 48,
+      "chain": "A",
+      "pdb_resid": 77,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 49,
+      "chain": "A",
+      "pdb_resid": 78,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 50,
+      "chain": "A",
+      "pdb_resid": 79,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 51,
+      "chain": "A",
+      "pdb_resid": 80,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 52,
+      "chain": "A",
+      "pdb_resid": 81,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 53,
+      "chain": "A",
+      "pdb_resid": 82,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 54,
+      "chain": "A",
+      "pdb_resid": 83,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 55,
+      "chain": "A",
+      "pdb_resid": 84,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 56,
+      "chain": "A",
+      "pdb_resid": 85,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 57,
+      "chain": "A",
+      "pdb_resid": 86,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 58,
+      "chain": "A",
+      "pdb_resid": 87,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 59,
+      "chain": "A",
+      "pdb_resid": 88,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 60,
+      "chain": "A",
+      "pdb_resid": 89,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 61,
+      "chain": "A",
+      "pdb_resid": 90,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 62,
+      "chain": "A",
+      "pdb_resid": 91,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 63,
+      "chain": "A",
+      "pdb_resid": 92,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 64,
+      "chain": "A",
+      "pdb_resid": 93,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 65,
+      "chain": "A",
+      "pdb_resid": 94,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 66,
+      "chain": "A",
+      "pdb_resid": 95,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 67,
+      "chain": "A",
+      "pdb_resid": 96,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 68,
+      "chain": "A",
+      "pdb_resid": 97,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 69,
+      "chain": "A",
+      "pdb_resid": 98,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 70,
+      "chain": "A",
+      "pdb_resid": 99,
+      "resname": "HID"
+    },
+    {
+      "topology_index": 71,
+      "chain": "A",
+      "pdb_resid": 100,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 72,
+      "chain": "A",
+      "pdb_resid": 101,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 73,
+      "chain": "A",
+      "pdb_resid": 102,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 74,
+      "chain": "A",
+      "pdb_resid": 103,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 75,
+      "chain": "A",
+      "pdb_resid": 104,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 76,
+      "chain": "A",
+      "pdb_resid": 105,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 77,
+      "chain": "A",
+      "pdb_resid": 106,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 78,
+      "chain": "A",
+      "pdb_resid": 107,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 79,
+      "chain": "A",
+      "pdb_resid": 108,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 80,
+      "chain": "A",
+      "pdb_resid": 109,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 81,
+      "chain": "A",
+      "pdb_resid": 110,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 82,
+      "chain": "A",
+      "pdb_resid": 111,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 83,
+      "chain": "A",
+      "pdb_resid": 112,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 84,
+      "chain": "A",
+      "pdb_resid": 113,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 85,
+      "chain": "A",
+      "pdb_resid": 114,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 86,
+      "chain": "A",
+      "pdb_resid": 115,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 87,
+      "chain": "A",
+      "pdb_resid": 116,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 88,
+      "chain": "A",
+      "pdb_resid": 117,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 89,
+      "chain": "A",
+      "pdb_resid": 118,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 90,
+      "chain": "A",
+      "pdb_resid": 119,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 91,
+      "chain": "A",
+      "pdb_resid": 120,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 92,
+      "chain": "A",
+      "pdb_resid": 121,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 93,
+      "chain": "A",
+      "pdb_resid": 122,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 94,
+      "chain": "A",
+      "pdb_resid": 123,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 95,
+      "chain": "A",
+      "pdb_resid": 124,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 96,
+      "chain": "A",
+      "pdb_resid": 125,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 97,
+      "chain": "A",
+      "pdb_resid": 126,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 98,
+      "chain": "A",
+      "pdb_resid": 127,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 99,
+      "chain": "A",
+      "pdb_resid": 128,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 100,
+      "chain": "A",
+      "pdb_resid": 135,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 101,
+      "chain": "A",
+      "pdb_resid": 136,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 102,
+      "chain": "A",
+      "pdb_resid": 137,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 103,
+      "chain": "A",
+      "pdb_resid": 138,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 104,
+      "chain": "A",
+      "pdb_resid": 139,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 105,
+      "chain": "A",
+      "pdb_resid": 140,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 106,
+      "chain": "A",
+      "pdb_resid": 141,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 107,
+      "chain": "A",
+      "pdb_resid": 142,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 108,
+      "chain": "A",
+      "pdb_resid": 143,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 109,
+      "chain": "A",
+      "pdb_resid": 144,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 110,
+      "chain": "A",
+      "pdb_resid": 145,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 111,
+      "chain": "A",
+      "pdb_resid": 146,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 112,
+      "chain": "A",
+      "pdb_resid": 147,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 113,
+      "chain": "A",
+      "pdb_resid": 148,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 114,
+      "chain": "A",
+      "pdb_resid": 149,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 115,
+      "chain": "A",
+      "pdb_resid": 150,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 116,
+      "chain": "A",
+      "pdb_resid": 151,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 117,
+      "chain": "A",
+      "pdb_resid": 152,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 118,
+      "chain": "A",
+      "pdb_resid": 153,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 119,
+      "chain": "A",
+      "pdb_resid": 154,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 120,
+      "chain": "A",
+      "pdb_resid": 155,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 121,
+      "chain": "A",
+      "pdb_resid": 156,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 122,
+      "chain": "A",
+      "pdb_resid": 157,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 123,
+      "chain": "A",
+      "pdb_resid": 158,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 124,
+      "chain": "A",
+      "pdb_resid": 159,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 125,
+      "chain": "A",
+      "pdb_resid": 160,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 126,
+      "chain": "A",
+      "pdb_resid": 161,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 127,
+      "chain": "A",
+      "pdb_resid": 162,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 128,
+      "chain": "A",
+      "pdb_resid": 163,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 129,
+      "chain": "A",
+      "pdb_resid": 164,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 130,
+      "chain": "A",
+      "pdb_resid": 165,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 131,
+      "chain": "A",
+      "pdb_resid": 166,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 132,
+      "chain": "A",
+      "pdb_resid": 167,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 133,
+      "chain": "A",
+      "pdb_resid": 168,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 134,
+      "chain": "A",
+      "pdb_resid": 169,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 135,
+      "chain": "A",
+      "pdb_resid": 170,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 136,
+      "chain": "A",
+      "pdb_resid": 171,
+      "resname": "HID"
+    },
+    {
+      "topology_index": 137,
+      "chain": "A",
+      "pdb_resid": 172,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 138,
+      "chain": "A",
+      "pdb_resid": 173,
+      "resname": "HID"
+    },
+    {
+      "topology_index": 139,
+      "chain": "A",
+      "pdb_resid": 174,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 140,
+      "chain": "A",
+      "pdb_resid": 175,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 141,
+      "chain": "A",
+      "pdb_resid": 176,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 142,
+      "chain": "A",
+      "pdb_resid": 177,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 143,
+      "chain": "A",
+      "pdb_resid": 178,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 144,
+      "chain": "A",
+      "pdb_resid": 179,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 145,
+      "chain": "A",
+      "pdb_resid": 180,
+      "resname": "HID"
+    },
+    {
+      "topology_index": 146,
+      "chain": "A",
+      "pdb_resid": 181,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 147,
+      "chain": "A",
+      "pdb_resid": 182,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 148,
+      "chain": "A",
+      "pdb_resid": 183,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 149,
+      "chain": "A",
+      "pdb_resid": 184,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 150,
+      "chain": "A",
+      "pdb_resid": 185,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 151,
+      "chain": "A",
+      "pdb_resid": 186,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 152,
+      "chain": "A",
+      "pdb_resid": 187,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 153,
+      "chain": "A",
+      "pdb_resid": 188,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 154,
+      "chain": "A",
+      "pdb_resid": 189,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 155,
+      "chain": "A",
+      "pdb_resid": 190,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 156,
+      "chain": "A",
+      "pdb_resid": 191,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 157,
+      "chain": "A",
+      "pdb_resid": 192,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 158,
+      "chain": "A",
+      "pdb_resid": 193,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 159,
+      "chain": "A",
+      "pdb_resid": 194,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 160,
+      "chain": "A",
+      "pdb_resid": 195,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 161,
+      "chain": "A",
+      "pdb_resid": 196,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 162,
+      "chain": "A",
+      "pdb_resid": 197,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 163,
+      "chain": "A",
+      "pdb_resid": 198,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 164,
+      "chain": "A",
+      "pdb_resid": 199,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 165,
+      "chain": "A",
+      "pdb_resid": 200,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 166,
+      "chain": "A",
+      "pdb_resid": 201,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 167,
+      "chain": "A",
+      "pdb_resid": 202,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 168,
+      "chain": "A",
+      "pdb_resid": 203,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 169,
+      "chain": "A",
+      "pdb_resid": 204,
+      "resname": "MET"
+    },
+    {
+      "topology_index": 170,
+      "chain": "A",
+      "pdb_resid": 205,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 171,
+      "chain": "A",
+      "pdb_resid": 206,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 172,
+      "chain": "A",
+      "pdb_resid": 207,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 173,
+      "chain": "A",
+      "pdb_resid": 208,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 174,
+      "chain": "A",
+      "pdb_resid": 209,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 175,
+      "chain": "A",
+      "pdb_resid": 210,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 176,
+      "chain": "A",
+      "pdb_resid": 211,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 177,
+      "chain": "A",
+      "pdb_resid": 212,
+      "resname": "HID"
+    },
+    {
+      "topology_index": 178,
+      "chain": "A",
+      "pdb_resid": 213,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 179,
+      "chain": "A",
+      "pdb_resid": 214,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 180,
+      "chain": "A",
+      "pdb_resid": 215,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 181,
+      "chain": "A",
+      "pdb_resid": 216,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 182,
+      "chain": "A",
+      "pdb_resid": 217,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 183,
+      "chain": "A",
+      "pdb_resid": 218,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 184,
+      "chain": "A",
+      "pdb_resid": 219,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 185,
+      "chain": "A",
+      "pdb_resid": 220,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 186,
+      "chain": "A",
+      "pdb_resid": 221,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 187,
+      "chain": "A",
+      "pdb_resid": 222,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 188,
+      "chain": "A",
+      "pdb_resid": 223,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 189,
+      "chain": "A",
+      "pdb_resid": 224,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 190,
+      "chain": "A",
+      "pdb_resid": 225,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 191,
+      "chain": "A",
+      "pdb_resid": 226,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 192,
+      "chain": "A",
+      "pdb_resid": 227,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 193,
+      "chain": "A",
+      "pdb_resid": 228,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 194,
+      "chain": "A",
+      "pdb_resid": 229,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 195,
+      "chain": "A",
+      "pdb_resid": 230,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 196,
+      "chain": "A",
+      "pdb_resid": 231,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 197,
+      "chain": "A",
+      "pdb_resid": 232,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 198,
+      "chain": "A",
+      "pdb_resid": 233,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 199,
+      "chain": "A",
+      "pdb_resid": 234,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 200,
+      "chain": "A",
+      "pdb_resid": 235,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 201,
+      "chain": "A",
+      "pdb_resid": 236,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 202,
+      "chain": "A",
+      "pdb_resid": 237,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 203,
+      "chain": "A",
+      "pdb_resid": 238,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 204,
+      "chain": "A",
+      "pdb_resid": 239,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 205,
+      "chain": "A",
+      "pdb_resid": 240,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 206,
+      "chain": "A",
+      "pdb_resid": 241,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 207,
+      "chain": "A",
+      "pdb_resid": 242,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 208,
+      "chain": "A",
+      "pdb_resid": 243,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 209,
+      "chain": "A",
+      "pdb_resid": 244,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 210,
+      "chain": "A",
+      "pdb_resid": 245,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 211,
+      "chain": "A",
+      "pdb_resid": 246,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 212,
+      "chain": "A",
+      "pdb_resid": 247,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 213,
+      "chain": "A",
+      "pdb_resid": 248,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 214,
+      "chain": "A",
+      "pdb_resid": 249,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 215,
+      "chain": "A",
+      "pdb_resid": 250,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 216,
+      "chain": "A",
+      "pdb_resid": 251,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 217,
+      "chain": "A",
+      "pdb_resid": 252,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 218,
+      "chain": "A",
+      "pdb_resid": 253,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 219,
+      "chain": "A",
+      "pdb_resid": 254,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 220,
+      "chain": "A",
+      "pdb_resid": 255,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 221,
+      "chain": "A",
+      "pdb_resid": 256,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 222,
+      "chain": "A",
+      "pdb_resid": 257,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 223,
+      "chain": "A",
+      "pdb_resid": 1001,
+      "resname": "MET"
+    },
+    {
+      "topology_index": 224,
+      "chain": "A",
+      "pdb_resid": 1002,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 225,
+      "chain": "A",
+      "pdb_resid": 1003,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 226,
+      "chain": "A",
+      "pdb_resid": 1004,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 227,
+      "chain": "A",
+      "pdb_resid": 1005,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 228,
+      "chain": "A",
+      "pdb_resid": 1006,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 229,
+      "chain": "A",
+      "pdb_resid": 1007,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 230,
+      "chain": "A",
+      "pdb_resid": 1008,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 231,
+      "chain": "A",
+      "pdb_resid": 1009,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 232,
+      "chain": "A",
+      "pdb_resid": 1010,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 233,
+      "chain": "A",
+      "pdb_resid": 1011,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 234,
+      "chain": "A",
+      "pdb_resid": 1012,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 235,
+      "chain": "A",
+      "pdb_resid": 1013,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 236,
+      "chain": "A",
+      "pdb_resid": 1014,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 237,
+      "chain": "A",
+      "pdb_resid": 1015,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 238,
+      "chain": "A",
+      "pdb_resid": 1016,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 239,
+      "chain": "A",
+      "pdb_resid": 1017,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 240,
+      "chain": "A",
+      "pdb_resid": 1018,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 241,
+      "chain": "A",
+      "pdb_resid": 1019,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 242,
+      "chain": "A",
+      "pdb_resid": 1020,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 243,
+      "chain": "A",
+      "pdb_resid": 1021,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 244,
+      "chain": "A",
+      "pdb_resid": 1022,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 245,
+      "chain": "A",
+      "pdb_resid": 1023,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 246,
+      "chain": "A",
+      "pdb_resid": 1024,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 247,
+      "chain": "A",
+      "pdb_resid": 1025,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 248,
+      "chain": "A",
+      "pdb_resid": 1026,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 249,
+      "chain": "A",
+      "pdb_resid": 1027,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 250,
+      "chain": "A",
+      "pdb_resid": 1028,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 251,
+      "chain": "A",
+      "pdb_resid": 1029,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 252,
+      "chain": "A",
+      "pdb_resid": 1030,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 253,
+      "chain": "A",
+      "pdb_resid": 1031,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 254,
+      "chain": "A",
+      "pdb_resid": 1032,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 255,
+      "chain": "A",
+      "pdb_resid": 1033,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 256,
+      "chain": "A",
+      "pdb_resid": 1034,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 257,
+      "chain": "A",
+      "pdb_resid": 1035,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 258,
+      "chain": "A",
+      "pdb_resid": 1036,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 259,
+      "chain": "A",
+      "pdb_resid": 1037,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 260,
+      "chain": "A",
+      "pdb_resid": 1038,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 261,
+      "chain": "A",
+      "pdb_resid": 1039,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 262,
+      "chain": "A",
+      "pdb_resid": 1040,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 263,
+      "chain": "A",
+      "pdb_resid": 1041,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 264,
+      "chain": "A",
+      "pdb_resid": 1042,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 265,
+      "chain": "A",
+      "pdb_resid": 1043,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 266,
+      "chain": "A",
+      "pdb_resid": 1044,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 267,
+      "chain": "A",
+      "pdb_resid": 1045,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 268,
+      "chain": "A",
+      "pdb_resid": 1046,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 269,
+      "chain": "A",
+      "pdb_resid": 1047,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 270,
+      "chain": "A",
+      "pdb_resid": 1048,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 271,
+      "chain": "A",
+      "pdb_resid": 1049,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 272,
+      "chain": "A",
+      "pdb_resid": 1050,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 273,
+      "chain": "A",
+      "pdb_resid": 1051,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 274,
+      "chain": "A",
+      "pdb_resid": 1052,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 275,
+      "chain": "A",
+      "pdb_resid": 1053,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 276,
+      "chain": "A",
+      "pdb_resid": 1054,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 277,
+      "chain": "A",
+      "pdb_resid": 262,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 278,
+      "chain": "A",
+      "pdb_resid": 263,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 279,
+      "chain": "A",
+      "pdb_resid": 264,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 280,
+      "chain": "A",
+      "pdb_resid": 265,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 281,
+      "chain": "A",
+      "pdb_resid": 266,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 282,
+      "chain": "A",
+      "pdb_resid": 267,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 283,
+      "chain": "A",
+      "pdb_resid": 268,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 284,
+      "chain": "A",
+      "pdb_resid": 269,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 285,
+      "chain": "A",
+      "pdb_resid": 270,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 286,
+      "chain": "A",
+      "pdb_resid": 271,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 287,
+      "chain": "A",
+      "pdb_resid": 272,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 288,
+      "chain": "A",
+      "pdb_resid": 273,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 289,
+      "chain": "A",
+      "pdb_resid": 274,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 290,
+      "chain": "A",
+      "pdb_resid": 275,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 291,
+      "chain": "A",
+      "pdb_resid": 276,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 292,
+      "chain": "A",
+      "pdb_resid": 277,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 293,
+      "chain": "A",
+      "pdb_resid": 278,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 294,
+      "chain": "A",
+      "pdb_resid": 279,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 295,
+      "chain": "A",
+      "pdb_resid": 280,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 296,
+      "chain": "A",
+      "pdb_resid": 281,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 297,
+      "chain": "A",
+      "pdb_resid": 282,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 298,
+      "chain": "A",
+      "pdb_resid": 283,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 299,
+      "chain": "A",
+      "pdb_resid": 284,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 300,
+      "chain": "A",
+      "pdb_resid": 285,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 301,
+      "chain": "A",
+      "pdb_resid": 286,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 302,
+      "chain": "A",
+      "pdb_resid": 287,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 303,
+      "chain": "A",
+      "pdb_resid": 288,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 304,
+      "chain": "A",
+      "pdb_resid": 289,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 305,
+      "chain": "A",
+      "pdb_resid": 290,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 306,
+      "chain": "A",
+      "pdb_resid": 291,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 307,
+      "chain": "A",
+      "pdb_resid": 292,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 308,
+      "chain": "A",
+      "pdb_resid": 293,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 309,
+      "chain": "A",
+      "pdb_resid": 294,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 310,
+      "chain": "A",
+      "pdb_resid": 295,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 311,
+      "chain": "A",
+      "pdb_resid": 296,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 312,
+      "chain": "A",
+      "pdb_resid": 297,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 313,
+      "chain": "A",
+      "pdb_resid": 298,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 314,
+      "chain": "A",
+      "pdb_resid": 299,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 315,
+      "chain": "A",
+      "pdb_resid": 300,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 316,
+      "chain": "A",
+      "pdb_resid": 301,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 317,
+      "chain": "A",
+      "pdb_resid": 302,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 318,
+      "chain": "A",
+      "pdb_resid": 303,
+      "resname": "MET"
+    },
+    {
+      "topology_index": 319,
+      "chain": "A",
+      "pdb_resid": 304,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 320,
+      "chain": "A",
+      "pdb_resid": 305,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 321,
+      "chain": "A",
+      "pdb_resid": 306,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 322,
+      "chain": "A",
+      "pdb_resid": 307,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 323,
+      "chain": "A",
+      "pdb_resid": 308,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 324,
+      "chain": "A",
+      "pdb_resid": 309,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 325,
+      "chain": "A",
+      "pdb_resid": 310,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 326,
+      "chain": "A",
+      "pdb_resid": 311,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 327,
+      "chain": "A",
+      "pdb_resid": 312,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 328,
+      "chain": "A",
+      "pdb_resid": 313,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 329,
+      "chain": "A",
+      "pdb_resid": 314,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 330,
+      "chain": "A",
+      "pdb_resid": 315,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 331,
+      "chain": "A",
+      "pdb_resid": 316,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 332,
+      "chain": "A",
+      "pdb_resid": 317,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 333,
+      "chain": "A",
+      "pdb_resid": 318,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 334,
+      "chain": "A",
+      "pdb_resid": 319,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 335,
+      "chain": "A",
+      "pdb_resid": 320,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 336,
+      "chain": "A",
+      "pdb_resid": 321,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 337,
+      "chain": "A",
+      "pdb_resid": 322,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 338,
+      "chain": "A",
+      "pdb_resid": 323,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 339,
+      "chain": "A",
+      "pdb_resid": 324,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 340,
+      "chain": "A",
+      "pdb_resid": 325,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 341,
+      "chain": "A",
+      "pdb_resid": 326,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 342,
+      "chain": "A",
+      "pdb_resid": 327,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 343,
+      "chain": "A",
+      "pdb_resid": 328,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 344,
+      "chain": "A",
+      "pdb_resid": 329,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 345,
+      "chain": "A",
+      "pdb_resid": 330,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 346,
+      "chain": "A",
+      "pdb_resid": 331,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 347,
+      "chain": "A",
+      "pdb_resid": 332,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 348,
+      "chain": "A",
+      "pdb_resid": 333,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 349,
+      "chain": "A",
+      "pdb_resid": 334,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 350,
+      "chain": "A",
+      "pdb_resid": 335,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 351,
+      "chain": "A",
+      "pdb_resid": 336,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 352,
+      "chain": "A",
+      "pdb_resid": 337,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 353,
+      "chain": "A",
+      "pdb_resid": 338,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 354,
+      "chain": "A",
+      "pdb_resid": 339,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 355,
+      "chain": "A",
+      "pdb_resid": 340,
+      "resname": "MET"
+    },
+    {
+      "topology_index": 356,
+      "chain": "A",
+      "pdb_resid": 341,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 357,
+      "chain": "A",
+      "pdb_resid": 342,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 358,
+      "chain": "A",
+      "pdb_resid": 343,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 359,
+      "chain": "A",
+      "pdb_resid": 344,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 360,
+      "chain": "A",
+      "pdb_resid": 345,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 361,
+      "chain": "A",
+      "pdb_resid": 346,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 362,
+      "chain": "A",
+      "pdb_resid": 347,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 363,
+      "chain": "A",
+      "pdb_resid": 348,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 364,
+      "chain": "A",
+      "pdb_resid": 349,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 365,
+      "chain": "A",
+      "pdb_resid": 350,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 366,
+      "chain": "A",
+      "pdb_resid": 351,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 367,
+      "chain": "A",
+      "pdb_resid": 352,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 368,
+      "chain": "A",
+      "pdb_resid": 353,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 369,
+      "chain": "A",
+      "pdb_resid": 354,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 370,
+      "chain": "A",
+      "pdb_resid": 355,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 371,
+      "chain": "A",
+      "pdb_resid": 356,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 372,
+      "chain": "A",
+      "pdb_resid": 357,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 373,
+      "chain": "A",
+      "pdb_resid": 358,
+      "resname": "PRO"
+    },
+    {
+      "topology_index": 374,
+      "chain": "A",
+      "pdb_resid": 359,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 375,
+      "chain": "A",
+      "pdb_resid": 360,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 376,
+      "chain": "A",
+      "pdb_resid": 361,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 377,
+      "chain": "A",
+      "pdb_resid": 362,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 378,
+      "chain": "A",
+      "pdb_resid": 363,
+      "resname": "HID"
+    },
+    {
+      "topology_index": 379,
+      "chain": "A",
+      "pdb_resid": 364,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 380,
+      "chain": "A",
+      "pdb_resid": 365,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 381,
+      "chain": "A",
+      "pdb_resid": 366,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 382,
+      "chain": "A",
+      "pdb_resid": 367,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 383,
+      "chain": "A",
+      "pdb_resid": 368,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 384,
+      "chain": "A",
+      "pdb_resid": 369,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 385,
+      "chain": "A",
+      "pdb_resid": 370,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 386,
+      "chain": "A",
+      "pdb_resid": 371,
+      "resname": "MET"
+    },
+    {
+      "topology_index": 387,
+      "chain": "A",
+      "pdb_resid": 372,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 388,
+      "chain": "A",
+      "pdb_resid": 373,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 389,
+      "chain": "A",
+      "pdb_resid": 374,
+      "resname": "HID"
+    },
+    {
+      "topology_index": 390,
+      "chain": "A",
+      "pdb_resid": 375,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 391,
+      "chain": "A",
+      "pdb_resid": 376,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 392,
+      "chain": "A",
+      "pdb_resid": 377,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 393,
+      "chain": "A",
+      "pdb_resid": 378,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 394,
+      "chain": "A",
+      "pdb_resid": 379,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 395,
+      "chain": "A",
+      "pdb_resid": 380,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 396,
+      "chain": "A",
+      "pdb_resid": 381,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 397,
+      "chain": "A",
+      "pdb_resid": 382,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 398,
+      "chain": "A",
+      "pdb_resid": 383,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 399,
+      "chain": "A",
+      "pdb_resid": 384,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 400,
+      "chain": "A",
+      "pdb_resid": 385,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 401,
+      "chain": "A",
+      "pdb_resid": 386,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 402,
+      "chain": "A",
+      "pdb_resid": 387,
+      "resname": "ASP"
+    },
+    {
+      "topology_index": 403,
+      "chain": "A",
+      "pdb_resid": 388,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 404,
+      "chain": "A",
+      "pdb_resid": 389,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 405,
+      "chain": "A",
+      "pdb_resid": 390,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 406,
+      "chain": "A",
+      "pdb_resid": 391,
+      "resname": "THR"
+    },
+    {
+      "topology_index": 407,
+      "chain": "A",
+      "pdb_resid": 392,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 408,
+      "chain": "A",
+      "pdb_resid": 393,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 409,
+      "chain": "A",
+      "pdb_resid": 394,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 410,
+      "chain": "A",
+      "pdb_resid": 395,
+      "resname": "GLY"
+    },
+    {
+      "topology_index": 411,
+      "chain": "A",
+      "pdb_resid": 396,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 412,
+      "chain": "A",
+      "pdb_resid": 397,
+      "resname": "MET"
+    },
+    {
+      "topology_index": 413,
+      "chain": "A",
+      "pdb_resid": 398,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 414,
+      "chain": "A",
+      "pdb_resid": 399,
+      "resname": "ALA"
+    },
+    {
+      "topology_index": 415,
+      "chain": "A",
+      "pdb_resid": 400,
+      "resname": "ILE"
+    },
+    {
+      "topology_index": 416,
+      "chain": "A",
+      "pdb_resid": 401,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 417,
+      "chain": "A",
+      "pdb_resid": 402,
+      "resname": "TYR"
+    },
+    {
+      "topology_index": 418,
+      "chain": "A",
+      "pdb_resid": 403,
+      "resname": "CYS"
+    },
+    {
+      "topology_index": 419,
+      "chain": "A",
+      "pdb_resid": 404,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 420,
+      "chain": "A",
+      "pdb_resid": 405,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 421,
+      "chain": "A",
+      "pdb_resid": 406,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 422,
+      "chain": "A",
+      "pdb_resid": 407,
+      "resname": "ASN"
+    },
+    {
+      "topology_index": 423,
+      "chain": "A",
+      "pdb_resid": 408,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 424,
+      "chain": "A",
+      "pdb_resid": 409,
+      "resname": "VAL"
+    },
+    {
+      "topology_index": 425,
+      "chain": "A",
+      "pdb_resid": 410,
+      "resname": "GLN"
+    },
+    {
+      "topology_index": 426,
+      "chain": "A",
+      "pdb_resid": 411,
+      "resname": "LEU"
+    },
+    {
+      "topology_index": 427,
+      "chain": "A",
+      "pdb_resid": 412,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 428,
+      "chain": "A",
+      "pdb_resid": 413,
+      "resname": "PHE"
+    },
+    {
+      "topology_index": 429,
+      "chain": "A",
+      "pdb_resid": 414,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 430,
+      "chain": "A",
+      "pdb_resid": 415,
+      "resname": "LYS"
+    },
+    {
+      "topology_index": 431,
+      "chain": "A",
+      "pdb_resid": 416,
+      "resname": "SER"
+    },
+    {
+      "topology_index": 432,
+      "chain": "A",
+      "pdb_resid": 417,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 433,
+      "chain": "A",
+      "pdb_resid": 418,
+      "resname": "GLU"
+    },
+    {
+      "topology_index": 434,
+      "chain": "A",
+      "pdb_resid": 419,
+      "resname": "ARG"
+    },
+    {
+      "topology_index": 435,
+      "chain": "A",
+      "pdb_resid": 420,
+      "resname": "TRP"
+    },
+    {
+      "topology_index": 436,
+      "chain": "A",
+      "pdb_resid": 421,
+      "resname": "ARG"
+    }
+  ],
+  "chains": {
+    "A": {
+      "min_pdb_resid": 29,
+      "max_pdb_resid": 1054,
+      "n_residues": 437
+    }
+  }
+}
