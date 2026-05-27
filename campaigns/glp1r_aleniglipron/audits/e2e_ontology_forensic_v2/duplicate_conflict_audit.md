@@ -1,0 +1,111 @@
+# Duplicate Conflict Audit
+
+row_count: 105
+
+| duplicate_group_id | classification | artifact_count | sha256_count | canonical_candidate_count | notes |
+| --- | --- | --- | --- | --- | --- |
+| DUP-SHA-00001 | BACKUP | 16 | 1 | 0 |  |
+| DUP-SHA-00002 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00003 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00004 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00005 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00006 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00007 | BACKUP | 8 | 1 | 0 |  |
+| DUP-SHA-00008 | BACKUP | 8 | 1 | 0 |  |
+| DUP-SHA-00009 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00010 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00011 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00012 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00013 | BACKUP | 3 | 1 | 0 |  |
+| DUP-SHA-00014 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00015 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00016 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00017 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00018 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00019 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00020 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00021 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00022 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00023 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00024 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00025 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00026 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00027 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00028 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00029 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00030 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00031 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00032 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00033 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00034 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00035 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00036 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00037 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00038 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00039 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00040 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00041 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00042 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00043 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00044 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00045 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00046 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00047 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00048 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00049 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00050 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00051 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00052 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00053 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00054 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00055 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00056 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00057 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00058 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00059 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00060 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00061 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00062 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00063 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00064 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00065 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00066 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00067 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00068 | BACKUP | 8 | 1 | 0 |  |
+| DUP-SHA-00069 | BACKUP | 8 | 1 | 0 |  |
+| DUP-SHA-00070 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00071 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00072 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00073 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00074 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00075 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00076 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00077 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00078 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00079 | BACKUP | 24 | 1 | 0 |  |
+| DUP-SHA-00080 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00081 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00082 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00083 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00084 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00085 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00086 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00087 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00088 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00089 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00090 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00091 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00092 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00093 | BACKUP | 2 | 1 | 0 |  |
+| DUP-SHA-00094 | BACKUP | 10 | 1 | 0 |  |
+| SEM-transition_operator | NONCANONICAL | 14 | 14 | 0 |  |
+| SEM-C4_report | NONCANONICAL | 18 | 17 | 0 |  |
+| SEM-chi_membership | NONCANONICAL | 40 | 39 | 0 |  |
+| SEM-DTSG | NONCANONICAL | 2 | 2 | 0 |  |
+| SEM-C6_reward | NONCANONICAL | 49 | 44 | 0 |  |
+| SEM-tile_registry | NONCANONICAL | 2 | 2 | 0 |  |
+| SEM-captured_graph_manifest | NONCANONICAL | 53 | 53 | 0 | Path list truncated to 50 entries |
+| SEM-reward_diagnostic | NONCANONICAL | 3 | 3 | 0 |  |
+| SEM-training_metric | NONCANONICAL | 255 | 254 | 0 | Path list truncated to 50 entries |
+| SEM-report | NONCANONICAL | 641 | 592 | 0 | Path list truncated to 50 entries |
+| SEM-release_package | NONCANONICAL | 54 | 54 | 0 | Path list truncated to 50 entries |

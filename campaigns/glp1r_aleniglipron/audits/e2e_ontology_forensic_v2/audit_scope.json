@@ -1,0 +1,156 @@
+[
+  {
+    "artifact_count": 3100,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "raw_observatory_data",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 37,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "active_sets",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 22,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "spectral_transfer_operator",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 20,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "markov_validity_C4",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 11,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "metastable_states_C1",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 2,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "coarse_DTSG",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 46,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "C6_dirichlet_reward",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 0,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "C6_7_perron_guard",
+    "notes": "No canonical v1 spec found",
+    "status": "MISSING"
+  },
+  {
+    "artifact_count": 19,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "captured_graph_tiles",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 26,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "BSR_operator_runtime",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 2,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "spectral_reward_manager",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 242,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "Log_SubTB_training",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 0,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "tile_credit_assignment",
+    "notes": "No canonical v1 spec found",
+    "status": "MISSING"
+  },
+  {
+    "artifact_count": 12,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "active_learning_feedback",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 128,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "variant_durability",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 5,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "genealogical_receptor_panel",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 5,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "chemical_tile_registry",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 397,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "molecule_design_surface",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 430,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "reports/dossiers/manifests",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 371,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "tests/gates/subagent_reports",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 86,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "release_packages/hashes/tags",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  },
+  {
+    "artifact_count": 12,
+    "canonical_status": "BLOCKED_NO_CANONICAL_SPEC",
+    "domain": "IP_secret_exposure",
+    "notes": "No canonical v1 spec found",
+    "status": "BLOCKED"
+  }
+]

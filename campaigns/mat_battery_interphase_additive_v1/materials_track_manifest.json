@@ -1,0 +1,20 @@
+{
+  "campaign_id": "mat_battery_interphase_additive_v1",
+  "schema_version": "PRISM.materials_track_manifest.v1",
+  "release": "v0.25.0-hardened-release",
+  "provenance_class": "L3_DERIVED_RUNTIME_INTERFACE",
+  "validated_surfaces": [
+    "BatteryInterphaseReward.compute",
+    "CCNS_TO_BATTERY_PHASE",
+    "UniversalMaterialsActionSpace.instantiate",
+    "XTBRewardAdapter.parser_interface",
+    "prism-nhs warp_jacobian compile"
+  ],
+  "validation_command": "PYTHONPATH=src:scripts python3 -m pytest tests/integration/test_materials_e2e_smoke.py -q",
+  "non_claims": [
+    "No wet-lab efficacy claim",
+    "No xTB production campaign claim",
+    "No rendered battery CRO dossier claim"
+  ],
+  "status": "MATERIALS_TRACK_RUNTIME_INTERFACE_VALIDATED"
+}

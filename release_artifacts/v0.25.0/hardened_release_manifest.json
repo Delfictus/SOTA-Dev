@@ -1,0 +1,9 @@
+{
+  "cbom": "release_artifacts/v0.25.0/CBOM_v2.0.json",
+  "root_hash": "258a7a48720180d50ae1ccfc258f46ff341739700fb79ef7914d27befea1e5f5",
+  "schema_version": "PRISM.hardened_release_manifest.v1",
+  "sha256sums": "release_artifacts/v0.25.0/SHA256SUMS.txt",
+  "source_commit": "a786f867464e4a606d99e979723a59fbf6c5cb51",
+  "subsystem_count": 14,
+  "total_files": 3139
+}

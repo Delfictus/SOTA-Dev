@@ -1,0 +1,473 @@
+{
+  "cargo_lock": {
+    "exists": true,
+    "package_count": 397,
+    "path": "Cargo.lock",
+    "pinning_authority": "Cargo.lock exact package versions",
+    "sample": [
+      {
+        "version": "4"
+      },
+      {
+        "name": "adler2",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "2.0.1"
+      },
+      {
+        "name": "ahash",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.7.8"
+      },
+      {
+        "name": "ahash",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.8.12"
+      },
+      {
+        "name": "aho-corasick",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "1.1.4"
+      },
+      {
+        "name": "android_system_properties",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.1.5"
+      },
+      {
+        "name": "anes",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.1.6"
+      },
+      {
+        "name": "anstream",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.6.21"
+      },
+      {
+        "name": "anstyle",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "1.0.13"
+      },
+      {
+        "name": "anstyle-parse",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.2.7"
+      },
+      {
+        "name": "anstyle-query",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "1.1.5"
+      },
+      {
+        "name": "anstyle-wincon",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "3.0.11"
+      },
+      {
+        "name": "anyhow",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "1.0.100"
+      },
+      {
+        "name": "approx",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.5.1"
+      },
+      {
+        "name": "arrayref",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.3.9"
+      },
+      {
+        "name": "arrayvec",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "0.7.6"
+      },
+      {
+        "name": "arrow",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "58.3.0"
+      },
+      {
+        "name": "arrow-arith",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "58.3.0"
+      },
+      {
+        "name": "arrow-array",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "58.3.0"
+      },
+      {
+        "name": "arrow-buffer",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "version": "58.3.0"
+      }
+    ]
+  },
+  "floating_python_requirements": [],
+  "python_requirements": [
+    {
+      "file": "requirements.txt",
+      "line": 1,
+      "pinned": true,
+      "requirement": "anthropic==0.79.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 2,
+      "pinned": true,
+      "requirement": "biopython==1.86"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 3,
+      "pinned": true,
+      "requirement": "blake3==1.0.8"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 4,
+      "pinned": true,
+      "requirement": "boto3==1.42.70"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 5,
+      "pinned": true,
+      "requirement": "botocore==1.42.70"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 6,
+      "pinned": true,
+      "requirement": "click==8.3.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 7,
+      "pinned": true,
+      "requirement": "dimorphite_dl==2.0.2"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 8,
+      "pinned": true,
+      "requirement": "fair-esm==2.0.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 9,
+      "pinned": true,
+      "requirement": "freesasa==2.2.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 10,
+      "pinned": true,
+      "requirement": "gemmi==0.7.4"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 11,
+      "pinned": true,
+      "requirement": "gpytorch==1.15.2"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 12,
+      "pinned": true,
+      "requirement": "gudhi==3.12.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 13,
+      "pinned": true,
+      "requirement": "h5py==3.14.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 14,
+      "pinned": true,
+      "requirement": "httpx==0.28.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 15,
+      "pinned": true,
+      "requirement": "ijson==3.5.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 16,
+      "pinned": true,
+      "requirement": "inotify-simple==2.0.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 17,
+      "pinned": true,
+      "requirement": "Jinja2==3.1.6"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 18,
+      "pinned": true,
+      "requirement": "lxml==6.0.2"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 19,
+      "pinned": true,
+      "requirement": "matplotlib==3.10.8"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 20,
+      "pinned": true,
+      "requirement": "MDAnalysis==2.10.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 21,
+      "pinned": true,
+      "requirement": "mdtraj==1.11.1.post1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 22,
+      "pinned": true,
+      "requirement": "mrcfile==1.5.4"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 23,
+      "pinned": true,
+      "requirement": "networkx==3.6.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 24,
+      "pinned": true,
+      "requirement": "numpy==2.4.4"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 25,
+      "pinned": true,
+      "requirement": "onnxconverter-common==1.16.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 26,
+      "pinned": true,
+      "requirement": "onnxmltools==1.16.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 27,
+      "pinned": true,
+      "requirement": "onnxruntime==1.24.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 28,
+      "pinned": true,
+      "requirement": "OpenMM==8.4.0.post2"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 29,
+      "pinned": true,
+      "requirement": "orjson==3.11.7"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 30,
+      "pinned": true,
+      "requirement": "pandas==2.3.3"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 31,
+      "pinned": true,
+      "requirement": "pdbfixer==1.12.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 32,
+      "pinned": true,
+      "requirement": "pillow==12.1.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 33,
+      "pinned": true,
+      "requirement": "polars-u64-idx==1.33.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 34,
+      "pinned": true,
+      "requirement": "POT==0.9.6.post1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 35,
+      "pinned": true,
+      "requirement": "ProDy==2.6.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 36,
+      "pinned": true,
+      "requirement": "prolif==2.1.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 37,
+      "pinned": true,
+      "requirement": "pyarrow==23.0.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 38,
+      "pinned": true,
+      "requirement": "pymol==2.5.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 39,
+      "pinned": true,
+      "requirement": "pysimdjson==7.0.2"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 40,
+      "pinned": true,
+      "requirement": "pytest==9.0.2"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 41,
+      "pinned": true,
+      "requirement": "PyYAML==6.0.1"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 42,
+      "pinned": true,
+      "requirement": "rdkit==2025.9.4"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 43,
+      "pinned": true,
+      "requirement": "requests==2.32.5"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 44,
+      "pinned": true,
+      "requirement": "scikit-learn==1.8.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 45,
+      "pinned": true,
+      "requirement": "scipy==1.17.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 46,
+      "pinned": true,
+      "requirement": "structlog==25.5.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 47,
+      "pinned": true,
+      "requirement": "torch==2.10.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 48,
+      "pinned": true,
+      "requirement": "torch-geometric==2.7.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 49,
+      "pinned": true,
+      "requirement": "tqdm==4.67.3"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 50,
+      "pinned": true,
+      "requirement": "typer==0.23.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 51,
+      "pinned": true,
+      "requirement": "xgboost==3.2.0"
+    },
+    {
+      "file": "requirements.txt",
+      "line": 52,
+      "pinned": true,
+      "requirement": "zstandard==0.25.0"
+    },
+    {
+      "file": "runpod_training/requirements.txt",
+      "line": 1,
+      "pinned": true,
+      "requirement": "torch==2.10.0"
+    },
+    {
+      "file": "runpod_training/requirements.txt",
+      "line": 2,
+      "pinned": true,
+      "requirement": "torch-geometric==2.7.0"
+    },
+    {
+      "file": "runpod_training/requirements.txt",
+      "line": 3,
+      "pinned": true,
+      "requirement": "fair-esm==2.0.0"
+    },
+    {
+      "file": "runpod_training/requirements.txt",
+      "line": 4,
+      "pinned": true,
+      "requirement": "biopython==1.86"
+    },
+    {
+      "file": "runpod_training/requirements.txt",
+      "line": 5,
+      "pinned": true,
+      "requirement": "numpy==2.4.4"
+    },
+    {
+      "file": "runpod_training/requirements.txt",
+      "line": 6,
+      "pinned": true,
+      "requirement": "scikit-learn==1.8.0"
+    },
+    {
+      "file": "runpod_training/requirements.txt",
+      "line": 7,
+      "pinned": true,
+      "requirement": "pandas==2.3.3"
+    }
+  ],
+  "schema_version": "PRISM.dependency_pinning_audit.v1",
+  "security_tools": [],
+  "summary": {
+    "cargo_lock_package_count": 397,
+    "cargo_lock_present": true,
+    "floating_python_count": 0,
+    "python_requirement_count": 59
+  }
+}

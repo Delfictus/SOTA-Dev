@@ -1,0 +1,45 @@
+{
+  "active_learning_status": "ACTIVE_LEARNING_SCORING_ONLY",
+  "artifact_count": 4973,
+  "audit_root": "campaigns/glp1r_aleniglipron/audits/e2e_ontology_forensic_v2",
+  "blocker_count": 12,
+  "blocker_count_by_severity": {
+    "CRITICAL": 5,
+    "HIGH": 5,
+    "MEDIUM": 2
+  },
+  "captured_tile_status": "CAPTURED_TILE_ARTIFACTS_PRESENT_NOT_CANONICAL",
+  "dependency_edge_count": 527070,
+  "final_report_path": "campaigns/glp1r_aleniglipron/audits/e2e_ontology_forensic_v2/PRISM_DSTW_E2E_ONTOLOGY_FORENSIC_AUDIT_v2.md",
+  "generated_at_utc": "2026-05-27T03:52:06Z",
+  "global_status": "E2E_BLOCKED",
+  "ip_secret_status": "SECRET_EXPOSED",
+  "log_subtb_status": "LOG_SUBTB_ARTIFACTS_PRESENT_NOT_CANONICAL",
+  "molecule_design_status": "BLOCKED_NO_VALIDITY_FILTERS",
+  "next_action": "Recover or authoritatively place DSTW_FORMAL_SPECIFICATION_v1.md before marking any E2E path canonical",
+  "next_actions": [
+    "Recover or authoritatively place DSTW_FORMAL_SPECIFICATION_v1.md and rerun this audit.",
+    "Resolve MISSING_W_HAT/C4/C6 blockers before any operational DSTW claim.",
+    "Triage credential/IP findings by path and line using redacted fingerprints only.",
+    "Add chemical tile registry plus validity and tile-to-operator/C6 mappings before molecule-ready claims.",
+    "Add variant-specific operator and C6 contexts before variant durability operational claims."
+  ],
+  "ontology_edge_count": 47483,
+  "ontology_node_count": 30285,
+  "spectral_spine_status": "BLOCKED_NO_CANONICAL_SPEC",
+  "sqlite_index_path": "campaigns/glp1r_aleniglipron/audits/e2e_ontology_forensic_v2/ontology_index.sqlite",
+  "symbol_count": 25053,
+  "top_10_blockers": [
+    "CRITICAL:BLOCKED_NO_CANONICAL_SPEC",
+    "CRITICAL:MISSING_W_HAT",
+    "CRITICAL:C4_NOT_PROVEN",
+    "CRITICAL:C6_NOT_CANONICAL",
+    "CRITICAL:SECRET_EXPOSED",
+    "HIGH:C1_NOT_PROVEN",
+    "HIGH:CLAIM_OVERREACH",
+    "HIGH:PROVENANCE_BREAK",
+    "HIGH:RUNTIME_NONCANONICAL",
+    "HIGH:IP_OVERDISCLOSURE"
+  ],
+  "variant_durability_status": "VARIANT_DURABILITY_PARTIAL"
+}
