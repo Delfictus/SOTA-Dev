@@ -8,10 +8,26 @@ import polars as pl
 
 
 ROOT = Path(__file__).resolve().parents[2]
+BRIDGE_BINARY_PACKAGES = {
+    "log_subtb_tile_guard": "prism-forge",
+    "oracle_scorer": "prism-forge",
+    "warp_jacobian": "prism-nhs",
+}
 
 
 def _binary(name: str) -> Path:
     path = ROOT / "target/release" / name
+    if not path.exists():
+        package = BRIDGE_BINARY_PACKAGES[name]
+        result = subprocess.run(
+            ["cargo", "build", "-p", package, "--release", "--bin", name],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
     assert path.exists(), f"missing release binary: {path}"
     return path
 

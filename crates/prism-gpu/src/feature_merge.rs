@@ -47,7 +47,7 @@ impl FeatureMergeGpu {
     /// * `config` - Feature merge configuration
     pub fn new(device: Arc<CudaContext>, config: FeatureMergeConfig) -> Result<Self> {
         // Load PTX and extract feature_merge_kernel function
-        let ptx_src = include_str!("../target/ptx/feature_merge.ptx");
+        let ptx_src = include_str!("kernels/feature_merge.ptx");
         let ptx = Ptx::from_src(ptx_src);
 
         // cudarc 0.18.1: load_ptx registers the module and functions
