@@ -361,6 +361,15 @@ impl NhsGpuEngine {
     /// Find PTX file path
     fn find_ptx_path(kernel_name: &str) -> Result<String> {
         let filename = format!("{}.ptx", kernel_name);
+        // Check PRISM4D_PTX_DIR / PRISM_PTX_DIR first
+        for env_key in &["PRISM4D_PTX_DIR", "PRISM_PTX_DIR"] {
+            if let Ok(dir) = std::env::var(env_key) {
+                let p = std::path::PathBuf::from(&dir).join(&filename);
+                if p.exists() {
+                    return Ok(p.display().to_string());
+                }
+            }
+        }
         let paths = [
             format!("target/ptx/{}", filename),
             format!("crates/prism-gpu/target/ptx/{}", filename),

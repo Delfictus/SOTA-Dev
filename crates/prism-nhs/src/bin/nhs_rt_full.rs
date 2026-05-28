@@ -3397,6 +3397,16 @@ fn run_coupled_twin_multi_pipeline(
 /// Find the PTX file path (same logic as fused_engine)
 #[cfg(feature = "gpu")]
 fn find_ptx_path() -> Result<String> {
+    // Check PRISM4D_PTX_DIR and PRISM_PTX_DIR environment variables first
+    for env_key in &["PRISM4D_PTX_DIR", "PRISM_PTX_DIR"] {
+        if let Ok(dir) = std::env::var(env_key) {
+            let p = std::path::Path::new(&dir).join("nhs_amber_fused.ptx");
+            if p.exists() {
+                log::info!("PTX loaded from {}: {}", env_key, p.display());
+                return Ok(p.display().to_string());
+            }
+        }
+    }
     let candidates = vec![
         "target/ptx/nhs_amber_fused.ptx".to_string(),
         "../../target/ptx/nhs_amber_fused.ptx".to_string(),
@@ -3414,7 +3424,7 @@ fn find_ptx_path() -> Result<String> {
             return Ok(p.clone());
         }
     }
-    anyhow::bail!("PTX file not found. Set PRISM4D_PTX_DIR or ensure target/ptx/ exists.")
+    anyhow::bail!("PTX file not found. Set PRISM4D_PTX_DIR or PRISM_PTX_DIR, or ensure target/ptx/ exists.")
 }
 
 /// Internal implementation for running a single structure
@@ -6345,15 +6355,31 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
     // ── ONE context, ONE module ──
     let context = CudaContext::new(0).context("CUDA context")?;
 
+    // Check PRISM4D_PTX_DIR / PRISM_PTX_DIR env vars first, then fallback candidates
+    let env_ptx: Option<String> = std::env::var("PRISM4D_PTX_DIR")
+        .or_else(|_| std::env::var("PRISM_PTX_DIR"))
+        .ok()
+        .and_then(|dir| {
+            let p = std::path::Path::new(&dir).join("nhs_amber_fused.ptx");
+            if p.exists() { Some(p.display().to_string()) } else { None }
+        });
     let ptx_candidates = [
         "../prism-gpu/src/kernels/nhs_amber_fused.ptx",
         "crates/prism-gpu/src/kernels/nhs_amber_fused.ptx",
         "target/ptx/nhs_amber_fused.ptx",
     ];
-    let ptx_path = ptx_candidates
-        .iter()
-        .find(|p| Path::new(p).exists())
-        .ok_or_else(|| anyhow::anyhow!("nhs_amber_fused.ptx not found"))?;
+    let ptx_path_owned: String;
+    let ptx_path: &str = if let Some(ref ep) = env_ptx {
+        log::info!("PTX loaded from env: {}", ep);
+        ep.as_str()
+    } else {
+        ptx_path_owned = ptx_candidates
+            .iter()
+            .find(|p| Path::new(p).exists())
+            .ok_or_else(|| anyhow::anyhow!("nhs_amber_fused.ptx not found. Set PRISM4D_PTX_DIR or PRISM_PTX_DIR."))?
+            .to_string();
+        &ptx_path_owned
+    };
     let module = context
         .load_module(Ptx::from_file(ptx_path))
         .context("Failed to load PTX")?;

@@ -17,6 +17,15 @@ use std::sync::Arc;
 
 /// Find a TWIN PTX file by name, searching standard paths.
 pub fn find_twin_ptx(name: &str) -> Result<String> {
+    // Check PRISM4D_PTX_DIR / PRISM_PTX_DIR first
+    for env_key in &["PRISM4D_PTX_DIR", "PRISM_PTX_DIR"] {
+        if let Ok(dir) = std::env::var(env_key) {
+            let p = std::path::PathBuf::from(&dir).join(name);
+            if p.exists() {
+                return Ok(p.display().to_string());
+            }
+        }
+    }
     let candidates = [
         format!("target/ptx/{}", name),
         format!("../../target/ptx/{}", name),
