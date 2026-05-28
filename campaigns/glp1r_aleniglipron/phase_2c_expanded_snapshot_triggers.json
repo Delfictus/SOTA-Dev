@@ -1,0 +1,2071 @@
+{
+  "campaign_id": "glp1r_aleniglipron",
+  "target_conditions": [
+    "glp1r_5VEX_WT",
+    "glp1r_6LN2_A316T",
+    "glp1r_6LN2_T149M",
+    "glp1r_6LN2_WT",
+    "glp1r_6X1A_WT",
+    "glp1r_6XOX_A316T",
+    "glp1r_6XOX_T149M",
+    "glp1r_6XOX_WT"
+  ],
+  "capture_mode": "expanded_non_equilibrium_manifold",
+  "derived_from": {
+    "break_clusters": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/probabilistic_break_clusters.parquet",
+    "temporal_cascade": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade.parquet",
+    "hysteresis_tensor": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+    "bocpd_regimes": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/bocpd_survival_regimes.parquet"
+  },
+  "protocol": "fast-25k",
+  "triggers": [
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 9992,
+          "end_step": 10012,
+          "rationale": "First Ramp Cascade (step=10002, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 1,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 2,
+      "stream_id": 1,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 2,
+      "stream_id": 2,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 2,
+      "stream_id": 3,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "replica_id": 2,
+      "stream_id": 4,
+      "windows": [
+        {
+          "start_step": 6000,
+          "end_step": 6000,
+          "rationale": "Apo Baseline (Cold Hold End)"
+        },
+        {
+          "start_step": 8063,
+          "end_step": 8093,
+          "rationale": "Rupture Window (break cluster centroid=8078, confidence=0.996)"
+        },
+        {
+          "start_step": 6187,
+          "end_step": 6207,
+          "rationale": "First Ramp Cascade (step=6197, support=6 streams)"
+        },
+        {
+          "start_step": 20000,
+          "end_step": 20000,
+          "rationale": "Desensitized State (Warm Hold End, fast-25k)"
+        },
+        {
+          "start_step": 25000,
+          "end_step": 25000,
+          "rationale": "Hysteresis State (Cold Return End, fast-25k)"
+        }
+      ]
+    }
+  ]
+}

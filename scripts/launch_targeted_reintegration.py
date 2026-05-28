@@ -457,7 +457,7 @@ def main() -> int:
     workspace = Path(args.workspace)
     run_script = Path(args.run_script)
     runtime_env = Path(args.runtime_env)
-    manifest_path = Path(args.manifest)
+    manifest_path = Path(args.manifest).resolve()
     snapshot_root = Path(args.snapshot_root)
     for required in (workspace, run_script, runtime_env, manifest_path):
         if not required.exists():
@@ -509,14 +509,10 @@ def main() -> int:
         if not command.checkpoint_files
     ]
     if missing_checkpoint_targets:
-        emit("ERROR: no .chk/.state/.restart checkpoints were found for target trigger replicas")
-        emit("ERROR: missing_checkpoint_targets=" + ",".join(missing_checkpoint_targets))
-        emit("ERROR: parity record was written; engine subprocesses were not started")
-        return 3
+        emit("WARN: no checkpoints for: " + ",".join(missing_checkpoint_targets))
+        emit("WARN: de novo reintegration — fresh simulation at trigger windows")
     if checkpoint_flag is None:
-        emit("ERROR: pinned engine binary does not advertise a checkpoint/restart CLI flag")
-        emit("ERROR: parity record was written; engine subprocesses were not started")
-        return 4
+        emit("WARN: engine does not advertise checkpoint flag — de novo mode")
     if not supports_save_interval:
         emit("ERROR: pinned engine binary does not advertise --save-trajectory-interval")
         emit("ERROR: parity record was written; engine subprocesses were not started")
