@@ -1,0 +1,30 @@
+{
+  "came_attention_weights_used": false,
+  "came_integrated_gradients": true,
+  "candidate_count": 100,
+  "candidate_path": "campaigns/glp1r_aleniglipron/track_a_generative/gflownet_top_100_candidates.parquet",
+  "claim_boundary": "Motifs are DERIVED from runtime candidate/reward artifacts; no projected field is labeled OBSERVED.",
+  "completeness_mean": 0.5782828282828283,
+  "created_at_utc": "2026-05-28T06:24:08.934919+00:00",
+  "lock_enriched_count": 21,
+  "method_raw_counts": {
+    "CAME": 22,
+    "PR_MCS": 23,
+    "SAD": 100,
+    "TFGD": 100
+  },
+  "method_registry_counts": {
+    "CAME": 21,
+    "PR_MCS": 23,
+    "SAD": 100
+  },
+  "motif_count": 144,
+  "pr_mcs_timeout_seconds": 10,
+  "registry_path": "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/motif_intelligence_track_a/thermodynamic_motif_registry.parquet",
+  "role_counts": {
+    "LOCK_WEDGE": 21,
+    "MIXED": 23,
+    "NEUTRAL": 100
+  },
+  "schema_version": "PRISM.thermodynamic_motif_registry_report.v1"
+}

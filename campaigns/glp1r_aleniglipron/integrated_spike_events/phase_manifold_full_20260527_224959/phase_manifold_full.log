@@ -1,0 +1,2 @@
+output='campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet' event='coherence_extraction_started' timestamp='2026-05-28T05:49:59.866787Z'
+rows=3263 fiber_invariant=1 edge_rows=9 event='coherence_extraction_complete' timestamp='2026-05-28T05:59:23.510858Z'

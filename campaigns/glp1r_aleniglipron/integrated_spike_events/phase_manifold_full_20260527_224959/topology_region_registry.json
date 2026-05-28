@@ -1,0 +1,984 @@
+{
+  "created_at": "2026-05-28T06:25:50.807391+00:00",
+  "evidence_paths": [
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+  ],
+  "id": "track_b_topology_region_registry",
+  "provenance_class": "L3_DERIVED",
+  "regions": {
+    "BISTATE_RETAINED_RESIDUES": {
+      "blocked_reason": null,
+      "provenance_class": "L3_DERIVED",
+      "purpose": "transition continuity",
+      "residues": [
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "GLU262",
+          "score_components": {
+            "coherence_score": 0.5806264584423907,
+            "mean_abs_load": 2193.6296229245863,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "PHE324",
+          "score_components": {
+            "coherence_score": 0.5751955377384068,
+            "mean_abs_load": 1482.257089182735,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "LYS346",
+          "score_components": {
+            "coherence_score": 0.5640349918997523,
+            "mean_abs_load": 1087.2264559749124,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "TRP264",
+          "score_components": {
+            "coherence_score": 0.5623422680829904,
+            "mean_abs_load": 2245.1892916423585,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "thermal_irreversibility",
+            "thermal_irreversibility_rank"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "RES402",
+          "score_components": {
+            "coherence_score": 0.0,
+            "mean_abs_load": 0.0,
+            "pathway_rank_score": 1.0,
+            "thermal_irreversibility": 0.7777777777777778,
+            "thermal_irreversibility_rank": 1.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "thermal_irreversibility",
+            "thermal_irreversibility_rank"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "RES322",
+          "score_components": {
+            "coherence_score": 0.0,
+            "mean_abs_load": 0.0,
+            "pathway_rank_score": 1.0,
+            "thermal_irreversibility": 0.7698056801195815,
+            "thermal_irreversibility_rank": 1.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "thermal_irreversibility",
+            "thermal_irreversibility_rank"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "RES156",
+          "score_components": {
+            "coherence_score": 0.0,
+            "mean_abs_load": 0.0,
+            "pathway_rank_score": 1.0,
+            "thermal_irreversibility": 0.7653886739359831,
+            "thermal_irreversibility_rank": 1.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "thermal_irreversibility",
+            "thermal_irreversibility_rank"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "BISTATE_RETAINED_RESIDUES",
+          "residue_id": "RES278",
+          "score_components": {
+            "coherence_score": 0.0,
+            "mean_abs_load": 0.0,
+            "pathway_rank_score": 1.0,
+            "thermal_irreversibility": 0.7631088634548843,
+            "thermal_irreversibility_rank": 1.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+          ]
+        }
+      ],
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+      ],
+      "status": "COVERED"
+    },
+    "ECD_TM1_GATEWAY": {
+      "blocked_reason": null,
+      "provenance_class": "L3_DERIVED",
+      "purpose": "upstream lock perturbation",
+      "residues": [
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "pocket_gateway_signal",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "PHE367",
+          "score_components": {
+            "coherence_score": 0.45052862330242976,
+            "mean_abs_load": 1506.7655989477635,
+            "pathway_rank_score": 0.5,
+            "pocket_gateway_signal": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "pocket_gateway_signal",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "ASN182",
+          "score_components": {
+            "coherence_score": 0.5026794949025335,
+            "mean_abs_load": 2381.936593201586,
+            "pathway_rank_score": 1.0,
+            "pocket_gateway_signal": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "LEU60",
+          "score_components": {
+            "coherence_score": 0.6329080345944872,
+            "mean_abs_load": 1044.248866979017,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "ALA28",
+          "score_components": {
+            "coherence_score": 0.6275667239904955,
+            "mean_abs_load": 1045.7007671992667,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "GLU76",
+          "score_components": {
+            "coherence_score": 0.6260783847394645,
+            "mean_abs_load": 1446.4019426112172,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "TRP39",
+          "score_components": {
+            "coherence_score": 0.6154323350641584,
+            "mean_abs_load": 1596.5256673578544,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "PHE143",
+          "score_components": {
+            "coherence_score": 0.6143077789250796,
+            "mean_abs_load": 2044.0140475666965,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "ECD_TM1_GATEWAY",
+          "residue_id": "SER136",
+          "score_components": {
+            "coherence_score": 0.613068255314341,
+            "mean_abs_load": 1655.7006384876142,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        }
+      ],
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+      ],
+      "status": "COVERED"
+    },
+    "HYDRATION_CORRIDOR": {
+      "blocked_reason": null,
+      "provenance_class": "L3_DERIVED",
+      "purpose": "solvent continuity",
+      "residues": [
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "HYDRATION_CORRIDOR",
+          "residue_id": "PHE260",
+          "score_components": {
+            "coherence_score": 0.6178572132312156,
+            "mean_abs_load": 1387.799355014682,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "HYDRATION_CORRIDOR",
+          "residue_id": "LEU251",
+          "score_components": {
+            "coherence_score": 0.5824729920601326,
+            "mean_abs_load": 1220.2087400864223,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "HYDRATION_CORRIDOR",
+          "residue_id": "ARG227",
+          "score_components": {
+            "coherence_score": 0.5784718418535144,
+            "mean_abs_load": 1190.2230976869414,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "HYDRATION_CORRIDOR",
+          "residue_id": "TYR252",
+          "score_components": {
+            "coherence_score": 0.5768981394307389,
+            "mean_abs_load": 1604.43535850857,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "HYDRATION_CORRIDOR",
+          "residue_id": "LEU224",
+          "score_components": {
+            "coherence_score": 0.5740294945353241,
+            "mean_abs_load": 1080.8740477314436,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "HYDRATION_CORRIDOR",
+          "residue_id": "GLY248",
+          "score_components": {
+            "coherence_score": 0.564338011886457,
+            "mean_abs_load": 1650.9487395664626,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        }
+      ],
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+      ],
+      "status": "COVERED"
+    },
+    "INTRACELLULAR_LOCK_BASIN": {
+      "blocked_reason": null,
+      "provenance_class": "L3_DERIVED",
+      "purpose": "quiet-lock persistence",
+      "residues": [
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "lock_distance_signal",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "ASN182",
+          "score_components": {
+            "coherence_score": 0.5026794949025335,
+            "lock_distance_signal": 1.0,
+            "mean_abs_load": 2381.936593201586,
+            "pathway_rank_score": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "TRP417",
+          "score_components": {
+            "coherence_score": 0.6477172269346887,
+            "mean_abs_load": 1536.7857411835716,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "ARG419",
+          "score_components": {
+            "coherence_score": 0.59923469487351,
+            "mean_abs_load": 1203.0781242362411,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "ARG414",
+          "score_components": {
+            "coherence_score": 0.5973698699532394,
+            "mean_abs_load": 1200.688077652119,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "TRP420",
+          "score_components": {
+            "coherence_score": 0.5932871386412638,
+            "mean_abs_load": 2255.210136415586,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "GLN410",
+          "score_components": {
+            "coherence_score": 0.5732126707393452,
+            "mean_abs_load": 1354.0791150539762,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "PHE369",
+          "score_components": {
+            "coherence_score": 0.5641166063565629,
+            "mean_abs_load": 1450.1688145936282,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "INTRACELLULAR_LOCK_BASIN",
+          "residue_id": "GLU418",
+          "score_components": {
+            "coherence_score": 0.5636241453332684,
+            "mean_abs_load": 1536.869969442169,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        }
+      ],
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+      ],
+      "status": "COVERED"
+    },
+    "TE_HUBS": {
+      "blocked_reason": null,
+      "provenance_class": "L3_DERIVED",
+      "purpose": "causal rerouting",
+      "residues": [
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "thermal_irreversibility",
+            "translation_pathway"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TE_HUBS",
+          "residue_id": "PHE367",
+          "score_components": {
+            "coherence_score": 0.45052862330242976,
+            "mean_abs_load": 1506.7655989477635,
+            "pathway_rank_score": 0.5,
+            "thermal_irreversibility": 0.0,
+            "translation_pathway": 1.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "thermal_irreversibility",
+            "translation_pathway"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TE_HUBS",
+          "residue_id": "ASN182",
+          "score_components": {
+            "coherence_score": 0.5026794949025335,
+            "mean_abs_load": 2381.936593201586,
+            "pathway_rank_score": 1.0,
+            "thermal_irreversibility": 0.0,
+            "translation_pathway": 1.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet"
+          ]
+        }
+      ],
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+      ],
+      "status": "COVERED"
+    },
+    "TM3_TM5_CORE": {
+      "blocked_reason": null,
+      "provenance_class": "L3_DERIVED",
+      "purpose": "propagation continuity",
+      "residues": [
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "ARG170",
+          "score_components": {
+            "coherence_score": 0.6202326325797101,
+            "mean_abs_load": 1161.1734562693923,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "HID171",
+          "score_components": {
+            "coherence_score": 0.6073655246424643,
+            "mean_abs_load": 1477.9564359369263,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "LEU118",
+          "score_components": {
+            "coherence_score": 0.5987772840198867,
+            "mean_abs_load": 1525.9473223453524,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "PHE257",
+          "score_components": {
+            "coherence_score": 0.5964595720719744,
+            "mean_abs_load": 2001.9697316244917,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "TYR145",
+          "score_components": {
+            "coherence_score": 0.5916299442644315,
+            "mean_abs_load": 1487.4516338771584,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "LEU141",
+          "score_components": {
+            "coherence_score": 0.5843138844422999,
+            "mean_abs_load": 1090.2184714287685,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "GLN140",
+          "score_components": {
+            "coherence_score": 0.5839945585928926,
+            "mean_abs_load": 1382.3855132557978,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        },
+        {
+          "evidence_columns": [
+            "coherence_score",
+            "mean_abs_load",
+            "pathway_rank_score",
+            "phase_coherence_rank",
+            "thermal_irreversibility"
+          ],
+          "provenance_class": "L3_DERIVED",
+          "region": "TM3_TM5_CORE",
+          "residue_id": "LEU166",
+          "score_components": {
+            "coherence_score": 0.5828881268669484,
+            "mean_abs_load": 1103.368130217777,
+            "pathway_rank_score": 1.0,
+            "phase_coherence_rank": 1.0,
+            "thermal_irreversibility": 0.0
+          },
+          "source_artifacts": [
+            "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet"
+          ]
+        }
+      ],
+      "source_artifacts": [
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+        "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+      ],
+      "status": "COVERED"
+    }
+  },
+  "schema_version": "track_b.topology_region_registry.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/mechanical_load_network.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/phase_manifold_coherence.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet"
+  ]
+}

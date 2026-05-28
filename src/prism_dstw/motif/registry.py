@@ -262,4 +262,4 @@ class MotifRegistry:
     def _write_entries(self, entries: list[MotifEntry]) -> None:
         self.parquet_path.parent.mkdir(parents=True, exist_ok=True)
         rows = [entry.to_storage_dict() for entry in sorted(entries, key=lambda item: item.motif_id)]
-        pl.DataFrame(rows).write_parquet(self.parquet_path)
+        pl.DataFrame(rows, infer_schema_length=None).write_parquet(self.parquet_path)

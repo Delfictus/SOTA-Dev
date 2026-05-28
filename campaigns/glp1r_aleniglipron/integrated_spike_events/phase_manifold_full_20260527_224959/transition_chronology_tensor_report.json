@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-05-28T06:22:00.888121+00:00",
+  "event_types": [
+    "bocpd_Cold_Hold",
+    "kinetic_strain_context"
+  ],
+  "hysteresis_rows_available": 11852,
+  "localized_pathway_rows": 2005,
+  "replica_stream_identity_preserved": {
+    "replica": true,
+    "stream": true
+  },
+  "row_count": 3200,
+  "schema_version": "track_b.transition_chronology_report.v1",
+  "source_artifacts": [
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/bocpd_survival_regimes.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/kinetic_strain_events.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/temporal_cascade.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+    "campaigns/glp1r_aleniglipron/integrated_spike_events/phase_manifold_full_20260527_224959/enriched_pathway_nodes.parquet"
+  ],
+  "valid_residue_rows": 3200,
+  "verdict": "TRANSITION_CHRONOLOGY_OBSERVED"
+}
