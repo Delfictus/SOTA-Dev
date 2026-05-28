@@ -1002,7 +1002,7 @@
     }
   ],
   "engine_binary": "/home/diddy/Desktop/Prism4D-bio/target/release/nhs_rt_full",
-  "engine_binary_sha256": "511b75a33399dbf8d380cb1f5bbd738902434eb323d41f13d4d02b152f67c069",
+  "engine_binary_sha256": "5f38bbf5913804062d55d6d777253e8ebf1f97f5d1bcb50869636014790939dc",
   "engine_flags": "--fast-25k --hysteresis --prism-therm --multi-stream 20 --spike-percentile 70 --fused-steps 6 --hmr --adaptive-dt --multi-differential --closed-loop-steering --asymmetric-steering --site-ranker phase-manifold --md-only-evidence --path-a-production-profile --path-a-max-wall-seconds 180 --uv-wavelengths 280,274,258,254,211 --nma-amplification 3.0 --nma-scan-fraction 0.3",
   "engine_supports_reintegrate": true,
   "engine_supports_save_trajectory_interval": true,

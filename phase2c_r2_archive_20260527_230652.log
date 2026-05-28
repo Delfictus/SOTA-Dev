@@ -1,0 +1,725 @@
+Transferred:   	    4.019 GiB / 147.539 GiB, 3%, 274.384 MiB/s, ETA 8m55s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          101 / 2992, 3%
+Elapsed time:        15.0s
+Transferring:
+ * glp1r_6LN2_WT/replica_…WT_stream16_spikes.bin: 88% /298.830Mi, 39.513Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream16_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream17_spikes.bin: 60% /298.813Mi, 73.468Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream17_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream18_spikes.bin: 31% /305.243Mi, 76.401Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream18_warp_matrix.bin:100% /114.750Mi, 57.372Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream19_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6LN2_WT/replica_…WT_stream19_spikes.bin: 11% /305.480Mi, 0/s, -
+ * glp1r_6LN2_WT/replica_…ream19_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6LN2_WT/replica_…tream1_signal_grid.bin:100% /13.500Mi, 0/s, -
+ * glp1r_6LN2_WT/replica_…_WT_stream1_spikes.bin: transferring
+ * glp1r_6LN2_WT/replica_…tream1_warp_matrix.bin:  0% /114.750Mi, 0/s, -
+ * glp1r_6LN2_WT/replica_…tream2_adaptive_dt.bin:100% /416, 0/s, -
+ * glp1r_6LN2_WT/replica_…ic_centroids_final.bin:100% /7.172Ki, 0/s, -
+ * glp1r_6LN2_WT/replica_…WT_stream2_bocpd.jsonl:100% /3.328Ki, 0/s, -
+ * glp1r_6LN2_WT/replica_…ream2_forces_final.bin:100% /83.145Ki, 0/s, -Transferred:   	    8.123 GiB / 147.831 GiB, 5%, 275.069 MiB/s, ETA 8m40s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          192 / 2992, 6%
+Elapsed time:        30.0s
+Transferring:
+ * glp1r_6LN2_WT/replica_…_WT_stream5_spikes.bin:100% /304.052Mi, 36.904Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream6_spikes.bin: 95% /298.837Mi, 40.610Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream7_spikes.bin: 69% /298.683Mi, 46.327Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream7_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream8_spikes.bin: 54% /298.841Mi, 49.655Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream8_warp_matrix.bin:100% /114.750Mi, 38.248Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream9_spikes.bin: 39% /298.864Mi, 58.406Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream9_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream0_signal_grid.bin:100% /13.500Mi, 0/s, -
+ * glp1r_6LN2_T149M/repli…49M_stream0_spikes.bin:  1% /293.178Mi, 0/s, -
+ * glp1r_6LN2_T149M/repli…tream0_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6LN2_T149M/repli…eam10_forces_final.bin:100% /83.180Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…tream10_kcc_v2full.bin:100% /24.422Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…10_protocol_state.json:100% /5.616Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…ream10_signal_grid.bin: 22% /13.500Mi, 0/s, -Transferred:   	   12.202 GiB / 147.831 GiB, 8%, 279.166 MiB/s, ETA 8m17s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          289 / 2992, 10%
+Elapsed time:        45.0s
+Transferring:
+ * glp1r_6XOX_A316T/repli…16T_stream0_spikes.bin:100% /296.168Mi, 35.704Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream10_spikes.bin: 92% /302.395Mi, 37.301Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream10_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream11_spikes.bin: 81% /302.367Mi, 39.368Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream11_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream12_spikes.bin: 60% /300.795Mi, 40.346Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream12_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream13_spikes.bin: 54% /300.976Mi, 46.999Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream13_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream14_spikes.bin: 35% /296.064Mi, 49.186Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream14_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream13_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6LN2_T149M/repli…9M_stream13_spikes.bin:  6% /298.286Mi, 0/s, -
+ * glp1r_6LN2_T149M/repli…ream13_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6LN2_T149M/repli…ic_centroids_final.bin:100% /7.172Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…M_stream14_bocpd.jsonl:100% /3.340Ki, 0/s, -Transferred:   	   16.160 GiB / 147.536 GiB, 11%, 272.812 MiB/s, ETA 8m13s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          370 / 2992, 12%
+Elapsed time:       1m0.0s
+Transferring:
+ * glp1r_6LN2_T149M/repli…9M_stream17_spikes.bin: 99% /293.176Mi, 33.904Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream17_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream18_spikes.bin: 86% /299.415Mi, 34.304Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream15_spikes.bin: 89% /296.049Mi, 35.404Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream15_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream18_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream16_spikes.bin: 67% /296.185Mi, 36.749Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream16_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream17_spikes.bin: 46% /296.095Mi, 44.760Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream17_warp_matrix.bin:100% /114.750Mi, 38.248Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream18_spikes.bin: 16% /302.274Mi, 0/s, -
+ * glp1r_6XOX_A316T/repli…ream18_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6XOX_A316T/repli…tream19_kcc_v2full.bin:100% /21.305Ki, 0/s, -
+ * glp1r_6XOX_A316T/repli…19_protocol_state.json:100% /5.633Ki, 0/s, -
+ * glp1r_6XOX_A316T/repli…ream19_signal_grid.bin: 59% /13.500Mi, 0/s, -
+ * glp1r_6XOX_A316T/repli…6T_stream19_spikes.bin: transferringTransferred:   	   20.082 GiB / 147.542 GiB, 14%, 266.287 MiB/s, ETA 8m10s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          455 / 2992, 15%
+Elapsed time:      1m15.0s
+Transferring:
+ * glp1r_6XOX_A316T/repli…16T_stream4_spikes.bin:100% /300.799Mi, 33.422Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream4_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream5_spikes.bin: 94% /300.975Mi, 35.804Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream5_warp_matrix.bin:100% /114.750Mi, 14.344Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream6_spikes.bin: 75% /296.089Mi, 38.555Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream6_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream7_spikes.bin: 57% /296.121Mi, 47.591Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream7_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream8_spikes.bin: 31% /296.089Mi, 62.683Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream8_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream9_signal_grid.bin:100% /13.500Mi, 0/s, -
+ * glp1r_6XOX_A316T/repli…16T_stream9_spikes.bin: transferring
+ * glp1r_6LN2_T149M/repli…ic_centroids_final.bin:100% /7.172Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…M_stream19_bocpd.jsonl:100% /3.341Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…eam19_forces_final.bin:100% /83.180Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…tream19_kcc_v2full.bin:100% /24.422Ki, 0/s, -Transferred:   	   24.343 GiB / 147.831 GiB, 16%, 271.945 MiB/s, ETA 7m44s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          547 / 2992, 18%
+Elapsed time:      1m30.0s
+Transferring:
+ * glp1r_6LN2_T149M/repli…49M_stream4_spikes.bin:100% /298.329Mi, 33.147Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream4_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream5_spikes.bin: 82% /298.331Mi, 33.475Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream5_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream6_spikes.bin: 71% /293.131Mi, 40.732Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream6_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream7_spikes.bin: 53% /293.093Mi, 47.905Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream7_warp_matrix.bin:100% /114.750Mi, 28.686Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream8_spikes.bin: 34% /293.189Mi, 52.749Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream8_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream9_spikes.bin: 15% /293.340Mi, 0/s, -
+ * glp1r_6LN2_T149M/repli…tream9_warp_matrix.bin:100% /114.750Mi, 114.745Mi/s,
+ * glp1r_6XOX_A316T/repli…tream9_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6XOX_A316T/repli…d_required_inputs.json:100% /2.310Ki, 0/s, -
+ * glp1r_5VEX_WT/replica_…mpleteness_report.json:100% /7.222Ki, 0/s, -
+ * glp1r_5VEX_WT/replica_…ce_routing_status.json:100% /287, 0/s, -Transferred:   	   28.346 GiB / 147.831 GiB, 19%, 278.063 MiB/s, ETA 7m20s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          645 / 2992, 22%
+Elapsed time:      1m45.0s
+Transferring:
+ * glp1r_5VEX_WT/replica_…WT_stream11_spikes.bin:100% /437.287Mi, 48.587Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream0_spikes.bin: 82% /271.268Mi, 30.310Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream0_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream10_spikes.bin: 68% /277.028Mi, 30.317Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream10_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream11_spikes.bin: 63% /277.138Mi, 33.783Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream11_warp_matrix.bin:100% /114.750Mi, 22.950Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream12_spikes.bin: 44% /276.295Mi, 29.980Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream12_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream12_spikes.bin: 34% /435.403Mi, 57.888Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream12_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream13_spikes.bin: 24% /276.290Mi, 50.061Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream13_warp_matrix.bin:100% /114.750Mi, 114.747Mi/s,
+ * glp1r_6LN2_T149M/repli…eam14_forces_final.bin:100% /83.180Ki, 0/s, -
+ * glp1r_5VEX_WT/replica_…eam13_forces_final.bin:100% /81.797Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…tream14_kcc_v2full.bin:100% /24.422Ki, 0/s, -Transferred:   	   32.328 GiB / 147.831 GiB, 22%, 274.138 MiB/s, ETA 7m11s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          720 / 2992, 24%
+Elapsed time:       2m0.0s
+Transferring:
+ * glp1r_5VEX_WT/replica_…WT_stream13_spikes.bin:100% /435.882Mi, 42.091Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream14_spikes.bin: 90% /427.925Mi, 41.446Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream14_warp_matrix.bin:100% /114.750Mi, 11.475Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream15_spikes.bin: 73% /428.108Mi, 38.697Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream15_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream16_spikes.bin: 59% /428.025Mi, 39.769Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream16_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream17_spikes.bin: 47% /428.344Mi, 38.318Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream17_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream18_spikes.bin: 35% /437.476Mi, 37.788Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream18_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream19_spikes.bin: 14% /437.634Mi, 31.122Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream19_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream15_spikes.bin: 23% /271.329Mi, 30.742Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream1_bocpd.jsonl:100% /3.329Ki, 0/s, -
+ * glp1r_5VEX_WT/replica_…ream1_forces_final.bin:100% /81.797Ki, 0/s, -Transferred:   	   36.400 GiB / 147.413 GiB, 25%, 281.702 MiB/s, ETA 6m43s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          789 / 2992, 26%
+Elapsed time:      2m15.0s
+Transferring:
+ * glp1r_5VEX_WT/replica_…_WT_stream2_spikes.bin: 94% /437.445Mi, 38.607Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream2_warp_matrix.bin:100% /114.750Mi, 10.432Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream3_spikes.bin: 75% /437.454Mi, 39.502Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream3_warp_matrix.bin:100% /114.750Mi, 12.749Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream4_spikes.bin: 61% /435.866Mi, 42.498Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream4_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream5_spikes.bin: 51% /435.808Mi, 47.850Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream5_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream6_spikes.bin: 28% /427.957Mi, 43.498Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream7_spikes.bin: 15% /428.136Mi, 56.340Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream7_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream8_signal_grid.bin: 30% /13.500Mi, 0/s, -
+ * glp1r_5VEX_WT/replica_…_WT_stream8_spikes.bin: transferring
+ * glp1r_5VEX_WT/replica_…tream8_warp_matrix.bin:  0% /114.750Mi, 0/s, -
+ * glp1r_5VEX_WT/replica_…tream9_adaptive_dt.bin:100% /416, 0/s, -Transferred:   	   40.378 GiB / 147.831 GiB, 27%, 271.697 MiB/s, ETA 6m44s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          860 / 2992, 29%
+Elapsed time:      2m30.0s
+Transferring:
+ * glp1r_6LN2_T149M/repli…9M_stream16_spikes.bin:100% /271.269Mi, 31.073Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream16_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream17_spikes.bin: 84% /271.267Mi, 34.086Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream17_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream18_spikes.bin: 66% /277.206Mi, 40.379Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream18_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6LN2_T149M/repli…9M_stream19_spikes.bin: 46% /277.218Mi, 42.665Mi/s, 
+ * glp1r_6LN2_T149M/repli…ream19_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream1_spikes.bin: 25% /271.207Mi, 47.519Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream1_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream2_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6LN2_T149M/repli…49M_stream2_spikes.bin:  6% /276.961Mi, 0/s, -
+ * glp1r_6LN2_T149M/repli…tream2_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6LN2_T149M/repli…ream3_forces_final.bin:100% /83.180Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…stream3_kcc_v2full.bin:100% /24.422Ki, 0/s, -
+ * glp1r_6LN2_T149M/repli…m3_protocol_state.json:100% /5.617Ki, 0/s, -Transferred:   	   44.389 GiB / 147.831 GiB, 30%, 275.360 MiB/s, ETA 6m24s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:          956 / 2992, 32%
+Elapsed time:      2m45.0s
+Transferring:
+ * glp1r_6LN2_T149M/repli…49M_stream7_spikes.bin:100% /271.224Mi, 33.903Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream7_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream8_spikes.bin: 92% /271.239Mi, 40.242Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream8_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6LN2_T149M/repli…49M_stream9_spikes.bin: 68% /271.225Mi, 38.993Mi/s, 
+ * glp1r_6LN2_T149M/repli…tream9_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream0_spikes.bin: 47% /326.907Mi, 51.770Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream0_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream10_spikes.bin: 28% /334.254Mi, 52.155Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream10_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream11_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6X1A_WT/replica_…WT_stream11_spikes.bin:  6% /334.412Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…ream11_warp_matrix.bin:100% /114.750Mi, 114.749Mi/s,
+ * glp1r_6X1A_WT/replica_…T_stream12_bocpd.jsonl:100% /4.379Ki, 0/s, -
+ * glp1r_6X1A_WT/replica_…eam12_forces_final.bin:100% /75.082Ki, 0/s, -
+ * glp1r_6X1A_WT/replica_…tream12_kcc_v2full.bin:100% /21.846Ki, 0/s, -Transferred:   	   48.417 GiB / 147.831 GiB, 33%, 275.478 MiB/s, ETA 6m9s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1040 / 2992, 35%
+Elapsed time:       3m0.0s
+Transferring:
+ * glp1r_6X1A_WT/replica_…WT_stream14_spikes.bin:100% /327.850Mi, 29.804Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream15_spikes.bin: 99% /327.848Mi, 35.691Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream16_spikes.bin: 86% /326.993Mi, 37.726Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream16_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream17_spikes.bin: 76% /327.012Mi, 41.949Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream17_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream18_spikes.bin: 52% /334.426Mi, 45.686Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream18_warp_matrix.bin:100% /114.750Mi, 28.686Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream19_spikes.bin: 28% /334.503Mi, 52.748Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream19_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream1_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6X1A_WT/replica_…_WT_stream1_spikes.bin:  5% /327.050Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…tream1_warp_matrix.bin:100% /114.750Mi, 114.747Mi/s,
+ * glp1r_6X1A_WT/replica_…ream2_forces_final.bin:100% /75.082Ki, 0/s, -
+ * glp1r_6X1A_WT/replica_…stream2_kcc_v2full.bin:100% /21.846Ki, 0/s, -
+ * glp1r_6X1A_WT/replica_…m2_protocol_state.json:100% /5.614Ki, 0/s, -Transferred:   	   52.469 GiB / 147.495 GiB, 36%, 276.880 MiB/s, ETA 5m51s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1138 / 2992, 38%
+Elapsed time:      3m15.0s
+Transferring:
+ * glp1r_6X1A_WT/replica_…_WT_stream5_spikes.bin:100% /331.716Mi, 36.857Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream0_spikes.bin: 82% /343.636Mi, 46.481Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream0_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream10_spikes.bin: 62% /351.032Mi, 47.491Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream10_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream11_spikes.bin: 45% /350.872Mi, 44.416Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream11_warp_matrix.bin:100% /114.750Mi, 28.686Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream12_spikes.bin: 31% /349.231Mi, 45.420Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream12_warp_matrix.bin:100% /114.750Mi, 38.248Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream13_spikes.bin: 15% /348.892Mi, 52.436Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream13_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6LN2_WT/replica_…ream14_signal_grid.bin: 79% /13.500Mi, 0/s, -
+ * glp1r_6LN2_WT/replica_…WT_stream14_spikes.bin: transferring
+ * glp1r_6LN2_WT/replica_…ream14_warp_matrix.bin:  0% /114.750Mi, 0/s, -
+ * glp1r_6LN2_WT/replica_…ream15_adaptive_dt.bin:100% /480, 0/s, -
+ * glp1r_6LN2_WT/replica_…ic_centroids_final.bin:100% /7.172Ki, 0/s, -Transferred:   	   56.541 GiB / 147.831 GiB, 38%, 274.745 MiB/s, ETA 5m40s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1213 / 2992, 41%
+Elapsed time:      3m30.0s
+Transferring:
+ * glp1r_6LN2_WT/replica_…WT_stream17_spikes.bin: 95% /343.646Mi, 39.139Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream17_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream18_spikes.bin: 78% /350.971Mi, 43.646Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream18_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6LN2_WT/replica_…WT_stream19_spikes.bin: 58% /351.012Mi, 40.679Mi/s, 
+ * glp1r_6LN2_WT/replica_…ream19_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream1_spikes.bin: 45% /343.563Mi, 46.311Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream1_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream2_spikes.bin: 22% /351.007Mi, 42.250Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream2_warp_matrix.bin:100% /114.750Mi, 57.373Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream3_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6LN2_WT/replica_…_WT_stream3_spikes.bin:  8% /350.898Mi, 0/s, -
+ * glp1r_6LN2_WT/replica_…tream3_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6LN2_WT/replica_…WT_stream4_bocpd.jsonl:100% /3.846Ki, 0/s, -
+ * glp1r_6LN2_WT/replica_…ream4_forces_final.bin:100% /83.145Ki, 0/s, -
+ * glp1r_6LN2_WT/replica_…stream4_kcc_v2full.bin:100% /24.416Ki, 0/s, -Transferred:   	   60.632 GiB / 147.831 GiB, 41%, 277.926 MiB/s, ETA 5m21s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1287 / 2992, 43%
+Elapsed time:      3m45.0s
+Transferring:
+ * glp1r_6LN2_WT/replica_…_WT_stream6_spikes.bin: 99% /343.668Mi, 35.761Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 11.475Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream7_spikes.bin: 88% /343.766Mi, 38.146Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream7_warp_matrix.bin:100% /114.750Mi, 14.344Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream8_spikes.bin: 69% /343.588Mi, 39.114Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream8_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6LN2_WT/replica_…_WT_stream9_spikes.bin: 53% /343.523Mi, 40.483Mi/s, 
+ * glp1r_6LN2_WT/replica_…tream9_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream6_spikes.bin: 43% /327.751Mi, 41.083Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream7_spikes.bin: 26% /327.915Mi, 51.090Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream7_warp_matrix.bin:100% /114.750Mi, 57.373Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream8_signal_grid.bin:100% /13.500Mi, 13.499Mi/s, 0
+ * glp1r_6X1A_WT/replica_…_WT_stream8_spikes.bin:  5% /327.020Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…tream8_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…ic_centroids_final.bin:100% /6.750Ki, 0/s, -Transferred:   	   64.649 GiB / 147.831 GiB, 44%, 281.477 MiB/s, ETA 5m2s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1381 / 2992, 46%
+Elapsed time:       4m0.0s
+Transferring:
+ * glp1r_6LN2_A316T/repli…6T_stream10_spikes.bin: 98% /329.955Mi, 39.916Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream10_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream11_spikes.bin: 77% /329.785Mi, 40.542Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream11_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream0_spikes.bin: 74% /338.570Mi, 41.616Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream0_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream10_spikes.bin: 55% /346.014Mi, 41.015Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream10_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream11_spikes.bin: 42% /345.936Mi, 40.166Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream11_warp_matrix.bin:100% /114.750Mi, 28.686Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream12_spikes.bin: 22% /328.460Mi, 40.122Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream12_warp_matrix.bin:100% /114.750Mi, 57.375Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream12_spikes.bin:  6% /343.771Mi, 0/s, -
+ * glp1r_6XOX_WT/replica_…ream12_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6LN2_A316T/repli…tream13_kcc_v2full.bin:100% /24.422Ki, 0/s, -
+ * glp1r_6XOX_WT/replica_…ream13_adaptive_dt.bin:100% /480, 0/s, -Transferred:   	   68.702 GiB / 147.831 GiB, 46%, 283.203 MiB/s, ETA 4m46s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1473 / 2992, 49%
+Elapsed time:      4m15.0s
+Transferring:
+ * glp1r_6XOX_WT/replica_…WT_stream14_spikes.bin: 96% /338.937Mi, 40.769Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream14_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream14_spikes.bin: 78% /322.899Mi, 40.196Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream14_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream15_spikes.bin: 67% /338.895Mi, 42.456Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream15_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream15_spikes.bin: 57% /322.943Mi, 42.452Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream15_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream16_spikes.bin: 37% /338.676Mi, 39.843Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream16_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream16_spikes.bin: 21% /322.913Mi, 39.997Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream16_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream17_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6XOX_WT/replica_…WT_stream17_spikes.bin:  6% /338.680Mi, 0/s, -
+ * glp1r_6XOX_WT/replica_…ream17_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6LN2_A316T/repli…tream17_kcc_v2full.bin:100% /24.422Ki, 0/s, -Transferred:   	   72.650 GiB / 147.831 GiB, 49%, 275.515 MiB/s, ETA 4m39s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1549 / 2992, 52%
+Elapsed time:      4m30.0s
+Transferring:
+ * glp1r_6LN2_A316T/repli…ream17_warp_matrix.bin:100% /114.750Mi, 9.562Mi/s, 0
+ * glp1r_6LN2_A316T/repli…6T_stream18_spikes.bin:100% /329.884Mi, 39.603Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream18_warp_matrix.bin:100% /114.750Mi, 12.749Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream0_spikes.bin: 86% /308.121Mi, 36.008Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream0_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream19_spikes.bin: 74% /345.985Mi, 40.815Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream19_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream10_spikes.bin: 62% /315.017Mi, 41.523Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream10_warp_matrix.bin:100% /114.750Mi, 22.950Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream19_spikes.bin: 49% /329.842Mi, 45.291Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream19_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream11_signal_grid.bin:100% /13.500Mi, 13.499Mi/s, 0
+ * glp1r_6X1A_WT/replica_…WT_stream11_spikes.bin:  8% /314.828Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…ream11_warp_matrix.bin:100% /114.750Mi, 114.747Mi/s,
+ * glp1r_6X1A_WT/replica_…eam12_forces_final.bin:100% /75.082Ki, 0/s, -
+ * glp1r_6XOX_T149M/repli…_1/ghost_time_map.json:100% /9.122Ki, 0/s, -Transferred:   	   76.623 GiB / 147.510 GiB, 52%, 273.588 MiB/s, ETA 4m25s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1641 / 2992, 55%
+Elapsed time:      4m45.0s
+Transferring:
+ * glp1r_6XOX_WT/replica_…_WT_stream2_spikes.bin:100% /345.521Mi, 34.552Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream1_spikes.bin: 94% /322.830Mi, 37.353Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream1_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream13_spikes.bin: 92% /312.963Mi, 38.544Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream13_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream2_spikes.bin: 69% /329.833Mi, 42.499Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream2_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream14_spikes.bin: 60% /308.607Mi, 41.502Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream14_warp_matrix.bin:100% /114.750Mi, 22.950Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream3_spikes.bin: 33% /329.662Mi, 38.592Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream3_warp_matrix.bin:100% /114.750Mi, 38.248Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream15_spikes.bin: 29% /308.601Mi, 45.546Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream15_warp_matrix.bin:100% /114.750Mi, 114.745Mi/s,
+ * glp1r_6LN2_A316T/repli…tream4_signal_grid.bin: 90% /13.500Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…tream16_kcc_v2full.bin:100% /21.846Ki, 0/s, -
+ * glp1r_6LN2_A316T/repli…16T_stream4_spikes.bin: transferringTransferred:   	   80.710 GiB / 147.831 GiB, 55%, 277.351 MiB/s, ETA 4m7s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1718 / 2992, 57%
+Elapsed time:       5m0.0s
+Transferring:
+ * glp1r_6X1A_WT/replica_…ream16_warp_matrix.bin:100% /114.750Mi, 8.827Mi/s, 0
+ * glp1r_6XOX_T149M/repli…49M_stream0_spikes.bin: 94% /403.513Mi, 42.876Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream0_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream3_spikes.bin: 89% /345.859Mi, 37.537Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream3_warp_matrix.bin:100% /114.750Mi, 12.749Mi/s, 
+ * glp1r_6X1A_WT/replica_…WT_stream17_spikes.bin: 69% /308.006Mi, 33.881Mi/s, 
+ * glp1r_6X1A_WT/replica_…ream17_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream10_spikes.bin: 59% /412.346Mi, 46.556Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream10_warp_matrix.bin:100% /114.750Mi, 22.950Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream6_spikes.bin: 34% /323.010Mi, 42.297Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream4_spikes.bin: 20% /344.227Mi, 39.434Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream4_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream11_spikes.bin:  7% /412.588Mi, 0/s, -
+ * glp1r_6LN2_A316T/repli…tream6_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6XOX_WT/replica_…WT_stream5_bocpd.jsonl:100% /3.846Ki, 0/s, -
+ * glp1r_6X1A_WT/replica_…ream18_signal_grid.bin: 20% /13.500Mi, 0/s, -Transferred:   	   84.711 GiB / 147.831 GiB, 57%, 274.767 MiB/s, ETA 3m55s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1795 / 2992, 60%
+Elapsed time:      5m15.0s
+Transferring:
+ * glp1r_6LN2_A316T/repli…16T_stream7_spikes.bin:100% /322.924Mi, 32.292Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream8_spikes.bin: 96% /323.013Mi, 36.950Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream8_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream9_spikes.bin: 87% /322.789Mi, 39.076Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream9_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream5_spikes.bin: 66% /343.699Mi, 44.381Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream5_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream6_spikes.bin: 47% /338.732Mi, 43.895Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream7_spikes.bin: 29% /338.821Mi, 40.359Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream7_warp_matrix.bin:100% /114.750Mi, 38.248Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream8_spikes.bin: 13% /338.608Mi, 46.062Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream8_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6XOX_WT/replica_…ream9_forces_final.bin:100% /73.289Ki, 0/s, -
+ * glp1r_6XOX_WT/replica_…stream9_kcc_v2full.bin:100% /21.299Ki, 0/s, -
+ * glp1r_6XOX_WT/replica_…m9_protocol_state.json:100% /5.610Ki, 0/s, -Transferred:   	   88.687 GiB / 147.530 GiB, 60%, 276.397 MiB/s, ETA 3m38s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1875 / 2992, 63%
+Elapsed time:      5m30.0s
+Transferring:
+ * glp1r_6X1A_WT/replica_…_WT_stream1_spikes.bin:100% /308.018Mi, 30.801Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream2_spikes.bin: 91% /314.844Mi, 33.992Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream2_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream12_spikes.bin: 74% /407.819Mi, 43.938Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream3_spikes.bin: 71% /314.935Mi, 34.437Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream3_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream4_spikes.bin: 58% /313.113Mi, 38.640Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream4_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream5_spikes.bin: 40% /312.922Mi, 45.592Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream5_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6X1A_WT/replica_…_WT_stream6_spikes.bin: 18% /308.559Mi, 47.655Mi/s, 
+ * glp1r_6X1A_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 114.743Mi/s,
+ * glp1r_6X1A_WT/replica_…tream7_signal_grid.bin: 89% /13.500Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…_WT_stream7_spikes.bin: transferring
+ * glp1r_6X1A_WT/replica_…tream7_warp_matrix.bin:  0% /114.750Mi, 0/s, -
+ * glp1r_6X1A_WT/replica_…tream8_adaptive_dt.bin:100% /512, 0/s, -Transferred:   	   92.801 GiB / 147.831 GiB, 63%, 273.835 MiB/s, ETA 3m25s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         1965 / 2992, 66%
+Elapsed time:      5m45.0s
+Transferring:
+ * glp1r_6XOX_T149M/repli…9M_stream13_spikes.bin: 94% /408.245Mi, 46.210Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream13_warp_matrix.bin:100% /114.750Mi, 12.749Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream14_spikes.bin: 80% /405.007Mi, 46.322Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream14_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream15_spikes.bin: 64% /405.143Mi, 48.353Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream15_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream16_spikes.bin: 40% /403.595Mi, 52.156Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream16_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream0_spikes.bin: 17% /381.416Mi, 46.122Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream0_warp_matrix.bin:100% /114.750Mi, 57.373Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream17_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6XOX_T149M/repli…ream10_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6XOX_T149M/repli…9M_stream10_spikes.bin:  6% /390.052Mi, 0/s, -
+ * glp1r_6XOX_T149M/repli…ream10_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6XOX_T149M/repli…M_stream11_bocpd.jsonl:100% /4.380Ki, 0/s, -
+ * glp1r_6XOX_T149M/repli…eam11_forces_final.bin:100% /73.324Ki, 0/s, -Transferred:   	   96.807 GiB / 147.831 GiB, 65%, 280.251 MiB/s, ETA 3m6s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2040 / 2992, 68%
+Elapsed time:       6m0.0s
+Transferring:
+ * glp1r_6XOX_T149M/repli…9M_stream17_spikes.bin:100% /403.546Mi, 33.628Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream12_spikes.bin: 86% /386.439Mi, 32.525Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream12_warp_matrix.bin:100% /114.750Mi, 11.475Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream18_spikes.bin: 74% /412.534Mi, 36.516Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream13_spikes.bin: 53% /386.428Mi, 32.737Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream13_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream0_spikes.bin: 47% /492.446Mi, 42.237Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream0_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream14_spikes.bin: 23% /382.588Mi, 34.703Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream14_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream10_spikes.bin: 14% /503.151Mi, 46.903Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream10_warp_matrix.bin:100% /114.750Mi, 114.745Mi/s,
+ * glp1r_5VEX_WT/replica_…T_stream11_bocpd.jsonl:100% /3.860Ki, 0/s, -
+ * glp1r_6XOX_T149M/repli…tream15_kcc_v2full.bin:100% /21.305Ki, 0/s, -
+ * glp1r_5VEX_WT/replica_…eam11_forces_final.bin:100% /81.797Ki, 0/s, -
+ * glp1r_6XOX_T149M/repli…15_protocol_state.json:100% /5.604Ki, 0/s, -Transferred:   	  100.936 GiB / 147.831 GiB, 68%, 280.186 MiB/s, ETA 2m51s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2100 / 2992, 70%
+Elapsed time:      6m15.0s
+Transferring:
+ * glp1r_6XOX_T149M/repli…9M_stream15_spikes.bin:100% /382.486Mi, 29.422Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream11_spikes.bin:100% /503.120Mi, 38.687Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream11_warp_matrix.bin:100% /114.750Mi, 9.562Mi/s, 0
+ * glp1r_6XOX_T149M/repli…9M_stream16_spikes.bin: 74% /381.345Mi, 30.510Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream12_spikes.bin: 71% /499.828Mi, 41.707Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream12_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream16_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream13_spikes.bin: 45% /500.478Mi, 39.562Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream18_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream13_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream17_spikes.bin: 16% /381.490Mi, 30.983Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream17_warp_matrix.bin:100% /114.750Mi, 57.371Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream19_spikes.bin: 18% /412.397Mi, 47.402Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream19_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6XOX_T149M/repli…M_stream18_bocpd.jsonl:100% /4.380Ki, 0/s, -
+ * glp1r_6XOX_T149M/repli…ic_centroids_final.bin:100% /6.727Ki, 0/s, -Transferred:   	  104.856 GiB / 147.522 GiB, 71%, 277.741 MiB/s, ETA 2m37s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2181 / 2992, 73%
+Elapsed time:      6m30.0s
+Transferring:
+ * glp1r_6XOX_T149M/repli…49M_stream1_spikes.bin:100% /403.553Mi, 33.616Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream1_warp_matrix.bin:100% /114.750Mi, 10.432Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream2_spikes.bin: 70% /412.786Mi, 34.196Mi/s, 
+ * glp1r_6XOX_T149M/repli…9M_stream19_spikes.bin: 71% /390.010Mi, 32.306Mi/s, 
+ * glp1r_6XOX_T149M/repli…ream19_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream2_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream3_spikes.bin: 52% /412.496Mi, 34.437Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream3_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream1_spikes.bin: 38% /381.424Mi, 31.351Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream4_spikes.bin: 32% /407.954Mi, 38.953Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream4_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream5_spikes.bin: 15% /408.192Mi, 43.372Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream5_warp_matrix.bin:100% /114.750Mi, 114.743Mi/s,
+ * glp1r_6XOX_WT/replica_…_WT_stream0_spikes.bin: transferring
+ * glp1r_6XOX_T149M/repli…tream6_adaptive_dt.bin:100% /576, 0/s, -
+ * glp1r_6XOX_WT/replica_…tream0_warp_matrix.bin:  0% /114.750Mi, 0/s, -Transferred:   	  108.904 GiB / 147.437 GiB, 74%, 271.247 MiB/s, ETA 2m25s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2263 / 2992, 76%
+Elapsed time:      6m45.0s
+Transferring:
+ * glp1r_6XOX_T149M/repli…49M_stream6_spikes.bin:100% /405.192Mi, 33.747Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream10_spikes.bin: 99% /323.205Mi, 29.480Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream10_warp_matrix.bin:100% /114.750Mi, 11.474Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream7_spikes.bin: 74% /405.161Mi, 37.145Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream7_warp_matrix.bin:100% /114.750Mi, 14.344Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream11_spikes.bin: 69% /323.248Mi, 33.744Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream11_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream8_spikes.bin: 49% /403.626Mi, 44.562Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream8_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream1_warp_matrix.bin:100% /114.750Mi, 57.373Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream2_spikes.bin: 11% /389.786Mi, 0/s, -
+ * glp1r_6XOX_T149M/repli…tream2_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6XOX_T149M/repli…ream3_forces_final.bin:100% /73.324Ki, 0/s, -
+ * glp1r_6XOX_T149M/repli…m3_protocol_state.json:100% /5.610Ki, 0/s, -
+ * glp1r_6XOX_T149M/repli…tream3_signal_grid.bin: 59% /13.500Mi, 0/s, -
+ * glp1r_6XOX_T149M/repli…49M_stream9_spikes.bin: transferringTransferred:   	  112.898 GiB / 147.350 GiB, 77%, 269.643 MiB/s, ETA 2m10s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2317 / 2992, 77%
+Elapsed time:       7m0.0s
+Transferring:
+ * glp1r_6XOX_T149M/repli…49M_stream9_spikes.bin:100% /403.559Mi, 28.826Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream3_spikes.bin:100% /389.931Mi, 27.852Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream14_spikes.bin: 96% /492.688Mi, 37.794Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream14_warp_matrix.bin:100% /114.750Mi, 8.827Mi/s, 0
+ * glp1r_6XOX_WT/replica_…WT_stream12_spikes.bin: 92% /321.663Mi, 24.446Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream12_warp_matrix.bin:100% /114.750Mi, 9.562Mi/s, 0
+ * glp1r_5VEX_WT/replica_…WT_stream15_spikes.bin: 67% /492.558Mi, 37.004Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream15_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream13_spikes.bin: 63% /321.689Mi, 29.379Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream13_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream4_spikes.bin: 40% /386.791Mi, 29.339Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream4_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream16_spikes.bin: 17% /492.450Mi, 52.562Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream16_warp_matrix.bin:100% /114.750Mi, 114.747Mi/s,
+ * glp1r_5VEX_WT/replica_…ream17_signal_grid.bin: 77% /13.500Mi, 0/s, -
+ * glp1r_5VEX_WT/replica_…WT_stream17_spikes.bin: transferringTransferred:   	  116.909 GiB / 147.831 GiB, 79%, 267.622 MiB/s, ETA 1m58s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2386 / 2992, 80%
+Elapsed time:      7m15.0s
+Transferring:
+ * glp1r_5VEX_WT/replica_…WT_stream17_spikes.bin:100% /492.318Mi, 34.944Mi/s, 
+ * glp1r_5VEX_WT/replica_…WT_stream18_spikes.bin: 90% /502.915Mi, 34.574Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream18_warp_matrix.bin:100% /114.750Mi, 8.826Mi/s, 0
+ * glp1r_5VEX_WT/replica_…WT_stream19_spikes.bin: 82% /503.233Mi, 34.630Mi/s, 
+ * glp1r_5VEX_WT/replica_…ream19_warp_matrix.bin:100% /114.750Mi, 9.562Mi/s, 0
+ * glp1r_5VEX_WT/replica_…_WT_stream1_spikes.bin: 69% /492.226Mi, 33.987Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream1_warp_matrix.bin:100% /114.750Mi, 11.474Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream2_spikes.bin: 51% /502.982Mi, 33.357Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream2_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream3_spikes.bin: 37% /503.321Mi, 35.700Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream3_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream14_spikes.bin: 28% /316.563Mi, 25.666Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream14_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream5_signal_grid.bin:100% /13.500Mi, 0/s, -
+ * glp1r_6XOX_T149M/repli…49M_stream5_spikes.bin:  0% /386.618Mi, 0/s, -
+ * glp1r_6XOX_T149M/repli…tream5_warp_matrix.bin:  0% /114.750Mi, 0/s, -Transferred:   	  120.998 GiB / 147.831 GiB, 82%, 274.838 MiB/s, ETA 1m39s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2452 / 2992, 82%
+Elapsed time:      7m30.0s
+Transferring:
+ * glp1r_5VEX_WT/replica_…_WT_stream4_spikes.bin: 92% /499.822Mi, 36.838Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream6_spikes.bin: 92% /382.405Mi, 28.614Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream4_warp_matrix.bin:100% /114.750Mi, 10.431Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream6_warp_matrix.bin:100% /114.750Mi, 10.432Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream15_spikes.bin: 77% /316.680Mi, 24.634Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream5_spikes.bin: 60% /500.450Mi, 37.090Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream5_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream7_spikes.bin: 48% /382.459Mi, 28.120Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream7_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream6_spikes.bin: 34% /492.790Mi, 38.656Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_T149M/repli…49M_stream8_spikes.bin: 18% /381.482Mi, 28.140Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream8_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream7_signal_grid.bin:100% /13.500Mi, 11.371Mi/s, 0
+ * glp1r_5VEX_WT/replica_…_WT_stream7_spikes.bin:  5% /492.851Mi, 0/s, -
+ * glp1r_5VEX_WT/replica_…tream7_warp_matrix.bin:  0% /114.750Mi, 0/s, -Transferred:   	  125.118 GiB / 147.831 GiB, 85%, 276.131 MiB/s, ETA 1m24s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2519 / 2992, 84%
+Elapsed time:      7m45.0s
+Transferring:
+ * glp1r_6XOX_T149M/repli…49M_stream9_spikes.bin: 87% /381.385Mi, 27.969Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream8_spikes.bin: 90% /492.346Mi, 38.883Mi/s, 
+ * glp1r_6XOX_T149M/repli…tream9_warp_matrix.bin:100% /114.750Mi, 9.562Mi/s, 0
+ * glp1r_5VEX_WT/replica_…tream8_warp_matrix.bin:100% /114.750Mi, 10.432Mi/s, 
+ * glp1r_5VEX_WT/replica_…_WT_stream9_spikes.bin: 69% /492.235Mi, 38.297Mi/s, 
+ * glp1r_5VEX_WT/replica_…tream9_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream15_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream16_spikes.bin: 58% /316.697Mi, 29.739Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream16_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream17_spikes.bin: 40% /316.569Mi, 32.062Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream17_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_WT/replica_…WT_stream18_spikes.bin: 20% /323.194Mi, 32.061Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream18_warp_matrix.bin:100% /114.750Mi, 57.373Mi/s, 
+ * glp1r_6XOX_WT/replica_…ream19_signal_grid.bin: 81% /13.500Mi, 0/s, -
+ * glp1r_6XOX_WT/replica_…WT_stream19_spikes.bin:  0% /322.937Mi, 0/s, -
+ * glp1r_6XOX_WT/replica_…ream19_warp_matrix.bin: 71% /114.750Mi, 0/s, -Transferred:   	  129.021 GiB / 147.522 GiB, 87%, 274.077 MiB/s, ETA 1m9s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2599 / 2992, 87%
+Elapsed time:       8m0.0s
+Transferring:
+ * glp1r_6XOX_WT/replica_…_WT_stream2_spikes.bin:100% /323.311Mi, 30.440Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream3_spikes.bin: 92% /323.224Mi, 30.986Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream3_warp_matrix.bin:100% /114.750Mi, 11.474Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream4_spikes.bin: 79% /321.580Mi, 31.299Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream4_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream5_spikes.bin: 70% /321.771Mi, 34.805Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream5_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream6_spikes.bin: 57% /316.566Mi, 35.525Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream6_warp_matrix.bin:100% /114.750Mi, 22.949Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream7_spikes.bin: 40% /316.647Mi, 36.499Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream7_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6XOX_WT/replica_…_WT_stream8_spikes.bin: 17% /316.635Mi, 35.185Mi/s, 
+ * glp1r_6XOX_WT/replica_…tream8_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6XOX_WT/replica_…m9_protocol_state.json:100% /5.602Ki, 0/s, -
+ * glp1r_6XOX_WT/replica_…tream9_signal_grid.bin: 43% /13.500Mi, 0/s, -
+ * glp1r_6XOX_WT/replica_…_WT_stream9_spikes.bin: transferringTransferred:   	  133.018 GiB / 147.522 GiB, 90%, 268.672 MiB/s, ETA 55s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2688 / 2992, 90%
+Elapsed time:      8m15.0s
+Transferring:
+ * glp1r_6XOX_A316T/repli…6T_stream10_spikes.bin:100% /323.511Mi, 29.410Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream11_spikes.bin: 97% /323.430Mi, 31.430Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream11_warp_matrix.bin:100% /114.750Mi, 11.475Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream12_spikes.bin: 83% /321.706Mi, 32.311Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream12_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream13_spikes.bin: 73% /321.429Mi, 32.980Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream13_warp_matrix.bin:100% /114.750Mi, 16.393Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream14_spikes.bin: 59% /316.961Mi, 34.974Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream14_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream15_spikes.bin: 40% /316.980Mi, 36.625Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream15_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6XOX_A316T/repli…6T_stream16_spikes.bin: 21% /316.759Mi, 39.747Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream16_warp_matrix.bin:100% /114.750Mi, 57.372Mi/s, 
+ * glp1r_6XOX_A316T/repli…ream17_signal_grid.bin: 61% /13.500Mi, 0/s, -
+ * glp1r_6XOX_A316T/repli…6T_stream17_spikes.bin: transferring
+ * glp1r_6XOX_A316T/repli…ream17_warp_matrix.bin:  0% /114.750Mi, 0/s, -Transferred:   	  137.153 GiB / 147.831 GiB, 93%, 276.099 MiB/s, ETA 39s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2772 / 2992, 93%
+Elapsed time:      8m30.0s
+Transferring:
+ * glp1r_6XOX_A316T/repli…16T_stream1_spikes.bin: 99% /316.710Mi, 30.152Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream2_spikes.bin: 89% /323.319Mi, 31.688Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream2_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream3_spikes.bin: 77% /323.468Mi, 34.316Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream3_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream4_spikes.bin: 63% /321.964Mi, 38.362Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream4_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream5_spikes.bin: 41% /321.499Mi, 38.509Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream5_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6XOX_A316T/repli…16T_stream6_spikes.bin: 22% /316.776Mi, 40.874Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream6_warp_matrix.bin:100% /114.750Mi, 57.371Mi/s, 
+ * glp1r_6XOX_A316T/repli…tream7_signal_grid.bin:100% /13.500Mi, 13.500Mi/s, 0
+ * glp1r_6XOX_A316T/repli…16T_stream7_spikes.bin:  6% /316.898Mi, 0/s, -
+ * glp1r_6XOX_A316T/repli…tream7_warp_matrix.bin:100% /114.750Mi, 0/s, -
+ * glp1r_6XOX_A316T/repli…ic_centroids_final.bin:100% /6.727Ki, 0/s, -
+ * glp1r_6XOX_A316T/repli…6T_stream8_bocpd.jsonl:100% /3.847Ki, 0/s, -Transferred:   	  141.166 GiB / 147.831 GiB, 95%, 274.584 MiB/s, ETA 24s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2864 / 2992, 96%
+Elapsed time:      8m45.0s
+Transferring:
+ * glp1r_6LN2_A316T/repli…16T_stream0_spikes.bin: 97% /322.946Mi, 30.469Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream10_spikes.bin: 87% /329.750Mi, 31.652Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream10_warp_matrix.bin:100% /114.750Mi, 12.750Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream11_spikes.bin: 78% /329.729Mi, 35.238Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream11_warp_matrix.bin:100% /114.750Mi, 14.343Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream12_spikes.bin: 62% /328.077Mi, 35.993Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream12_warp_matrix.bin:100% /114.750Mi, 19.125Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream13_spikes.bin: 46% /328.320Mi, 36.226Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream13_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream14_spikes.bin: 27% /322.922Mi, 36.342Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream14_warp_matrix.bin:100% /114.750Mi, 57.374Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream15_spikes.bin: 14% /322.842Mi, 37.560Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream15_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6LN2_A316T/repli…tream16_kcc_v2full.bin:100% /24.422Ki, 0/s, -
+ * glp1r_6LN2_A316T/repli…16_protocol_state.json:100% /5.622Ki, 0/s, -
+ * glp1r_6LN2_A316T/repli…ream16_signal_grid.bin: 69% /13.500Mi, 0/s, -Transferred:   	  145.187 GiB / 147.831 GiB, 98%, 273.935 MiB/s, ETA 9s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2943 / 2992, 98%
+Elapsed time:       9m0.0s
+Transferring:
+ * glp1r_6LN2_A316T/repli…6T_stream18_spikes.bin:100% /329.846Mi, 31.409Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream18_warp_matrix.bin:100% /114.750Mi, 10.432Mi/s, 
+ * glp1r_6LN2_A316T/repli…6T_stream19_spikes.bin: 90% /330.043Mi, 32.310Mi/s, 
+ * glp1r_6LN2_A316T/repli…ream19_warp_matrix.bin:100% /114.750Mi, 12.749Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream1_spikes.bin: 73% /322.847Mi, 32.340Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream1_warp_matrix.bin:100% /114.750Mi, 16.392Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream2_spikes.bin: 64% /329.730Mi, 37.674Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream2_warp_matrix.bin:100% /114.750Mi, 19.124Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream3_spikes.bin: 47% /329.874Mi, 36.640Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream3_warp_matrix.bin:100% /114.750Mi, 28.687Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream4_spikes.bin: 33% /328.181Mi, 36.645Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream4_warp_matrix.bin:100% /114.750Mi, 38.249Mi/s, 
+ * glp1r_6LN2_A316T/repli…16T_stream5_spikes.bin: 14% /328.520Mi, 40.684Mi/s, 
+ * glp1r_6LN2_A316T/repli…tream5_warp_matrix.bin:100% /114.750Mi, 114.748Mi/s,
+ * glp1r_6LN2_A316T/repli…ream6_forces_final.bin:100% /83.191Ki, 0/s, -
+ * glp1r_6LN2_A316T/repli…stream6_kcc_v2full.bin:100% /24.422Ki, 0/s, -Transferred:   	  147.831 GiB / 147.831 GiB, 100%, 211.292 MiB/s, ETA 0s
+Checks:                 0 / 0, -, Listed 3016
+Transferred:         2992 / 2992, 100%
+Elapsed time:      9m14.5s
+RCLONE_COPY_EXIT=0
