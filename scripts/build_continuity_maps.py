@@ -15,6 +15,29 @@ import polars as pl
 from prism_dstw.calibration.track_b_artifacts import sha256_file, write_json
 from prism_dstw.calibration.track_b_schemas import utc_now_iso
 
+HYDRATION_DSTW_COLUMNS = (
+    "topology_region",
+    "topology_region_source",
+    "captured_tile_ids",
+    "captured_tile_types",
+    "captured_graph_tile_hashes",
+    "captured_tile_topology_regions",
+    "captured_tile_match_basis",
+    "captured_tile_count",
+    "topology_delta_hashes",
+    "basin_delta_hashes",
+    "restricted_operator_hashes",
+    "c6_operator_hashes",
+    "spectral_reward_event_source",
+    "spectral_captured_replay_count",
+    "spectral_gpu_solve_count",
+    "spectral_cpu_solve_count",
+    "spectral_reward_cache_hit_rate",
+    "dstw_spectral_status",
+    "dstw_integration_status",
+    "dstw_context_evidence_paths",
+)
+
 
 def _chronology_voxel_maps(chronology: Path) -> tuple[dict[str, int], dict[tuple[str, int], int]]:
     residue_to_voxel: dict[str, int] = {}
@@ -96,24 +119,28 @@ def _build_nma(paths: list[Path], residue_voxels: dict[str, int]) -> pl.DataFram
 
 def _build_hydration(paths: list[Path]) -> pl.DataFrame:
     if not paths:
+        blocked_row: dict[str, Any] = {
+            "id": "hydration-blocked-missing",
+            "map_type": "HYDRATION",
+            "residue_id": None,
+            "voxel_idx": None,
+            "hydration_tunnel_id": "BLOCKED_WITH_HARD_EVIDENCE",
+            "sigma_hyd": 0.0,
+            "solvent_wire_importance": 0.0,
+            "occlusion_risk": 0.0,
+            "provenance_class": "L0_MISSING",
+            "source_artifacts": json.dumps([]),
+            "evidence_paths": json.dumps(["No hydration parquet found by supplied glob"]),
+            "blocked_with_hard_evidence": True,
+            "created_at": utc_now_iso(),
+            "schema_version": "track_b.hydration_continuity_map.v1",
+        }
+        blocked_row.update({column: None for column in HYDRATION_DSTW_COLUMNS})
+        blocked_row["captured_tile_count"] = 0
+        blocked_row["dstw_integration_status"] = "DSTW_UNMAPPED"
         return pl.DataFrame(
             [
-                {
-                    "id": "hydration-blocked-missing",
-                    "map_type": "HYDRATION",
-                    "residue_id": None,
-                    "voxel_idx": None,
-                    "hydration_tunnel_id": "BLOCKED_WITH_HARD_EVIDENCE",
-                    "sigma_hyd": 0.0,
-                    "solvent_wire_importance": 0.0,
-                    "occlusion_risk": 0.0,
-                    "provenance_class": "L0_MISSING",
-                    "source_artifacts": json.dumps([]),
-                    "evidence_paths": json.dumps(["No hydration parquet found by supplied glob"]),
-                    "blocked_with_hard_evidence": True,
-                    "created_at": utc_now_iso(),
-                    "schema_version": "track_b.hydration_continuity_map.v1",
-                }
+                blocked_row
             ]
         )
     rows: list[dict[str, Any]] = []
@@ -121,24 +148,26 @@ def _build_hydration(paths: list[Path]) -> pl.DataFrame:
         frame = pl.scan_parquet(str(path)).limit(5000).collect()
         for idx, row in enumerate(frame.to_dicts()):
             sigma = float(row.get("sigma_hyd") or row.get("sigma_hydration_sq") or 0.0)
-            rows.append(
-                {
-                    "id": f"hydration-{path.stem}-{idx}",
-                    "map_type": "HYDRATION",
-                    "residue_id": str(row.get("residue_id") or row.get("residue_idx") or ""),
-                    "voxel_idx": row.get("voxel_idx"),
-                    "hydration_tunnel_id": str(row.get("hydration_tunnel_id") or path.stem),
-                    "sigma_hyd": sigma,
-                    "solvent_wire_importance": abs(sigma),
-                    "occlusion_risk": max(0.0, sigma),
-                    "provenance_class": "L3_DERIVED",
-                    "source_artifacts": json.dumps([str(path)]),
-                    "evidence_paths": json.dumps([str(path)]),
-                    "blocked_with_hard_evidence": False,
-                    "created_at": utc_now_iso(),
-                    "schema_version": "track_b.hydration_continuity_map.v1",
-                }
-            )
+            wire = float(row.get("solvent_wire_importance") if row.get("solvent_wire_importance") is not None else abs(sigma))
+            risk = float(row.get("occlusion_risk") if row.get("occlusion_risk") is not None else max(0.0, sigma))
+            record = {
+                "id": f"hydration-{path.stem}-{idx}",
+                "map_type": "HYDRATION",
+                "residue_id": str(row.get("residue_id") or row.get("residue_idx") or ""),
+                "voxel_idx": row.get("voxel_idx"),
+                "hydration_tunnel_id": str(row.get("hydration_tunnel_id") or path.stem),
+                "sigma_hyd": sigma,
+                "solvent_wire_importance": wire,
+                "occlusion_risk": risk,
+                "provenance_class": "L3_DERIVED",
+                "source_artifacts": json.dumps([str(path)]),
+                "evidence_paths": json.dumps([str(path)]),
+                "blocked_with_hard_evidence": False,
+                "created_at": utc_now_iso(),
+                "schema_version": "track_b.hydration_continuity_map.v1",
+            }
+            record.update({column: row.get(column) for column in HYDRATION_DSTW_COLUMNS})
+            rows.append(record)
     return pl.DataFrame(rows)
 
 
