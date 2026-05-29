@@ -114,10 +114,10 @@ def _build_nma(paths: list[Path], residue_voxels: dict[str, int]) -> pl.DataFram
                 "schema_version": "track_b.nma_continuity_map.v1",
             }
         )
-    return pl.DataFrame(rows)
+    return pl.DataFrame(rows, infer_schema_length=None)
 
 
-def _build_hydration(paths: list[Path]) -> pl.DataFrame:
+def _build_hydration(paths: list[Path], row_limit: int | None = None) -> pl.DataFrame:
     if not paths:
         blocked_row: dict[str, Any] = {
             "id": "hydration-blocked-missing",
@@ -145,7 +145,10 @@ def _build_hydration(paths: list[Path]) -> pl.DataFrame:
         )
     rows: list[dict[str, Any]] = []
     for path in paths:
-        frame = pl.scan_parquet(str(path)).limit(5000).collect()
+        scan = pl.scan_parquet(str(path))
+        if row_limit is not None:
+            scan = scan.limit(row_limit)
+        frame = scan.collect()
         for idx, row in enumerate(frame.to_dicts()):
             sigma = float(row.get("sigma_hyd") or row.get("sigma_hydration_sq") or 0.0)
             wire = float(row.get("solvent_wire_importance") if row.get("solvent_wire_importance") is not None else abs(sigma))
@@ -168,7 +171,7 @@ def _build_hydration(paths: list[Path]) -> pl.DataFrame:
             }
             record.update({column: row.get(column) for column in HYDRATION_DSTW_COLUMNS})
             rows.append(record)
-    return pl.DataFrame(rows)
+    return pl.DataFrame(rows, infer_schema_length=None)
 
 
 def _build_thermodynamic(
@@ -260,6 +263,12 @@ def main() -> None:
     parser.add_argument("--chronology", type=Path, required=True)
     parser.add_argument("--signal-grid", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--hydration-row-limit",
+        type=int,
+        default=None,
+        help="Optional smoke/debug row limit. By default all hydration rows are consumed.",
+    )
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -268,7 +277,7 @@ def main() -> None:
 
     residue_voxels, condition_residue_voxels = _chronology_voxel_maps(args.chronology)
     nma = _build_nma(nma_paths, residue_voxels)
-    hydration = _build_hydration(hydration_paths)
+    hydration = _build_hydration(hydration_paths, row_limit=args.hydration_row_limit)
     thermo = _build_thermodynamic(args.hysteresis, args.chronology, residue_voxels, condition_residue_voxels)
 
     nma_path = args.output_dir / "nma_continuity_map.parquet"

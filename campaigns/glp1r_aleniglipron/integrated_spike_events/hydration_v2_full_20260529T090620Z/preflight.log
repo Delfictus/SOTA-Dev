@@ -1,0 +1,9 @@
+RUN_ID=hydration_v2_full_20260529T090620Z
+OUT=campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z
+START_UTC=2026-05-29T09:06:20Z
+POLARS_MAX_THREADS=24
+DISK_BEFORE=
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  3.6T  2.2T  1.3T  64% /
+/dev/nvme1n1p1  1.8T  889G  851G  52% /mnt/storage
+INPUT_BYTES=111208044158

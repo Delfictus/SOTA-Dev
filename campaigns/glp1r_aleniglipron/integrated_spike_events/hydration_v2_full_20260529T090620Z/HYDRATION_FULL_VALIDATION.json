@@ -1,0 +1,170 @@
+{
+  "status": "PASS",
+  "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/hydration_statistics.parquet",
+  "size_bytes": 36043972,
+  "sha256": "6dd51bc7e645f7a946b49ba6ab2f55a16320f203f6ba546c77f187c9c1c076a6",
+  "rows": 963605,
+  "row_groups": 15,
+  "columns": [
+    "condition_id",
+    "residue_id",
+    "voxel_idx",
+    "hydration_tunnel_id",
+    "sigma_hyd",
+    "solvent_wire_importance",
+    "occlusion_risk",
+    "topology_region",
+    "topology_region_source",
+    "captured_tile_ids",
+    "captured_tile_types",
+    "captured_graph_tile_hashes",
+    "captured_tile_topology_regions",
+    "captured_tile_match_basis",
+    "captured_tile_count",
+    "topology_delta_hashes",
+    "basin_delta_hashes",
+    "restricted_operator_hashes",
+    "c6_operator_hashes",
+    "spectral_reward_event_source",
+    "spectral_captured_replay_count",
+    "spectral_gpu_solve_count",
+    "spectral_cpu_solve_count",
+    "spectral_reward_cache_hit_rate",
+    "dstw_spectral_status",
+    "dstw_integration_status",
+    "dstw_context_evidence_paths"
+  ],
+  "condition_count": 8,
+  "by_condition": [
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "rows": 169281,
+      "mean_sigma_hyd": 0.005321713728885243,
+      "mean_solvent_wire_importance": 0.03455054068003365,
+      "mean_occlusion_risk": 0.012863769218427966,
+      "captured_tile_count_sum": 2000,
+      "dstw_status_unique": 3
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "rows": 118889,
+      "mean_sigma_hyd": 0.005307909451196136,
+      "mean_solvent_wire_importance": 0.03245503659540713,
+      "mean_occlusion_risk": 0.012846311130648677,
+      "captured_tile_count_sum": 1112,
+      "dstw_status_unique": 3
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "rows": 116000,
+      "mean_sigma_hyd": 0.005317037250728581,
+      "mean_solvent_wire_importance": 0.031656446271066535,
+      "mean_occlusion_risk": 0.013795554886435399,
+      "captured_tile_count_sum": 840,
+      "dstw_status_unique": 3
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "rows": 118270,
+      "mean_sigma_hyd": 0.005309748830863387,
+      "mean_solvent_wire_importance": 0.03310702022599857,
+      "mean_occlusion_risk": 0.012839048459998675,
+      "captured_tile_count_sum": 976,
+      "dstw_status_unique": 3
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "rows": 99559,
+      "mean_sigma_hyd": 0.005321793717180064,
+      "mean_solvent_wire_importance": 0.027411731268853278,
+      "mean_occlusion_risk": 0.013810743225127452,
+      "captured_tile_count_sum": 188,
+      "dstw_status_unique": 3
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "rows": 108986,
+      "mean_sigma_hyd": 0.005304229093781585,
+      "mean_solvent_wire_importance": 0.030644930477432015,
+      "mean_occlusion_risk": 0.01378381080926076,
+      "captured_tile_count_sum": 3928,
+      "dstw_status_unique": 3
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "rows": 116071,
+      "mean_sigma_hyd": 0.005301563240161736,
+      "mean_solvent_wire_importance": 0.029977930983937685,
+      "mean_occlusion_risk": 0.013791176879783857,
+      "captured_tile_count_sum": 4360,
+      "dstw_status_unique": 3
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "rows": 116549,
+      "mean_sigma_hyd": 0.005301633276614496,
+      "mean_solvent_wire_importance": 0.031300584148876515,
+      "mean_occlusion_risk": 0.012859372468788889,
+      "captured_tile_count_sum": 4436,
+      "dstw_status_unique": 3
+    }
+  ],
+  "dstw_status_counts": [
+    {
+      "dstw_integration_status": "DSTW_CAPTURED_GRAPH_SPECTRAL_LINKED",
+      "rows": 4460
+    },
+    {
+      "dstw_integration_status": "DSTW_TOPOLOGY_REGION_LINKED",
+      "rows": 61174
+    },
+    {
+      "dstw_integration_status": "DSTW_UNMAPPED",
+      "rows": 897971
+    }
+  ],
+  "topology_region_counts": [
+    {
+      "topology_region": null,
+      "rows": 897971
+    },
+    {
+      "topology_region": "TM3_TM5_CORE",
+      "rows": 22313
+    },
+    {
+      "topology_region": "ECD_TM1_GATEWAY",
+      "rows": 15813
+    },
+    {
+      "topology_region": "HYDRATION_CORRIDOR",
+      "rows": 11648
+    },
+    {
+      "topology_region": "BISTATE_RETAINED_RESIDUES",
+      "rows": 8037
+    },
+    {
+      "topology_region": "INTRACELLULAR_LOCK_BASIN",
+      "rows": 6288
+    },
+    {
+      "topology_region": "ECD_TM1_GATEWAY|INTRACELLULAR_LOCK_BASIN|TE_HUBS",
+      "rows": 1431
+    },
+    {
+      "topology_region": "ECD_TM1_GATEWAY|TE_HUBS",
+      "rows": 104
+    }
+  ],
+  "captured_tile_rows": 4460,
+  "topology_region_null_rows": 897971,
+  "hydration_claim": "FULL_104GB_EXTRACTION_RUN_AND_VALIDATED_FOR_8_DISCOVERED_CONDITIONS",
+  "input_parquet": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/spike_events_snr_masked.parquet",
+  "context_files": [
+    "campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/captured_tile_registry.json",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_training_metrics.parquet",
+    "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_run_manifest.json"
+  ]
+}

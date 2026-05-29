@@ -1,0 +1,7 @@
+PYTHONPATH=src python3 scripts/build_continuity_maps.py \
+  --nma-glob 'campaigns/glp1r_aleniglipron/topologies/glp1r_*_nma_modes.json' \
+  --hydration-glob 'campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/hydration_statistics.parquet' \
+  --hysteresis campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet \
+  --chronology campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/transition_chronology_tensor.parquet \
+  --signal-grid campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet \
+  --output-dir 'campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full'

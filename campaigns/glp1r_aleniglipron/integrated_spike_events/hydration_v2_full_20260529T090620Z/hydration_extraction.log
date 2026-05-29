@@ -1,0 +1,43 @@
+{"event": "hydration_extractor_start", "event_parquet": "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/spike_events_snr_masked.parquet", "out_dir": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z", "timestamp": "2026-05-29T09:06:22.803613Z"}
+{"captured_tile_keys": 3, "enabled": true, "event": "dstw_context_loaded", "evidence_paths": ["campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json", "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/captured_tile_registry.json", "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_training_metrics.parquet", "campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_run_manifest.json"], "spectral_fields": ["dstw_spectral_status", "spectral_captured_replay_count", "spectral_cpu_solve_count", "spectral_gpu_solve_count", "spectral_reward_cache_hit_rate", "spectral_reward_event_source"], "timestamp": "2026-05-29T09:06:22.803650Z", "topology_region_rows": 37}
+{"condition_count": 8, "condition_ids": ["glp1r_5VEX_WT", "glp1r_6LN2_A316T", "glp1r_6LN2_T149M", "glp1r_6LN2_WT", "glp1r_6X1A_WT", "glp1r_6XOX_A316T", "glp1r_6XOX_T149M", "glp1r_6XOX_WT"], "event": "conditions_discovered", "timestamp": "2026-05-29T09:06:36.478383Z"}
+{"condition_id": "glp1r_5VEX_WT", "condition_index": 1, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:06:36.479097Z"}
+{"condition_id": "glp1r_5VEX_WT", "condition_index": 1, "elapsed_seconds": 18.428, "event": "condition_chunk_written", "input_event_rows": 888728654, "output_group_rows": 169281, "timestamp": "2026-05-29T09:06:54.906915Z"}
+{"condition_id": "glp1r_6LN2_A316T", "condition_index": 2, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:06:54.906967Z"}
+{"condition_id": "glp1r_6LN2_A316T", "condition_index": 2, "elapsed_seconds": 13.463, "event": "condition_chunk_written", "input_event_rows": 660825474, "output_group_rows": 118889, "timestamp": "2026-05-29T09:07:08.370010Z"}
+{"condition_id": "glp1r_6LN2_T149M", "condition_index": 3, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:07:08.370069Z"}
+{"condition_id": "glp1r_6LN2_T149M", "condition_index": 3, "elapsed_seconds": 14.16, "event": "condition_chunk_written", "input_event_rows": 662396850, "output_group_rows": 116000, "timestamp": "2026-05-29T09:07:22.530453Z"}
+{"condition_id": "glp1r_6LN2_WT", "condition_index": 4, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:07:22.530510Z"}
+{"condition_id": "glp1r_6LN2_WT", "condition_index": 4, "elapsed_seconds": 13.35, "event": "condition_chunk_written", "input_event_rows": 648271587, "output_group_rows": 118270, "timestamp": "2026-05-29T09:07:35.880066Z"}
+{"condition_id": "glp1r_6X1A_WT", "condition_index": 5, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:07:35.880118Z"}
+{"condition_id": "glp1r_6X1A_WT", "condition_index": 5, "elapsed_seconds": 13.361, "event": "condition_chunk_written", "input_event_rows": 649613743, "output_group_rows": 99559, "timestamp": "2026-05-29T09:07:49.241385Z"}
+{"condition_id": "glp1r_6XOX_A316T", "condition_index": 6, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:07:49.241438Z"}
+{"condition_id": "glp1r_6XOX_A316T", "condition_index": 6, "elapsed_seconds": 13.518, "event": "condition_chunk_written", "input_event_rows": 660386628, "output_group_rows": 108986, "timestamp": "2026-05-29T09:08:02.759505Z"}
+{"condition_id": "glp1r_6XOX_T149M", "condition_index": 7, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:08:02.759562Z"}
+{"condition_id": "glp1r_6XOX_T149M", "condition_index": 7, "elapsed_seconds": 15.348, "event": "condition_chunk_written", "input_event_rows": 715911455, "output_group_rows": 116071, "timestamp": "2026-05-29T09:08:18.107385Z"}
+{"condition_id": "glp1r_6XOX_WT", "condition_index": 8, "event": "condition_chunk_start", "timestamp": "2026-05-29T09:08:18.107436Z"}
+{"condition_id": "glp1r_6XOX_WT", "condition_index": 8, "elapsed_seconds": 14.512, "event": "condition_chunk_written", "input_event_rows": 688580415, "output_group_rows": 116549, "timestamp": "2026-05-29T09:08:32.619859Z"}
+{"condition_count": 8, "elapsed_seconds": 131.55, "event": "hydration_extractor_complete", "input_event_rows": 5574714806, "output_group_rows": 963605, "output_path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/hydration_statistics.parquet", "timestamp": "2026-05-29T09:08:32.620892Z"}
+	Command being timed: "python3 scripts/prism_v2_hydration_extractor.py --event-parquet campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/spike_events_snr_masked.parquet --out-dir campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z --topology-region-registry campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json --captured-tile-registry campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/captured_tile_registry.json --spectral-metrics campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_training_metrics.parquet --subtb-run-manifest campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_run_manifest.json"
+	User time (seconds): 2310.80
+	System time (seconds): 216.64
+	Percent of CPU this job got: 1888%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:13.84
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 85726088
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 329835
+	Minor (reclaiming a frame) page faults: 39831141
+	Voluntary context switches: 762177
+	Involuntary context switches: 216873
+	Swaps: 0
+	File system inputs: 185458224
+	File system outputs: 70424
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

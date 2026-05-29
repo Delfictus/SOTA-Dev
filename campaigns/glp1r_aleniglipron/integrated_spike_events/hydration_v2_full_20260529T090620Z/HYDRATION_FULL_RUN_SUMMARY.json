@@ -1,0 +1,251 @@
+{
+  "status": "PASS",
+  "run_root": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z",
+  "files": [
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/hydration_statistics.parquet",
+      "exists": true,
+      "size_bytes": 36043972,
+      "sha256": "6dd51bc7e645f7a946b49ba6ab2f55a16320f203f6ba546c77f187c9c1c076a6",
+      "rows": 963605,
+      "row_groups": 15,
+      "columns": [
+        "condition_id",
+        "residue_id",
+        "voxel_idx",
+        "hydration_tunnel_id",
+        "sigma_hyd",
+        "solvent_wire_importance",
+        "occlusion_risk",
+        "topology_region",
+        "topology_region_source",
+        "captured_tile_ids",
+        "captured_tile_types",
+        "captured_graph_tile_hashes",
+        "captured_tile_topology_regions",
+        "captured_tile_match_basis",
+        "captured_tile_count",
+        "topology_delta_hashes",
+        "basin_delta_hashes",
+        "restricted_operator_hashes",
+        "c6_operator_hashes",
+        "spectral_reward_event_source",
+        "spectral_captured_replay_count",
+        "spectral_gpu_solve_count",
+        "spectral_cpu_solve_count",
+        "spectral_reward_cache_hit_rate",
+        "dstw_spectral_status",
+        "dstw_integration_status",
+        "dstw_context_evidence_paths"
+      ]
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full/hydration_continuity_map.parquet",
+      "exists": true,
+      "size_bytes": 30953210,
+      "sha256": "ccf96fc5a5c6a289494e035358c6902948e3090eb0d5a099c133b76827584618",
+      "rows": 963605,
+      "row_groups": 3,
+      "columns": [
+        "id",
+        "map_type",
+        "residue_id",
+        "voxel_idx",
+        "hydration_tunnel_id",
+        "sigma_hyd",
+        "solvent_wire_importance",
+        "occlusion_risk",
+        "provenance_class",
+        "source_artifacts",
+        "evidence_paths",
+        "blocked_with_hard_evidence",
+        "created_at",
+        "schema_version",
+        "topology_region",
+        "topology_region_source",
+        "captured_tile_ids",
+        "captured_tile_types",
+        "captured_graph_tile_hashes",
+        "captured_tile_topology_regions",
+        "captured_tile_match_basis",
+        "captured_tile_count",
+        "topology_delta_hashes",
+        "basin_delta_hashes",
+        "restricted_operator_hashes",
+        "c6_operator_hashes",
+        "spectral_reward_event_source",
+        "spectral_captured_replay_count",
+        "spectral_gpu_solve_count",
+        "spectral_cpu_solve_count",
+        "spectral_reward_cache_hit_rate",
+        "dstw_spectral_status",
+        "dstw_integration_status",
+        "dstw_context_evidence_paths"
+      ]
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full/nma_continuity_map.parquet",
+      "exists": true,
+      "size_bytes": 44190,
+      "sha256": "06be09b2bb5bac545fab90f48b913aec8ddf0bcb5ffbb5ec76fd5fa24a9180ca",
+      "rows": 3263,
+      "row_groups": 1,
+      "columns": [
+        "id",
+        "map_type",
+        "residue_id",
+        "voxel_idx",
+        "hinge_residue_flag",
+        "mode_displacement_norm",
+        "hinge_disruption_risk",
+        "provenance_class",
+        "source_artifacts",
+        "evidence_paths",
+        "blocked_with_hard_evidence",
+        "created_at",
+        "schema_version"
+      ]
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full/thermodynamic_continuity_map.parquet",
+      "exists": true,
+      "size_bytes": 421737,
+      "sha256": "ef5dcd388a6410b3a736694eb7036749de631d00bbb280b322d7a668a55627ba",
+      "rows": 11852,
+      "row_groups": 1,
+      "columns": [
+        "id",
+        "map_type",
+        "residue_id",
+        "voxel_idx",
+        "reversibility",
+        "hysteresis_score",
+        "transition_event_density",
+        "trap_risk",
+        "recovery_likelihood",
+        "provenance_class",
+        "source_artifacts",
+        "evidence_paths",
+        "blocked_with_hard_evidence",
+        "created_at",
+        "schema_version"
+      ]
+    },
+    {
+      "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full/continuity_map_manifest.json",
+      "exists": true,
+      "size_bytes": 2621,
+      "sha256": "2362b7ba985f08b600380c776a62e3a2a2cf4d5219ba16305e8c1bd7abeb65d0"
+    }
+  ],
+  "hydration_status_counts": [
+    {
+      "dstw_integration_status": "DSTW_CAPTURED_GRAPH_SPECTRAL_LINKED",
+      "rows": 4460
+    },
+    {
+      "dstw_integration_status": "DSTW_TOPOLOGY_REGION_LINKED",
+      "rows": 61174
+    },
+    {
+      "dstw_integration_status": "DSTW_UNMAPPED",
+      "rows": 897971
+    }
+  ],
+  "hydration_continuity_status_counts": [
+    {
+      "dstw_integration_status": "DSTW_CAPTURED_GRAPH_SPECTRAL_LINKED",
+      "rows": 4460
+    },
+    {
+      "dstw_integration_status": "DSTW_TOPOLOGY_REGION_LINKED",
+      "rows": 61174
+    },
+    {
+      "dstw_integration_status": "DSTW_UNMAPPED",
+      "rows": 897971
+    }
+  ],
+  "hydration_rows_match_continuity": true,
+  "blocked_hydration_rows": 0,
+  "captured_tile_rows": 4460,
+  "condition_rows": [
+    {
+      "condition_id": "glp1r_5VEX_WT",
+      "rows": 169281
+    },
+    {
+      "condition_id": "glp1r_6LN2_A316T",
+      "rows": 118889
+    },
+    {
+      "condition_id": "glp1r_6LN2_T149M",
+      "rows": 116000
+    },
+    {
+      "condition_id": "glp1r_6LN2_WT",
+      "rows": 118270
+    },
+    {
+      "condition_id": "glp1r_6X1A_WT",
+      "rows": 99559
+    },
+    {
+      "condition_id": "glp1r_6XOX_A316T",
+      "rows": 108986
+    },
+    {
+      "condition_id": "glp1r_6XOX_T149M",
+      "rows": 116071
+    },
+    {
+      "condition_id": "glp1r_6XOX_WT",
+      "rows": 116549
+    }
+  ],
+  "manifest": {
+    "created_at": "2026-05-29T09:14:17.877764+00:00",
+    "evidence_paths": [
+      "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+      "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/transition_chronology_tensor.parquet",
+      "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet"
+    ],
+    "id": "track_b_continuity_map_manifest",
+    "maps": {
+      "hydration": {
+        "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full/hydration_continuity_map.parquet",
+        "provenance": "L3_DERIVED",
+        "rows": 963605,
+        "sha256": "ccf96fc5a5c6a289494e035358c6902948e3090eb0d5a099c133b76827584618"
+      },
+      "nma": {
+        "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full/nma_continuity_map.parquet",
+        "provenance": "L3_DERIVED",
+        "rows": 3263,
+        "sha256": "06be09b2bb5bac545fab90f48b913aec8ddf0bcb5ffbb5ec76fd5fa24a9180ca"
+      },
+      "thermodynamic": {
+        "path": "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full/thermodynamic_continuity_map.parquet",
+        "provenance": "L3_DERIVED",
+        "rows": 11852,
+        "sha256": "ef5dcd388a6410b3a736694eb7036749de631d00bbb280b322d7a668a55627ba"
+      }
+    },
+    "provenance_class": "L3_DERIVED",
+    "schema_version": "track_b.continuity_map_manifest.v1",
+    "source_artifacts": [
+      "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet",
+      "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/transition_chronology_tensor.parquet",
+      "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_5VEX_WT_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_6LN2_A316T_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_6LN2_T149M_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_6LN2_WT_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_6X1A_WT_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_A316T_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_T149M_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT_nma_modes.json",
+      "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/hydration_statistics.parquet"
+    ]
+  }
+}

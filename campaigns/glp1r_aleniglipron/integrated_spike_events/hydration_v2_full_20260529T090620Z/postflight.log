@@ -1,0 +1,7 @@
+END_UTC=2026-05-29T09:08:34Z
+EXIT_STATUS=0
+DISK_AFTER=
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  3.6T  2.2T  1.3T  64% /
+/dev/nvme1n1p1  1.8T  889G  851G  52% /mnt/storage
+OUTPUT_BYTES=36043972

@@ -1,0 +1,48 @@
+Traceback (most recent call last):
+  File "/home/diddy/Desktop/Prism4D-bio/scripts/build_continuity_maps.py", line 317, in <module>
+    main()
+  File "/home/diddy/Desktop/Prism4D-bio/scripts/build_continuity_maps.py", line 280, in main
+    hydration = _build_hydration(hydration_paths, row_limit=args.hydration_row_limit)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/diddy/Desktop/Prism4D-bio/scripts/build_continuity_maps.py", line 174, in _build_hydration
+    return pl.DataFrame(rows)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/diddy/.local/lib/python3.12/site-packages/polars/dataframe/frame.py", line 385, in __init__
+    self._df = sequence_to_pydf(
+               ^^^^^^^^^^^^^^^^^
+  File "/home/diddy/.local/lib/python3.12/site-packages/polars/_utils/construction/dataframe.py", line 461, in sequence_to_pydf
+    return _sequence_to_pydf_dispatcher(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/functools.py", line 909, in wrapper
+    return dispatch(args[0].__class__)(*args, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/diddy/.local/lib/python3.12/site-packages/polars/_utils/construction/dataframe.py", line 717, in _sequence_of_dict_to_pydf
+    pydf = PyDataFrame.from_dicts(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+polars.exceptions.ComputeError: could not append value: "tile_0008_246e4f338f,tile_0009_e9fabd2e1f,tile_0010_b3513fae86,tile_0011_f5387e89df" of type: str to the builder; make sure that all rows have the same schema or consider increasing `infer_schema_length`
+
+it might also be that a value overflows the data-type's capacity
+Command exited with non-zero status 1
+	Command being timed: "python3 scripts/build_continuity_maps.py --nma-glob campaigns/glp1r_aleniglipron/topologies/glp1r_*_nma_modes.json --hydration-glob campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/hydration_statistics.parquet --hysteresis campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/hysteresis_tensor.parquet --chronology campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/transition_chronology_tensor.parquet --signal-grid campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/signal_grid_variance_channel.parquet --output-dir campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z/continuity_maps_full"
+	User time (seconds): 6.73
+	System time (seconds): 1.77
+	Percent of CPU this job got: 105%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:08.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 6546960
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 15
+	Minor (reclaiming a frame) page faults: 1656369
+	Voluntary context switches: 1052
+	Involuntary context switches: 82
+	Swaps: 0
+	File system inputs: 8064
+	File system outputs: 0
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

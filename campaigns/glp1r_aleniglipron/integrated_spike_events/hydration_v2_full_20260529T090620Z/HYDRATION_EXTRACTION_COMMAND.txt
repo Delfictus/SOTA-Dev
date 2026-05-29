@@ -1,0 +1,7 @@
+PYTHONPATH=src POLARS_MAX_THREADS=24 python3 scripts/prism_v2_hydration_extractor.py \
+  --event-parquet campaigns/glp1r_aleniglipron/integrated_spike_events/n80_full_scale/spike_events_snr_masked.parquet \
+  --out-dir campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z \
+  --topology-region-registry campaigns/glp1r_aleniglipron/track_b_chronological/topology_region_registry.json \
+  --captured-tile-registry campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/captured_graph_tiles/captured_tile_registry.json \
+  --spectral-metrics campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_training_metrics.parquet \
+  --subtb-run-manifest campaigns/glp1r_aleniglipron/track_b_chronological/subtb_spectral/subtb_run_manifest.json
