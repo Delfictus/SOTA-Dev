@@ -16,6 +16,7 @@ CRITICAL_RELATIVE_PATHS = [
     "campaigns/glp1r_aleniglipron/track_a_generative",
     "campaigns/glp1r_aleniglipron/topologies",
     "campaigns/glp1r_aleniglipron/topology",
+    "campaigns/glp1r_aleniglipron/phase_2c_snapshots",
     "campaigns/glp1r_aleniglipron/dstw_phase_b",
     "campaigns/glp1r_aleniglipron/integrated_spike_events/n80_phase_manifold_smoke_fixture",
     "campaigns/glp1r_aleniglipron/integrated_spike_events/hydration_v2_full_20260529T090620Z",
@@ -48,6 +49,9 @@ class PathAudit:
     sealed_symlink_target_bytes: int
     status: str
     note: str
+    data_pack_id: str | None
+    data_pack_archive_path: str | None
+    data_pack_archive_size_bytes: int | None
 
 
 def now_utc() -> str:
@@ -78,9 +82,22 @@ def tree_stats(path: Path) -> tuple[int, int, int]:
     return total, symlink_targets, symlink_target_bytes
 
 
-def summarize_path(repo_root: Path, seal_root: Path, rel_path: str) -> PathAudit:
+def load_pack_receipts(path: Path | None) -> dict[str, dict]:
+    if path is None or not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        row["relative_path"]: row
+        for row in payload.get("packs", [])
+        if row.get("status") == "PASS"
+    }
+
+
+def summarize_path(repo_root: Path, seal_root: Path, rel_path: str, pack_receipts: dict[str, dict]) -> PathAudit:
     source = repo_root / rel_path
     sealed = seal_root / "build_context" / "rootfs" / "home" / "diddy" / "Desktop" / "Prism4D-bio" / rel_path
+    pack = pack_receipts.get(rel_path)
+    phase2c_pack = pack_receipts.get("campaigns/glp1r_aleniglipron/phase_2c_snapshots")
     source_exists = source.exists()
     sealed_exists = sealed.exists()
     source_size, source_symlink_count, source_symlink_bytes = tree_stats(source) if source_exists else (None, 0, 0)
@@ -88,14 +105,24 @@ def summarize_path(repo_root: Path, seal_root: Path, rel_path: str) -> PathAudit
 
     if source_exists and sealed_exists:
         if source_symlink_count:
-            status = "SOURCE_HAS_EXTERNAL_SYMLINK_DEPENDENCIES"
-            note = "source path includes symlinked targets outside the materialized directory footprint"
+            if rel_path.endswith("dstw_phase_b") and phase2c_pack:
+                status = "SEALED_MATCH_WITH_EXTERNAL_PACK"
+                note = "dstw_phase_b symlink targets are sealed separately via phase2c_snapshots_full data pack"
+            else:
+                status = "SOURCE_HAS_EXTERNAL_SYMLINK_DEPENDENCIES"
+                note = "source path includes symlinked targets outside the materialized directory footprint"
         elif source_size == sealed_size:
             status = "SEALED_MATCH"
             note = "source and sealed sizes match"
+        elif pack:
+            status = "SEALED_VIA_DATA_PACK"
+            note = "full source is sealed via external data pack; image carries only a reduced in-image subset"
         else:
             status = "SEALED_DIFFERENT"
             note = "source and sealed sizes differ"
+    elif source_exists and not sealed_exists and pack:
+        status = "SEALED_VIA_DATA_PACK"
+        note = "present in source tree and sealed via external data pack"
     elif source_exists and not sealed_exists:
         status = "MISSING_FROM_SEAL"
         note = "present in source tree but absent from canonical seal"
@@ -118,6 +145,9 @@ def summarize_path(repo_root: Path, seal_root: Path, rel_path: str) -> PathAudit
         sealed_symlink_target_bytes=sealed_symlink_bytes,
         status=status,
         note=note,
+        data_pack_id=pack["pack_id"] if pack else None,
+        data_pack_archive_path=pack["archive_path"] if pack else None,
+        data_pack_archive_size_bytes=pack["archive_size_bytes"] if pack else None,
     )
 
 
@@ -181,9 +211,15 @@ def render_markdown(report: dict) -> str:
         "| --- | --- | ---: | ---: | --- |",
     ]
     for row in report["critical_paths"]:
+        pack_note = row["note"]
+        if row["data_pack_id"]:
+            pack_note = (
+                f"{pack_note} "
+                f"[pack={row['data_pack_id']}; archive_bytes={row['data_pack_archive_size_bytes']}]"
+            )
         lines.append(
             f"| `{row['relative_path']}` | `{row['status']}` | "
-            f"{row['source_size_bytes'] or 0} | {row['sealed_size_bytes'] or 0} | {row['note']} |"
+            f"{row['source_size_bytes'] or 0} | {row['sealed_size_bytes'] or 0} | {pack_note} |"
         )
     lines.extend(["", "## Large External Candidates", ""])
     if report["large_external_candidates"]:
@@ -207,6 +243,11 @@ def main() -> int:
         help="Additional roots to scan for large external data candidates.",
     )
     parser.add_argument("--external-limit", type=int, default=20)
+    parser.add_argument(
+        "--data-pack-receipt",
+        default=None,
+        help="Optional CANONICAL_DATA_PACK_SEAL_RECEIPT.json path to reconcile externally sealed packs.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -214,8 +255,10 @@ def main() -> int:
     json_out = Path(args.json_out)
     md_out = Path(args.md_out)
     scan_roots = [Path(p).resolve() for p in args.scan_root]
+    data_pack_receipt = Path(args.data_pack_receipt).resolve() if args.data_pack_receipt else None
+    pack_receipts = load_pack_receipts(data_pack_receipt)
 
-    critical = [summarize_path(repo_root, seal_root, rel_path) for rel_path in CRITICAL_RELATIVE_PATHS]
+    critical = [summarize_path(repo_root, seal_root, rel_path, pack_receipts) for rel_path in CRITICAL_RELATIVE_PATHS]
     large_external = iter_large_external_candidates(scan_roots, repo_root, seal_root, args.external_limit)
 
     report = {
@@ -223,6 +266,7 @@ def main() -> int:
         "generated_at_utc": now_utc(),
         "repo_root": str(repo_root),
         "seal_root": str(seal_root),
+        "data_pack_receipt": str(data_pack_receipt) if data_pack_receipt else None,
         "critical_paths": [asdict(row) for row in critical],
         "large_external_candidates": large_external,
     }
