@@ -27,6 +27,12 @@
       "validation_mode": "real_smoke"
     },
     {
+      "id": "engine_binary",
+      "path": "target/release/nhs_rt_full",
+      "kind": "binary",
+      "validation_mode": "real_smoke"
+    },
+    {
       "id": "am1bcc_charge_compute",
       "path": "scripts/compute_am1bcc_charges.py",
       "kind": "python_script",
@@ -41,6 +47,12 @@
     {
       "id": "dstw_export",
       "path": "target/release/dstw_export_wt_pathb",
+      "kind": "binary",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "site_materializer",
+      "path": "target/release/prism-materialize-sites",
       "kind": "binary",
       "validation_mode": "real_smoke"
     },
@@ -73,6 +85,24 @@
       "path": "scripts/prism-postflight-md-only.py",
       "kind": "python_script",
       "validation_mode": "real_smoke"
+    },
+    {
+      "id": "preflight_gate",
+      "path": "scripts/prism-preflight.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
+    },
+    {
+      "id": "ground_truth_gate",
+      "path": "scripts/prism-ground-truth.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
+    },
+    {
+      "id": "postflight_gate",
+      "path": "scripts/prism-postflight.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
     },
     {
       "id": "phase_manifold_extractor",

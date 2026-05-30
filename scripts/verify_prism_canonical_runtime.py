@@ -531,6 +531,79 @@ def main() -> int:
         )
     )
 
+    compiled_prefix = compiled_topology.name[: -len(".topology.json")]
+    engine_dir = report_root / "engine_smoke"
+    summary["steps"].append(
+        run_step(
+            "engine_smoke",
+            [
+                "scripts/prism-validate-and-run.sh",
+                "-t",
+                str(compiled_topology),
+                "-o",
+                str(engine_dir),
+                "--fast",
+                "--hysteresis",
+                "--prism-therm",
+                "--multi-stream",
+                "8",
+                "--spike-percentile",
+                "70",
+                "--fused-steps",
+                "6",
+                "--hmr",
+                "--adaptive-dt",
+                "--multi-differential",
+                "--closed-loop-steering",
+                "--asymmetric-steering",
+                "--site-ranker",
+                "phase-manifold",
+                "--md-only-evidence",
+                "--path-a-production-profile",
+                "--path-a-max-wall-seconds",
+                "180",
+                "--uv-wavelengths",
+                "280,274,258,254,211",
+                "--nma-amplification",
+                "3.0",
+                "--nma-scan-fraction",
+                "0.3",
+                "--replica-seed",
+                "42",
+                "-v",
+            ],
+            report_root,
+            env,
+            expected_outputs=[
+                engine_dir / "md_evidence_manifest.json",
+                engine_dir / f"{compiled_prefix}_path_a_completion.json",
+            ],
+        )
+    )
+
+    materialized_dir = report_root / "materialized_smoke"
+    materialized_sites = materialized_dir / "binding_sites.materialized.json"
+    summary["steps"].append(
+        run_step(
+            "materialize_smoke",
+            [
+                "target/release/prism-materialize-sites",
+                "--manifest",
+                str(engine_dir / "md_evidence_manifest.json"),
+                "--output-dir",
+                str(materialized_dir),
+                "--top-k-candidates",
+                "8",
+                "--materialized-top-n",
+                "3",
+                "--verbose",
+            ],
+            report_root,
+            env,
+            expected_outputs=[materialized_sites],
+        )
+    )
+
     dstw_dir = report_root / "dstw_smoke"
     summary["steps"].append(
         run_step(
@@ -538,11 +611,11 @@ def main() -> int:
             [
                 "target/release/dstw_export_wt_pathb",
                 "--materialized-sites",
-                "/mnt/storage/tmp/glp1r_candidate_md_smoke_20260527_233437/materialized_openff/cand_015_bccda098_glp1r_6XOX_WT_replica_0/binding_sites.materialized.json",
+                str(materialized_sites),
                 "--residue-map",
-                "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT.residue_map.json",
+                "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_A316T.residue_map.json",
                 "--topology-json",
-                "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT.topology.json",
+                str(compiled_topology),
                 "--target",
                 "GLP1R",
                 "--uniprot-accession",
@@ -683,8 +756,8 @@ def main() -> int:
             [
                 "python3",
                 "scripts/prism-postflight-md-only.py",
-                "/mnt/storage/tmp/glp1r_candidate_md_smoke_20260527_233437/engine_openff/cand_015_bccda098_glp1r_6XOX_WT_replica_0",
-                "glp1r_6XOX_HOLO_cand_015_bccda098",
+                str(engine_dir),
+                compiled_prefix,
             ],
             report_root,
             env,
