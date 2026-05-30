@@ -15,7 +15,7 @@ from pathlib import Path
 import polars as pl
 
 # Add repo src to path so we can import the prism_dstw package.
-REPO = Path("/home/diddy/Desktop/Prism4D-bio")
+REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from prism_dstw.orchestration.rust_reward_oracle import (  # noqa: E402

@@ -1,0 +1,46 @@
+{
+  "schema_version": "PRISM.release_tracks.v1",
+  "generated_at_utc": "2026-05-29T02:00:00Z",
+  "tracks": [
+    {
+      "id": "track_a",
+      "name": "PRISM_CANONICAL_PLATFORM_RELEASE",
+      "input_root": "/home/diddy/PRISM-ISOLATED-20260528",
+      "authoritative_repo_root": "/home/diddy/PRISM-ISOLATED-20260528/absolute_root/home/diddy/Desktop/Prism4D-bio",
+      "authoritative_env_root": "/home/diddy/PRISM-ISOLATED-20260528/absolute_root/home/diddy/miniconda3",
+      "authoritative_candidate_smoke_root": "/home/diddy/PRISM-ISOLATED-20260528/absolute_root/mnt/storage/tmp/glp1r_candidate_md_smoke_20260527_233437",
+      "purpose": "sealed operational PRISM release",
+      "required_destinations": [
+        "github",
+        "ssd",
+        "r2"
+      ],
+      "status": "ready_for_capacity_safe_sealing",
+      "claim_boundary": {
+        "phase2c_status": "SEALED",
+        "platform_smoke_status": "VALID",
+        "hydration_dstw_integration_status": "IMPLEMENTED_AND_SMOKE_VERIFIED",
+        "hydration_full_run_status": "NOT_FULLY_RUN_104GB_INPUT_UNMEASURED",
+        "phase1_to_3_full_production_status": "NOT_CLAIMABLE"
+      },
+      "waits_for_track_b": false,
+      "wait_exception": "only_if_required_prism_artifact_exists_only_in_track_b"
+    },
+    {
+      "id": "track_b",
+      "name": "WORKSTATION_ARCHIVE",
+      "input_roots": [
+        "/home/diddy",
+        "/mnt/*"
+      ],
+      "purpose": "broader workstation preservation",
+      "status": "archive_in_progress",
+      "blocker": "volatile_live_changing_codex_sqlite_wal_reconciliation",
+      "separate_from_track_a": true,
+      "active_services": [
+        "prism-workstation-archive-home-20260529-v2.service",
+        "prism-workstation-archive-mnt-20260529-v2.service"
+      ]
+    }
+  ]
+}

@@ -2,9 +2,11 @@
 # Compile all CUDA kernels to sm_120 PTX for Blackwell (RTX 5080)
 
 # Don't exit on error - we want to compile as many as possible
+set -u
 
-KERNEL_DIR="/home/diddy/Desktop/Prism4D-bio/crates/prism-gpu/src/kernels"
-OUTPUT_DIR="/home/diddy/Desktop/Prism4D-bio/crates/prism-gpu/src/kernels"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+KERNEL_DIR="$ROOT/crates/prism-gpu/src/kernels"
+OUTPUT_DIR="$ROOT/crates/prism-gpu/src/kernels"
 NVCC_FLAGS="-ptx -arch=sm_120 -O3 --use_fast_math -Wno-deprecated-gpu-targets"
 
 echo "═══════════════════════════════════════════════════════════════"
@@ -79,7 +81,7 @@ done
 # Also compile holographic_langevin from different location
 echo ""
 echo "Other kernels:"
-OTHER_KERNEL="/home/diddy/Desktop/Prism4D-bio/crates/prism-gpu/kernels/holographic_langevin.cu"
+OTHER_KERNEL="$ROOT/crates/prism-gpu/kernels/holographic_langevin.cu"
 if [[ -f "$OTHER_KERNEL" ]]; then
     compile_kernel "$OTHER_KERNEL"
 fi

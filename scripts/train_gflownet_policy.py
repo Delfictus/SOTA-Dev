@@ -9,6 +9,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import random
 import subprocess
 import sys
@@ -59,6 +60,7 @@ from prism_dstw.scoring.tripartite_bias_scorer import (
     compute_reward_v2,
     compute_tripartite_bias,
 )
+from lib.prism_runtime import ensure_prism_scratch_subdir, resolve_prism_scratch_root
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -290,7 +292,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hysteresis-tensor", type=Path, default=None)
     parser.add_argument("--translation-pathway", type=Path, default=None)
     parser.add_argument("--cross-species", type=Path, default=None)
-    parser.add_argument("--checkpoint-dir", type=Path, default=REPO_ROOT / ".scratch/checkpoints")
+    parser.add_argument("--checkpoint-dir", type=Path, default=resolve_prism_scratch_root(REPO_ROOT) / "checkpoints")
     parser.add_argument("--checkpoint-interval", type=int, default=50)
     parser.add_argument("--output-policy", type=Path, default=TRACK_A_DIR / "gflownet_policy_v1.pt")
     parser.add_argument("--telemetry-log", type=Path, default=None)
@@ -1791,8 +1793,7 @@ def rust_zmatrix_assemble_product(
             }
         ]
     }
-    scratch = REPO_ROOT / ".scratch/kinematic_assembly"
-    scratch.mkdir(parents=True, exist_ok=True)
+    scratch = ensure_prism_scratch_subdir("kinematic_assembly", repo_root=REPO_ROOT)
     with tempfile.TemporaryDirectory(prefix="zmatrix_", dir=scratch) as tmpdir:
         request_path = Path(tmpdir) / "request.json"
         response_path = Path(tmpdir) / "response.json"
@@ -3434,8 +3435,12 @@ async def train() -> None:
             lock_mask=lock_mask if lock_mask.is_file() else None,
         )
     else:
+        oracle_run_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}_{os.getpid()}"
+        oracle_scratch = ensure_prism_scratch_subdir("oracle_bridge", oracle_run_id, repo_root=REPO_ROOT)
         oracle = SurvivorCorpusOracle(
             survivor_corpus=paths.survivors,
+            batch_path=oracle_scratch / "oracle_batch.parquet",
+            reward_path=oracle_scratch / "oracle_rewards.parquet",
             max_batch_size=int(args.batch_size),
             extra_args=tuple(oracle_args),
         )

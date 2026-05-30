@@ -280,6 +280,49 @@ def _translate_mol(mol: Any, delta: Point3D) -> None:
         conformer.SetAtomPosition(atom_index, position)
 
 
+def _float_list(values: list[Any], *, label: str) -> list[float]:
+    try:
+        return [float(value) for value in values]
+    except Exception as exc:
+        raise ValueError(f"{label} does not decode to a float vector") from exc
+
+
+def _precomputed_am1bcc_charges(mol: Any) -> tuple[list[float], str] | None:
+    atom_props = ("AM1BCCCharge", "am1bcc_charge")
+    for prop_name in atom_props:
+        charges: list[float] = []
+        for atom in mol.GetAtoms():
+            if not atom.HasProp(prop_name):
+                break
+            charges.append(float(atom.GetProp(prop_name)))
+        if len(charges) == int(mol.GetNumAtoms()):
+            return charges, f"atom_prop:{prop_name}"
+
+    if mol.HasProp("am1bcc_charges_json"):
+        decoded = json.loads(str(mol.GetProp("am1bcc_charges_json")))
+        if isinstance(decoded, list) and len(decoded) == int(mol.GetNumAtoms()):
+            return _float_list(decoded, label="am1bcc_charges_json"), "mol_prop:am1bcc_charges_json"
+
+    legacy_props = ("PartialCharge", "_TriposPartialCharge")
+    for prop_name in legacy_props:
+        charges = []
+        for atom in mol.GetAtoms():
+            if not atom.HasProp(prop_name):
+                break
+            charges.append(float(atom.GetProp(prop_name)))
+        if len(charges) == int(mol.GetNumAtoms()):
+            return charges, f"atom_prop:{prop_name}"
+    return None
+
+
+def _stamp_am1bcc_properties(mol: Any, charges: list[float]) -> None:
+    for atom_index, charge in enumerate(charges):
+        atom = mol.GetAtomWithIdx(atom_index)
+        atom.SetDoubleProp("AM1BCCCharge", charge)
+        atom.SetProp("am1bcc_charge", f"{charge:.12f}")
+    mol.SetProp("am1bcc_charges_json", json.dumps(charges, separators=(",", ":")))
+
+
 class PrismTopologyCompiler:
     """Compile GFlowNet-generated RDKit molecules into PRISM-4D topologies."""
 
@@ -288,11 +331,13 @@ class PrismTopologyCompiler:
         *,
         base_receptor_topology: Path = DEFAULT_BASE_TOPOLOGY,
         output_dir: Path = DEFAULT_OUTPUT_DIR,
+        condition_prefix: str | None = None,
         min_heavy_distance_A: float = MIN_HEAVY_DISTANCE_A,
         max_contact_distance_A: float = MAX_CONTACT_DISTANCE_A,
     ) -> None:
         self.base_receptor_topology = base_receptor_topology
         self.output_dir = output_dir
+        self.condition_prefix = condition_prefix
         self.min_heavy_distance_A = min_heavy_distance_A
         self.max_contact_distance_A = max_contact_distance_A
 
@@ -313,6 +358,18 @@ class PrismTopologyCompiler:
         return prepared
 
     def _assign_openff_parameters(self, mol: Any) -> tuple[Any, list[float], str]:
+        precomputed = _precomputed_am1bcc_charges(mol)
+        if precomputed is not None:
+            charges, source_label = precomputed
+            if len(charges) != int(mol.GetNumAtoms()):
+                raise ValueError("precomputed AM1-BCC charge vector length does not match RDKit atom count")
+            _stamp_am1bcc_properties(mol, charges)
+            tool_label = (
+                str(mol.GetProp("am1bcc_tool"))
+                if bool(mol.HasProp("am1bcc_tool"))
+                else "precomputed_sdf"
+            )
+            return mol, charges, f"AM1-BCC/{tool_label}/{source_label}+MMFF94s_minimized"
         try:
             toolkit = import_module("openff.toolkit")
         except ImportError as exc:
@@ -324,11 +381,7 @@ class PrismTopologyCompiler:
         charges = [float(charge.m_as("elementary_charge")) for charge in off_mol.partial_charges]
         if len(charges) != int(mol.GetNumAtoms()):
             raise ValueError("OpenFF charge vector length does not match RDKit atom count")
-        for atom_index, charge in enumerate(charges):
-            atom = mol.GetAtomWithIdx(atom_index)
-            atom.SetDoubleProp("AM1BCCCharge", charge)
-            atom.SetProp("am1bcc_charge", f"{charge:.12f}")
-        mol.SetProp("am1bcc_charges_json", json.dumps(charges, separators=(",", ":")))
+        _stamp_am1bcc_properties(mol, charges)
         forcefield_name = "openff-2.2.0.offxml"
         try:
             force_field_class(forcefield_name).create_openmm_system(off_mol.to_topology())
@@ -424,7 +477,8 @@ class PrismTopologyCompiler:
         for atom_offset in range(ligand_atom_count):
             serial_map[str(serial_start + atom_offset)] = offset + atom_offset
 
-        condition_id = f"glp1r_6XOX_HOLO_{generated_id}"
+        condition_prefix = self.condition_prefix or "glp1r_6XOX_HOLO"
+        condition_id = f"{condition_prefix}_{generated_id}"
         topology["n_atoms"] = offset + ligand_atom_count
         topology["n_residues"] = ligand_residue_index + 1
         topology["n_chains"] = max(int(topology.get("n_chains", 1)), 2)
@@ -466,7 +520,9 @@ class PrismTopologyCompiler:
         merged, min_distance = self._append_ligand(topology, parameterized, charges, charge_method, safe_generated_id)
         if metadata:
             merged["generated_ligand_metadata"] = dict(metadata)
-        output = self.output_dir / f"glp1r_6XOX_HOLO_{safe_generated_id}.topology.json"
+        condition_prefix = self.condition_prefix or "glp1r_6XOX_HOLO"
+        safe_prefix = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in condition_prefix)
+        output = self.output_dir / f"{safe_prefix}_{safe_generated_id}.topology.json"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(merged, indent=2, sort_keys=False) + "\n", encoding="utf-8")
         return TopologyCompileResult(

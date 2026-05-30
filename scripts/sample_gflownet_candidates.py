@@ -28,12 +28,13 @@ import polars as pl
 import torch
 from torch_geometric.data import Batch  # type: ignore[import-untyped]
 
-REPO = Path("/home/diddy/Desktop/Prism4D-bio")
+REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "src"))
 
 # Reuse the trainer's helpers (scaffold graph, action space, model factory).
 import scripts.train_gflownet_policy as T  # noqa: E402
+from lib.prism_runtime import ensure_prism_scratch_subdir  # noqa: E402
 
 from prism_dstw.hierarchical_bayes.gflownet_policy import (  # noqa: E402
     FiberBundleGFlowNetPolicy,
@@ -185,7 +186,14 @@ def main() -> int:
     ap.add_argument("--temperatures", type=str, default="")
     ap.add_argument("--trajectories-per-temperature", type=int, default=None)
     ap.add_argument("--output", type=Path, default=OUT_TOP500)
+    ap.add_argument("--top100-output", type=Path, default=OUT_TOP100)
+    ap.add_argument("--raw-output", type=Path, default=OUT_PARQUET)
+    ap.add_argument("--summary-output", type=Path, default=OUT_SUMMARY)
+    ap.add_argument("--top500-csv-output", type=Path, default=TRACK_A / "gflownet_top_500_candidates.csv")
+    ap.add_argument("--top100-csv-output", type=Path, default=TRACK_A / "gflownet_top_100_candidates.csv")
+    ap.add_argument("--top500-md-output", type=Path, default=TRACK_A / "gflownet_top_500_candidates.md")
     ap.add_argument("--tripartite-scoring", action="store_true", default=False)
+    ap.add_argument("--skip-hard-fail-gates", action="store_true", default=False)
     args = ap.parse_args()
 
     print("=== Phase 2 — multi-temperature policy sampling ===")
@@ -368,9 +376,27 @@ def main() -> int:
         print(f"  regime {regime['name']:<20s} T={T_}  N={len(regime_rows):>5d}  "
               f"elapsed {elapsed:5.1f}s  cumulative {cumulative}/{total_samples}")
 
+    output_top500 = resolve_track_a_path(args.output, OUT_TOP500)
+    output_top100 = resolve_track_a_path(args.top100_output, OUT_TOP100)
+    raw_output = resolve_track_a_path(args.raw_output, OUT_PARQUET)
+    summary_output = resolve_track_a_path(args.summary_output, OUT_SUMMARY)
+    top500_csv_output = resolve_track_a_path(args.top500_csv_output, TRACK_A / "gflownet_top_500_candidates.csv")
+    top100_csv_output = resolve_track_a_path(args.top100_csv_output, TRACK_A / "gflownet_top_100_candidates.csv")
+    top500_md_output = resolve_track_a_path(args.top500_md_output, TRACK_A / "gflownet_top_500_candidates.md")
+    for path in [
+        output_top500,
+        output_top100,
+        raw_output,
+        summary_output,
+        top500_csv_output,
+        top100_csv_output,
+        top500_md_output,
+    ]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
     df = pl.DataFrame(rows)
-    df.write_parquet(OUT_PARQUET)
-    print(f"  -> {OUT_PARQUET}  ({df.height:,} rows)")
+    df.write_parquet(raw_output)
+    print(f"  -> {raw_output}  ({df.height:,} rows)")
 
     unique_for_oracle = (
         df.unique(subset=["canonical_smiles"], keep="first")
@@ -397,8 +423,7 @@ def main() -> int:
             pl.col("trajectory_entropy"),
         )
     )
-    scratch = REPO / ".scratch/gflownet_sampling"
-    scratch.mkdir(parents=True, exist_ok=True)
+    scratch = ensure_prism_scratch_subdir("gflownet_sampling", repo_root=REPO)
     oracle_batch = scratch / "oracle_batch.parquet"
     oracle_rewards = scratch / "oracle_rewards.parquet"
     unique_for_oracle.select(["trajectory_id", "anchor_id", "canonical_smiles"]).write_parquet(oracle_batch)
@@ -453,12 +478,10 @@ def main() -> int:
     else:
         top100_source = biased_pool.head(100)
     top100 = top100_source.drop("rank").with_row_index("rank", offset=1)
-    output_top500 = resolve_track_a_path(args.output, OUT_TOP500)
-    output_top100 = output_top500.with_name(output_top500.stem.replace("top_500", "top_100") + output_top500.suffix)
     top500.write_parquet(output_top500)
-    top500.write_csv(TRACK_A / "gflownet_top_500_candidates.csv")
+    top500.write_csv(top500_csv_output)
     top100.write_parquet(output_top100)
-    top100.write_csv(TRACK_A / "gflownet_top_100_candidates.csv")
+    top100.write_csv(top100_csv_output)
     md_rows = [
         "# GFlowNet Top 500 Candidates",
         "",
@@ -477,7 +500,7 @@ def main() -> int:
                 cryptic=float(row["cryptic_bonus"]),
             )
         )
-    (TRACK_A / "gflownet_top_500_candidates.md").write_text("\n".join(md_rows) + "\n")
+    top500_md_output.write_text("\n".join(md_rows) + "\n")
 
     # ----- Hard-fail gates -----
     valid_rate = (df.filter(pl.col("validity_status") == "valid").height) / df.height
@@ -505,9 +528,10 @@ def main() -> int:
         "biased_lock_threshold": LOCK_CLASH_THRESHOLD,
         "top500_min_reward": float(top500.get_column("reward").min()) if top500.height else 0.0,
         "top500_max_reward": float(top500.get_column("reward").max()) if top500.height else 0.0,
+        "skip_hard_fail_gates": bool(args.skip_hard_fail_gates),
     }
-    OUT_SUMMARY.write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"  -> {OUT_SUMMARY}")
+    summary_output.write_text(json.dumps(summary, indent=2) + "\n")
+    print(f"  -> {summary_output}")
 
     print()
     print("=== Hard-fail gate evaluation ===")
@@ -522,6 +546,12 @@ def main() -> int:
         f"top500_max_reward={summary['top500_max_reward']:.6f}"
     )
 
+    if args.skip_hard_fail_gates:
+        print("hard_fail_gates_skipped reason=explicit_smoke_override")
+        summary["gate_status"] = "SKIPPED_FOR_SMOKE"
+        summary_output.write_text(json.dumps(summary, indent=2) + "\n")
+        return 0
+
     if valid_rate < 0.80:
         hard_fail(f"valid generation rate {valid_rate*100:.2f}% < 80%")
     expected_unique_floor = min(500, n_actions)
@@ -530,6 +560,8 @@ def main() -> int:
     if top_anchor_share > 0.50:
         hard_fail(f"top anchor family share {top_anchor_share*100:.2f}% > 50% — mode collapse")
 
+    summary["gate_status"] = "PASS"
+    summary_output.write_text(json.dumps(summary, indent=2) + "\n")
     print()
     print("PASS — Phase 2 complete.")
     return 0

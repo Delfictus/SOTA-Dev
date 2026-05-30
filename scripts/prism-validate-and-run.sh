@@ -53,6 +53,7 @@ ENGINE="$PROJECT_DIR/target/release/nhs_rt_full"
 PREFLIGHT="$SCRIPT_DIR/prism-preflight.py"
 GROUND_TRUTH="$SCRIPT_DIR/prism-ground-truth.py"
 POSTFLIGHT="$SCRIPT_DIR/prism-postflight.py"
+POSTFLIGHT_MD_ONLY="$SCRIPT_DIR/prism-postflight-md-only.py"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TWIN PTX bootstrap — fresh clones won't have target/ptx/ populated.
@@ -63,7 +64,7 @@ POSTFLIGHT="$SCRIPT_DIR/prism-postflight.py"
 # freshly-built target/ptx/protocol_director.ptx is already present, it is
 # NOT touched. Only seeds when target/ptx/protocol_director.ptx is missing.
 # ─────────────────────────────────────────────────────────────────────────────
-PTX_BUNDLE="$PROJECT_DIR/vendor/working_ptx_2026-04-10"
+PTX_BUNDLE="$PROJECT_DIR/vendor/working_ptx_2026-05-29"
 PTX_TARGET="$PROJECT_DIR/target/ptx"
 if [[ -d "$PTX_BUNDLE" && ! -f "$PTX_TARGET/protocol_director.ptx" ]]; then
     mkdir -p "$PTX_TARGET"
@@ -75,6 +76,7 @@ fi
 TOPOLOGY=""
 OUTPUT_DIR=""
 CHAIN_MAP=""
+MD_ONLY_EVIDENCE=false
 ENGINE_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -94,6 +96,9 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
+            if [[ "$1" == "--md-only-evidence" ]]; then
+                MD_ONLY_EVIDENCE=true
+            fi
             ENGINE_ARGS+=("$1")
             shift
             ;;
@@ -257,10 +262,14 @@ echo ""
 
 # Phase 3: Postflight
 POSTFLIGHT_ARGS=("$OUTPUT_DIR" "$PREFIX")
-if [[ -n "$CHAIN_MAP" ]]; then
-    POSTFLIGHT_ARGS+=("--chain-map" "$CHAIN_MAP")
+if [[ "$MD_ONLY_EVIDENCE" == "true" ]]; then
+    python3 "$POSTFLIGHT_MD_ONLY" "${POSTFLIGHT_ARGS[@]}"
+else
+    if [[ -n "$CHAIN_MAP" ]]; then
+        POSTFLIGHT_ARGS+=("--chain-map" "$CHAIN_MAP")
+    fi
+    python3 "$POSTFLIGHT" "${POSTFLIGHT_ARGS[@]}"
 fi
-python3 "$POSTFLIGHT" "${POSTFLIGHT_ARGS[@]}"
 POST_EXIT=$?
 
 if [[ $POST_EXIT -ne 0 ]]; then

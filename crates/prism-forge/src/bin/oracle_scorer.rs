@@ -19,8 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-const DEFAULT_BATCH: &str = ".scratch/oracle_batch.parquet";
-const DEFAULT_REWARDS: &str = ".scratch/oracle_rewards.parquet";
 const DEFAULT_SURVIVORS: &str =
     "campaigns/glp1r_aleniglipron/track_a_generative/vspace_survivors_full_scale.parquet";
 const DEFAULT_LOCK_MASK: &str =
@@ -49,8 +47,8 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            batch: PathBuf::from(DEFAULT_BATCH),
-            rewards: PathBuf::from(DEFAULT_REWARDS),
+            batch: default_scratch_path("oracle_batch.parquet"),
+            rewards: default_scratch_path("oracle_rewards.parquet"),
             survivors: PathBuf::from(DEFAULT_SURVIVORS),
             lock_mask: Some(PathBuf::from(DEFAULT_LOCK_MASK)),
             live_scoring: false,
@@ -70,6 +68,16 @@ impl Default for Config {
             continuity_admissibility: false,
         }
     }
+}
+
+fn default_scratch_root() -> PathBuf {
+    env::var_os("PRISM_SCRATCH_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/mnt/storage/prism-scratch/Prism4D-bio"))
+}
+
+fn default_scratch_path(name: &str) -> PathBuf {
+    default_scratch_root().join("oracle_bridge").join(name)
 }
 
 #[derive(Debug, Clone)]

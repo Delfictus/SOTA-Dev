@@ -12,6 +12,8 @@ from typing import Any
 
 from rdkit import Chem
 
+from lib.prism_runtime import resolve_prism_scratch_root
+
 SAFE_CANDIDATE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -21,7 +23,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sdf", type=Path, required=True)
     parser.add_argument("--replicas", type=int, required=True)
     parser.add_argument("--protocol", default="ccns_5phase_validation")
-    parser.add_argument("--output-dir", type=Path, default=Path(".scratch/ccns_validation_manifests"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=resolve_prism_scratch_root() / "ccns_validation_manifests",
+    )
     parser.add_argument("--raw-output-dir", type=Path, default=None)
     return parser.parse_args()
 

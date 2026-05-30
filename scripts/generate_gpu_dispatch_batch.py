@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shlex
+import subprocess
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping, cast
@@ -14,6 +17,8 @@ from typing import Any, Mapping, cast
 import polars as pl
 from rdkit import Chem
 from rdkit.Chem import AllChem
+
+from lib.prism_runtime import resolve_prism_dock_python
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +37,16 @@ DEFAULT_RAW_ROOT = Path(
 DEFAULT_TOPOLOGY_ROOT = Path(
     "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES"
 )
+DEFAULT_SOURCE_CORPORA = [
+    TRACK_A / "vspace_survivors_scaffold_consensus_action_corpus.parquet",
+    TRACK_A / "vspace_survivors_full_scale.parquet",
+]
 SAFE_CANDIDATE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def default_portable_env_python() -> Path | None:
+    candidate = resolve_prism_dock_python()
+    return candidate if candidate.exists() else None
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,6 +61,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--protocol-state-summary", type=Path, default=DEFAULT_PROTOCOL_STATE_SUMMARY)
     parser.add_argument("--raw-root", type=Path, default=DEFAULT_RAW_ROOT)
     parser.add_argument("--topology-root", type=Path, default=DEFAULT_TOPOLOGY_ROOT)
+    parser.add_argument(
+        "--source-corpus",
+        dest="source_corpora",
+        action="append",
+        type=Path,
+        default=None,
+        help="Optional parquet(s) used to recover saved coordinates/charges for generated candidates.",
+    )
+    parser.add_argument(
+        "--portable-env-python",
+        type=Path,
+        default=default_portable_env_python(),
+        help="Python interpreter from the copied prism_dock env used to assign AM1-BCC charges.",
+    )
+    parser.add_argument(
+        "--allow-missing-am1bcc",
+        action="store_true",
+        help="Permit stripped/unbackfilled SDFs when no AM1-BCC source is available. Default is fail-closed.",
+    )
     parser.add_argument("--lock-positive-only", action="store_true", default=False)
     parser.add_argument("--bald-ranking", action="store_true", default=False)
     return parser.parse_args()
@@ -58,6 +91,8 @@ def main() -> int:
     profiles = normalize_profiles(pl.read_parquet(profiles_path))
     if bool(args.lock_positive_only):
         profiles = profiles.filter(pl.col("lock_geometry_score") > 0.0)
+    source_corpora = list(args.source_corpora) if args.source_corpora is not None else list(DEFAULT_SOURCE_CORPORA)
+    source_lookup = build_source_lookup(source_corpora)
     output_dir = Path(args.output_dir)
     sdf_dir = output_dir / "sdf"
     topology_dir = output_dir / "topologies"
@@ -80,6 +115,9 @@ def main() -> int:
                 protocol_state_summary=Path(args.protocol_state_summary),
                 raw_root=Path(args.raw_root),
                 topology_root=Path(args.topology_root),
+                source_lookup=source_lookup,
+                portable_env_python=Path(args.portable_env_python) if args.portable_env_python is not None else None,
+                require_am1bcc=not bool(args.allow_missing_am1bcc),
             )
         )
 
@@ -92,6 +130,9 @@ def main() -> int:
         "protocol_state_summary": str(Path(args.protocol_state_summary)),
         "raw_root": str(Path(args.raw_root)),
         "topology_root": str(Path(args.topology_root)),
+        "source_corpora": [str(path) for path in source_corpora],
+        "portable_env_python": str(args.portable_env_python) if args.portable_env_python is not None else None,
+        "require_am1bcc": not bool(args.allow_missing_am1bcc),
         "lock_positive_only": bool(args.lock_positive_only),
         "bald_ranking": bool(args.bald_ranking),
         "dispatch_count": len(manifest_rows),
@@ -113,15 +154,26 @@ def write_dispatch_assets(
     protocol_state_summary: Path,
     raw_root: Path,
     topology_root: Path,
+    source_lookup: dict[str, dict[str, Any]],
+    portable_env_python: Path | None,
+    require_am1bcc: bool,
 ) -> dict[str, Any]:
     candidate_id = str(row["candidate_id"])
     validate_candidate_id(candidate_id)
     smiles = str(row["canonical_smiles"])
+    source_row = source_lookup.get(smiles, {})
     sdf_path = sdf_dir / f"{candidate_id}.sdf"
     topology_path = topology_dir / f"{candidate_id}.json"
     script_path = launch_dir / f"launch-n{replicas}-validate-{candidate_id}.sh"
-    write_sdf(smiles, sdf_path)
-    write_topology_json(topology_path, candidate_id, sdf_path, row)
+    sdf_metadata = write_sdf(
+        smiles,
+        sdf_path,
+        row=row,
+        source_row=source_row,
+        portable_env_python=portable_env_python,
+        require_am1bcc=require_am1bcc,
+    )
+    write_topology_json(topology_path, candidate_id, sdf_path, row, sdf_metadata)
     script_path.write_text(
         slurm_script(
             candidate_id,
@@ -145,10 +197,119 @@ def write_dispatch_assets(
         "bald_information_value": float(row.get("bald_information_value", 0.0)),
         "lock_geometry_score": float(row.get("lock_geometry_score", 0.0)),
         "epistemic_confidence": str(row.get("epistemic_confidence", "L1")),
+        "sdf_generation": sdf_metadata,
     }
 
 
-def write_sdf(smiles: str, output: Path) -> None:
+def _candidate_field(row: Mapping[str, Any], key: str) -> Any:
+    value = row.get(key)
+    return None if value is None else value
+
+
+def _decode_coordinates(raw: Any) -> list[list[float]] | None:
+    if raw is None:
+        return None
+    decoded = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(decoded, list):
+        return None
+    points: list[list[float]] = []
+    for point in decoded:
+        if not isinstance(point, (list, tuple)) or len(point) != 3:
+            return None
+        points.append([float(point[0]), float(point[1]), float(point[2])])
+    return points
+
+
+def _decode_charges(raw: Any) -> list[float] | None:
+    if raw is None:
+        return None
+    decoded = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(decoded, list):
+        return None
+    return [float(value) for value in decoded]
+
+
+def _stamp_coordinates(mol: Any, coordinates: list[list[float]]) -> bool:
+    if len(coordinates) != int(mol.GetNumAtoms()):
+        return False
+    conformer = mol.GetConformer(0)
+    for index, point in enumerate(coordinates):
+        conformer.SetAtomPosition(index, (float(point[0]), float(point[1]), float(point[2])))
+    return True
+
+
+def _stamp_charges(mol: Any, charges: list[float]) -> bool:
+    if len(charges) != int(mol.GetNumAtoms()):
+        return False
+    for atom, charge in zip(mol.GetAtoms(), charges, strict=True):
+        atom.SetDoubleProp("AM1BCCCharge", float(charge))
+        atom.SetDoubleProp("PartialCharge", float(charge))
+        atom.SetProp("am1bcc_charge", f"{float(charge):.12f}")
+    if hasattr(Chem, "CreateAtomDoublePropertyList"):
+        Chem.CreateAtomDoublePropertyList(mol, "AM1BCCCharge")
+        Chem.CreateAtomDoublePropertyList(mol, "PartialCharge")
+    mol.SetProp("am1bcc_charges_json", json.dumps([float(charge) for charge in charges], separators=(",", ":")))
+    mol.SetProp("charge_method", "AM1-BCC")
+    return True
+
+
+def _recover_saved_coordinates(row: Mapping[str, Any], source_row: Mapping[str, Any]) -> tuple[list[list[float]] | None, str | None]:
+    for label, candidate_row in (("profile_row", row), ("source_corpus", source_row)):
+        coordinates = _decode_coordinates(_candidate_field(candidate_row, "coordinates_json"))
+        if coordinates is not None:
+            return coordinates, label
+    return None, None
+
+
+def _recover_saved_charges(row: Mapping[str, Any], source_row: Mapping[str, Any]) -> tuple[list[float] | None, str | None]:
+    fields = ("am1bcc_charges_json", "partial_charges_json")
+    for label, candidate_row in (("profile_row", row), ("source_corpus", source_row)):
+        for field in fields:
+            charges = _decode_charges(_candidate_field(candidate_row, field))
+            if charges is not None:
+                return charges, f"{label}:{field}"
+    return None, None
+
+
+def _backfill_am1bcc(output: Path, portable_env_python: Path | None) -> str:
+    if portable_env_python is None or not portable_env_python.exists():
+        raise FileNotFoundError("portable prism_dock python not found for AM1-BCC backfill")
+    command = [
+        str(portable_env_python),
+        str(REPO_ROOT / "scripts/compute_am1bcc_charges.py"),
+        "--input",
+        str(output),
+        "--output",
+        str(output),
+    ]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO_ROOT / "src")
+    env["PATH"] = f"{portable_env_python.parent}:{env.get('PATH', '')}"
+    result = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+        env=env,
+        cwd=str(REPO_ROOT),
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"AM1-BCC backfill failed for {output}:\n{result.stdout}")
+    log_path = output.with_suffix(output.suffix + ".am1bcc.log")
+    log_path.write_text(result.stdout, encoding="utf-8")
+    return f"portable_env:{portable_env_python}"
+
+
+def write_sdf(
+    smiles: str,
+    output: Path,
+    *,
+    row: Mapping[str, Any],
+    source_row: Mapping[str, Any],
+    portable_env_python: Path | None,
+    require_am1bcc: bool,
+) -> dict[str, Any]:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f"invalid SMILES for SDF generation: {smiles}")
@@ -159,9 +320,37 @@ def write_sdf(smiles: str, output: Path) -> None:
         all_chem.Compute2DCoords(mol_h)
     else:
         all_chem.MMFFOptimizeMolecule(mol_h, maxIters=200)
+    coordinates, coordinates_source = _recover_saved_coordinates(row, source_row)
+    coordinates_status = "generated_mmff94"
+    if coordinates is not None:
+        if _stamp_coordinates(mol_h, coordinates):
+            coordinates_status = "restored_saved_coordinates"
+        else:
+            coordinates_source = None
+            coordinates_status = "saved_coordinates_atom_count_mismatch"
+    charges, charge_source = _recover_saved_charges(row, source_row)
+    charge_status = "missing"
+    if charges is not None:
+        if _stamp_charges(mol_h, charges):
+            charge_status = "restored_saved_charges"
+        else:
+            charges = None
+            charge_source = None
+            charge_status = "saved_charges_atom_count_mismatch"
     writer = Chem.SDWriter(str(output))
     writer.write(mol_h)
     writer.close()
+    am1bcc_backfill_source: str | None = None
+    if charge_source is None and require_am1bcc:
+        am1bcc_backfill_source = _backfill_am1bcc(output, portable_env_python)
+        charge_status = "portable_env_backfill"
+    return {
+        "coordinates_source": coordinates_source,
+        "coordinates_status": coordinates_status,
+        "charge_source": charge_source or am1bcc_backfill_source,
+        "charge_status": charge_status,
+        "portable_env_python": str(portable_env_python) if portable_env_python is not None else None,
+    }
 
 
 def write_topology_json(
@@ -169,6 +358,7 @@ def write_topology_json(
     candidate_id: str,
     sdf_path: Path,
     row: Mapping[str, Any],
+    sdf_generation: Mapping[str, Any],
 ) -> None:
     payload = {
         "schema_version": "PRISM.gpu_dispatch_topology.v2",
@@ -179,6 +369,7 @@ def write_topology_json(
         "bald_information_value": float(row.get("bald_information_value", 0.0)),
         "epistemic_confidence": str(row.get("epistemic_confidence", "L1")),
         "provenance": "generated_for_four_channel_gpu_dispatch",
+        "sdf_generation": dict(sdf_generation),
     }
     atomic_write_json(path, payload)
 
@@ -457,6 +648,29 @@ def normalize_profiles(frame: pl.DataFrame) -> pl.DataFrame:
     if "epistemic_confidence" not in frame.columns:
         frame = frame.with_columns(pl.lit("L1").alias("epistemic_confidence"))
     return frame
+
+
+def build_source_lookup(paths: list[Path]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        frame = pl.read_parquet(path)
+        if "canonical_smiles" not in frame.columns:
+            continue
+        selected_columns = [column for column in frame.columns if column in {
+            "canonical_smiles",
+            "coordinates_json",
+            "am1bcc_charges_json",
+            "partial_charges_json",
+            "ligand_sdf_path",
+            "anchor_id",
+            "product_id",
+        }]
+        for row in frame.select(selected_columns).iter_rows(named=True):
+            smiles = str(row["canonical_smiles"])
+            lookup.setdefault(smiles, dict(row))
+    return lookup
 
 
 def validate_candidate_id(candidate_id: str) -> None:

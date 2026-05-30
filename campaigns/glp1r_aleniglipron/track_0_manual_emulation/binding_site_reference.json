@@ -442,7 +442,7 @@
         -35.901217460632324,
         -52.5072717666626
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_5VEX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_5VEX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_5VEX_WT",
@@ -888,7 +888,7 @@
         -35.901217460632324,
         -52.5072717666626
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_5VEX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_5VEX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_5VEX_WT",
@@ -1334,7 +1334,7 @@
         -36.807265281677246,
         -48.109068870544434
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_5VEX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_5VEX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_5VEX_WT",
@@ -1750,7 +1750,7 @@
         -38.14794063568115,
         -51.96183204650879
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_5VEX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_5VEX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_6XOX_WT",
@@ -2266,7 +2266,7 @@
         136.71696662902832,
         139.08785820007324
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_6XOX_WT",
@@ -2602,7 +2602,7 @@
         133.08351516723633,
         138.13212394714355
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_6XOX_WT",
@@ -3078,7 +3078,7 @@
         131.5799045562744,
         109.0735912322998
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_6XOX_WT",
@@ -3594,7 +3594,7 @@
         137.3673915863037,
         146.1579990386963
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT.topology.json"
     },
     {
       "condition_id": "glp1r_6LN2_A316T",
@@ -4020,7 +4020,7 @@
         31.826486587524414,
         75.132737159729
       ],
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_A316T.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6LN2_A316T.topology.json"
     }
   ],
   "reference": {

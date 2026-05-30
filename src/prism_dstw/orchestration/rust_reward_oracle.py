@@ -15,9 +15,10 @@ import polars as pl
 import torch
 from torch import Tensor
 
+DEFAULT_SCRATCH_ROOT = Path(os.environ.get("PRISM_SCRATCH_ROOT", "/mnt/storage/prism-scratch/Prism4D-bio"))
 
-DEFAULT_BATCH_PATH = Path(".scratch/oracle_batch.parquet")
-DEFAULT_REWARD_PATH = Path(".scratch/oracle_rewards.parquet")
+DEFAULT_BATCH_PATH = DEFAULT_SCRATCH_ROOT / "oracle_bridge" / "oracle_batch.parquet"
+DEFAULT_REWARD_PATH = DEFAULT_SCRATCH_ROOT / "oracle_bridge" / "oracle_rewards.parquet"
 DEFAULT_ORACLE_BIN = Path("target/release/oracle_scorer")
 DEFAULT_SURVIVOR_CORPUS = Path(
     "campaigns/glp1r_aleniglipron/track_a_generative/"

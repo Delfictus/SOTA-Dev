@@ -40,18 +40,17 @@
 set -uo pipefail
 
 # ── Path roots ──────────────────────────────────────────────────────────────
-ROOT="/home/diddy/Desktop/Prism4D-bio"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGETS_DIR="${ROOT}/data/targets"
-ENGINE="${ROOT}/target/release/nhs_rt_full"
+ENGINE_WRAPPER="${ROOT}/scripts/prism-validate-and-run.sh"
 CAMPAIGN_DIR="${ROOT}/.prism_orchestration/campaign_2026"
 DASHBOARD="${CAMPAIGN_DIR}/CAMPAIGN_DASHBOARD.txt"
 CAMPAIGN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
 
 # ── Pre-flight ──────────────────────────────────────────────────────────────
-if [[ ! -x "${ENGINE}" ]]; then
-    echo "ERROR: engine binary not found or not executable: ${ENGINE}"
-    echo "       Build first:"
-    echo "         cargo build -p prism-nhs --features gpu,v2_ignition --release"
+if [[ ! -x "${ENGINE_WRAPPER}" ]]; then
+    echo "ERROR: engine wrapper not found or not executable: ${ENGINE_WRAPPER}"
+    echo "       Expected canonical entrypoint: scripts/prism-validate-and-run.sh"
     exit 1
 fi
 
@@ -81,7 +80,7 @@ TARGETS=(
     echo "════════════════════════════════════════════════════════════════════════════"
     echo "PRISM-4D v1.0 — Tier-1 Pharma Campaign Dashboard"
     echo "Started: ${CAMPAIGN_TS}"
-    echo "Engine:  ${ENGINE}"
+    echo "Engine wrapper: ${ENGINE_WRAPPER}"
     echo "Tag:     ghost-lattice-v5-blocking-sync-milestone (f8f368f6)"
     echo "════════════════════════════════════════════════════════════════════════════"
     printf "%-22s | %-14s | %-11s | %-22s | %s\n" \
@@ -119,13 +118,12 @@ for TARGET in "${TARGETS[@]}"; do
     echo "  Log:      ${LOG}"
 
     # ── Canonical PRISM-4D v1.0 engine invocation ──────────────────────────
-    # Direct invocation with PRISM_VALIDATED=1 (operator-authorised
-    # bypass of scripts/prism-validate-and-run.sh for batch campaigns).
+    # The engine rejects direct invocation. Use the canonical wrapper.
     # All flags per LEAD ARCHITECT directive 2026-05-09 — verbatim.
     TARGET_START=$(date +%s)
 
-    PRISM_VALIDATED=1 RUST_LOG=info \
-        "${ENGINE}" \
+    RUST_LOG=info \
+        "${ENGINE_WRAPPER}" \
             -t "${TOPO}" \
             -o "${OUT}" \
             --fast --hysteresis --prism-therm \

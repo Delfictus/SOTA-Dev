@@ -13,7 +13,7 @@
       "padded_extent_angstrom": 99.43302631378174,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.056475904583931,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_5VEX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_5VEX_WT.topology.json"
     },
     "glp1r_6LN2_A316T": {
       "grid_dim": 96,
@@ -28,7 +28,7 @@
       "padded_extent_angstrom": 111.05834722518921,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.1799949392676354,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_A316T.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6LN2_A316T.topology.json"
     },
     "glp1r_6LN2_T149M": {
       "grid_dim": 96,
@@ -43,7 +43,7 @@
       "padded_extent_angstrom": 111.57962799072266,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.1855335474014281,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_T149M.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6LN2_T149M.topology.json"
     },
     "glp1r_6LN2_WT": {
       "grid_dim": 96,
@@ -58,7 +58,7 @@
       "padded_extent_angstrom": 110.97800731658936,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.179141327738762,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6LN2_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6LN2_WT.topology.json"
     },
     "glp1r_6X1A_WT": {
       "grid_dim": 96,
@@ -73,7 +73,7 @@
       "padded_extent_angstrom": 116.59479141235352,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.238819658756256,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6X1A_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6X1A_WT.topology.json"
     },
     "glp1r_6XOX_A316T": {
       "grid_dim": 96,
@@ -88,7 +88,7 @@
       "padded_extent_angstrom": 112.3823070526123,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.1940620124340058,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_A316T.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_A316T.topology.json"
     },
     "glp1r_6XOX_T149M": {
       "grid_dim": 96,
@@ -103,7 +103,7 @@
       "padded_extent_angstrom": 110.4883861541748,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.1739391028881072,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_T149M.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_T149M.topology.json"
     },
     "glp1r_6XOX_WT": {
       "grid_dim": 96,
@@ -118,7 +118,7 @@
       "padded_extent_angstrom": 109.85668182373047,
       "padding_each_side_angstrom": 5.0,
       "spacing_angstrom": 1.1672272443771363,
-      "topology_path": "/media/diddy/PRISM-LBS/prism-glp1r-aleniglipron-workspace/20260518T031002Z/04_TOPOLOGIES/glp1r_6XOX_WT.topology.json"
+      "topology_path": "campaigns/glp1r_aleniglipron/topologies/glp1r_6XOX_WT.topology.json"
     }
   },
   "created_at_utc": "2026-05-22T23:57:59.872932+00:00",

@@ -1,0 +1,55 @@
+release:
+  require_no_unaccounted_files: true
+  require_cold_restore: true
+  require_git_bundle: true
+  require_github_tag: true
+  require_ssd_full_copy: true
+  require_r2_full_copy: true
+  allow_github_database_omission: true
+  allow_silent_omission: false
+
+destinations:
+  github:
+    required: true
+    allow_database_omission: true
+    require_manifest_stubs_for_omitted_databases: true
+    max_regular_git_file_mib: 100
+  ssd:
+    required: true
+    require_databases: true
+    require_env_archives: true
+    require_cuda_ptx: true
+    require_readback_verification: true
+  r2:
+    required: true
+    require_databases: true
+    require_env_archives: true
+    require_cuda_ptx: true
+    require_readback_verification: true
+
+validation:
+  require_manifest_sha256: true
+  require_archive_extract_test: true
+  require_checksum_verification: true
+  require_restore_test: true
+  require_operational_smoke: true
+  expensive_tests_may_be_skipped: true
+  skipped_tests_must_be_declared: true
+
+claim_boundary:
+  phase2c_may_be_claimed_sealed: true
+  platform_smoke_may_be_claimed_valid: true
+  phase1_to_3_full_production_may_be_claimed_only_if_candidate_matrix_complete: true
+  hydration_may_be_claimed_only_if_hydration_inputs_and_outputs_exist: true
+
+candidate_matrix:
+  require_canonical_candidate_manifest: true
+  require_status_reconciliation: true
+  require_no_conflicting_status_without_explanation: true
+  require_candidate_id: true
+  require_smiles_or_reason_missing: true
+  require_sdf_or_reason_missing: true
+  require_dossier_or_reason_missing: true
+  require_topology_or_reason_missing: true
+  require_expected_outputs: true
+  require_observed_outputs: true

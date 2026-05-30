@@ -4,7 +4,8 @@
 # Phases 3-9 in order.
 set -euo pipefail
 
-cd /home/diddy/Desktop/Prism4D-bio
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 LOG=/tmp/gflownet_inference_chain.log
 PHASE2_PARQUET=campaigns/glp1r_aleniglipron/track_a_generative/gflownet_raw_policy_samples.parquet
@@ -45,4 +46,4 @@ run_phase phase9_validate  python3 scripts/validate_and_package_gflownet_inferen
 
 echo "[chain] $(date -u +%H:%M:%S) all phases complete" | tee -a "$LOG"
 echo "[chain] final tarball:" | tee -a "$LOG"
-ls -la /home/diddy/Desktop/Prism4D-bio/PRISM_TRACK_A_GFLOWNET_V1_INFERENCE_AUDIT_v1.0.tar.gz* | tee -a "$LOG"
+ls -la "$ROOT"/PRISM_TRACK_A_GFLOWNET_V1_INFERENCE_AUDIT_v1.0.tar.gz* | tee -a "$LOG"

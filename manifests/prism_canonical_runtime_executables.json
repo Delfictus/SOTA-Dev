@@ -1,0 +1,132 @@
+{
+  "schema_version": "prism.canonical_runtime_executable_registry.v1",
+  "scope": "product_boundary",
+  "executables": [
+    {
+      "id": "canonical_env_activate",
+      "path": "scripts/prism-canonical-env.sh",
+      "kind": "shell_script",
+      "validation_mode": "syntax"
+    },
+    {
+      "id": "validated_engine_wrapper",
+      "path": "scripts/prism-validate-and-run.sh",
+      "kind": "shell_script",
+      "validation_mode": "syntax_and_usage"
+    },
+    {
+      "id": "topology_prep",
+      "path": "scripts/prism-prep",
+      "kind": "python_script",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "candidate_holo_compile",
+      "path": "scripts/compile_candidate_holo_topology.py",
+      "kind": "python_script",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "am1bcc_charge_compute",
+      "path": "scripts/compute_am1bcc_charges.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
+    },
+    {
+      "id": "gpu_dispatch_generation",
+      "path": "scripts/generate_gpu_dispatch_batch.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
+    },
+    {
+      "id": "dstw_export",
+      "path": "target/release/dstw_export_wt_pathb",
+      "kind": "binary",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "gflownet_sampling",
+      "path": "scripts/sample_gflownet_candidates.py",
+      "kind": "python_script",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "gflownet_training",
+      "path": "scripts/train_gflownet_policy.py",
+      "kind": "python_script",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "oracle_scorer",
+      "path": "target/release/oracle_scorer",
+      "kind": "binary",
+      "validation_mode": "presence_only"
+    },
+    {
+      "id": "docking_lane",
+      "path": "scripts/gpu_dock.py",
+      "kind": "python_script",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "md_only_postflight",
+      "path": "scripts/prism-postflight-md-only.py",
+      "kind": "python_script",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "phase_manifold_extractor",
+      "path": "scripts/prism_phase_manifold_coherence.py",
+      "kind": "python_script",
+      "validation_mode": "real_smoke"
+    },
+    {
+      "id": "hydration_extractor_v2",
+      "path": "scripts/prism_v2_hydration_extractor.py",
+      "kind": "python_script",
+      "validation_mode": "fixture_smoke"
+    },
+    {
+      "id": "continuity_map_builder",
+      "path": "scripts/build_continuity_maps.py",
+      "kind": "python_script",
+      "validation_mode": "fixture_smoke"
+    },
+    {
+      "id": "subtb_spectral_gflownet",
+      "path": "scripts/run_log_subtb_spectral_gflownet.py",
+      "kind": "python_script",
+      "validation_mode": "fixture_smoke"
+    },
+    {
+      "id": "transition_trajectory_tensor",
+      "path": "scripts/build_transition_trajectory_tensor.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
+    },
+    {
+      "id": "thermodynamic_motif_registry",
+      "path": "scripts/build_thermodynamic_motif_registry.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
+    },
+    {
+      "id": "ccns_validation",
+      "path": "scripts/run_ccns_validation_md.py",
+      "kind": "python_script",
+      "validation_mode": "compile_only"
+    },
+    {
+      "id": "campaign_orchestrator",
+      "path": "scripts/production/run_pharma_campaign.sh",
+      "kind": "shell_script",
+      "validation_mode": "syntax"
+    },
+    {
+      "id": "ptx_compile_bundle",
+      "path": "scripts/compile_all_ptx_sm120.sh",
+      "kind": "shell_script",
+      "validation_mode": "syntax"
+    }
+  ]
+}

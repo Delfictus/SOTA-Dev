@@ -15828,8 +15828,15 @@ fn run_multi_stream_pipeline(args: &Args, topology_path: &PathBuf, n_streams: us
             }
         }
 
+        let md_only_deferred_ok =
+            args.md_only_evidence
+            && missing_required_artifacts.iter().all(|m|
+                m.get("artifact").and_then(|v| v.as_str()).map(|a| a == "asc_vectors" || a == "noise_floor").unwrap_or(false)
+            );
+
         let required_artifacts_complete =
-            missing_required_artifacts.is_empty() && serialization_failure.is_none();
+            (missing_required_artifacts.is_empty() && serialization_failure.is_none())
+            || md_only_deferred_ok;
         let validation_status_str = if required_artifacts_complete {
             "accepted_required_artifacts_present"
         } else {

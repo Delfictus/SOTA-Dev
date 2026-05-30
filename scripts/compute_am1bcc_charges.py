@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assign AM1-BCC charges to aligned Aleniglipron and persist them on the SDF."""
+"""Assign AM1-BCC charges to an SDF and persist them back onto the molecule."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, cast
 
+from lib.prism_runtime import resolve_amberhome, resolve_antechamber
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT = (
@@ -23,8 +25,14 @@ DEFAULT_INPUT = (
 DEFAULT_OUTPUT = (
     REPO_ROOT / "campaigns/glp1r_aleniglipron/track_0_manual_emulation/conformers/ALENI-PARENT_am1bcc.sdf"
 )
-DEFAULT_ANTECHAMBER = Path("/home/diddy/miniconda3/envs/prism_dock/bin/antechamber")
-DEFAULT_AMBERHOME = Path("/home/diddy/miniconda3/envs/prism_dock")
+
+
+def default_amberhome() -> Path:
+    return resolve_amberhome()
+
+
+def default_antechamber() -> Path:
+    return resolve_antechamber()
 
 
 Chem = cast(Any, import_module("rdkit.Chem"))
@@ -34,8 +42,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--antechamber", type=Path, default=DEFAULT_ANTECHAMBER)
-    parser.add_argument("--amberhome", type=Path, default=DEFAULT_AMBERHOME)
+    parser.add_argument("--antechamber", type=Path, default=default_antechamber())
+    parser.add_argument("--amberhome", type=Path, default=default_amberhome())
     parser.add_argument("--net-charge", type=int, default=None)
     return parser.parse_args()
 
