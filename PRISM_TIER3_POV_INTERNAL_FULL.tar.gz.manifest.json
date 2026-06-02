@@ -1,0 +1,9 @@
+{
+  "archive_path": "final_pov_package/09_checksums_and_provenance/PRISM_TIER3_POV_INTERNAL_FULL.tar.gz",
+  "blake3": "19c70b68789dedd8fd99a5b98c3e9023eba13d9d72b15930b0540186ccdefb49",
+  "generated_at_utc": "2026-06-02T04:59:53.101892+00:00",
+  "merkle_root": "74ec5402752916b498d7197b67900929112cfa06d1cd555b228fc8b869225459",
+  "redaction_status": "PASS",
+  "sha256": "76e227fdb5d1c236feeab2596a97eedae55fcc46700b2c4500fb766b98eb112d",
+  "tier": "INTERNAL_FULL"
+}

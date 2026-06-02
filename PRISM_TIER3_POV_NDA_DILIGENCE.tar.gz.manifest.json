@@ -1,0 +1,9 @@
+{
+  "archive_path": "final_pov_package/09_checksums_and_provenance/PRISM_TIER3_POV_NDA_DILIGENCE.tar.gz",
+  "blake3": "82476f7b1e450147297107d3dbc17cf69276857e5991acb1e23d41dc1ca71c6a",
+  "generated_at_utc": "2026-06-02T04:59:53.110752+00:00",
+  "merkle_root": "9785df054e8fe0034f6542decd476b7fd2626007ebb8b407ec258cff336636b4",
+  "redaction_status": "PASS",
+  "sha256": "ae658f752b96699ec22b958013904129d125019b8c377e42e00664aa7f06fc3f",
+  "tier": "NDA_DILIGENCE"
+}

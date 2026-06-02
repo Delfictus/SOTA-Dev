@@ -1,0 +1,15 @@
+{
+  "blockers": [],
+  "claim_red_team_status": "CLAIM_RED_TEAM_PASS",
+  "cold_clone_status": "COLD_CLONE_REPLAY_PASS",
+  "executive_packet_exists": true,
+  "generated_at_utc": "2026-06-02T04:59:54.855961+00:00",
+  "medchem_packet_exists": true,
+  "scorecard_exists": true,
+  "sqlite_exists": true,
+  "status": "POV_EXTERNAL_DILIGENCE_READY_DSTW_FULL_LEVERAGE",
+  "structural_packet_exists": true,
+  "tier_manifest_count": 3,
+  "view_count": 6,
+  "wetlab_exists": true
+}

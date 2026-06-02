@@ -1,0 +1,20 @@
+{
+  "absolute_workstation_path_hits": [],
+  "archive_blake3": "19c70b68789dedd8fd99a5b98c3e9023eba13d9d72b15930b0540186ccdefb49",
+  "archive_exists": true,
+  "archive_sha256": "76e227fdb5d1c236feeab2596a97eedae55fcc46700b2c4500fb766b98eb112d",
+  "claim_count": 5,
+  "clone_root": "/tmp/prism_pov_cold_clone_toabj14v/clone",
+  "declared_dependencies_file": "requirements.txt",
+  "dependency_install_mode": "runtime_subset_verified",
+  "generated_at_utc": "2026-06-02T04:59:54.718377+00:00",
+  "git_commit": "cfc8dc4d17fca841936e159579d123d0371f5aeb",
+  "master_index_status": "PASS",
+  "merkle_root": "4cdf4d0e665634ac1e62b6667f1f89e8ba1937a70ba24ca232151f1625caeddb",
+  "missing_artifacts": [],
+  "referenced_artifact_missing_count": 0,
+  "render_locks_present": true,
+  "schema_version": "prism.tier3_pov.cold_clone_replay_report.v1",
+  "status": "COLD_CLONE_REPLAY_PASS",
+  "visual_locks_present": true
+}

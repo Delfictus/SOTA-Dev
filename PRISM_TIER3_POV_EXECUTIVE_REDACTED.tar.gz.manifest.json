@@ -1,0 +1,9 @@
+{
+  "archive_path": "final_pov_package/09_checksums_and_provenance/PRISM_TIER3_POV_EXECUTIVE_REDACTED.tar.gz",
+  "blake3": "f28bab86362dedcad6f0d713dfe3e85af90d31c8d03956096c8dd4f1d545f8e4",
+  "generated_at_utc": "2026-06-02T04:59:53.113792+00:00",
+  "merkle_root": "d2e959cbd7bdb130e03779a89e17450de2a7407b2c6a4fb5fd24fc198c64cc3c",
+  "redaction_status": "PASS",
+  "sha256": "4977eb1ceeb0de2370f7b063902c87630150939179a32d548ea2382744798872",
+  "tier": "EXECUTIVE_REDACTED"
+}
